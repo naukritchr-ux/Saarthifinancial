@@ -2623,6 +2623,8 @@ def get_active_predictions():
     try:
         # Load models and mappings
         models_loaded = False
+        fran_freq_map = {}
+        comp_freq_map = {}
         try:
             import joblib
             backend_dir = os.path.dirname(os.path.abspath(__file__))
