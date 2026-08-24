@@ -234,35 +234,71 @@ def init_db():
     
     db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'crm_db.sqlite')
     
-    print("Syncing database with live API data...")
+    print("Syncing database with live recruitment API data...")
     # 1. Fetch franchisees
     try:
         req_f = urllib.request.Request('https://api.sarthi360.in/api/franchisees', headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req_f, timeout=10) as response:
+        with urllib.request.urlopen(req_f, timeout=15) as response:
             franchisees = json.loads(response.read().decode('utf-8'))
     except Exception as e:
         print("Warning: Failed to fetch franchisees from live API:", str(e))
         print("Falling back to existing SQLite database if present.")
         return
         
-    # 2. Fetch jobinvoices
+    # 2. Fetch enquiries
     try:
-        req_inv = urllib.request.Request('https://api.sarthi360.in/api/jobinvoice', headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req_inv, timeout=15) as response:
-            invoices = json.loads(response.read().decode('utf-8'))
+        req_enq = urllib.request.Request('https://api.sarthi360.in/api/enquiries', headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req_enq, timeout=35) as response:
+            enquiries_res = json.loads(response.read().decode('utf-8'))
+            enquiries = enquiries_res.get('data', [])
     except Exception as e:
-        print("Warning: Failed to fetch jobinvoices from live API:", str(e))
+        print("Warning: Failed to fetch enquiries from live API:", str(e))
         print("Falling back to existing SQLite database if present.")
         return
         
-    print(f"Loaded live data: {len(franchisees)} franchisees and {len(invoices)} jobinvoices.")
+    # 3. Fetch invoices
+    try:
+        req_inv = urllib.request.Request('https://api.sarthi360.in/api/Invoice', headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req_inv, timeout=45) as response:
+            invoices = json.loads(response.read().decode('utf-8'))
+    except Exception as e:
+        print("Warning: Failed to fetch invoices from live API:", str(e))
+        print("Falling back to existing SQLite database if present.")
+        return
+        
+    print(f"Loaded live data: {len(franchisees)} franchisees, {len(enquiries)} enquiries, and {len(invoices)} invoices.")
     
     try:
         # Connect directly to SQLite file to avoid recursion
         conn = sqlite3.connect(db_path, check_same_thread=False)
         cursor = conn.cursor()
         
-        # Create schema and populate tables (inside a transaction)
+        # Check and handle table expenditure
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='expenditure'")
+        has_expenditure = cursor.fetchone()
+        expenditure_rows = []
+        if has_expenditure:
+            # Save existing expenditures
+            cursor.execute("SELECT srNo, billDate, particulars, expenses, amount, net, expenseType, bdAgentId, franchiseeId, is_deleted FROM expenditure")
+            expenditure_rows = cursor.fetchall()
+            
+        # Check and handle table budgets
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='budgets'")
+        has_budgets = cursor.fetchone()
+        budgets_rows = []
+        if has_budgets:
+            cursor.execute("SELECT category, limit_amount FROM budgets")
+            budgets_rows = cursor.fetchall()
+            
+        # Check and handle table audit_log
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_log'")
+        has_audit = cursor.fetchone()
+        audit_rows = []
+        if has_audit:
+            cursor.execute("SELECT id, table_name, record_id, field_changed, old_value, new_value, changed_by, changed_at FROM audit_log")
+            audit_rows = cursor.fetchall()
+
+        # Re-create tables
         cursor.execute("DROP TABLE IF EXISTS franchisees")
         cursor.execute("""
             CREATE TABLE franchisees (
@@ -301,7 +337,7 @@ def init_db():
         cursor.execute("DROP TABLE IF EXISTS invoice")
         cursor.execute("""
             CREATE TABLE invoice (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id INTEGER PRIMARY KEY,
                 enquiry_id INTEGER,
                 billNumber TEXT,
                 billDate TEXT,
@@ -369,19 +405,39 @@ def init_db():
         """)
         
         # Populate budgets
-        initial_budgets = {
-            'Marketing': 50000.0,
-            'Operations': 150000.0,
-            'Rent': 45000.0,
-            'Salaries': 800000.0,
-            'Software': 25000.0,
-            'Travel': 30000.0,
-            'Utilities': 15000.0,
-            'Other': 50000.0
-        }
-        for cat, lim in initial_budgets.items():
-            cursor.execute("INSERT INTO budgets (category, limit_amount) VALUES (?, ?)", (cat, lim))
-            
+        if budgets_rows:
+            for r in budgets_rows:
+                cursor.execute("INSERT INTO budgets (category, limit_amount) VALUES (?, ?)", r)
+        else:
+            initial_budgets = {
+                'Marketing': 50000.0,
+                'Operations': 150000.0,
+                'Rent': 45000.0,
+                'Salaries': 800000.0,
+                'Software': 25000.0,
+                'Travel': 30000.0,
+                'Utilities': 15000.0,
+                'Other': 50000.0
+            }
+            for cat, lim in initial_budgets.items():
+                cursor.execute("INSERT INTO budgets (category, limit_amount) VALUES (?, ?)", (cat, lim))
+                
+        # Populate expenditure
+        if expenditure_rows:
+            for r in expenditure_rows:
+                cursor.execute("""
+                    INSERT INTO expenditure (srNo, billDate, particulars, expenses, amount, net, expenseType, bdAgentId, franchiseeId, is_deleted)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, r)
+                
+        # Populate audit log
+        if audit_rows:
+            for r in audit_rows:
+                cursor.execute("""
+                    INSERT INTO audit_log (id, table_name, record_id, field_changed, old_value, new_value, changed_by, changed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, r)
+                
         # Populate franchisees
         for f in franchisees:
             name = f.get('nameAsPerAgreement', '')
@@ -395,63 +451,71 @@ def init_db():
                 VALUES (?, ?, ?)
             """, (name, tl, '2025-01-01'))
             
-        # Populate enquiries, invoices, payments, expenses
-        for inv in invoices:
-            inv_id = inv.get('id')
-            if not inv_id:
+        # Populate enquiries
+        for enq in enquiries:
+            enq_id = enq.get('id')
+            if not enq_id:
                 continue
                 
-            franchisee = inv.get('kindlyShareName', '')
+            company = enq.get('companyName', '')
+            if company:
+                company = company.strip()
+            bd = enq.get('bdMemberName', '')
+            if bd:
+                bd = bd.strip()
+            tl = enq.get('teamLeaderName', '')
+            if tl:
+                tl = tl.strip()
+            franchisee = enq.get('franchiseeName', '')
             if franchisee:
                 franchisee = franchisee.strip()
-            team_leader = inv.get('nameOfTeamLeader', '')
-            if team_leader:
-                team_leader = team_leader.strip()
                 
             # Parse Dates
-            bill_date_raw = inv.get('billDate')
+            alloc_date_raw = enq.get('dateOfAllocation')
+            alloc_date = None
+            if alloc_date_raw:
+                alloc_date = alloc_date_raw.split('T')[0]
+                
+            realloc_date_raw = enq.get('dateOfReallocation')
+            realloc_date = None
+            if realloc_date_raw:
+                realloc_date = realloc_date_raw.split('T')[0]
+                
+            bill_date_raw = enq.get('bill_date')
             bill_date = None
             if bill_date_raw:
                 bill_date = bill_date_raw.split('T')[0]
                 
-            # Parse amountPaidWithoutGst
-            amount_paid_raw = inv.get('amountPaidWithoutGst')
-            try:
-                service_charges = float(amount_paid_raw) if amount_paid_raw else 0.0
-            except:
-                service_charges = 0.0
-                
-            # Parse totalAmountPaid
-            total_amount_raw = inv.get('totalAmountPaid')
-            try:
-                total_amount = float(total_amount_raw) if total_amount_raw else 0.0
-            except:
-                total_amount = 0.0
-                
-            # Check payment received status
-            payment_details = inv.get('paymentDetailsForNaukri') or {}
-            is_received = False
-            if isinstance(payment_details, dict):
-                is_received = payment_details.get('received', False)
-            
-            status = 'inprogress'
-            if is_received or total_amount > 0:
-                status = 'closed'
-                
-            bill_no = inv.get('billNo', '')
-            if bill_no:
-                bill_no = bill_no.strip()
-            else:
-                bill_no = None
-                
-            created_at_raw = inv.get('createdAt')
+            created_at_raw = enq.get('created_at')
             created_at = None
             if created_at_raw:
                 created_at = created_at_raw.split('T')[0]
-            else:
-                created_at = bill_date
                 
-            # Insert into enquiries
+            # Parse numeric fields
+            placement_fees = 0.0
+            try:
+                placement_fees = float(enq.get('placementFees') or 0.0)
+            except:
+                pass
+                
+            sal_from = 0.0
+            try:
+                sal_from = float(enq.get('from') or 0.0)
+            except:
+                pass
+                
+            sal_to = 0.0
+            try:
+                sal_to = float(enq.get('to') or 0.0)
+            except:
+                pass
+                
+            bill_amount = 0.0
+            try:
+                bill_amount = float(enq.get('bill_amount') or 0.0)
+            except:
+                pass
+                
             cursor.execute("""
                 INSERT INTO enquiries (
                     id, companyName, bdMemberName, teamLeaderName, franchiseeName,
@@ -460,79 +524,106 @@ def init_db():
                     bill_no, bill_date, bill_amount, info, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                inv_id, franchisee, team_leader, team_leader, franchisee,
-                service_charges, "Job Portal Logins", "IT & Recruitment", 0.0, 0.0, status,
-                bill_date, bill_date, None,
-                bill_no, bill_date, service_charges, "O", created_at
+                enq_id, company, bd, tl, franchisee,
+                placement_fees, enq.get('positionName'), enq.get('industry'), sal_from, sal_to, enq.get('enquiryStatus'),
+                alloc_date, alloc_date, realloc_date,
+                enq.get('bill_no'), bill_date, bill_amount, "O", created_at
             ))
             
-            # If billed, insert into invoice
+        # Populate invoice and franchisePayments
+        for inv in invoices:
+            inv_id = inv.get('id')
+            if not inv_id:
+                continue
+                
+            enq_id = inv.get('enquiry_id')
+            bill_no = inv.get('billNumber', '')
             if bill_no:
-                # Calculate franchiseeShare
+                bill_no = bill_no.strip()
+            else:
+                bill_no = None
+                
+            bill_date_raw = inv.get('billDate')
+            bill_date = None
+            if bill_date_raw:
+                bill_date = bill_date_raw.split('T')[0]
+                
+            # Parse numeric fields
+            service_charges = 0.0
+            try:
+                service_charges = float(inv.get('serviceCharges') or 0.0)
+            except:
+                pass
+                
+            # Parse franchiseeShare from API if valid
+            franchisee_share = 0.0
+            try:
+                f_share_raw = inv.get('franchiseeShare')
+                franchisee_share = float(f_share_raw) if f_share_raw else 0.0
+            except:
+                pass
+                
+            # Parse ourShare from API if valid
+            our_share = 0.0
+            try:
+                o_share_raw = inv.get('ourShare')
+                our_share = float(o_share_raw) if o_share_raw else 0.0
+            except:
+                pass
+                
+            # Fallback to business split rules if they are not set / zero
+            if franchisee_share == 0.0 and our_share == 0.0:
                 split_pct = 0.75
                 if bill_date and bill_date < '2026-04-01':
                     split_pct = 0.60
                 franchisee_share = service_charges * split_pct
                 our_share = service_charges - franchisee_share
                 
-                # Extract payment amount and date
-                pay_amounts = inv.get('paymentAmountsForNaukri') or []
-                pay_dates = inv.get('paymentDatesForNaukri') or []
+            amt_received = 0.0
+            try:
+                amt_received = float(inv.get('amountReceived') or 0.0)
+            except:
+                pass
                 
-                amt_received = 0.0
+            date_received_raw = inv.get('dateReceived')
+            date_received = None
+            if date_received_raw:
+                date_received = date_received_raw.split('T')[0]
+            else:
                 date_received = bill_date
                 
-                for amt_str in pay_amounts:
-                    if amt_str:
-                        try:
-                            amt_received += float(amt_str)
-                        except:
-                            pass
-                            
-                for dt_str in pay_dates:
-                    if dt_str:
-                        date_received = dt_str
-                        break
-                        
-                if amt_received == 0.0 and is_received:
-                    amt_received = service_charges
-                    
-                cursor.execute("""
-                    INSERT INTO invoice (
-                        enquiry_id, billNumber, billDate, serviceCharges,
-                        franchiseeShare, ourShare, amountReceived, dateReceived,
-                        nameOfBd, teamLeader, franchiseName
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    inv_id, bill_no, bill_date, service_charges,
-                    franchisee_share, our_share, amt_received, date_received,
-                    team_leader, team_leader, franchisee
-                ))
+            franchise_name = inv.get('franchiseName', '')
+            if franchise_name:
+                franchise_name = franchise_name.strip()
+            tl = inv.get('teamLeader', '')
+            if tl:
+                tl = tl.strip()
+            bd = inv.get('nameOfBd', '')
+            if bd:
+                bd = bd.strip()
                 
-                # Insert into franchisePayments
-                if amt_received > 0:
-                    cursor.execute("""
-                        INSERT INTO franchisePayments (
-                            invoice_id, payment_done, payment_date, payment_mode, uid_transaction_id, payment_amount
-                        ) VALUES (?, ?, ?, ?, ?, ?)
-                    """, (
-                        inv_id, "Yes", date_received, "Online", bill_no, amt_received
-                    ))
-                    
-            # Generate expenditure from portal cost
-            cost_raw = inv.get('totalCostOfPortal')
-            try:
-                portal_cost = float(cost_raw) if cost_raw else 0.0
-            except:
-                portal_cost = 0.0
-                
-            if portal_cost > 0:
+            cursor.execute("""
+                INSERT INTO invoice (
+                    id, enquiry_id, billNumber, billDate, serviceCharges,
+                    franchiseeShare, ourShare, amountReceived, dateReceived,
+                    nameOfBd, teamLeader, franchiseName
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                inv_id, enq_id, bill_no, bill_date, service_charges,
+                franchisee_share, our_share, amt_received, date_received,
+                bd, tl, franchise_name
+            ))
+            
+            # Insert into franchisePayments if payment done
+            if amt_received > 0:
+                pay_mode = inv.get('payment_mode') or "Online"
+                trans_id = inv.get('uid_transaction_id') or bill_no
                 cursor.execute("""
-                    INSERT INTO expenditure (
-                        srNo, billDate, particulars, expenses, amount, net, expenseType, bdAgentId, franchiseeId, is_deleted
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO franchisePayments (
+                        invoice_id, payment_done, payment_date, payment_mode, uid_transaction_id, payment_amount
+                    ) VALUES (?, ?, ?, ?, ?, ?)
                 """, (
-                    "EXP", bill_date, f"Portal Cost for {franchisee}", "Portal Cost", portal_cost, portal_cost, "General", None, None, 0
+                    inv_id, "Yes", date_received, pay_mode, trans_id, amt_received
                 ))
                 
         conn.commit()
