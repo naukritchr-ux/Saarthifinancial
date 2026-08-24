@@ -7,6 +7,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DB_NAME = os.getenv("DB_NAME", "crm_db")
+DB_PORT = 3306
+DB_HOST = "localhost"
+DB_USER = "root"
+DB_PASSWORD = ""
 
 class SQLiteDictCursor:
     def __init__(self, conn):
