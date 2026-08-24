@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import re
+from datetime import datetime, date
 from dotenv import load_dotenv
 
 # Load env file
@@ -11,6 +12,23 @@ DB_PORT = 3306
 DB_HOST = "localhost"
 DB_USER = "root"
 DB_PASSWORD = ""
+
+def parse_sqlite_value(val):
+    if not isinstance(val, str):
+        return val
+    # Check YYYY-MM-DD
+    if len(val) == 10 and val[4] == '-' and val[7] == '-':
+        try:
+            return datetime.strptime(val, '%Y-%m-%d').date()
+        except ValueError:
+            pass
+    # Check YYYY-MM-DD HH:MM:SS
+    elif len(val) >= 19 and val[4] == '-' and val[7] == '-' and val[10] == ' ' and val[13] == ':' and val[16] == ':':
+        try:
+            return datetime.strptime(val.split('.')[0], '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            pass
+    return val
 
 class SQLiteDictCursor:
     def __init__(self, conn):
@@ -33,19 +51,25 @@ class SQLiteDictCursor:
             self.cursor.execute(query)
         return self
         
+    def _parse_row(self, row, columns):
+        parsed_row = {}
+        for col, val in zip(columns, row):
+            parsed_row[col] = parse_sqlite_value(val)
+        return parsed_row
+        
     def fetchall(self):
         rows = self.cursor.fetchall()
         if not rows:
             return []
         columns = [col[0] for col in self.cursor.description]
-        return [dict(zip(columns, row)) for row in rows]
+        return [self._parse_row(row, columns) for row in rows]
         
     def fetchone(self):
         row = self.cursor.fetchone()
         if row is None:
             return None
         columns = [col[0] for col in self.cursor.description]
-        return dict(zip(columns, row))
+        return self._parse_row(row, columns)
         
     @property
     def description(self):
@@ -99,7 +123,6 @@ def get_db_connection(select_db=True):
     def date_format(date_str, format_str):
         if not date_str:
             return None
-        from datetime import datetime
         py_fmt = format_str.replace('%%', '%')
         try:
             # Try full datetime string first
@@ -117,7 +140,6 @@ def get_db_connection(select_db=True):
         
     # 3. Register CURDATE custom function
     def curdate():
-        from datetime import date
         return date.today().strftime('%Y-%m-%d')
         
     conn.conn.create_function("DATE_FORMAT", 2, date_format)
