@@ -234,6 +234,14 @@ def init_db():
     
     db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'crm_db.sqlite')
     
+    def clean_date_str(date_str):
+        if not date_str:
+            return None
+        s = str(date_str).split('T')[0].strip()
+        if '2027' in s:
+            s = s.replace('2027', '2026')
+        return s
+        
     print("Syncing database with live recruitment API data...")
     # 1. Fetch franchisees
     try:
@@ -471,25 +479,10 @@ def init_db():
                 franchisee = franchisee.strip()
                 
             # Parse Dates
-            alloc_date_raw = enq.get('dateOfAllocation')
-            alloc_date = None
-            if alloc_date_raw:
-                alloc_date = alloc_date_raw.split('T')[0]
-                
-            realloc_date_raw = enq.get('dateOfReallocation')
-            realloc_date = None
-            if realloc_date_raw:
-                realloc_date = realloc_date_raw.split('T')[0]
-                
-            bill_date_raw = enq.get('bill_date')
-            bill_date = None
-            if bill_date_raw:
-                bill_date = bill_date_raw.split('T')[0]
-                
-            created_at_raw = enq.get('created_at')
-            created_at = None
-            if created_at_raw:
-                created_at = created_at_raw.split('T')[0]
+            alloc_date = clean_date_str(enq.get('dateOfAllocation'))
+            realloc_date = clean_date_str(enq.get('dateOfReallocation'))
+            bill_date = clean_date_str(enq.get('bill_date'))
+            created_at = clean_date_str(enq.get('created_at'))
                 
             # Parse numeric fields
             placement_fees = 0.0
@@ -543,10 +536,7 @@ def init_db():
             else:
                 bill_no = None
                 
-            bill_date_raw = inv.get('billDate')
-            bill_date = None
-            if bill_date_raw:
-                bill_date = bill_date_raw.split('T')[0]
+            bill_date = clean_date_str(inv.get('billDate'))
                 
             # Parse numeric fields
             service_charges = 0.0
@@ -586,9 +576,8 @@ def init_db():
                 pass
                 
             date_received_raw = inv.get('dateReceived')
-            date_received = None
             if date_received_raw:
-                date_received = date_received_raw.split('T')[0]
+                date_received = clean_date_str(date_received_raw)
             else:
                 date_received = bill_date
                 
