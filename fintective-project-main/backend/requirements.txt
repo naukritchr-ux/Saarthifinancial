@@ -4,3 +4,7 @@ PyMySQL==1.1.1
 python-dotenv==1.0.1
 cryptography==42.0.7
 PyJWT==2.8.0
+pandas
+numpy
+scikit-learn
+joblib
