@@ -1,0 +1,37 @@
+SAARTHI DATA CLEANING REPORT
+=============================
+
+ENQUIRIES
+  Raw rows:              13963
+  Duplicate groups found: 79 (same company+candidate+bill_no)
+  Rows removed:           89 (kept most-recently-updated row per group)
+  Clean rows:             13874
+
+INVOICE
+  Raw rows:                    7064
+  Unresolvable collisions:     85 bill numbers / 173 rows -> DROPPED ENTIRELY
+                                (two different companies share one bill number - cannot
+                                 auto-determine which is correct; needs DB admin to confirm
+                                 whether the bill-number generator has a collision bug)
+  Resolvable duplicate groups: 212 bill numbers / 223 extra rows -> COLLAPSED
+                                (exact re-entries, revised amounts, same-company-different-
+                                 candidate reuse - kept the most recently created row per
+                                 bill number, dropped the rest)
+  Clean rows:                   6668
+
+TRAINING DATASET (enquiries LEFT JOIN cleaned+aggregated invoice)
+  Total enquiry rows:        13874
+  Rows with a matched clean invoice: 6424 (46.3%)
+  Rows with no invoice at all:       7450 (closed-but-never-billed,
+                                       or invoice existed but got dropped as an unresolvable collision)
+
+CAVEAT - read before trusting this for training:
+  The "same_company_diff_candidate" bucket (16 bill numbers) was resolved by keeping
+  only the most recent row per bill number. This is a safe default to avoid double-
+  counting revenue, but it's an assumption: if these were actually two genuinely
+  separate placements that happened to get the same bill number typed in by mistake,
+  one real placement's revenue is being silently dropped rather than fixed. Same
+  caveat applies to "same_deal_revised_amount" (15 bill numbers) - assumed the latest
+  entry is the corrected one, which is usually but not certainly true.
+  Worth a spot-check against Tally/physical invoices before fully trusting revenue
+  totals derived from this exact resolution.
