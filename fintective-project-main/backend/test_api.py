@@ -1,3 +1,5 @@
+import warnings
+warnings.filterwarnings('ignore')
 import json
 import unittest
 import os

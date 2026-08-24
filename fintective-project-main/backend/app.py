@@ -1544,6 +1544,8 @@ def get_bd_enquiry_status():
 
 @app.route('/api/finance/action-items', methods=['GET'])
 def get_action_items():
+    import warnings
+    warnings.simplefilter('ignore', category=UserWarning)
     import csv
     ghost_deals = []
     duplicate_expenses = []
