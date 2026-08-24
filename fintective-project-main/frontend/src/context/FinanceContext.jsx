@@ -2,10 +2,9 @@ import React, { createContext, useState, useEffect } from 'react';
 
 export const FinanceContext = createContext();
 
-export const FinanceProvider = ({ children }) => {
-  // Change this URL to your main site's API endpoint when deploying or fetching directly!
-  const API_BASE_URL = 'http://localhost:5000/api';
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+export const FinanceProvider = ({ children }) => {
   const [transactions, setTransactions] = useState([]);
   const [franchisees, setFranchisees] = useState([]);
   const [bdAgents, setBdAgents] = useState([]);

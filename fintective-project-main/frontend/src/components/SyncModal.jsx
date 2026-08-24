@@ -1,10 +1,10 @@
 import React, { useState, useContext } from 'react';
-import { FinanceContext } from '../context/FinanceContext';
+import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { X, RefreshCw, Globe, CheckCircle2, AlertTriangle, Play } from 'lucide-react';
 
 const SyncModal = ({ isOpen, onClose }) => {
   const { addTransaction, transactions } = useContext(FinanceContext);
-  const [apiUrl, setApiUrl] = useState('http://localhost:5000/api/transactions');
+  const [apiUrl, setApiUrl] = useState(`${API_BASE_URL}/transactions`);
   const [syncLogs, setSyncLogs] = useState([]);
   const [status, setStatus] = useState('idle'); // idle, loading, success, error
   const [importedCount, setImportedCount] = useState(0);

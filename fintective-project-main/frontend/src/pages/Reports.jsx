@@ -1,5 +1,5 @@
 import React, { useContext, useState, useEffect } from 'react';
-import { FinanceContext } from '../context/FinanceContext';
+import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { Search, Trash2, Printer, Filter, X, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 
@@ -20,7 +20,7 @@ const Reports = () => {
   useEffect(() => {
     if (activeTab === 'ml' && !mlData) {
       setMlLoading(true);
-      fetch('http://localhost:5000/api/ml/insights')
+      fetch(`${API_BASE_URL}/ml/insights`)
         .then(res => {
           if (!res.ok) throw new Error('Failed to load ML predictive insights. Make sure the backend Flask server is running.');
           return res.json();
@@ -516,7 +516,7 @@ const Reports = () => {
                   <div>
                     <span className="font-bold" style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '8px' }}>Outlier Distribution Analysis</span>
                     <img 
-                      src="http://localhost:5000/api/ml/plots/expense_anomalies.png" 
+                      src={`${API_BASE_URL}/ml/plots/expense_anomalies.png`} 
                       alt="Expense Outliers Analysis Chart"
                       style={{ width: '100%', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}
                       onError={(e) => { e.target.style.display = 'none'; }}
@@ -595,7 +595,7 @@ const Reports = () => {
                   </p>
                   
                   <img 
-                    src="http://localhost:5000/api/ml/plots/franchise_segments.png" 
+                    src={`${API_BASE_URL}/ml/plots/franchise_segments.png`} 
                     alt="Franchise Segments Chart"
                     style={{ width: '100%', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '16px' }}
                     onError={(e) => { e.target.style.display = 'none'; }}
@@ -640,7 +640,7 @@ const Reports = () => {
                   </p>
                   
                   <img 
-                    src="http://localhost:5000/api/ml/plots/client_segments.png" 
+                    src={`${API_BASE_URL}/ml/plots/client_segments.png`} 
                     alt="Client Segments Chart"
                     style={{ width: '100%', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '16px' }}
                     onError={(e) => { e.target.style.display = 'none'; }}

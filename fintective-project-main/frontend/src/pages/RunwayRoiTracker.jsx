@@ -1,5 +1,5 @@
 import React, { useContext, useState, useEffect } from 'react';
-import { FinanceContext } from '../context/FinanceContext';
+import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { 
   TrendingUp, 
@@ -63,7 +63,7 @@ const RunwayRoiTracker = () => {
   // Fetch ML Active Predictions
   const fetchMlPredictions = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/ml/active-predictions');
+      const res = await fetch(`${API_BASE_URL}/ml/active-predictions`);
       if (res.ok) {
         const data = await res.json();
         setActivePredictions(data.predictions || []);
@@ -92,7 +92,7 @@ const RunwayRoiTracker = () => {
             end = `${yVal}-${String(mIdx + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
           }
         }
-        const res = await fetch(`http://localhost:5000/api/bd-revenue-leaderboard?start_date=${start}&end_date=${end}`);
+        const res = await fetch(`${API_BASE_URL}/bd-revenue-leaderboard?start_date=${start}&end_date=${end}`);
         if (res.ok) {
           const data = await res.json();
           setLeaderboard(data);
@@ -110,7 +110,7 @@ const RunwayRoiTracker = () => {
   const fetchActionItems = async () => {
     setActionItemsLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/finance/action-items');
+      const res = await fetch(`${API_BASE_URL}/finance/action-items`);
       if (res.ok) {
         const data = await res.json();
         setGhostDeals(data.ghost_deals || []);
@@ -136,7 +136,7 @@ const RunwayRoiTracker = () => {
     setSelectedRecruiter(name);
     setRecruiterDetailsLoading(true);
     try {
-      const res = await fetch(`http://localhost:5000/api/finance/bd-revenue/${encodeURIComponent(name)}/detail`);
+      const res = await fetch(`${API_BASE_URL}/finance/bd-revenue/${encodeURIComponent(name)}/detail`);
       if (res.ok) {
         const data = await res.json();
         setRecruiterDetails(data);
@@ -151,7 +151,7 @@ const RunwayRoiTracker = () => {
   // Soft Delete duplicate expense
   const handleDeleteDuplicate = async (id, itemInfo) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/finance/action-items/${id}/soft-delete`, {
+      const res = await fetch(`${API_BASE_URL}/finance/action-items/${id}/soft-delete`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -175,7 +175,7 @@ const RunwayRoiTracker = () => {
   // Undo soft delete (Restore)
   const handleUndoSoftDelete = async (id) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/finance/action-items/${id}/restore`, {
+      const res = await fetch(`${API_BASE_URL}/finance/action-items/${id}/restore`, {
         method: 'POST'
       });
       if (res.ok) {
@@ -193,7 +193,7 @@ const RunwayRoiTracker = () => {
   // Resolve Revenue Leakage Ghost Placements
   const handleResolveLeakage = async (id, billDate, billNo, reasonCode) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/finance/action-items/${id}/resolve`, {
+      const res = await fetch(`${API_BASE_URL}/finance/action-items/${id}/resolve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bill_date: billDate, bill_no: billNo, reason_code: reasonCode })
@@ -205,7 +205,7 @@ const RunwayRoiTracker = () => {
         // Also reload leaderboards to reflect resolved amounts
         const start = '2018-01-01';
         const end = '2026-12-31';
-        const lbRes = await fetch(`http://localhost:5000/api/bd-revenue-leaderboard?start_date=${start}&end_date=${end}`);
+        const lbRes = await fetch(`${API_BASE_URL}/bd-revenue-leaderboard?start_date=${start}&end_date=${end}`);
         if (lbRes.ok) {
           const lbData = await lbRes.json();
           setLeaderboard(lbData);

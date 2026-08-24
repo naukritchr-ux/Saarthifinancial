@@ -1,5 +1,5 @@
 import { useContext, useState, useEffect } from 'react';
-import { FinanceContext } from '../context/FinanceContext';
+import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { TrendingUp, Plus, Award, Briefcase, X, Percent, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -137,7 +137,7 @@ const BDPerformance = () => {
 
   useEffect(() => {
     const { start, end } = getPeriodDates(selectedMonth, selectedYear);
-    fetch(`http://localhost:5000/api/bd-revenue-leaderboard?start_date=${start}&end_date=${end}`)
+    fetch(`${API_BASE_URL}/bd-revenue-leaderboard?start_date=${start}&end_date=${end}`)
       .then(res => {
         if (res.ok) return res.json();
       })

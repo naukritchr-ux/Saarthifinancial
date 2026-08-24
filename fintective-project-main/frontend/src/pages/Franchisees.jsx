@@ -1,5 +1,5 @@
 import { useContext, useState, useEffect } from 'react';
-import { FinanceContext } from '../context/FinanceContext';
+import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { Users, Plus, ShieldCheck, MapPin, X, AlertTriangle, Award } from 'lucide-react';
 
@@ -127,7 +127,7 @@ const Franchisees = () => {
   };
 
   useEffect(() => {
-    fetch('http://localhost:5000/api/ml/insights')
+    fetch(`${API_BASE_URL}/ml/insights`)
       .then(res => {
         if (res.ok) return res.json();
       })
@@ -142,7 +142,7 @@ const Franchisees = () => {
   useEffect(() => {
     setLoadingSummary(true);
     const { start, end } = getPeriodDates(selectedMonth, selectedYear);
-    fetch(`http://localhost:5000/api/finance/franchisee-summary?start_date=${start}&end_date=${end}`)
+    fetch(`${API_BASE_URL}/finance/franchisee-summary?start_date=${start}&end_date=${end}`)
       .then(res => {
         if (res.ok) return res.json();
       })
