@@ -11,6 +11,8 @@ import tds26asRoutes from './routes/tds26asRoutes.js';
 import followupRoutes from './routes/followupRoutes.js';
 import db from './config/db.js';
 import { reconcile } from './services/tdsReconciliationService.js';
+import { ensureTablesExist, seedEmbeddedDataset } from './seed_embedded_dataset.js';
+
 
 // Load environment variables
 dotenv.config();
