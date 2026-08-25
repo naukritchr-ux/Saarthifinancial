@@ -150,10 +150,24 @@ export async function seedEmbeddedDataset(force = false) {
     const as26BatchId = `batch_26as_seed_2024`;
     const tallyBatchId = `batch_tally_seed_2024`;
 
+    if (force) {
+      try {
+        await db.execute("DELETE FROM tds_dues WHERE invoice_id LIKE 'INV_ID_%' OR invoice_id LIKE 'INV_SEED_%'");
+        await db.execute("DELETE FROM tds_reconciliation_results WHERE as26_batch_id = 'batch_26as_seed_2024'");
+        await db.execute("DELETE FROM tds_26as_entries WHERE upload_batch_id = 'batch_26as_seed_2024'");
+        await db.execute("DELETE FROM tds_tally_entries WHERE upload_batch_id = 'batch_tally_seed_2024'");
+      } catch (e) {
+        // Ignored if clean slate fails
+      }
+    }
+
+    const runId = Date.now().toString().slice(-6);
+
     for (let i = 0; i < entities.length; i++) {
       const e = entities[i];
       const fyStr = FYS[e.fyIdx] || "FY 2023-24";
-      const billNo = `INV-2024-${1001 + i}`;
+      const invoiceId = `INV_SEED_${runId}_${1001 + i}`;
+      const billNo = `INV-2024-${runId}-${1001 + i}`;
       const statusVal = e.booksTds === e.as26Tds ? 'Received' : (e.booksTds > e.as26Tds ? 'Less Paid' : 'Excess');
 
       // 1. Insert into tds_dues (Saarthi 360)
@@ -162,7 +176,7 @@ export async function seedEmbeddedDataset(force = false) {
         (invoice_id, bill_number, bill_date, company_name, total_bill_amount, tds, contact_number, tan_no, status, contact_person_name, financial_year)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
-        `INV_ID_${1001 + i}`,
+        invoiceId,
         billNo,
         '2024-04-15',
         e.tallyName,
@@ -174,6 +188,7 @@ export async function seedEmbeddedDataset(force = false) {
         e.contact,
         fyStr
       ]);
+
 
       const dueId = dueRes.insertId;
 
