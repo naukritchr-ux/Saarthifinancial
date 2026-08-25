@@ -118,8 +118,8 @@ export const getFollowups = async (req, res) => {
       whereClauses.push("status IN ('Call Not Picked Up', 'Call Tomorrow', 'HR Left', 'Mailed')");
     }
 
-
     const whereSQL = whereClauses.length ? 'WHERE ' + whereClauses.join(' AND ') : '';
+
 
     const query = `
       SELECT 
