@@ -14,8 +14,10 @@ CREATE TABLE IF NOT EXISTS tds_dues (
   amount_received DECIMAL(15,2),
   status TEXT CHECK(status IN ('pending','paid','overdue','Not Received','Received','Less Paid','Excess')),
   contact_person_name TEXT,
-  note TEXT
+  note TEXT,
+  financial_year TEXT
 );
+
 
 -- Parsed Form 26AS entries
 CREATE TABLE IF NOT EXISTS tds_26as_entries (
