@@ -1,0 +1,8 @@
+{
+  "name": "saarthi-finance-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "npm install --prefix fintective-project-main/frontend && npm run build --prefix fintective-project-main/frontend && mkdir -p dist && cp -r fintective-project-main/frontend/dist/* dist/"
+  }
+}
