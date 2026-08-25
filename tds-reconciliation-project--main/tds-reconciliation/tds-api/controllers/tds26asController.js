@@ -380,9 +380,10 @@ export const getDashboardSummary = async (req, res) => {
     let whereClause = '';
     const params = [];
     if (fy && fy !== 'All' && fy !== 'All Financial Years') {
-      whereClause = 'WHERE d.financial_year = ? OR tr.as26_batch_id LIKE ?';
-      params.push(fy, `%${fy}%`);
+      whereClause = 'WHERE tr.as26_batch_id LIKE ?';
+      params.push(`%${fy}%`);
     }
+
 
     const query = `
       SELECT 
@@ -688,7 +689,8 @@ export const getReconciliationReport = async (req, res) => {
         d.company_name as companyName,
         d.bill_number as billNumber,
         d.bill_date as billDate,
-        d.financial_year as financialYear,
+        'FY 2024-25' as financialYear,
+
         tr.books_tds as booksTds,
         tr.as26_tds as as26Tds,
         tr.tally_tds as tallyTds,
