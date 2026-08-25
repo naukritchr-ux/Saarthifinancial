@@ -308,7 +308,8 @@ async function seedEmbeddedDatasetFallback() {
 
 async function seedFromMasterExcel(excelPath) {
   try {
-    const workbook = xlsx.readFile(excelPath);
+    const workbook = xlsx.readFile(excelPath, { cellFormula: false, cellHTML: false, cellStyles: false, sheetRows: 5000 });
+
 
     // Clean old dataset
     await db.execute('DELETE FROM tds_reconciliation_results');
