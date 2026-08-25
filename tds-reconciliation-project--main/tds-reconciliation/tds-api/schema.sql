@@ -72,3 +72,23 @@ CREATE TABLE IF NOT EXISTS tds_reconciliation (
   INDEX (upload_batch_id),
   INDEX (tan_no)
 );
+
+-- 6. Follow-up Report Tracking
+CREATE TABLE IF NOT EXISTS tds_followups (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tan_no VARCHAR(15) NOT NULL,
+  company_name VARCHAR(255) NOT NULL,
+  contact_person VARCHAR(100),
+  department VARCHAR(100),
+  contact_number VARCHAR(20),
+  method VARCHAR(30),
+  status VARCHAR(30) NOT NULL,
+  notes TEXT,
+  followup_date DATE NOT NULL,
+  next_followup_date DATE,
+  created_by VARCHAR(100) DEFAULT 'System',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX (tan_no)
+);
+

@@ -85,3 +85,22 @@ CREATE TABLE IF NOT EXISTS upload_history (
   metadata TEXT,
   upload_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Follow-up Report tracking table
+CREATE TABLE IF NOT EXISTS tds_followups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tan_no TEXT NOT NULL,
+  company_name TEXT NOT NULL,
+  contact_person TEXT,
+  department TEXT,
+  contact_number TEXT,
+  method TEXT,
+  status TEXT NOT NULL,
+  notes TEXT,
+  followup_date TEXT NOT NULL,
+  next_followup_date TEXT,
+  created_by TEXT DEFAULT 'System',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
