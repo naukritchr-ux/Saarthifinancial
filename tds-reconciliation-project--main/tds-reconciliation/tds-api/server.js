@@ -166,25 +166,16 @@ const autoSeedIfEmpty = async () => {
   }
 };
 
-import { seedEmbeddedDataset } from './seed_embedded_dataset.js';
-
-// Ensure DB migrations for missing columns
-const ensureMigrations = async () => {
-  try {
-    await db.execute('ALTER TABLE tds_dues ADD COLUMN financial_year TEXT');
-    console.log('✅ Added financial_year column to tds_dues');
-  } catch (e) {
-    // Column already exists or alter table ignored
-  }
-};
+import { seedEmbeddedDataset, ensureTablesExist } from './seed_embedded_dataset.js';
 
 // Start Server
 app.listen(PORT, async () => {
   console.log(`🚀 Standalone TDS backend server is listening on port ${PORT}`);
-  await ensureMigrations();
+  await ensureTablesExist();
   await autoSeedIfEmpty();
   await seedEmbeddedDataset();
 });
+
 
 
 
