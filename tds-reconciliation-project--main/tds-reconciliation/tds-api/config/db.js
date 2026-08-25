@@ -73,23 +73,23 @@ if (DB_TYPE === 'sqlite') {
     }
   };
   
-  // Auto-initialize the SQLite database schema if local.db is empty or newly created
+  // Auto-initialize the SQLite database schema atomically using db.exec
   try {
     const schemaSqlPath = path.resolve('schema_sqlite.sql');
     if (fs.existsSync(schemaSqlPath)) {
       const schemaSql = fs.readFileSync(schemaSqlPath, 'utf8');
-      // Split statements by semicolon and run sequentially
-      const statements = schemaSql.split(/;\s*$/m);
-      for (const statement of statements) {
-        if (statement.trim()) {
-          sqliteDb.run(statement);
+      sqliteDb.exec(schemaSql, (err) => {
+        if (err) {
+          console.error('⚠️ Failed to initialize SQLite schema on startup:', err.message);
+        } else {
+          console.log('✅ Offline SQLite schema initialized atomically.');
         }
-      }
-      console.log('✅ Offline SQLite schema verified/loaded.');
+      });
     }
   } catch (err) {
-    console.error('⚠️ Failed to initialize SQLite schema on startup:', err.message);
+    console.error('⚠️ Failed to read SQLite schema on startup:', err.message);
   }
+
 
 } else {
   console.log('🔌 Initializing MySQL database pool');
