@@ -1,0 +1,11 @@
+{
+  "framework": "vite",
+  "buildCommand": "cd tds-reconciliation/tds-ui && npm install && npm run build",
+  "outputDirectory": "tds-reconciliation/tds-ui/dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

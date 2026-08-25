@@ -1,7 +1,7 @@
 {
   "framework": "vite",
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
+  "buildCommand": "cd tds-ui && npm install && npm run build",
+  "outputDirectory": "tds-ui/dist",
   "rewrites": [
     {
       "source": "/(.*)",
