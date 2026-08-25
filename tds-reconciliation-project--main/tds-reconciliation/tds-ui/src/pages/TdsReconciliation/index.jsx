@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { RefreshCw, Search, Download, Database, CheckCircle, AlertTriangle, X, ShieldCheck } from 'lucide-react';
 import ReconciliationTable from './ReconciliationTable';
 import EditModal from './EditModal';
-import { getReconciliationReport, getCsvExportUrl } from '../../api/tdsApi';
+import { getReconciliationReport, getCsvExportUrl, triggerSeed } from '../../api/tdsApi';
 
 export default function TdsReconciliation() {
   const [rows, setRows] = useState([]);
@@ -26,7 +26,7 @@ export default function TdsReconciliation() {
   const fetchReport = async () => {
     setLoading(true);
     try {
-      const res = await getReconciliationReport({
+      let res = await getReconciliationReport({
         page,
         limit,
         search,
@@ -34,6 +34,19 @@ export default function TdsReconciliation() {
         coverageFilter: coverageFilter === 'All' ? '' : coverageFilter,
         sortBy
       });
+
+      // If empty DB, trigger seed and re-fetch once
+      if (res && res.success && (res.total === 0 || !res.data || res.data.length === 0) && !search) {
+        await triggerSeed();
+        res = await getReconciliationReport({
+          page,
+          limit,
+          search,
+          overallStatus: overallStatus === 'All' ? '' : overallStatus,
+          coverageFilter: coverageFilter === 'All' ? '' : coverageFilter,
+          sortBy
+        });
+      }
 
       if (res && res.success) {
         setRows(res.data || []);
@@ -53,6 +66,7 @@ export default function TdsReconciliation() {
       setLoading(false);
     }
   };
+
 
   useEffect(() => {
     fetchReport();

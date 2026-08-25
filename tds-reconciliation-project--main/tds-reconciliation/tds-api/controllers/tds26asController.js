@@ -1,6 +1,7 @@
 import xlsx from 'xlsx';
 import db from '../config/db.js';
 import { reconcile } from '../services/tdsReconciliationService.js';
+import { seedEmbeddedDataset } from '../seed_embedded_dataset.js';
 import { v4 as uuidv4 } from 'uuid';
 
 // Helper to format values
@@ -9,6 +10,19 @@ const cleanNumber = (val) => {
   const num = parseFloat(String(val).replace(/,/g, ''));
   return isNaN(num) ? 0 : num;
 };
+
+/**
+ * Trigger Database Seeding Endpoint
+ */
+export const seedDatabaseEndpoint = async (req, res) => {
+  try {
+    await seedEmbeddedDataset(true);
+    res.json({ success: true, message: 'Database seeded successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
 
 /**
  * Upload & Parse Form 26AS CSV/Excel file
@@ -357,7 +371,6 @@ export const uploadTally = async (req, res) => {
 };
 
 /**
-/**
  * Get Dashboard Summary Aggregate Counts & Totals
  */
 export const getDashboardSummary = async (req, res) => {
@@ -386,7 +399,14 @@ export const getDashboardSummary = async (req, res) => {
       ${whereClause}
     `;
 
-    const [rows] = await db.execute(query, params);
+    let [rows] = await db.execute(query, params);
+
+    // Auto-seed if database is empty
+    if (rows.length === 0 && (!fy || fy === 'All' || fy === 'All Financial Years')) {
+      await seedEmbeddedDataset(true);
+      const [newRows] = await db.execute(query, params);
+      rows = newRows;
+    }
 
     let tallyTotal = 0;
     let as26Total = 0;
@@ -642,14 +662,22 @@ export const getReconciliationReport = async (req, res) => {
     }
 
     // Count query
-    const countQuery = `
+    let countQuery = `
       SELECT COUNT(*) as total 
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
       ${whereSQL}
     `;
-    const [countRes] = await db.execute(countQuery, queryParams);
-    const total = countRes[0]?.total || 0;
+    let [countRes] = await db.execute(countQuery, queryParams);
+    let total = countRes[0]?.total || 0;
+
+    // Auto-seed if 0 records found and no search query filter is applied
+    if (total === 0 && !search && (!overallStatus || overallStatus === 'All') && (coverageFilter === 'All' || !coverageFilter)) {
+      await seedEmbeddedDataset(true);
+      const [newCountRes] = await db.execute(countQuery, queryParams);
+      total = newCountRes[0]?.total || 0;
+    }
+
 
     // Report query
     const reportQuery = `
