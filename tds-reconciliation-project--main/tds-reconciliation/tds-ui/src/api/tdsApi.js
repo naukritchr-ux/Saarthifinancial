@@ -14,12 +14,18 @@ const buildQuery = (params = {}) => {
   return query.toString();
 };
 
+export const triggerSeed = async () => {
+  const response = await fetch(`${API_URL}/api/tds-26as/seed`);
+  return await response.json();
+};
+
 /** Dashboard API */
 export const getDashboardSummary = async (fy = '') => {
   const q = buildQuery({ fy });
   const response = await fetch(`${API_URL}/api/tds-26as/dashboard-summary?${q}`);
   return await response.json();
 };
+
 
 /** Cleaning Queue API */
 export const getCleaningQueue = async () => {

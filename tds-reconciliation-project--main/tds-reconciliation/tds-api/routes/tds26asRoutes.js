@@ -12,7 +12,8 @@ import {
   exportReconciliationCSV,
   getDashboardSummary,
   getCleaningQueue,
-  resolveCleaningItem
+  resolveCleaningItem,
+  seedDatabaseEndpoint
 } from '../controllers/tds26asController.js';
 
 const router = express.Router();
@@ -41,6 +42,8 @@ const upload = multer({
 });
 
 // Mount endpoints
+router.get('/seed', seedDatabaseEndpoint);
+router.post('/seed', seedDatabaseEndpoint);
 router.post('/upload-26as', authenticateUser, upload.single('file'), upload26as);
 router.post('/upload-tally', authenticateUser, upload.single('file'), uploadTally);
 router.get('/dashboard-summary', getDashboardSummary);
@@ -50,6 +53,7 @@ router.get('/report', getReconciliationReport);
 router.put('/override', authenticateUser, overrideReconciliationStatus);
 router.get('/batches', getUploadHistory);
 router.get('/export', exportReconciliationCSV);
+
 
 
 export default router;

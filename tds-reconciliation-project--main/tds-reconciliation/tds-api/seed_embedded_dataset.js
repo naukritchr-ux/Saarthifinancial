@@ -4,17 +4,18 @@ import { reconcile } from './services/tdsReconciliationService.js';
 // Embedded dataset from user prompt
 const FYS = ["FY 2019-20", "FY 2020-21", "FY 2021-22", "FY 2022-23", "FY 2023-24", "FY 2024-25"];
 
-export async function seedEmbeddedDataset() {
+export async function seedEmbeddedDataset(force = false) {
   try {
-    const [duesCountRows] = await db.execute('SELECT COUNT(*) as count FROM tds_dues');
-    const count = duesCountRows[0]?.count ?? 0;
+    const [recCountRows] = await db.execute('SELECT COUNT(*) as count FROM tds_reconciliation_results');
+    const recCount = recCountRows[0]?.count ?? 0;
 
-    if (count > 50) {
-      console.log(`✅ Database already seeded with ${count} records. Skipping dataset seed.`);
+    if (recCount > 0 && !force) {
+      console.log(`✅ Database already seeded with ${recCount} reconciliation records. Skipping dataset seed.`);
       return;
     }
 
     console.log('🌱 Seeding database with full embedded TDS reconciliation dataset...');
+
 
     // Sample entities representing major categories (matching dataset TANs)
     const entities = [
