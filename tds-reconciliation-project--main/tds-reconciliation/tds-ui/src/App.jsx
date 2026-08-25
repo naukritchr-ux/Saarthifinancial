@@ -1,13 +1,35 @@
+import React from 'react';
+import Layout from './components/Layout';
+import { useApp } from './context/AppContext';
+import Dashboard from './pages/Dashboard';
+import DataImport from './pages/DataImport';
 import TdsReconciliation from './pages/TdsReconciliation';
+import FollowUp from './pages/FollowUp';
+import ImportHistory from './pages/ImportHistory';
 
-function App() {
-  return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <TdsReconciliation />
-      </div>
-    </div>
-  );
+function AppContent() {
+  const { activePage } = useApp();
+
+  switch (activePage) {
+    case 'dashboard':
+      return <Dashboard />;
+    case 'import':
+      return <DataImport />;
+    case 'reconciliation':
+      return <TdsReconciliation />;
+    case 'follow-up':
+      return <FollowUp />;
+    case 'import-history':
+      return <ImportHistory />;
+    default:
+      return <Dashboard />;
+  }
 }
 
-export default App;
+export default function App() {
+  return (
+    <Layout>
+      <AppContent />
+    </Layout>
+  );
+}
