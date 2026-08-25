@@ -5,15 +5,12 @@ import {
   TrendingUp, 
   TrendingDown, 
   Activity, 
-  TrendingUp as LineChart, 
   Building2, 
   Users, 
   DollarSign, 
   Percent, 
   Award,
   ChevronRight,
-  TrendingUp as ArrowUpRight,
-  TrendingDown as ArrowDownRight,
   AlertTriangle,
   CheckCircle2,
   UploadCloud,
@@ -25,6 +22,11 @@ import {
   ShieldAlert,
   Check
 } from 'lucide-react';
+
+const LineChart = TrendingUp;
+const ArrowUpRight = TrendingUp;
+const ArrowDownRight = TrendingDown;
+
 
 const RunwayRoiTracker = () => {
   const { transactions, franchisees, bdAgents, selectedMonth, selectedYear, activeModule } = useContext(FinanceContext);
