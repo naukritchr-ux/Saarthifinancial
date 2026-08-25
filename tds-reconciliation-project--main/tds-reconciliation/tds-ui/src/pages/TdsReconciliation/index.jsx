@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Search, Download, Database, CheckCircle, AlertTriangle, HelpCircle } from 'lucide-react';
-import UploadPanel from './UploadPanel';
+import { RefreshCw, Search, Download, Database, CheckCircle, AlertTriangle, X, ShieldCheck } from 'lucide-react';
 import ReconciliationTable from './ReconciliationTable';
 import EditModal from './EditModal';
-import { getReconciliationReport, getCsvExportUrl } from '../../api/tdsReconciliation';
+import { getReconciliationReport, getCsvExportUrl } from '../../api/tdsApi';
 
 export default function TdsReconciliation() {
   const [rows, setRows] = useState([]);
@@ -13,15 +12,13 @@ export default function TdsReconciliation() {
   
   const [search, setSearch] = useState('');
   const [overallStatus, setOverallStatus] = useState('All');
-  
-  // Pairwise filter dropdowns
-  const [books26asFilter, setBooks26asFilter] = useState('All');
-  const [booksTallyFilter, setBooksTallyFilter] = useState('All');
-  const [as26TallyFilter, setAs26TallyFilter] = useState('All');
+  const [coverageFilter, setCoverageFilter] = useState('All');
+  const [sortBy, setSortBy] = useState('updated_at');
 
   const [loading, setLoading] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [activeEditRow, setActiveEditRow] = useState(null);
+  const [activeViewRow, setActiveViewRow] = useState(null);
 
   // Statistics counters
   const [stats, setStats] = useState({ total: 0, matched: 0, partial: 0, major: 0 });
@@ -34,19 +31,16 @@ export default function TdsReconciliation() {
         limit,
         search,
         overallStatus: overallStatus === 'All' ? '' : overallStatus,
-        booksVs26asStatus: books26asFilter === 'All' ? '' : books26asFilter,
-        booksVsTallyStatus: booksTallyFilter === 'All' ? '' : booksTallyFilter,
-        as26VsTallyStatus: as26TallyFilter === 'All' ? '' : as26TallyFilter
+        coverageFilter: coverageFilter === 'All' ? '' : coverageFilter,
+        sortBy
       });
 
-      if (res.success) {
-        setRows(res.data);
-        setTotal(res.total);
+      if (res && res.success) {
+        setRows(res.data || []);
+        setTotal(res.total || 0);
         
-        // Compute statistics for display based on returned overall statuses
-        // In production, you would fetch these from a dedicated stats endpoint
-        const tempStats = { total: res.total, matched: 0, partial: 0, major: 0 };
-        res.data.forEach(r => {
+        const tempStats = { total: res.total || 0, matched: 0, partial: 0, major: 0 };
+        (res.data || []).forEach(r => {
           if (r.overallStatus === 'All Matched') tempStats.matched++;
           else if (r.overallStatus === 'Partial Mismatch') tempStats.partial++;
           else if (r.overallStatus === 'Major Mismatch') tempStats.major++;
@@ -62,7 +56,7 @@ export default function TdsReconciliation() {
 
   useEffect(() => {
     fetchReport();
-  }, [page, overallStatus, books26asFilter, booksTallyFilter, as26TallyFilter, refreshTrigger]);
+  }, [page, overallStatus, coverageFilter, sortBy, refreshTrigger]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -77,98 +71,95 @@ export default function TdsReconciliation() {
   const handleCsvExport = () => {
     const exportUrl = getCsvExportUrl({
       search,
-      overallStatus: overallStatus === 'All' ? '' : overallStatus
+      overallStatus: overallStatus === 'All' ? '' : overallStatus,
+      coverageFilter: coverageFilter === 'All' ? '' : coverageFilter
     });
-    // Trigger download
     window.open(exportUrl, '_blank');
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-6 animate-fade-in">
+      {/* Header Banner */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
         <div>
-          <h1 className="text-2xl font-black text-gray-900 tracking-tight flex items-center gap-2">
-            <Database className="w-7 h-7 text-indigo-600" />
-            3-Way TDS Reconciliation
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <Database className="w-7 h-7 text-amber-500" />
+            3-Way TDS Reconciliation Workbench
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Compare CRM books, Form 26AS credits, and Tally ledger reports.
+          <p className="text-xs text-gray-500 mt-1">
+            Reconcile client TDS entries across Tally Ledgers, Form 26AS portal, and Saarthi 360 CRM.
           </p>
         </div>
         <button
           onClick={handleRefresh}
-          className="inline-flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-100 font-semibold px-4 py-2 rounded-xl transition text-sm"
+          className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-amber-400 font-bold px-4 py-2 rounded-xl transition text-xs cursor-pointer shadow-sm"
         >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh Report
         </button>
       </div>
 
-      {/* Upload Panel */}
-      <UploadPanel onUploadSuccess={handleRefresh} />
-
-      {/* Summary Statistics */}
+      {/* Statistics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-slate-100 text-slate-700 rounded-xl">
             <Database className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Invoices</div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Records</div>
             <div className="text-xl font-extrabold text-gray-900 mt-0.5">{total}</div>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-green-50 text-green-600 rounded-xl">
+        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
             <CheckCircle className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">All Matched</div>
-            <div className="text-xl font-extrabold text-gray-900 mt-0.5">{stats.matched}</div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">All Matched</div>
+            <div className="text-xl font-extrabold text-emerald-600 mt-0.5">{stats.matched}</div>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4">
           <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
             <AlertTriangle className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Partial Mismatches</div>
-            <div className="text-xl font-extrabold text-gray-900 mt-0.5">{stats.partial}</div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Partial Mismatches</div>
+            <div className="text-xl font-extrabold text-amber-600 mt-0.5">{stats.partial}</div>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4">
           <div className="p-3 bg-red-50 text-red-600 rounded-xl">
             <AlertTriangle className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Major Mismatches</div>
-            <div className="text-xl font-extrabold text-gray-900 mt-0.5">{stats.major}</div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Major Mismatches</div>
+            <div className="text-xl font-extrabold text-red-600 mt-0.5">{stats.major}</div>
           </div>
         </div>
       </div>
 
       {/* Query Bar */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm space-y-4">
+      <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
           {/* Search Form */}
           <form onSubmit={handleSearchSubmit} className="flex w-full md:max-w-md gap-2">
             <div className="relative flex-grow">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
+              <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-3" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by Company Name or TAN Number..."
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500 transition"
+                placeholder="Search by Company Name or TAN..."
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2 text-xs focus:outline-none focus:border-amber-500 font-medium"
               />
             </div>
             <button
               type="submit"
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-5 rounded-xl transition text-sm"
+              className="bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 px-4 rounded-xl transition text-xs cursor-pointer"
             >
               Search
             </button>
@@ -177,71 +168,58 @@ export default function TdsReconciliation() {
           {/* CSV Export Button */}
           <button
             onClick={handleCsvExport}
-            className="w-full md:w-auto inline-flex items-center justify-center gap-2 bg-gray-900 hover:bg-gray-800 text-white font-semibold py-2.5 px-5 rounded-xl transition text-sm"
+            className="w-full md:w-auto inline-flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2 px-4 rounded-xl transition text-xs cursor-pointer shadow-sm"
           >
             <Download className="w-4 h-4" />
             Export Selected to CSV
           </button>
         </div>
 
-        {/* Pairwise filters row */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-gray-50">
+        {/* Filter & Sort Controls Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-3 border-t border-gray-100 text-xs">
+          {/* Coverage Filter */}
           <div>
-            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Books vs 26AS Status</label>
+            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+              Source Coverage Filter
+            </label>
             <select
-              value={books26asFilter}
-              onChange={(e) => { setPage(1); setBooks26asFilter(e.target.value); }}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-xs font-medium focus:outline-none focus:border-indigo-500"
+              value={coverageFilter}
+              onChange={(e) => { setPage(1); setCoverageFilter(e.target.value); }}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-amber-500"
             >
-              <option value="All">All</option>
-              <option value="Matched">Matched</option>
-              <option value="Less Paid">Less Paid</option>
-              <option value="Excess">Excess</option>
-              <option value="Not Received">Not Received</option>
+              <option value="All">Coverage: All Coverage</option>
+              <option value="3/3">3 of 3 Match (All Sources)</option>
+              <option value="2/3">2 of 3 Match (Dual Source)</option>
+              <option value="1/3">1 of 3 Match (Single Source)</option>
             </select>
           </div>
 
+          {/* Sort By */}
           <div>
-            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Books vs Tally Status</label>
+            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+              Sort Order
+            </label>
             <select
-              value={booksTallyFilter}
-              onChange={(e) => { setPage(1); setBooksTallyFilter(e.target.value); }}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-xs font-medium focus:outline-none focus:border-indigo-500"
+              value={sortBy}
+              onChange={(e) => { setPage(1); setSortBy(e.target.value); }}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-amber-500"
             >
-              <option value="All">All</option>
-              <option value="Matched">Matched</option>
-              <option value="Less Paid">Less Paid</option>
-              <option value="Excess">Excess</option>
-              <option value="Not Received">Not Received</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">26AS vs Tally Status</label>
-            <select
-              value={as26TallyFilter}
-              onChange={(e) => { setPage(1); setAs26TallyFilter(e.target.value); }}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-xs font-medium focus:outline-none focus:border-indigo-500"
-            >
-              <option value="All">All</option>
-              <option value="Matched">Matched</option>
-              <option value="Less Paid">Less Paid</option>
-              <option value="Excess">Excess</option>
-              <option value="Not Received">Not Received</option>
+              <option value="updated_at">Sort: Recently Updated</option>
+              <option value="difference_desc">Sort: Difference (High → Low)</option>
             </select>
           </div>
         </div>
       </div>
 
-      {/* Tabs list filtering by overall status */}
-      <div className="flex gap-2 border-b border-gray-200 pb-px">
+      {/* Status Tabs */}
+      <div className="flex gap-2 border-b border-gray-200 pb-px overflow-x-auto text-xs">
         {['All', 'All Matched', 'Partial Mismatch', 'Major Mismatch'].map((tab) => (
           <button
             key={tab}
             onClick={() => { setPage(1); setOverallStatus(tab); }}
-            className={`px-5 py-2.5 text-sm font-semibold border-b-2 transition ${
+            className={`px-4 py-2 font-bold border-b-2 transition cursor-pointer whitespace-nowrap ${
               overallStatus === tab
-                ? 'border-indigo-600 text-indigo-600 font-bold'
+                ? 'border-amber-500 text-slate-900 bg-amber-50/30'
                 : 'border-transparent text-gray-500 hover:text-gray-800'
             }`}
           >
@@ -258,6 +236,7 @@ export default function TdsReconciliation() {
         limit={limit}
         onPageChange={setPage}
         onEditClick={setActiveEditRow}
+        onViewClick={setActiveViewRow}
       />
 
       {/* Manual Edit Modal */}
@@ -267,6 +246,72 @@ export default function TdsReconciliation() {
           onClose={() => setActiveEditRow(null)}
           onSaveSuccess={handleRefresh}
         />
+      )}
+
+      {/* Read-Only Detail Modal */}
+      {activeViewRow && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 max-w-lg w-full overflow-hidden">
+            <div className="flex justify-between items-center bg-slate-950 text-white px-6 py-4 border-b border-slate-800">
+              <div>
+                <h3 className="font-bold text-base text-amber-400">Reconciliation Detail Record</h3>
+                <p className="text-xs text-slate-400 mt-0.5">{activeViewRow.companyName} ({activeViewRow.tanNo})</p>
+              </div>
+              <button onClick={() => setActiveViewRow(null)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
+                <div>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Tally TDS</span>
+                  <div className="font-black text-teal-700 text-base">₹{Number(activeViewRow.tallyTds || 0).toLocaleString('en-IN')}</div>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Form 26AS TDS</span>
+                  <div className="font-black text-indigo-700 text-base">₹{Number(activeViewRow.as26Tds || 0).toLocaleString('en-IN')}</div>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Saarthi 360 TDS</span>
+                  <div className="font-black text-purple-700 text-base">₹{Number(activeViewRow.saarthiTds || activeViewRow.booksTds || 0).toLocaleString('en-IN')}</div>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">Financial Status</span>
+                  <div className="font-extrabold text-slate-900 mt-1">{activeViewRow.financialStatus || activeViewRow.overallStatus}</div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between py-1 border-b border-gray-100">
+                  <span className="text-gray-500 font-semibold">Source Coverage:</span>
+                  <span className="font-bold">{activeViewRow.sourceCoverage?.label || '3/3 Match'}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-gray-100">
+                  <span className="text-gray-500 font-semibold">Bill Number:</span>
+                  <span className="font-bold">{activeViewRow.billNumber || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-gray-100">
+                  <span className="text-gray-500 font-semibold">Financial Year:</span>
+                  <span className="font-bold">{activeViewRow.financialYear || '2024-25'}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-gray-100">
+                  <span className="text-gray-500 font-semibold">Is Manually Overridden:</span>
+                  <span className="font-bold text-blue-600">{activeViewRow.isManuallyEdited ? 'Yes' : 'No'}</span>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  onClick={() => setActiveViewRow(null)}
+                  className="bg-slate-900 text-white font-bold px-4 py-2 rounded-xl text-xs cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
