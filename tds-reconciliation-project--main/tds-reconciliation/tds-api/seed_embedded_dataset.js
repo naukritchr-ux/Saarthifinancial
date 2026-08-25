@@ -428,7 +428,9 @@ async function seedFromMasterExcel(excelPath) {
       }
 
       let booksVsTally = Math.abs(booksTds - tallyTds) <= 1 ? 'Matched' : (booksTds > tallyTds ? 'Less Paid' : 'Excess');
-      let as26VsTally = Math.abs(as26Tds - tallyTds) <= 1 ? 'Matched' : (as26VsTally ? (as26Tds > tallyTds ? 'Excess' : 'Less Paid') : 'Matched');
+      let as26VsTally = Math.abs(as26Tds - tallyTds) <= 1 ? 'Matched' : (as26Tds > tallyTds ? 'Excess' : 'Less Paid');
+
+
 
       let overallStatus = 'All Matched';
       if (booksVs26as !== 'Matched' || booksVsTally !== 'Matched' || as26VsTally !== 'Matched') {
