@@ -50,10 +50,15 @@ export async function ensureTablesExist() {
     `);
 
     try {
-      await db.execute('ALTER TABLE tds_dues ADD COLUMN financial_year TEXT');
+      const [cols] = await db.execute("PRAGMA table_info(tds_dues)");
+      const hasFy = (cols || []).some(c => c.name === 'financial_year');
+      if (!hasFy) {
+        await db.execute('ALTER TABLE tds_dues ADD COLUMN financial_year TEXT');
+      }
     } catch (e) {
-      // Column already exists
+      // Ignored
     }
+
 
 
     await db.execute(`
