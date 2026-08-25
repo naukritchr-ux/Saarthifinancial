@@ -108,15 +108,16 @@ export const getFollowups = async (req, res) => {
 
     if (dueOnly === 'true' || dueOnly === true) {
       const todayStr = now.toISOString().split('T')[0];
-      whereClauses.push('next_followup_date IS NOT NULL AND next_followup_date <= ? AND status NOT IN ("TDS Paid", "Form Received")');
+      whereClauses.push("next_followup_date IS NOT NULL AND next_followup_date <= ? AND status NOT IN ('TDS Paid', 'Form Received')");
       params.push(todayStr);
     }
 
     if (responseFilter === 'responded') {
-      whereClauses.push('status IN ("TDS Paid", "Form Received", "Check & Revert", "Mail Reply")');
+      whereClauses.push("status IN ('TDS Paid', 'Form Received', 'Check & Revert', 'Mail Reply')");
     } else if (responseFilter === 'no_response') {
-      whereClauses.push('status IN ("Call Not Picked Up", "Call Tomorrow", "HR Left", "Mailed")');
+      whereClauses.push("status IN ('Call Not Picked Up', 'Call Tomorrow', 'HR Left', 'Mailed')");
     }
+
 
     const whereSQL = whereClauses.length ? 'WHERE ' + whereClauses.join(' AND ') : '';
 

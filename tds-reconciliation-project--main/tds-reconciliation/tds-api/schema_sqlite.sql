@@ -12,12 +12,11 @@ CREATE TABLE IF NOT EXISTS tds_dues (
   payment_date TEXT,
   tan_no TEXT,
   amount_received DECIMAL(15,2),
-  status TEXT CHECK(status IN ('pending','paid','overdue','Not Received','Received','Less Paid','Excess')),
+  status TEXT,
   contact_person_name TEXT,
   note TEXT,
   financial_year TEXT
 );
-
 
 -- Parsed Form 26AS entries
 CREATE TABLE IF NOT EXISTS tds_26as_entries (
@@ -53,10 +52,11 @@ CREATE TABLE IF NOT EXISTS tds_reconciliation_results (
   books_tds DECIMAL(15,2) NOT NULL,
   as26_tds DECIMAL(15,2) DEFAULT 0.00,
   tally_tds DECIMAL(15,2) DEFAULT 0.00,
-  books_vs_26as_status TEXT CHECK(books_vs_26as_status IN ('Excess','Less Paid','Not Received','Matched')),
-  books_vs_tally_status TEXT CHECK(books_vs_tally_status IN ('Excess','Less Paid','Not Received','Matched')),
-  as26_vs_tally_status TEXT CHECK(as26_vs_tally_status IN ('Excess','Less Paid','Not Received','Matched')),
-  overall_status TEXT CHECK(overall_status IN ('All Matched','Partial Mismatch','Major Mismatch')) NOT NULL,
+  books_vs_26as_status TEXT,
+  books_vs_tally_status TEXT,
+  as26_vs_tally_status TEXT,
+  overall_status TEXT NOT NULL,
+
   as26_batch_id TEXT,
   tally_batch_id TEXT,
   is_manually_edited INTEGER DEFAULT 0,

@@ -33,9 +33,10 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     const tallyMap = new Map();
     if (tallyBatchId) {
       const [tallyRows] = await db.execute(
-        'SELECT UPPER(TRIM(tan_no)) as tan, SUM(tds_deducted) as total FROM tds_tally_entries WHERE upload_batch_id = ? GROUP BY UPPER(TRIM(tan_no))',
+        'SELECT UPPER(TRIM(tan_no)) as tan, SUM(tds_amount) as total FROM tds_tally_entries WHERE upload_batch_id = ? GROUP BY UPPER(TRIM(tan_no))',
         [tallyBatchId]
       );
+
       tallyRows.forEach(row => tallyMap.set(row.tan, parseFloat(row.total || 0)));
     }
 
