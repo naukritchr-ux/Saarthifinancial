@@ -166,9 +166,13 @@ const autoSeedIfEmpty = async () => {
   }
 };
 
+import { seedEmbeddedDataset } from './seed_embedded_dataset.js';
+
 // Start Server
 app.listen(PORT, async () => {
   console.log(`🚀 Standalone TDS backend server is listening on port ${PORT}`);
   await autoSeedIfEmpty();
+  await seedEmbeddedDataset();
 });
+
 
