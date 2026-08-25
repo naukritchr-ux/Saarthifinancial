@@ -49,20 +49,9 @@ export async function ensureTablesExist() {
       )
     `);
 
-    try {
-      const [cols] = await db.execute("PRAGMA table_info(tds_dues)");
-      const hasFy = (cols || []).some(c => c.name === 'financial_year');
-      if (!hasFy) {
-        await db.execute('ALTER TABLE tds_dues ADD COLUMN financial_year TEXT');
-      }
-    } catch (e) {
-      // Ignored
-    }
-
-
-
     await db.execute(`
       CREATE TABLE IF NOT EXISTS tds_26as_entries (
+
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         tan_no TEXT NOT NULL,
         deductor_name TEXT,
