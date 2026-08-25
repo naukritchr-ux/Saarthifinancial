@@ -1,11 +1,120 @@
 import db from './config/db.js';
-import { reconcile } from './services/tdsReconciliationService.js';
 
 // Embedded dataset from user prompt
 const FYS = ["FY 2019-20", "FY 2020-21", "FY 2021-22", "FY 2022-23", "FY 2023-24", "FY 2024-25"];
 
+export async function ensureTablesExist() {
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS tds_dues (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        invoice_id TEXT UNIQUE,
+        bill_number TEXT,
+        bill_date TEXT,
+        company_name TEXT,
+        total_bill_amount DECIMAL(15,2),
+        tds DECIMAL(15,2),
+        contact_number TEXT,
+        teamleader TEXT,
+        payment_date TEXT,
+        tan_no TEXT,
+        amount_received DECIMAL(15,2),
+        status TEXT,
+        contact_person_name TEXT,
+        note TEXT,
+        financial_year TEXT
+      )
+    `);
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS tds_26as_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tan_no TEXT NOT NULL,
+        deductor_name TEXT,
+        amount_paid DECIMAL(15,2),
+        tds_deducted DECIMAL(15,2) NOT NULL,
+        section TEXT,
+        quarter TEXT,
+        upload_batch_id TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS tds_tally_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tan_no TEXT NOT NULL,
+        party_name TEXT,
+        voucher_date TEXT,
+        amount DECIMAL(15,2),
+        tds_amount DECIMAL(15,2) NOT NULL,
+        ledger_name TEXT,
+        upload_batch_id TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS tds_reconciliation_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tds_dues_id INTEGER NOT NULL,
+        tan_no TEXT NOT NULL,
+        books_tds DECIMAL(15,2) NOT NULL,
+        as26_tds DECIMAL(15,2) DEFAULT 0.00,
+        tally_tds DECIMAL(15,2) DEFAULT 0.00,
+        books_vs_26as_status TEXT,
+        books_vs_tally_status TEXT,
+        as26_vs_tally_status TEXT,
+        overall_status TEXT NOT NULL,
+        as26_batch_id TEXT,
+        tally_batch_id TEXT,
+        is_manually_edited INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS upload_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        file_name TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        uploaded_by TEXT NOT NULL DEFAULT 'System',
+        status TEXT NOT NULL DEFAULT 'Completed',
+        metadata TEXT,
+        upload_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS tds_followups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tan_no TEXT NOT NULL,
+        company_name TEXT NOT NULL,
+        contact_person TEXT,
+        department TEXT,
+        contact_number TEXT,
+        method TEXT,
+        status TEXT NOT NULL,
+        notes TEXT,
+        followup_date TEXT NOT NULL,
+        next_followup_date TEXT,
+        created_by TEXT DEFAULT 'System',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    console.log('✅ SQLite table schemas verified.');
+  } catch (err) {
+    console.error('⚠️ Error ensuring tables exist:', err.message);
+  }
+}
+
 export async function seedEmbeddedDataset(force = false) {
   try {
+    await ensureTablesExist();
+
     const [recCountRows] = await db.execute('SELECT COUNT(*) as count FROM tds_reconciliation_results');
     const recCount = recCountRows[0]?.count ?? 0;
 
@@ -15,7 +124,6 @@ export async function seedEmbeddedDataset(force = false) {
     }
 
     console.log('🌱 Seeding database with full embedded TDS reconciliation dataset...');
-
 
     // Sample entities representing major categories (matching dataset TANs)
     const entities = [
@@ -46,12 +154,13 @@ export async function seedEmbeddedDataset(force = false) {
       const e = entities[i];
       const fyStr = FYS[e.fyIdx] || "FY 2023-24";
       const billNo = `INV-2024-${1001 + i}`;
+      const statusVal = e.booksTds === e.as26Tds ? 'Received' : (e.booksTds > e.as26Tds ? 'Less Paid' : 'Excess');
 
       // 1. Insert into tds_dues (Saarthi 360)
       const [dueRes] = await db.execute(`
         INSERT INTO tds_dues 
-        (invoice_id, bill_number, bill_date, company_name, total_bill_amount, tds, contact_number, tan_no, status, contact_person_name)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (invoice_id, bill_number, bill_date, company_name, total_bill_amount, tds, contact_number, tan_no, status, contact_person_name, financial_year)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         `INV_ID_${1001 + i}`,
         billNo,
@@ -61,8 +170,9 @@ export async function seedEmbeddedDataset(force = false) {
         e.booksTds,
         e.phone,
         e.tan,
-        e.booksTds === e.as26Tds ? 'Matched' : (e.booksTds > e.as26Tds ? 'Less Paid' : 'Excess'),
-        e.contact
+        statusVal,
+        e.contact,
+        fyStr
       ]);
 
       const dueId = dueRes.insertId;
