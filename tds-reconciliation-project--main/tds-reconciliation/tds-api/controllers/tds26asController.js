@@ -357,6 +357,234 @@ export const uploadTally = async (req, res) => {
 };
 
 /**
+/**
+ * Get Dashboard Summary Aggregate Counts & Totals
+ */
+export const getDashboardSummary = async (req, res) => {
+  try {
+    const { fy } = req.query;
+
+    let whereClause = '';
+    const params = [];
+    if (fy && fy !== 'All' && fy !== 'All Financial Years') {
+      whereClause = 'WHERE d.financial_year = ? OR tr.as26_batch_id LIKE ?';
+      params.push(fy, `%${fy}%`);
+    }
+
+    const query = `
+      SELECT 
+        tr.books_tds,
+        tr.as26_tds,
+        tr.tally_tds,
+        tr.overall_status,
+        tr.books_vs_26as_status,
+        tr.books_vs_tally_status,
+        tr.as26_vs_tally_status,
+        tr.is_manually_edited
+      FROM tds_reconciliation_results tr
+      LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+      ${whereClause}
+    `;
+
+    const [rows] = await db.execute(query, params);
+
+    let tallyTotal = 0;
+    let as26Total = 0;
+    let saarthiTotal = 0;
+
+    let threeOfThree = 0;
+    let twoOfThree = 0;
+    let oneOfThree = 0;
+    let noMatch = 0;
+
+    let matchCount = 0;
+    let lessCount = 0;
+    let excessCount = 0;
+    let missingCount = 0;
+    let pendingReviewCount = 0;
+    let resolvedCount = 0;
+
+    rows.forEach(r => {
+      const tally = parseFloat(r.tally_tds || 0);
+      const as26 = parseFloat(r.as26_tds || 0);
+      const saarthi = parseFloat(r.books_tds || 0);
+
+      tallyTotal += tally;
+      as26Total += as26;
+      saarthiTotal += saarthi;
+
+      // Source Coverage calculation
+      const sourcesPresent = (tally > 0 ? 1 : 0) + (as26 > 0 ? 1 : 0) + (saarthi > 0 ? 1 : 0);
+      if (sourcesPresent === 3) threeOfThree++;
+      else if (sourcesPresent === 2) twoOfThree++;
+      else if (sourcesPresent === 1) oneOfThree++;
+      else noMatch++;
+
+      // Financial status mapping
+      if (r.is_manually_edited) {
+        resolvedCount++;
+      } else if (r.overall_status === 'All Matched') {
+        matchCount++;
+      } else if (r.overall_status === 'Partial Mismatch') {
+        pendingReviewCount++;
+      } else if (sourcesPresent < 3 || r.overall_status === 'Major Mismatch') {
+        if (r.books_vs_26as_status === 'Less Paid' || r.books_vs_tally_status === 'Less Paid') lessCount++;
+        else if (r.books_vs_26as_status === 'Excess' || r.books_vs_tally_status === 'Excess') excessCount++;
+        else missingCount++;
+      } else if (r.books_vs_26as_status === 'Less Paid') {
+        lessCount++;
+      } else if (r.books_vs_26as_status === 'Excess') {
+        excessCount++;
+      } else {
+        matchCount++;
+      }
+    });
+
+    res.json({
+      success: true,
+      totals: {
+        tally: tallyTotal,
+        as26: as26Total,
+        saarthi: saarthiTotal,
+        netGap: tallyTotal - as26Total
+      },
+      recordCount: rows.length,
+      sourceCoverage: {
+        threeOfThree,
+        twoOfThree,
+        oneOfThree,
+        noMatch
+      },
+      financialStatus: {
+        match: matchCount,
+        less: lessCount,
+        excess: excessCount,
+        missing: missingCount,
+        pendingReview: pendingReviewCount,
+        resolved: resolvedCount
+      }
+    });
+
+  } catch (error) {
+    console.error('💥 Error in getDashboardSummary:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch dashboard summary', details: error.message });
+  }
+};
+
+/**
+ * Get Data Import Cleaning Queue
+ */
+export const getCleaningQueue = async (req, res) => {
+  try {
+    // Defines rows needing cleaning: TAN missing/blank OR company name fuzzy mismatch across sources OR duplicate TAN
+    const query = `
+      SELECT 
+        tr.id,
+        tr.tan_no as tanNo,
+        d.company_name as booksCompanyName,
+        tr.books_tds as booksTds,
+        tr.as26_tds as as26Tds,
+        tr.tally_tds as tallyTds,
+        tr.overall_status as overallStatus
+      FROM tds_reconciliation_results tr
+      LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+      WHERE tr.tan_no IS NULL OR tr.tan_no = '' OR LENGTH(tr.tan_no) < 10 
+         OR d.company_name IS NULL OR d.company_name = 'Unknown Company' OR d.company_name = ''
+         OR tr.overall_status = 'Major Mismatch'
+      ORDER BY tr.id DESC
+      LIMIT 100
+    `;
+
+    const [rows] = await db.execute(query);
+
+    const cleaningItems = rows.map((r, idx) => {
+      let reason = 'Unmatched TAN / Missing metadata';
+      let issueType = 'unmatched_tan';
+      if (!r.tanNo || r.tanNo.length < 10) {
+        reason = 'Missing or Invalid TAN Format';
+        issueType = 'invalid_tan';
+      } else if (!r.booksCompanyName || r.booksCompanyName === 'Unknown Company') {
+        reason = 'Deductor Name Discrepancy';
+        issueType = 'name_mismatch';
+      } else {
+        reason = 'Multi-source Data Discrepancy';
+        issueType = 'source_discrepancy';
+      }
+
+      return {
+        id: r.id,
+        tanNo: r.tanNo || 'UNKNOWN_TAN',
+        companyName: r.booksCompanyName || 'Unknown Client',
+        issueType,
+        issueReason: reason,
+        sources: [
+          r.booksTds > 0 ? 'Saarthi 360' : null,
+          r.as26Tds > 0 ? 'Form 26AS' : null,
+          r.tallyTds > 0 ? 'Tally Ledger' : null
+        ].filter(Boolean),
+        booksTds: r.booksTds,
+        as26Tds: r.as26Tds,
+        tallyTds: r.tallyTds
+      };
+    });
+
+    res.json({
+      success: true,
+      count: cleaningItems.length,
+      data: cleaningItems
+    });
+
+  } catch (error) {
+    console.error('💥 Error in getCleaningQueue:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch cleaning queue', details: error.message });
+  }
+};
+
+/**
+ * Resolve a Data Import Cleaning Item
+ */
+export const resolveCleaningItem = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tanNo, companyName } = req.body;
+
+    if (!id || !tanNo || !companyName) {
+      return res.status(400).json({ success: false, error: 'Required: id, tanNo, companyName' });
+    }
+
+    const cleanTan = String(tanNo).toUpperCase().trim();
+    const cleanCompany = String(companyName).trim();
+
+    // 1. Update tds_reconciliation_results
+    const [recRes] = await db.execute(
+      'UPDATE tds_reconciliation_results SET tan_no = ?, is_manually_edited = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [cleanTan, id]
+    );
+
+    // 2. Update associated tds_dues record
+    const [recRows] = await db.execute('SELECT tds_dues_id FROM tds_reconciliation_results WHERE id = ?', [id]);
+    if (recRows.length > 0 && recRows[0].tds_dues_id) {
+      await db.execute(
+        'UPDATE tds_dues SET tan_no = ?, company_name = ? WHERE id = ?',
+        [cleanTan, cleanCompany, recRows[0].tds_dues_id]
+      );
+    }
+
+    res.json({
+      success: true,
+      message: 'Cleaning item resolved successfully',
+      id,
+      tanNo: cleanTan,
+      companyName: cleanCompany
+    });
+
+  } catch (error) {
+    console.error('💥 Error in resolveCleaningItem:', error);
+    res.status(500).json({ success: false, error: 'Failed to resolve cleaning item', details: error.message });
+  }
+};
+
+/**
  * Get Paginated & Filterable Reconciliation Report
  */
 export const getReconciliationReport = async (req, res) => {
@@ -366,6 +594,8 @@ export const getReconciliationReport = async (req, res) => {
       limit = 20,
       search = '',
       overallStatus = '',
+      coverageFilter = 'All',
+      sortBy = 'updated_at',
       booksVs26asStatus = '',
       booksVsTallyStatus = '',
       as26VsTallyStatus = ''
@@ -393,16 +623,23 @@ export const getReconciliationReport = async (req, res) => {
       whereClauses.push('tr.books_vs_26as_status = ?');
       queryParams.push(booksVs26asStatus);
     }
-    if (booksVsTallyStatus && booksVsTallyStatus !== 'All') {
-      whereClauses.push('tr.books_vs_tally_status = ?');
-      queryParams.push(booksVsTallyStatus);
-    }
-    if (as26VsTallyStatus && as26VsTallyStatus !== 'All') {
-      whereClauses.push('tr.as26_vs_tally_status = ?');
-      queryParams.push(as26VsTallyStatus);
+
+    // Source Coverage Filter
+    if (coverageFilter === '3/3' || coverageFilter === '3 of 3') {
+      whereClauses.push('(tr.books_tds > 0 AND tr.as26_tds > 0 AND tr.tally_tds > 0)');
+    } else if (coverageFilter === '2/3' || coverageFilter === '2 of 3') {
+      whereClauses.push('((CASE WHEN tr.books_tds > 0 THEN 1 ELSE 0 END + CASE WHEN tr.as26_tds > 0 THEN 1 ELSE 0 END + CASE WHEN tr.tally_tds > 0 THEN 1 ELSE 0 END) = 2)');
+    } else if (coverageFilter === '1/3' || coverageFilter === '1 of 3') {
+      whereClauses.push('((CASE WHEN tr.books_tds > 0 THEN 1 ELSE 0 END + CASE WHEN tr.as26_tds > 0 THEN 1 ELSE 0 END + CASE WHEN tr.tally_tds > 0 THEN 1 ELSE 0 END) = 1)');
     }
 
     const whereSQL = whereClauses.length ? 'WHERE ' + whereClauses.join(' AND ') : '';
+
+    // Sort clause
+    let orderSQL = 'ORDER BY tr.updated_at DESC';
+    if (sortBy === 'difference_desc' || sortBy === 'difference' || sortBy === 'Difference (High → Low)') {
+      orderSQL = 'ORDER BY ABS((COALESCE(tr.books_tds, tr.tally_tds, 0)) - COALESCE(tr.as26_tds, 0)) DESC';
+    }
 
     // Count query
     const countQuery = `
@@ -423,6 +660,7 @@ export const getReconciliationReport = async (req, res) => {
         d.company_name as companyName,
         d.bill_number as billNumber,
         d.bill_date as billDate,
+        d.financial_year as financialYear,
         tr.books_tds as booksTds,
         tr.as26_tds as as26Tds,
         tr.tally_tds as tallyTds,
@@ -437,11 +675,52 @@ export const getReconciliationReport = async (req, res) => {
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
       ${whereSQL}
-      ORDER BY tr.updated_at DESC
+      ${orderSQL}
       LIMIT ${limitNum} OFFSET ${offset}
     `;
 
-    const [rows] = await db.execute(reportQuery, queryParams);
+    const [rawRows] = await db.execute(reportQuery, queryParams);
+
+    // Enrich rows with sourceCoverage and financialStatus
+    const rows = rawRows.map(r => {
+      const tally = parseFloat(r.tallyTds || 0);
+      const as26 = parseFloat(r.as26Tds || 0);
+      const saarthi = parseFloat(r.booksTds || 0);
+
+      const sources = [];
+      if (tally > 0) sources.push('Tally');
+      if (as26 > 0) sources.push('26AS');
+      if (saarthi > 0) sources.push('Saarthi');
+
+      const countStr = `${sources.length}/3`;
+      let coverageLabel = `${countStr} · ${sources.join(' + ') || 'No match'}`;
+
+      // Financial status mapping
+      let financialStatus = 'Match';
+      if (r.isManuallyEdited) financialStatus = 'Resolved';
+      else if (r.overallStatus === 'All Matched') financialStatus = 'Match';
+      else if (r.overallStatus === 'Partial Mismatch') financialStatus = 'Pending Review';
+      else if (sources.length < 3) financialStatus = 'Missing';
+      else if (r.booksVs26asStatus === 'Less Paid') financialStatus = 'Less';
+      else if (r.booksVs26asStatus === 'Excess') financialStatus = 'Excess';
+      else financialStatus = 'Match';
+
+      // Net difference (Saarthi/Tally vs 26AS)
+      const difference = (saarthi || tally) - as26;
+
+      return {
+        ...r,
+        saarthiTds: saarthi,
+        difference,
+        sourceCoverage: {
+          count: countStr,
+          label: coverageLabel,
+          sourcesCount: sources.length,
+          sources
+        },
+        financialStatus
+      };
+    });
 
     res.json({
       success: true,
@@ -457,6 +736,7 @@ export const getReconciliationReport = async (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to fetch reconciliation report', details: error.message });
   }
 };
+
 
 /**
  * Manually Override Pairwise or Overall Status

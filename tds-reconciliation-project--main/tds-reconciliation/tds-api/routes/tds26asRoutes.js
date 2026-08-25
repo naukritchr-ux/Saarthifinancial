@@ -9,7 +9,10 @@ import {
   getReconciliationReport,
   overrideReconciliationStatus,
   getUploadHistory,
-  exportReconciliationCSV
+  exportReconciliationCSV,
+  getDashboardSummary,
+  getCleaningQueue,
+  resolveCleaningItem
 } from '../controllers/tds26asController.js';
 
 const router = express.Router();
@@ -40,9 +43,13 @@ const upload = multer({
 // Mount endpoints
 router.post('/upload-26as', authenticateUser, upload.single('file'), upload26as);
 router.post('/upload-tally', authenticateUser, upload.single('file'), uploadTally);
+router.get('/dashboard-summary', getDashboardSummary);
+router.get('/cleaning-queue', getCleaningQueue);
+router.put('/cleaning-queue/:id', resolveCleaningItem);
 router.get('/report', getReconciliationReport);
 router.put('/override', authenticateUser, overrideReconciliationStatus);
 router.get('/batches', getUploadHistory);
 router.get('/export', exportReconciliationCSV);
+
 
 export default router;

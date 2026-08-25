@@ -8,6 +8,7 @@ import xlsx from 'xlsx';
 
 // Load unified route definitions
 import tds26asRoutes from './routes/tds26asRoutes.js';
+import followupRoutes from './routes/followupRoutes.js';
 import db from './config/db.js';
 import { reconcile } from './services/tdsReconciliationService.js';
 
@@ -45,8 +46,11 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', message: 'TDS Reconciliation API is running' });
 });
 
-// Mount modular TDS routes
+// Mount modular TDS & Followup routes
 app.use('/api/tds-26as', tds26asRoutes);
+app.use('/api/tds', tds26asRoutes);
+app.use('/api/followups', followupRoutes);
+
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {
