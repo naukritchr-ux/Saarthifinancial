@@ -49,6 +49,13 @@ export async function ensureTablesExist() {
       )
     `);
 
+    try {
+      await db.execute('ALTER TABLE tds_dues ADD COLUMN financial_year TEXT');
+    } catch (e) {
+      // Column already exists
+    }
+
+
     await db.execute(`
       CREATE TABLE IF NOT EXISTS tds_26as_entries (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
