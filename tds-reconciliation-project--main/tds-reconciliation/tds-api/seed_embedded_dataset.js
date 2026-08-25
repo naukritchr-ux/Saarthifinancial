@@ -383,8 +383,10 @@ async function seedFromMasterExcel(excelPath) {
         fy
       ]);
 
-      const dueId = dueRes.insertId;
+      const dueId = dueRes?.insertId;
+      if (!dueId) continue;
       duesInserted++;
+
 
       // 2. Insert into tds_26as_entries if present
       if (as26Tan && tanRegex.test(as26Tan) && (as26Source === '26AS' || as26Tds > 0)) {
