@@ -1,0 +1,25 @@
+# Dependency directories
+node_modules/
+
+# Production build output
+dist/
+build/
+
+# Local database files
+*.db
+*.db-journal
+*.sqlite
+
+# Environment variables
+.env
+.env.local
+
+# Temporary/Upload files
+uploads/
+/tmp/uploads/
+*.log
+
+# Editor configurations
+.vscode/
+.idea/
+.DS_Store
