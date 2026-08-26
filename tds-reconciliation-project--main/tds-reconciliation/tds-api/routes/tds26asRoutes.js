@@ -13,7 +13,8 @@ import {
   getDashboardSummary,
   getCleaningQueue,
   resolveCleaningItem,
-  seedDatabaseEndpoint
+  seedDatabaseEndpoint,
+  purgeUploadData
 } from '../controllers/tds26asController.js';
 
 const router = express.Router();
@@ -46,6 +47,8 @@ router.get('/seed', seedDatabaseEndpoint);
 router.post('/seed', seedDatabaseEndpoint);
 router.post('/upload-26as', authenticateUser, upload.single('file'), upload26as);
 router.post('/upload-tally', authenticateUser, upload.single('file'), uploadTally);
+router.post('/purge', purgeUploadData);
+router.delete('/purge', purgeUploadData);
 router.get('/dashboard-summary', getDashboardSummary);
 router.get('/cleaning-queue', getCleaningQueue);
 router.put('/cleaning-queue/:id', resolveCleaningItem);
