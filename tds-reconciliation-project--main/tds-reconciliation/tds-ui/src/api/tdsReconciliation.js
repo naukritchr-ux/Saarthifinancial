@@ -14,9 +14,10 @@ const buildQuery = (params) => {
 /**
  * Upload Form 26AS CSV file
  */
-export const upload26as = async (file) => {
+export const upload26as = async (file, importMode = 'update') => {
   const formData = new FormData();
   formData.append('file', file);
+  if (importMode) formData.append('importMode', importMode);
   
   const response = await fetch(`${API_URL}/api/tds-26as/upload-26as`, {
     method: 'POST',
@@ -28,13 +29,26 @@ export const upload26as = async (file) => {
 /**
  * Upload Tally CSV file
  */
-export const uploadTally = async (file) => {
+export const uploadTally = async (file, importMode = 'update') => {
   const formData = new FormData();
   formData.append('file', file);
+  if (importMode) formData.append('importMode', importMode);
   
   const response = await fetch(`${API_URL}/api/tds-26as/upload-tally`, {
     method: 'POST',
     body: formData,
+  });
+  return await response.json();
+};
+
+/**
+ * Purge / Clear dataset
+ */
+export const purgeData = async (target = 'all') => {
+  const response = await fetch(`${API_URL}/api/tds-26as/purge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target })
   });
   return await response.json();
 };

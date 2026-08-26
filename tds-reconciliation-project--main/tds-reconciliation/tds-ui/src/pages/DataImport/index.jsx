@@ -77,14 +77,14 @@ export default function DataImport() {
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gradient-to-r from-white via-slate-50 to-amber-50/20 p-6 rounded-2xl border border-gray-200 shadow-sm">
         <div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
             <Upload className="w-7 h-7 text-amber-500" />
             Data Import & Cleaning Workbench
           </h1>
-          <p className="text-xs text-gray-500 mt-1">
-            Upload raw Form 26AS portal reports, Tally ledger CSVs, and resolve deductor metadata discrepancies.
+          <p className="text-xs text-slate-600 font-medium mt-1">
+            Upload Form 26AS portal reports, Tally ledger CSVs, preview expected headers, and clear or update data.
           </p>
         </div>
       </div>
@@ -96,21 +96,21 @@ export default function DataImport() {
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden space-y-4 p-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-gray-100 pb-4">
           <div>
-            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
               <Wrench className="w-5 h-5 text-amber-500" />
               Data Cleaning Queue
               <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-500 text-slate-950">
                 {queue.length} Flagged
               </span>
             </h2>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
               Entries flagged for missing TAN format, deductor name discrepancies, or multi-source unlinked records
             </p>
           </div>
 
           <button
             onClick={fetchQueue}
-            className="inline-flex items-center gap-2 bg-gray-50 hover:bg-gray-100 text-gray-700 font-semibold px-3.5 py-2 rounded-xl transition text-xs border border-gray-200 cursor-pointer"
+            className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-amber-400 font-bold px-3.5 py-2 rounded-xl transition text-xs shadow-sm cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh Queue
@@ -121,7 +121,7 @@ export default function DataImport() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-slate-50 border-b border-gray-200 text-slate-500 font-bold uppercase tracking-wider">
+              <tr className="bg-slate-900 text-white font-extrabold uppercase tracking-wider border-b border-slate-800">
                 <th className="px-4 py-3">Flagged Record / Company</th>
                 <th className="px-4 py-3">Current TAN</th>
                 <th className="px-4 py-3">Sources Reporting Data</th>

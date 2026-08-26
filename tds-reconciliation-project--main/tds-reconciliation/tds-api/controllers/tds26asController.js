@@ -121,6 +121,13 @@ export const upload26as = async (req, res) => {
       });
     }
 
+    const importMode = req.body?.importMode || req.query?.importMode || 'update';
+    if (importMode === 'clean') {
+      console.log('🧹 Cleaning past Form 26AS data before import...');
+      await db.execute('DELETE FROM tds_26as_entries');
+      await db.execute('UPDATE tds_reconciliation_results SET as26_tds = 0, as26_batch_id = NULL WHERE is_manually_edited = 0');
+    }
+
     const uploadBatchId = `batch_26as_${uuidv4().replace(/-/g, '').slice(0, 12)}`;
     const entries = [];
     const errors = [];
@@ -287,6 +294,13 @@ export const uploadTally = async (req, res) => {
     // Fallback mappings
     if (colMap.tds_amount === -1) colMap.tds_amount = colMap.tan_no + 3;
     if (colMap.amount === -1) colMap.amount = colMap.tan_no + 2;
+
+    const importMode = req.body?.importMode || req.query?.importMode || 'update';
+    if (importMode === 'clean') {
+      console.log('🧹 Cleaning past Tally data before import...');
+      await db.execute('DELETE FROM tds_tally_entries');
+      await db.execute('UPDATE tds_reconciliation_results SET tally_tds = 0, tally_batch_id = NULL WHERE is_manually_edited = 0');
+    }
 
     const uploadBatchId = `batch_tally_${uuidv4().replace(/-/g, '').slice(0, 12)}`;
     const entries = [];
@@ -953,3 +967,29 @@ export const exportReconciliationCSV = async (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to generate CSV export file', details: error.message });
   }
 };
+
+/**
+ * Purge / Clear uploaded data
+ */
+export const purgeUploadData = async (req, res) => {
+  try {
+    const { target } = req.body || {}; // '26as', 'tally', 'all'
+    if (target === '26as') {
+      await db.execute('DELETE FROM tds_26as_entries');
+      await db.execute('UPDATE tds_reconciliation_results SET as26_tds = 0, as26_batch_id = NULL WHERE is_manually_edited = 0');
+    } else if (target === 'tally') {
+      await db.execute('DELETE FROM tds_tally_entries');
+      await db.execute('UPDATE tds_reconciliation_results SET tally_tds = 0, tally_batch_id = NULL WHERE is_manually_edited = 0');
+    } else {
+      await db.execute('DELETE FROM tds_26as_entries');
+      await db.execute('DELETE FROM tds_tally_entries');
+      await db.execute('DELETE FROM upload_history');
+      await db.execute('UPDATE tds_reconciliation_results SET as26_tds = 0, tally_tds = 0, as26_batch_id = NULL, tally_batch_id = NULL WHERE is_manually_edited = 0');
+    }
+    res.json({ success: true, message: `Successfully cleaned ${target || 'all'} dataset records` });
+  } catch (err) {
+    console.error('Error in purgeUploadData:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
