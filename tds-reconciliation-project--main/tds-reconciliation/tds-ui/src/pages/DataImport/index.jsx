@@ -192,65 +192,77 @@ export default function DataImport() {
 
       {/* Resolve Cleaning Modal */}
       {activeResolveItem && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 max-w-md w-full overflow-hidden">
-            <div className="flex justify-between items-center bg-slate-950 text-white px-6 py-4 border-b border-slate-800">
+        <div
+          onClick={() => setActiveResolveItem(null)}
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 z-50 overflow-y-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200/80 max-w-md w-full max-h-[90vh] flex flex-col overflow-hidden my-auto animate-scale-up"
+          >
+            <div className="flex-none flex justify-between items-center bg-slate-950 text-white px-6 py-4 border-b border-slate-800">
               <div>
-                <h3 className="font-bold text-lg text-amber-400">Resolve Data Discrepancy</h3>
+                <h3 className="font-bold text-base text-amber-400">Resolve Data Discrepancy</h3>
                 <p className="text-xs text-slate-400 mt-0.5">Record ID #{activeResolveItem.id}</p>
               </div>
-              <button onClick={() => setActiveResolveItem(null)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button
+                type="button"
+                onClick={() => setActiveResolveItem(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleResolveSubmit} className="p-6 space-y-4">
-              {resolveError && (
-                <div className="bg-red-50 text-red-700 p-3 rounded-xl flex items-start gap-2 text-xs border border-red-200 font-semibold">
-                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <span>{resolveError}</span>
+            <form onSubmit={handleResolveSubmit} className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs custom-scrollbar">
+                {resolveError && (
+                  <div className="bg-red-50 text-red-700 p-3 rounded-xl flex items-start gap-2 text-xs border border-red-200 font-semibold">
+                    <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                    <span>{resolveError}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    Canonical TAN Number <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={resolveTan}
+                    onChange={(e) => setResolveTan(e.target.value.toUpperCase())}
+                    placeholder="e.g. ABCD12345E"
+                    maxLength={10}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                  />
                 </div>
-              )}
 
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                  Canonical TAN Number <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={resolveTan}
-                  onChange={(e) => setResolveTan(e.target.value.toUpperCase())}
-                  placeholder="e.g. ABCD12345E"
-                  maxLength={10}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-mono uppercase focus:outline-none focus:border-amber-500"
-                />
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                    Canonical Company Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={resolveCompany}
+                    onChange={(e) => setResolveCompany(e.target.value)}
+                    placeholder="e.g. Acme Financial Services Pvt Ltd"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                  Canonical Company Name <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={resolveCompany}
-                  onChange={(e) => setResolveCompany(e.target.value)}
-                  placeholder="e.g. Acme Financial Services Pvt Ltd"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              <div className="flex gap-3 justify-end pt-4 border-t border-gray-100">
+              <div className="flex-none px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex gap-3 justify-end items-center">
                 <button
                   type="button"
                   onClick={() => setActiveResolveItem(null)}
-                  className="px-4 py-2 rounded-xl text-gray-700 border border-gray-200 hover:bg-gray-50 text-xs font-bold transition cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-slate-700 border border-slate-200 hover:bg-slate-100 text-xs font-bold transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={resolving}
-                  className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-5 py-2 rounded-xl transition text-xs flex items-center gap-2 disabled:opacity-50 cursor-pointer shadow"
+                  className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-5 py-2 rounded-xl transition text-xs flex items-center gap-2 disabled:opacity-50 cursor-pointer shadow-sm"
                 >
                   {resolving ? (
                     <>

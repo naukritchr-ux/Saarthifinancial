@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Loader2, AlertCircle } from 'lucide-react';
 import { applyStatusOverride } from '../../api/tdsReconciliation';
 
@@ -15,6 +15,15 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
     books_vs_tally_status: ['Excess', 'Less Paid', 'Not Received', 'Matched'],
     as26_vs_tally_status: ['Excess', 'Less Paid', 'Not Received', 'Matched']
   };
+
+  // Close on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -38,11 +47,11 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
         note: note.trim()
       });
 
-      if (res.success) {
+      if (res && res.success) {
         onSaveSuccess();
         onClose();
       } else {
-        setError(res.error || 'Failed to update status');
+        setError(res?.error || 'Failed to update status');
       }
     } catch (err) {
       setError(err.message || 'Connection error');
@@ -58,93 +67,105 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
   };
 
   // Set initial default value
-  React.useEffect(() => {
+  useEffect(() => {
     setValue(statusOptions[field][0]);
-  }, []);
+  }, [field]);
 
   return (
-    <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 max-w-md w-full overflow-hidden animate-slide-up">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 z-50 overflow-y-auto"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-2xl shadow-2xl border border-slate-200/80 max-w-md w-full max-h-[90vh] flex flex-col overflow-hidden my-auto animate-scale-up"
+      >
         {/* Header */}
-        <div className="flex justify-between items-center bg-gray-50 border-b border-gray-100 px-6 py-4">
+        <div className="flex-none flex justify-between items-center bg-slate-900 border-b border-slate-800 px-6 py-4 text-white">
           <div>
-            <h3 className="font-bold text-gray-800 text-lg">Manual Status Override</h3>
-            <p className="text-xs text-gray-500 mt-0.5">{row.companyName} ({row.tanNo})</p>
+            <h3 className="font-bold text-gray-100 text-base">Manual Status Override</h3>
+            <p className="text-xs text-slate-400 mt-0.5">{row.companyName} ({row.tanNo})</p>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-200 transition text-gray-400 hover:text-gray-600">
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSave} className="p-6 flex flex-col gap-4">
-          {error && (
-            <div className="bg-red-50 text-red-700 border border-red-100 rounded-xl p-3 flex items-start gap-2 text-xs">
-              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              <span>{error}</span>
+        <form onSubmit={handleSave} className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs custom-scrollbar">
+            {error && (
+              <div className="bg-red-50 text-red-700 border border-red-200 rounded-xl p-3 flex items-start gap-2 text-xs font-semibold">
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* Select Target Status Field */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                Select Comparison Target
+              </label>
+              <select
+                value={field}
+                onChange={(e) => handleFieldChange(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
+              >
+                <option value="overall_status">Overall Status</option>
+                <option value="books_vs_26as_status">Books vs Form 26AS</option>
+                <option value="books_vs_tally_status">Books vs Tally Ledger</option>
+                <option value="as26_vs_tally_status">Form 26AS vs Tally Ledger</option>
+              </select>
             </div>
-          )}
 
-          {/* Select Target Status Field */}
-          <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-              Select Comparison Target
-            </label>
-            <select
-              value={field}
-              onChange={(e) => handleFieldChange(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500"
-            >
-              <option value="overall_status">Overall Status</option>
-              <option value="books_vs_26as_status">Books vs Form 26AS</option>
-              <option value="books_vs_tally_status">Books vs Tally Ledger</option>
-              <option value="as26_vs_tally_status">Form 26AS vs Tally Ledger</option>
-            </select>
-          </div>
+            {/* Select Override Value */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                New Status Value
+              </label>
+              <select
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
+              >
+                {statusOptions[field].map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
 
-          {/* Select Override Value */}
-          <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-              New Status Value
-            </label>
-            <select
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500"
-            >
-              {statusOptions[field].map((opt) => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Required Justification Note */}
-          <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-              Justification Note <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              rows={3}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Provide a brief explanation for auditing purposes (e.g., Client confirmed offline credit mismatch resolved)..."
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500"
-            />
+            {/* Required Justification Note */}
+            <div>
+              <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                Justification Note <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                rows={3}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Provide a brief explanation for auditing purposes (e.g., Client confirmed offline credit mismatch resolved)..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium resize-none"
+              />
+            </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-3 justify-end mt-4 border-t border-gray-50 pt-4">
+          <div className="flex-none flex gap-3 justify-end px-6 py-4 border-t border-slate-100 bg-slate-50/50">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-gray-700 border border-gray-200 hover:bg-gray-50 text-sm font-medium transition"
+              className="px-4 py-2 rounded-xl text-slate-700 border border-slate-200 hover:bg-slate-100 text-xs font-bold transition cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-2 rounded-xl transition text-sm flex items-center gap-2 disabled:opacity-50"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2 rounded-xl transition text-xs flex items-center gap-2 disabled:opacity-50 cursor-pointer shadow-sm"
             >
               {loading ? (
                 <>

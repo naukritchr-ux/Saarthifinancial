@@ -736,81 +736,93 @@ const TdsReconciliation = () => {
 
       {/* Upload 26AS Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
-          <div className="bg-white rounded-xl border border-gray-250 shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="bg-purple-900 text-white px-5 py-4 flex justify-between items-center">
-              <h3 className="font-extrabold text-lg">Upload Form 26AS (Excel/CSV)</h3>
-              <button onClick={() => setShowUploadModal(false)} className="text-white/80 hover:text-white transition-colors cursor-pointer">
+        <div
+          onClick={() => setShowUploadModal(false)}
+          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl border border-slate-200/80 shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden my-auto animate-scale-up"
+          >
+            <div className="flex-none bg-purple-900 text-white px-6 py-4 flex justify-between items-center border-b border-purple-950">
+              <h3 className="font-extrabold text-base">Upload Form 26AS (Excel/CSV)</h3>
+              <button
+                type="button"
+                onClick={() => setShowUploadModal(false)}
+                className="text-white/80 hover:text-white transition-colors cursor-pointer p-1 rounded-lg hover:bg-purple-800"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleFileUploadSubmit} className="p-5 space-y-4">
-              {uploadError && (
-                <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg flex gap-2 text-xs font-semibold">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{uploadError}</span>
-                </div>
-              )}
+            <form onSubmit={handleFileUploadSubmit} className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs custom-scrollbar">
+                {uploadError && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl flex gap-2 text-xs font-semibold">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{uploadError}</span>
+                  </div>
+                )}
 
-              {uploadSuccess && (
-                <div className="p-3 bg-green-50 border border-green-200 text-green-800 rounded-lg flex gap-2 text-xs font-semibold">
-                  <CheckCircle className="w-4 h-4 shrink-0" />
-                  <span>{uploadSuccess}</span>
-                </div>
-              )}
+                {uploadSuccess && (
+                  <div className="p-3 bg-green-50 border border-green-200 text-green-800 rounded-xl flex gap-2 text-xs font-semibold">
+                    <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{uploadSuccess}</span>
+                  </div>
+                )}
 
-              {/* Drag/Drop Zone */}
-              <div className="border-2 border-dashed border-gray-300 hover:border-purple-600 rounded-xl p-6 transition-all duration-150 flex flex-col items-center justify-center text-center cursor-pointer bg-gray-50/50">
-                <input
-                  type="file"
-                  id="26as-file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={(e) => setUploadFile(e.target.files[0])}
-                  className="hidden"
-                />
-                <label htmlFor="26as-file" className="cursor-pointer w-full flex flex-col items-center justify-center">
-                  <FileText className="w-12 h-12 text-purple-600 mb-3" />
-                  {uploadFile ? (
-                    <div>
-                      <p className="font-bold text-gray-800 text-sm">{uploadFile.name}</p>
-                      <p className="text-[10px] text-gray-400 mt-1">{(uploadFile.size / 1024).toFixed(1)} KB</p>
-                    </div>
-                  ) : (
-                    <div>
-                      <p className="font-bold text-gray-700 text-sm">Click to select or drag Form 26AS file</p>
-                      <p className="text-[10px] text-gray-400 mt-1">Supported formats: Excel (.xlsx, .xls) and CSV</p>
-                    </div>
-                  )}
-                </label>
+                {/* Drag/Drop Zone */}
+                <div className="border-2 border-dashed border-slate-300 hover:border-purple-600 rounded-xl p-6 transition-all flex flex-col items-center justify-center text-center cursor-pointer bg-slate-50/50">
+                  <input
+                    type="file"
+                    id="26as-file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={(e) => setUploadFile(e.target.files[0])}
+                    className="hidden"
+                  />
+                  <label htmlFor="26as-file" className="cursor-pointer w-full flex flex-col items-center justify-center">
+                    <FileText className="w-10 h-10 text-purple-600 mb-2" />
+                    {uploadFile ? (
+                      <div>
+                        <p className="font-bold text-gray-800 text-xs">{uploadFile.name}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">{(uploadFile.size / 1024).toFixed(1)} KB</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="font-bold text-gray-700 text-xs">Click to select or drag Form 26AS file</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">Supported formats: Excel (.xlsx, .xls) and CSV</p>
+                      </div>
+                    )}
+                  </label>
+                </div>
+
+                {/* Metadata selection */}
+                <div className="w-full">
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Financial Year (Optional Override)</label>
+                  <select
+                    value={uploadYear}
+                    onChange={(e) => setUploadYear(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 bg-slate-50"
+                  >
+                    <option value="2024-25">2024-25</option>
+                    <option value="2025-26">2025-26</option>
+                    <option value="2026-27">2026-27</option>
+                  </select>
+                </div>
               </div>
 
-              {/* Metadata selection */}
-              <div className="w-full">
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Financial Year (Optional Override)</label>
-                <select
-                  value={uploadYear}
-                  onChange={(e) => setUploadYear(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-semibold focus:outline-none focus:border-purple-600 bg-white"
-                >
-                  <option value="2024-25">2024-25</option>
-                  <option value="2025-26">2025-26</option>
-                  <option value="2026-27">2026-27</option>
-                </select>
-              </div>
-
-              <div className="flex gap-2 justify-end pt-3">
+              <div className="flex-none px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex gap-3 justify-end items-center">
                 <button
                   type="button"
                   onClick={() => setShowUploadModal(false)}
-                  className="px-4 py-2 border border-gray-300 hover:bg-gray-50 text-gray-700 font-bold rounded-lg transition-colors text-sm cursor-pointer"
+                  className="px-4 py-2 border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded-xl transition text-xs cursor-pointer"
                   disabled={uploading}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex items-center gap-2 px-5 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-lg transition-all shadow-sm text-sm cursor-pointer"
+                  className="flex items-center gap-2 px-5 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-xl transition shadow-sm text-xs cursor-pointer disabled:opacity-50"
                   disabled={uploading}
                 >
                   {uploading ? (
@@ -829,81 +841,93 @@ const TdsReconciliation = () => {
 
       {/* Upload Tally Modal */}
       {showTallyUploadModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex justify-center items-center p-4">
-          <div className="bg-white rounded-xl border border-gray-250 shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="bg-blue-900 text-white px-5 py-4 flex justify-between items-center">
-              <h3 className="font-extrabold text-lg">Upload Tally Ledger Data</h3>
-              <button onClick={() => setShowTallyUploadModal(false)} className="text-white/80 hover:text-white transition-colors cursor-pointer">
+        <div
+          onClick={() => setShowTallyUploadModal(false)}
+          className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 overflow-y-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl border border-slate-200/80 shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden my-auto animate-scale-up"
+          >
+            <div className="flex-none bg-blue-900 text-white px-6 py-4 flex justify-between items-center border-b border-blue-950">
+              <h3 className="font-extrabold text-base">Upload Tally Ledger Data</h3>
+              <button
+                type="button"
+                onClick={() => setShowTallyUploadModal(false)}
+                className="text-white/80 hover:text-white transition-colors cursor-pointer p-1 rounded-lg hover:bg-blue-800"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleTallyFileUploadSubmit} className="p-5 space-y-4">
-              {uploadTallyError && (
-                <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg flex gap-2 text-xs font-semibold">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{uploadTallyError}</span>
-                </div>
-              )}
+            <form onSubmit={handleTallyFileUploadSubmit} className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs custom-scrollbar">
+                {uploadTallyError && (
+                  <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl flex gap-2 text-xs font-semibold">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{uploadTallyError}</span>
+                  </div>
+                )}
 
-              {uploadTallySuccess && (
-                <div className="p-3 bg-green-50 border border-green-200 text-green-800 rounded-lg flex gap-2 text-xs font-semibold">
-                  <CheckCircle className="w-4 h-4 shrink-0" />
-                  <span>{uploadTallySuccess}</span>
-                </div>
-              )}
+                {uploadTallySuccess && (
+                  <div className="p-3 bg-green-50 border border-green-200 text-green-800 rounded-xl flex gap-2 text-xs font-semibold">
+                    <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{uploadTallySuccess}</span>
+                  </div>
+                )}
 
-              {/* Drag/Drop Zone */}
-              <div className="border-2 border-dashed border-gray-300 hover:border-blue-600 rounded-xl p-6 transition-all duration-150 flex flex-col items-center justify-center text-center cursor-pointer bg-gray-50/50">
-                <input
-                  type="file"
-                  id="tally-file"
-                  accept=".xlsx,.xls,.csv"
-                  onChange={(e) => setUploadTallyFile(e.target.files[0])}
-                  className="hidden"
-                />
-                <label htmlFor="tally-file" className="cursor-pointer w-full flex flex-col items-center justify-center">
-                  <Database className="w-12 h-12 text-blue-600 mb-3" />
-                  {uploadTallyFile ? (
-                    <div>
-                      <p className="font-bold text-gray-800 text-sm">{uploadTallyFile.name}</p>
-                      <p className="text-[10px] text-gray-400 mt-1">{(uploadTallyFile.size / 1024).toFixed(1)} KB</p>
-                    </div>
-                  ) : (
-                    <div>
-                      <p className="font-bold text-gray-700 text-sm">Click to select or drag Tally data file</p>
-                      <p className="text-[10px] text-gray-400 mt-1">Supported formats: Excel (.xlsx, .xls) and CSV</p>
-                    </div>
-                  )}
-                </label>
+                {/* Drag/Drop Zone */}
+                <div className="border-2 border-dashed border-slate-300 hover:border-blue-600 rounded-xl p-6 transition-all flex flex-col items-center justify-center text-center cursor-pointer bg-slate-50/50">
+                  <input
+                    type="file"
+                    id="tally-file"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={(e) => setUploadTallyFile(e.target.files[0])}
+                    className="hidden"
+                  />
+                  <label htmlFor="tally-file" className="cursor-pointer w-full flex flex-col items-center justify-center">
+                    <Database className="w-10 h-10 text-blue-600 mb-2" />
+                    {uploadTallyFile ? (
+                      <div>
+                        <p className="font-bold text-gray-800 text-xs">{uploadTallyFile.name}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">{(uploadTallyFile.size / 1024).toFixed(1)} KB</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="font-bold text-gray-700 text-xs">Click to select or drag Tally data file</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">Supported formats: Excel (.xlsx, .xls) and CSV</p>
+                      </div>
+                    )}
+                  </label>
+                </div>
+
+                {/* Metadata selection */}
+                <div className="w-full">
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">Financial Year (Optional Override)</label>
+                  <select
+                    value={uploadTallyYear}
+                    onChange={(e) => setUploadTallyYear(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 bg-slate-50"
+                  >
+                    <option value="2024-25">2024-25</option>
+                    <option value="2025-26">2025-26</option>
+                    <option value="2026-27">2026-27</option>
+                  </select>
+                </div>
               </div>
 
-              {/* Metadata selection */}
-              <div className="w-full">
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Financial Year (Optional Override)</label>
-                <select
-                  value={uploadTallyYear}
-                  onChange={(e) => setUploadTallyYear(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-semibold focus:outline-none focus:border-blue-600 bg-white"
-                >
-                  <option value="2024-25">2024-25</option>
-                  <option value="2025-26">2025-26</option>
-                  <option value="2026-27">2026-27</option>
-                </select>
-              </div>
-
-              <div className="flex gap-2 justify-end pt-3">
+              <div className="flex-none px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex gap-3 justify-end items-center">
                 <button
                   type="button"
                   onClick={() => setShowTallyUploadModal(false)}
-                  className="px-4 py-2 border border-gray-300 hover:bg-gray-50 text-gray-700 font-bold rounded-lg transition-colors text-sm cursor-pointer"
+                  className="px-4 py-2 border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded-xl transition text-xs cursor-pointer"
                   disabled={uploadingTally}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex items-center gap-2 px-5 py-2 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-lg transition-all shadow-sm text-sm cursor-pointer"
+                  className="flex items-center gap-2 px-5 py-2 bg-blue-700 hover:bg-blue-800 text-white font-bold rounded-xl transition shadow-sm text-xs cursor-pointer disabled:opacity-50"
                   disabled={uploadingTally}
                 >
                   {uploadingTally ? (
