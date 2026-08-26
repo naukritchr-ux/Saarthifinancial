@@ -264,34 +264,44 @@ export default function TdsReconciliation() {
 
       {/* Read-Only Detail Modal */}
       {activeViewRow && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 max-w-lg w-full overflow-hidden">
-            <div className="flex justify-between items-center bg-slate-950 text-white px-6 py-4 border-b border-slate-800">
+        <div
+          onClick={() => setActiveViewRow(null)}
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 z-50 overflow-y-auto"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200/80 max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden my-auto animate-scale-up"
+          >
+            <div className="flex-none flex justify-between items-center bg-slate-950 text-white px-6 py-4 border-b border-slate-800">
               <div>
                 <h3 className="font-bold text-base text-amber-400">Reconciliation Detail Record</h3>
                 <p className="text-xs text-slate-400 mt-0.5">{activeViewRow.companyName} ({activeViewRow.tanNo})</p>
               </div>
-              <button onClick={() => setActiveViewRow(null)} className="text-slate-400 hover:text-white cursor-pointer">
+              <button
+                type="button"
+                onClick={() => setActiveViewRow(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs custom-scrollbar">
+              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
                 <div>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase">Tally TDS</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Tally TDS</span>
                   <div className="font-black text-teal-700 text-base">₹{Number(activeViewRow.tallyTds || 0).toLocaleString('en-IN')}</div>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase">Form 26AS TDS</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Form 26AS TDS</span>
                   <div className="font-black text-indigo-700 text-base">₹{Number(activeViewRow.as26Tds || 0).toLocaleString('en-IN')}</div>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase">Saarthi 360 TDS</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Saarthi 360 TDS</span>
                   <div className="font-black text-purple-700 text-base">₹{Number(activeViewRow.saarthiTds || activeViewRow.booksTds || 0).toLocaleString('en-IN')}</div>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-gray-400 uppercase">Financial Status</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Financial Status</span>
                   <div className="font-extrabold text-slate-900 mt-1">{activeViewRow.financialStatus || activeViewRow.overallStatus}</div>
                 </div>
               </div>
@@ -314,15 +324,16 @@ export default function TdsReconciliation() {
                   <span className="font-bold text-blue-600">{activeViewRow.isManuallyEdited ? 'Yes' : 'No'}</span>
                 </div>
               </div>
+            </div>
 
-              <div className="flex justify-end pt-2">
-                <button
-                  onClick={() => setActiveViewRow(null)}
-                  className="bg-slate-900 text-white font-bold px-4 py-2 rounded-xl text-xs cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
+            <div className="flex-none px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setActiveViewRow(null)}
+                className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
