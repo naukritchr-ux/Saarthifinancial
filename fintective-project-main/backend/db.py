@@ -339,6 +339,14 @@ def init_db():
                 onboardingDate TEXT
             )
         """)
+        cursor.execute("DROP TABLE IF EXISTS franchisees_forms")
+        cursor.execute("""
+            CREATE TABLE franchisees_forms (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nameAsPerAgreement TEXT,
+                teamLeaderName TEXT
+            )
+        """)
         
         cursor.execute("DROP TABLE IF EXISTS enquiries")
         cursor.execute("""
@@ -379,7 +387,11 @@ def init_db():
                 dateReceived TEXT,
                 nameOfBd TEXT,
                 teamLeader TEXT,
-                franchiseName TEXT
+                franchiseName TEXT,
+                financialYear TEXT,
+                candidateName TEXT,
+                companyName TEXT,
+                postOfCandidate TEXT
             )
         """)
         
@@ -509,6 +521,10 @@ def init_db():
                 INSERT INTO franchisees (nameAsPerAgreement, teamLeaderName, onboardingDate)
                 VALUES (?, ?, ?)
             """, (name, tl, '2025-01-01'))
+            cursor.execute("""
+                INSERT INTO franchisees_forms (nameAsPerAgreement, teamLeaderName)
+                VALUES (?, ?)
+            """, (name, tl))
             
         # Populate enquiries
         for enq in enquiries:
@@ -642,16 +658,23 @@ def init_db():
             if bd:
                 bd = bd.strip()
                 
+            fy_val = inv.get('financialYear', '')
+            cand_name = inv.get('candidateName', '')
+            comp_name = inv.get('companyName', '')
+            post_cand = inv.get('postOfCandidate', '')
+
             cursor.execute("""
                 INSERT INTO invoice (
                     id, enquiry_id, billNumber, billDate, serviceCharges,
                     franchiseeShare, ourShare, amountReceived, dateReceived,
-                    nameOfBd, teamLeader, franchiseName
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    nameOfBd, teamLeader, franchiseName, financialYear,
+                    candidateName, companyName, postOfCandidate
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 inv_id, enq_id, bill_no, bill_date, service_charges,
                 franchisee_share, our_share, amt_received, date_received,
-                bd, tl, franchise_name
+                bd, tl, franchise_name, fy_val,
+                cand_name, comp_name, post_cand
             ))
             
             # Insert into franchisePayments if payment done

@@ -157,14 +157,23 @@ const Franchisees = () => {
 
   const franchiseSummaries = summaryData.ledger.map(fran => {
     const trend = getFranchiseeTrend(fran.id);
+    const fin = getFranchiseeFinancials(fran.id);
     
     // Look up ML segment
     const mlMatch = mlData ? mlData.find(item => item.franchise.trim().toLowerCase() === fran.name.trim().toLowerCase()) : null;
     const mlSegment = mlMatch ? mlMatch.segment : 'Steady Partners (Consistent Output)';
     const mlCluster = mlMatch ? mlMatch.cluster : 1;
 
+    const costsIncurred = fran.costsTracked ? fran.costsIncurred : (fin.costsIncurred > 0 ? fin.costsIncurred : null);
+    const revenuePaid = fin.revenuePaid > 0 ? fin.revenuePaid : (fran.revenuePaid || 0);
+    const netContribution = costsIncurred !== null ? (revenuePaid - costsIncurred) : revenuePaid;
+
     return {
       ...fran,
+      revenuePaid,
+      costsIncurred,
+      netContribution,
+      costsTracked: costsIncurred !== null,
       trend,
       mlSegment,
       mlCluster
