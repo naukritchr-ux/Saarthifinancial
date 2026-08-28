@@ -77,8 +77,37 @@ except Exception as e:
 def get_enq_exclude_clause(table_prefix=""):
     prefix = f"{table_prefix}." if table_prefix else ""
     if ENQUIRY_IDS_TO_EXCLUDE:
-        return f"{prefix}id NOT IN ({', '.join(['%s'] * len(ENQUIRY_IDS_TO_EXCLUDE))})"
+        ids_str = ', '.join(str(int(x)) for x in ENQUIRY_IDS_TO_EXCLUDE)
+        return f"{prefix}id NOT IN ({ids_str})"
     return "1=1"
+
+def get_potential_loss(cursor, group_by_field=None, start_date=None, end_date=None):
+    enq_clause = get_enq_exclude_clause()
+    status_clause = "enquiryStatus IN ('cancelled', 'offered_and_rejected', 'internally_closed')"
+    where_parts = [status_clause, enq_clause]
+    params = []
+    
+    if start_date and end_date:
+        where_parts.append("dateOfAllocation BETWEEN %s AND %s")
+        params.extend([start_date, end_date])
+        
+    where_sql = " AND ".join(where_parts)
+    
+    if group_by_field:
+        query = f"""
+            SELECT TRIM({group_by_field}) AS name, SUM(COALESCE(placementFees, 0)) AS potential_loss
+            FROM enquiries
+            WHERE {where_sql} AND {group_by_field} IS NOT NULL AND TRIM({group_by_field}) != ''
+              AND TRIM(LOWER({group_by_field})) NOT IN ('head office', 'head  - office')
+            GROUP BY TRIM({group_by_field})
+        """
+        cursor.execute(query, params)
+        return cursor.fetchall()
+    else:
+        query = f"SELECT SUM(COALESCE(placementFees, 0)) AS potential_loss FROM enquiries WHERE {where_sql}"
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+        return float(row['potential_loss'] or 0.0) if row else 0.0
 
 app = Flask(__name__)
 # Enable CORS for all routes (important for React web-app communication)
@@ -267,7 +296,7 @@ def get_transactions():
                     WHERE {enq_clause}
                     LIMIT 10000
                 """
-                params = COLLIDING_BILL_NUMBERS + (ENQUIRY_IDS_TO_EXCLUDE if ENQUIRY_IDS_TO_EXCLUDE else [])
+                params = COLLIDING_BILL_NUMBERS
                 cursor.execute(query, params)
                 enquiry_inflows = cursor.fetchall()
                 
@@ -996,8 +1025,10 @@ def get_franchisee_summary():
                 'profitSharingPercentage': float(r['profitSharingPercentage'] or 75.0),
                 'candidatesPlaced': int(r['candidates_placed']),
                 'revenuePaid': float(r['inflow_revenue']),
-                'costsIncurred': 0.0,
-                'netContribution': float(r['inflow_revenue'])
+                # TODO: Once expenditure table gets a franchisee_id column, sum real expense transactions per franchisee here
+                'costsIncurred': None,
+                'netContribution': float(r['inflow_revenue']),
+                'costsTracked': False
             })
             
         return jsonify({
@@ -1092,7 +1123,7 @@ def get_bd_agents():
                         SUM(CASE WHEN e.enquiryStatus = 'position_hold' THEN 1 ELSE 0 END) AS on_hold,
                         SUM(CASE WHEN e.enquiryStatus = 'revised' THEN 1 ELSE 0 END) AS revised,
                         SUM(CASE WHEN e.enquiryStatus = 'credit_note' THEN 1 ELSE 0 END) AS credit_notes,
-                        SUM(CASE WHEN e.enquiryStatus IN ('cancelled', 'offered_and_rejected', 'internally_closed') THEN COALESCE(i.serviceCharges, e.bill_amount, 0) ELSE 0 END) AS loss_amount,
+                        SUM(CASE WHEN e.enquiryStatus IN ('cancelled', 'offered_and_rejected', 'internally_closed') THEN COALESCE(e.placementFees, 0) ELSE 0 END) AS loss_amount,
                         SUM(CASE WHEN e.enquiryStatus IN ('closed', 'offered_and_accepted') THEN COALESCE(i.serviceCharges, e.bill_amount, 0) ELSE 0 END) AS gross_revenue,
                         SUM(CASE WHEN e.enquiryStatus = 'credit_note' THEN COALESCE(i.serviceCharges, e.bill_amount, 0) ELSE 0 END) AS credit_note_reversals
                     FROM enquiries e
@@ -1266,7 +1297,7 @@ def get_bd_revenue(bd_name=None, start_date=None, end_date=None, aggregate=True)
                         TRIM(bdMemberName) AS name,
                         SUM(placementFees) AS potential_loss
                     FROM enquiries
-                    WHERE enquiryStatus IN ('cancelled', 'internally_closed')
+                    WHERE enquiryStatus IN ('cancelled', 'offered_and_rejected', 'internally_closed')
                       AND dateOfAllocation BETWEEN %s AND %s
                       AND bdMemberName IS NOT NULL AND TRIM(bdMemberName) != ''
                       AND TRIM(LOWER(bdMemberName)) NOT IN ('head office', 'head  - office')
@@ -1430,7 +1461,8 @@ def get_tl_revenue_leaderboard():
                 SUM(placementFees) AS potential_loss,
                 COUNT(*) AS total_enquiries
             FROM enquiries
-            WHERE dateOfAllocation BETWEEN %s AND %s
+            WHERE enquiryStatus IN ('cancelled', 'offered_and_rejected', 'internally_closed')
+              AND dateOfAllocation BETWEEN %s AND %s
               AND teamLeaderName IS NOT NULL AND TRIM(teamLeaderName) != ''
               AND TRIM(LOWER(teamLeaderName)) NOT IN ('head office', 'head  - office')
               AND {enq_clause_loss}
@@ -2151,7 +2183,7 @@ def get_team_leaders():
                         SUM(CASE WHEN e.enquiryStatus = 'credit_note' THEN 1 ELSE 0 END) AS credit_notes,
                         SUM(CASE WHEN e.enquiryStatus IN ('closed', 'offered_and_accepted') THEN COALESCE(i.serviceCharges, e.bill_amount, 0) ELSE 0 END) AS gross_revenue,
                         SUM(CASE WHEN e.enquiryStatus IN ('closed', 'offered_and_accepted') THEN COALESCE(i.serviceCharges - i.franchiseeShare, i.ourShare, e.bill_amount * 0.4375, 0) ELSE 0 END) AS net_revenue,
-                        SUM(CASE WHEN e.enquiryStatus IN ('cancelled', 'offered_and_rejected', 'internally_closed') THEN COALESCE(i.serviceCharges, e.bill_amount, 0) ELSE 0 END) AS loss_amount,
+                        SUM(CASE WHEN e.enquiryStatus IN ('cancelled', 'offered_and_rejected', 'internally_closed') THEN COALESCE(e.placementFees, 0) ELSE 0 END) AS loss_amount,
                         SUM(CASE WHEN e.enquiryStatus = 'credit_note' THEN COALESCE(i.serviceCharges, e.bill_amount, 0) ELSE 0 END) AS credit_note_reversals
                     FROM enquiries e
                     LEFT JOIN invoice i ON e.id = i.enquiry_id

@@ -91,6 +91,44 @@ export const FinanceProvider = ({ children }) => {
     return saved || 'franchise_bd_revenue';
   });
 
+  const [dataSource, setDataSource] = useState('backend'); // 'backend' | 'fallback'
+
+  // Helper functions for matching stable IDs in fallback path (Phase 2)
+  const getStableStringHash = (str) => {
+    if (!str) return 0;
+    const clean = str.trim().toLowerCase();
+    let hash = 0;
+    for (let i = 0; i < clean.length; i++) {
+      hash = ((hash << 5) - hash) + clean.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash) % 100000;
+  };
+
+  const matchFranchiseeId = (franName, franList = []) => {
+    if (!franName) return null;
+    const clean = franName.trim().toLowerCase();
+    if (!clean) return null;
+    const found = franList.find(f => {
+      const fn = (f.nameAsPerAgreement || f.name || '').trim().toLowerCase();
+      return fn === clean || (clean && fn.includes(clean)) || (fn && clean.includes(fn));
+    });
+    if (found && found.id) return found.id;
+    return `f-${getStableStringHash(clean)}`;
+  };
+
+  const matchBdAgentId = (bdName, bdList = []) => {
+    if (!bdName) return null;
+    const clean = bdName.trim().toLowerCase();
+    if (!clean) return null;
+    const found = bdList.find(b => {
+      const bn = (b.name || b.bd_name || b.bdMemberName || '').trim().toLowerCase();
+      return bn === clean || (clean && bn.includes(clean)) || (bn && clean.includes(bn));
+    });
+    if (found && found.id) return found.id;
+    return `bd-${getStableStringHash(clean)}`;
+  };
+
   // Sync state with backend server or direct live URL APIs on mount
   useEffect(() => {
     const fetchData = async () => {
@@ -102,6 +140,7 @@ export const FinanceProvider = ({ children }) => {
           if (Array.isArray(txData) && txData.length > 0) {
             setTransactions(txData);
             loadedFromBackend = true;
+            setDataSource('backend');
           }
         }
         
@@ -134,6 +173,7 @@ export const FinanceProvider = ({ children }) => {
 
       // If backend server was unreachable on deployed client, fetch live URL APIs directly in browser!
       if (!loadedFromBackend) {
+        setDataSource('fallback');
         try {
           console.log('Fetching live recruitment & expense data directly from HTTPS URL APIs...');
           const [enqRes, invRes, franRes, expRes] = await Promise.allSettled([
@@ -154,9 +194,13 @@ export const FinanceProvider = ({ children }) => {
             invoices = await invRes.value.json() || [];
           }
 
+          let currentFranList = franchisees;
           if (franRes.status === 'fulfilled' && franRes.value.ok) {
             const fData = await franRes.value.json() || [];
-            if (fData.length > 0) setFranchisees(fData);
+            if (fData.length > 0) {
+              currentFranList = fData;
+              setFranchisees(fData);
+            }
           }
 
           let liveExp = [];
@@ -165,11 +209,42 @@ export const FinanceProvider = ({ children }) => {
           }
 
           const liveTxs = [];
+
+          // 1. Build income transactions from live Invoices
+          invoices.forEach(inv => {
+            if (!inv.id) return;
+            const amt = parseFloat(inv.serviceCharges || inv.totalBillAmt || inv.amountReceived || 0);
+            const dateStr = (inv.billDate || inv.dateReceived || inv.createdAt || '').split('T')[0];
+            if (amt > 0 && dateStr) {
+              const franName = inv.franchiseName || '';
+              const bdName = inv.nameOfBd || '';
+              liveTxs.push({
+                id: `inv-${inv.id}`,
+                title: `${inv.companyName || 'Client Placement'} - ${inv.postOfCandidate || 'Recruitment'}`,
+                amount: amt,
+                type: 'income',
+                category: 'Recruitment Fee',
+                subCategory: 'Placement Invoice',
+                date: dateStr,
+                companyName: inv.companyName || '',
+                bdAgentName: bdName,
+                teamLeaderName: inv.teamLeader || '',
+                franchiseeName: franName,
+                franchiseeId: matchFranchiseeId(franName, currentFranList),
+                bdAgentId: matchBdAgentId(bdName, bdAgents),
+                financialYear: inv.financialYear || 'N/A'
+              });
+            }
+          });
+
+          // 2. Build income transactions from Enquiries if missing in invoices
           enquiries.forEach(enq => {
             if (!enq.id) return;
             const amt = parseFloat(enq.bill_amount || enq.placementFees || 0);
             const dateStr = (enq.bill_date || enq.dateOfAllocation || enq.created_at || '').split('T')[0];
-            if (amt > 0 && dateStr) {
+            if (amt > 0 && dateStr && !invoices.some(i => i.enquiry_id === enq.id)) {
+              const franName = enq.franchiseeName || '';
+              const bdName = enq.bdMemberName || '';
               liveTxs.push({
                 id: `enq-${enq.id}`,
                 title: `${enq.companyName || 'Client Placement'} - ${enq.positionName || 'Role'}`,
@@ -179,25 +254,21 @@ export const FinanceProvider = ({ children }) => {
                 subCategory: 'Placement',
                 date: dateStr,
                 companyName: enq.companyName || '',
-                bdAgentName: enq.bdMemberName || '',
+                bdAgentName: bdName,
                 teamLeaderName: enq.teamLeaderName || '',
-                franchiseeName: enq.franchiseeName || ''
+                franchiseeName: franName,
+                franchiseeId: matchFranchiseeId(franName, currentFranList),
+                bdAgentId: matchBdAgentId(bdName, bdAgents)
               });
             }
           });
 
-          // Add live operational expenses
-          const operationalExpenses = [
-            { id: 'exp-op-1', title: 'Employee Base Salaries Batch', amount: 450000, type: 'expense', category: 'Salaries', subCategory: 'Salaries', date: '2026-08-05', companyName: 'HDFC Bank Corporate' },
-            { id: 'exp-op-2', title: 'Commercial Office Rent & Maintenance', amount: 45000, type: 'expense', category: 'Office & infra', subCategory: 'Rent & Infrastructure', date: '2026-08-10', companyName: 'Embassy Office Parks' },
-            { id: 'exp-op-3', title: 'Naukri.com & LinkedIn Recruiter Suite', amount: 85000, type: 'expense', category: 'Portal subscriptions', subCategory: 'Job Portal Access', date: '2026-08-15', companyName: 'Info Edge India Ltd' },
-            { id: 'exp-op-4', title: 'Google Search Ads & Social Campaigns', amount: 65000, type: 'expense', category: 'Marketing', subCategory: 'Performance Marketing', date: '2026-08-20', companyName: 'Google India Digital' }
-          ];
-
+          // 3. Process live expenses (if liveExp is non-empty) — NO fake hardcoded operationalExpenses array!
+          const liveExpenseTxs = [];
           liveExp.forEach(exp => {
             const total = (parseFloat(exp.franchisee || 0) + parseFloat(exp.recruitment || 0)) * 1000;
             if (total > 0) {
-              operationalExpenses.push({
+              liveExpenseTxs.push({
                 id: `exp-api-${exp.id}`,
                 title: exp.head_component || 'Operating Expense',
                 amount: total,
@@ -210,7 +281,7 @@ export const FinanceProvider = ({ children }) => {
             }
           });
 
-          const combined = [...liveTxs, ...operationalExpenses];
+          const combined = [...liveTxs, ...liveExpenseTxs];
           if (combined.length > 0) {
             setTransactions(combined);
           }
@@ -437,6 +508,7 @@ export const FinanceProvider = ({ children }) => {
         availableYears,
         activeModule,
         setActiveModule,
+        dataSource,
         addTransaction,
         deleteTransaction,
         updateBudget,

@@ -29,7 +29,7 @@ const ArrowDownRight = TrendingDown;
 
 
 const RunwayRoiTracker = () => {
-  const { transactions, franchisees, bdAgents, selectedMonth, selectedYear, activeModule } = useContext(FinanceContext);
+  const { transactions, franchisees, bdAgents, selectedMonth, selectedYear, activeModule, currentCashBalance: contextCashBalance, movingAvgBurn: contextMovingBurn } = useContext(FinanceContext);
   const [activeTab, setActiveTab] = useState('summary'); // summary, bd-roi, franchise-roi, companies, scenario, mom-pivot, leakage
   const [leaderboard, setLeaderboard] = useState([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
@@ -364,12 +364,18 @@ const RunwayRoiTracker = () => {
   // 1. Current Cash Balance (all-time inflows - all-time outflows)
   const allTimeInflow = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
   const allTimeOutflow = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-  const currentCashBalance = Math.max(0, allTimeInflow - allTimeOutflow);
+  const currentCashBalance = (contextCashBalance !== undefined && contextCashBalance !== null) 
+    ? contextCashBalance 
+    : Math.max(0, allTimeInflow - allTimeOutflow);
 
   // 2. Moving Avg Monthly Burn (net burn = outflow - inflow, floored at 0)
+  // Consistently divide by 3 per saarthi_finance_formulas.md spec
   const movingAvgOutflow = last3Months.reduce((sum, m) => sum + m.outflow, 0) / 3;
   const movingAvgInflow = last3Months.reduce((sum, m) => sum + m.inflow, 0) / 3;
-  const movingAvgBurn = Math.max(movingAvgOutflow - movingAvgInflow, 0); // only positive when truly burning cash
+  const computedBurn = Math.max(movingAvgOutflow - movingAvgInflow, 0); // only positive when truly burning cash
+  const movingAvgBurn = (contextMovingBurn !== undefined && contextMovingBurn !== null && contextMovingBurn > 0) 
+    ? contextMovingBurn 
+    : computedBurn;
 
   // Baseline Runway calculations
   const isCashExhaustionRisk = movingAvgBurn > 0;
