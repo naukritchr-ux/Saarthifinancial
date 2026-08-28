@@ -18,13 +18,8 @@ export const FinanceProvider = ({ children }) => {
     'Other': 0
   });
 
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    return localStorage.getItem('saarthi_selected_month') || 'All Months';
-  });
-
-  const [selectedYear, setSelectedYear] = useState(() => {
-    return localStorage.getItem('saarthi_selected_year') || 'All Years';
-  });
+  const [selectedMonth, setSelectedMonth] = useState('All Months');
+  const [selectedYear, setSelectedYear] = useState('All Years');
 
   const availableMonths = React.useMemo(() => {
     if (!Array.isArray(transactions)) return ['All Months'];
