@@ -10,12 +10,24 @@ const Reports = () => {
   const [filterType, setFilterType] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterPayment, setFilterPayment] = useState('all');
+  const [filterCompany, setFilterCompany] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   
   const [activeTab, setActiveTab] = useState('ledger'); // 'ledger' or 'ml'
   const [mlData, setMlData] = useState(null);
   const [mlLoading, setMlLoading] = useState(false);
   const [mlError, setMlError] = useState(null);
+
+  const companyList = React.useMemo(() => {
+    if (!Array.isArray(transactions)) return [];
+    const companies = new Set();
+    transactions.forEach(tx => {
+      if (tx.companyName && tx.companyName !== 'N/A') {
+        companies.add(tx.companyName);
+      }
+    });
+    return Array.from(companies).sort();
+  }, [transactions]);
 
   useEffect(() => {
     if (activeTab === 'ml' && !mlData) {
@@ -39,7 +51,7 @@ const Reports = () => {
   // Reset page to 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, filterType, filterCategory, filterPayment, selectedMonth]);
+  }, [searchQuery, filterType, filterCategory, filterPayment, filterCompany, selectedMonth]);
 
   const categories = activeModule === 'job_portal'
     ? ['Job portal', 'Portal subscriptions', 'Marketing', 'Other']
@@ -84,7 +96,8 @@ const Reports = () => {
     const descMatch = (tx.description || '').toLowerCase().includes(query);
     const subMatch = (tx.subCategory || '').toLowerCase().includes(query);
     const refMatch = (tx.referenceId || '').toLowerCase().includes(query);
-    if (!titleMatch && !descMatch && !subMatch && !refMatch) return false;
+    const companyMatch = (tx.companyName || '').toLowerCase().includes(query);
+    if (!titleMatch && !descMatch && !subMatch && !refMatch && !companyMatch) return false;
 
     // 3. Filter Type
     if (filterType !== 'all' && tx.type !== filterType) return false;
@@ -94,6 +107,9 @@ const Reports = () => {
 
     // 5. Filter Payment Mode
     if (filterPayment !== 'all' && (tx.paymentMode || 'Cash') !== filterPayment) return false;
+
+    // 6. Filter Company Name
+    if (filterCompany !== 'all' && (tx.companyName || 'N/A') !== filterCompany) return false;
 
     return true;
   });
@@ -115,13 +131,14 @@ const Reports = () => {
 
   // CSV Exporter - exact details client-side
   const handleExportCSV = () => {
-    const headers = ['Date', 'Title', 'Type', 'Category', 'Sub-Category', 'BD Agent', 'Franchisee', 'Payment Mode', 'Reference ID', 'Amount (INR)', 'Description'];
+    const headers = ['Date', 'Title', 'Company Name', 'Type', 'Category', 'Sub-Category', 'BD Agent', 'Franchisee', 'Payment Mode', 'Reference ID', 'Amount (INR)', 'Description'];
     const rows = filteredTxs.map(tx => {
       const agent = bdAgents ? bdAgents.find(a => a.id === tx.bdAgentId) : null;
       const franchisee = franchisees ? franchisees.find(f => f.id === tx.franchiseeId) : null;
       return [
         tx.date,
         `"${tx.title.replace(/"/g, '""')}"`,
+        `"${(tx.companyName || 'N/A').replace(/"/g, '""')}"`,
         tx.type,
         tx.category,
         tx.subCategory || 'General',
@@ -253,9 +270,28 @@ const Reports = () => {
             </select>
           </div>
 
+          <div className="filter-item">
+            <label><Filter size={14} /> Company</label>
+            <select
+              value={filterCompany}
+              onChange={(e) => setFilterCompany(e.target.value)}
+            >
+              <option value="all">All Companies</option>
+              {companyList.map(comp => (
+                <option key={comp} value={comp}>{comp}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="filter-item flex-end">
-            {(searchQuery || filterType !== 'all' || filterCategory !== 'all' || filterPayment !== 'all') && (
-              <button className="btn btn-secondary btn-icon-only" title="Clear Filters" onClick={handleClearFilters}>
+            {(searchQuery || filterType !== 'all' || filterCategory !== 'all' || filterPayment !== 'all' || filterCompany !== 'all') && (
+              <button className="btn btn-secondary btn-icon-only" title="Clear Filters" onClick={() => {
+                setSearchQuery('');
+                setFilterType('all');
+                setFilterCategory('all');
+                setFilterPayment('all');
+                setFilterCompany('all');
+              }}>
                 <X size={16} />
               </button>
             )}
@@ -300,7 +336,13 @@ const Reports = () => {
         {filteredTxs.length === 0 ? (
           <div className="no-records-wrapper">
             <p className="no-data-text">No transaction logs match your filter settings.</p>
-            <button className="btn btn-secondary" onClick={handleClearFilters}>Reset Filters</button>
+            <button className="btn btn-secondary" onClick={() => {
+              setSearchQuery('');
+              setFilterType('all');
+              setFilterCategory('all');
+              setFilterPayment('all');
+              setFilterCompany('all');
+            }}>Reset Filters</button>
           </div>
         ) : (
           (() => {
@@ -316,10 +358,11 @@ const Reports = () => {
                       <tr>
                         <th>Date</th>
                         <th>Item Title & Sub-Category</th>
+                        <th>Company Name</th>
                         <th>Category</th>
                         <th>Payment Mode</th>
                         <th>Reference ID</th>
-                        <th>Amount</th>
+                        <th className="text-right">Amount</th>
                         <th className="no-print">Actions</th>
                       </tr>
                     </thead>
@@ -336,17 +379,34 @@ const Reports = () => {
                               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '2px', alignItems: 'center' }}>
                                 <span className="ledger-tx-subcategory">{tx.subCategory || 'General'}</span>
                                 {agent && (
-                                  <span style={{ fontSize: '0.7rem', padding: '1px 6px', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa', borderRadius: '4px', border: '1px solid rgba(139, 92, 246, 0.2)' }}>
+                                  <span style={{ fontSize: '0.7rem', padding: '1px 6px', backgroundColor: 'rgba(139, 92, 246, 0.15)', color: '#8b5cf6', borderRadius: '4px', border: '1px solid rgba(139, 92, 246, 0.2)', fontWeight: '600' }}>
                                     BD: {agent.name}
                                   </span>
                                 )}
                                 {franchisee && (
-                                  <span style={{ fontSize: '0.7rem', padding: '1px 6px', backgroundColor: 'rgba(45, 212, 191, 0.15)', color: '#2dd4bf', borderRadius: '4px', border: '1px solid rgba(45, 212, 191, 0.2)' }}>
+                                  <span style={{ fontSize: '0.7rem', padding: '1px 6px', backgroundColor: 'rgba(13, 148, 136, 0.15)', color: '#0d9488', borderRadius: '4px', border: '1px solid rgba(13, 148, 136, 0.2)', fontWeight: '600' }}>
                                     Franchisee: {franchisee.name}
                                   </span>
                                 )}
                               </div>
                               {tx.description && <span className="ledger-tx-desc">{tx.description}</span>}
+                            </td>
+                            <td>
+                              {tx.companyName && tx.companyName !== 'N/A' ? (
+                                <span style={{
+                                  fontSize: '0.75rem',
+                                  padding: '3px 8px',
+                                  borderRadius: '6px',
+                                  backgroundColor: '#e0f2fe',
+                                  color: '#0284c7',
+                                  fontWeight: '700',
+                                  display: 'inline-block'
+                                }}>
+                                  {tx.companyName}
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.825rem' }}>—</span>
+                              )}
                             </td>
                              <td>
                                {tx.type === 'income' && tx.category === 'Recruitment' && tx.info && tx.info !== 'N/A' ? (
@@ -362,14 +422,14 @@ const Reports = () => {
                             <td className="font-bold">{tx.paymentMode || 'Cash'}</td>
                             <td><code className="ref-code">{tx.referenceId}</code></td>
                             <td className={`font-bold text-right ${tx.type === 'income' ? 'text-teal' : 'text-red'}`}>
-                               {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
+                               {formatCurrency(tx.amount, tx.type === 'expense')}
                             </td>
                             <td className="text-center no-print">
                               <button 
                                 className="btn-delete"
                                 title="Delete entry"
                                 onClick={() => {
-                                  if (confirm(`Are you sure you want to delete the entry "${tx.title}" for â‚¹${tx.amount.toLocaleString()}?`)) {
+                                  if (confirm(`Are you sure you want to delete the entry "${tx.title}" for ₹${tx.amount.toLocaleString()}?`)) {
                                     deleteTransaction(tx.id);
                                   }
                                 }}

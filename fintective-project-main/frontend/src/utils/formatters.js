@@ -16,7 +16,7 @@ export const formatCurrency = (value, isOutflow = false) => {
   }).format(Math.abs(num));
 
   if (num < 0 || isOutflow) {
-    return `-${formatted}`;
+    return `-${formatted.trim()}`;
   }
   return formatted;
 };

@@ -1925,9 +1925,9 @@ button, input, select, textarea {
 }
 
 .roi-tracker-page .menu-item.active {
-  color: #0b132b !important;
+  color: #ffffff !important;
   background: var(--accent-teal) !important;
-  box-shadow: 0 4px 14px rgba(45, 212, 191, 0.35);
+  box-shadow: 0 4px 14px rgba(13, 148, 136, 0.35);
 }
 
 .roi-tracker-page .data-table tr {
@@ -1935,28 +1935,27 @@ button, input, select, textarea {
 }
 
 .roi-tracker-page .data-table tbody tr:hover {
-  background-color: rgba(255, 255, 255, 0.02) !important;
-  transform: scale(1.002);
+  background-color: #f1f5f9 !important;
+  transform: scale(1.001);
 }
 
 .roi-tracker-page .data-table td {
   padding: 14px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-main);
 }
 
-/* Premium pill tab container */
+/* Premium pill tab container for Light Theme */
 .roi-tracker-page .pill-tabs-container {
   display: inline-flex;
   flex-wrap: wrap;
-  background: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: #e2e8f0;
+  border: 1px solid #cbd5e1;
   border-radius: 12px;
   padding: 5px;
   gap: 4px;
   margin-bottom: 24px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-sm);
 }
 
 .roi-tracker-page .pill-tabs-container button {
@@ -1967,25 +1966,32 @@ button, input, select, textarea {
   font-weight: 700;
   cursor: pointer;
   background: transparent;
-  color: rgba(255, 255, 255, 0.55);
+  color: #475569;
   transition: all 0.2s ease;
 }
 
 .roi-tracker-page .pill-tabs-container button:hover:not(.active) {
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(255, 255, 255, 0.85);
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.roi-tracker-page .pill-tabs-container button.active {
+  background: var(--accent-teal, #0d9488);
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(13, 148, 136, 0.3);
 }
 
 /* Moving average projection chart elements */
 .chart-content-center svg {
-  background: linear-gradient(180deg, #0f172a 0%, #0b132b 100%);
+  background: #ffffff;
   border-radius: var(--radius-lg);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-md);
 }
 
 .chart-content-center text {
   font-family: 'Plus Jakarta Sans', sans-serif;
+  fill: #0f172a !important;
 }
 
 .chart-content-center circle {
@@ -2005,13 +2011,13 @@ button, input, select, textarea {
   width: 100%;
   height: 6px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.1);
+  background: #cbd5e1;
   outline: none;
   transition: background 0.15s ease;
 }
 
 .roi-tracker-page .slider-input:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: #94a3b8;
 }
 
 .roi-tracker-page .slider-input::-webkit-slider-thumb {
@@ -2020,29 +2026,27 @@ button, input, select, textarea {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--accent-teal, #2dd4bf);
+  background: var(--accent-teal, #0d9488);
   cursor: pointer;
-  box-shadow: 0 0 10px rgba(45, 212, 191, 0.6);
+  box-shadow: 0 0 8px rgba(13, 148, 136, 0.5);
   transition: transform 0.1s ease, background-color 0.1s ease;
 }
 
 .roi-tracker-page .slider-input::-webkit-slider-thumb:hover {
   transform: scale(1.2);
-  background: #34d399;
+  background: #0f766e;
 }
 
-/* Glass card layout for simulator */
+/* Card layout for simulator */
 .roi-tracker-page .simulator-panel {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  background: rgba(30, 41, 59, 0.3);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: #ffffff;
+  border: 1px solid var(--border-color);
   padding: 28px;
   border-radius: 16px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-md);
 }
 
 .roi-tracker-page .slider-group-container {
@@ -2050,15 +2054,15 @@ button, input, select, textarea {
   flex-direction: column;
   gap: 10px;
   padding: 14px 16px;
-  background: rgba(255, 255, 255, 0.01);
-  border: 1px solid rgba(255, 255, 255, 0.03);
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
   transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
 .roi-tracker-page .slider-group-container.active-sim {
-  border-color: rgba(45, 212, 191, 0.2);
-  background: rgba(45, 212, 191, 0.01);
+  border-color: var(--accent-teal);
+  background: rgba(13, 148, 136, 0.04);
 }
 
 /* --- LOGIN PORTAL SCREEN --- */

@@ -6,6 +6,7 @@ const LogTransaction = ({ type = 'income', setActivePage }) => {
 
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
+  const [companyName, setCompanyName] = useState('');
   const [category, setCategory] = useState('');
   const [subCategory, setSubCategory] = useState('');
   const [date, setDate] = useState('');
@@ -45,6 +46,7 @@ const LogTransaction = ({ type = 'income', setActivePage }) => {
     }
     setPaymentMode(type === 'income' ? 'Net Banking' : 'UPI');
     setSubCategory('');
+    setCompanyName('');
     setReferenceId('');
     setFranchiseeId('');
     setBdAgentId('');
@@ -104,6 +106,7 @@ const LogTransaction = ({ type = 'income', setActivePage }) => {
     const transactionData = {
       title,
       amount: parseFloat(amount),
+      companyName: companyName.trim() || 'N/A',
       type,
       category,
       subCategory: subCategory.trim() || 'General',
@@ -216,6 +219,17 @@ const LogTransaction = ({ type = 'income', setActivePage }) => {
                 value={subCategory}
                 onChange={(e) => setSubCategory(e.target.value)}
                 placeholder="e.g., Tea & Coffee, Google Search Ads"
+              />
+            </div>
+
+            <div className="form-group flex-1">
+              <label htmlFor="tx-company">Company / Vendor Name</label>
+              <input
+                type="text"
+                id="tx-company"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder={type === 'income' ? 'e.g., Acme Tech Pvt Ltd' : 'e.g., AWS Services, Vendor Corp'}
               />
             </div>
           </div>
