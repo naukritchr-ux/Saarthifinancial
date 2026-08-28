@@ -59,8 +59,10 @@ const Dashboard = ({ setActivePage }) => {
     return monthMatch && yearMatch;
   });
 
-  const revenue = currentTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-  const expenses = currentTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+  const displayTxs = (currentTxs.length > 0 || selectedMonth !== 'All Months' || selectedYear !== 'All Years') ? currentTxs : roleTxs;
+
+  const revenue = (displayTxs.length > 0 ? displayTxs : roleTxs).filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+  const expenses = (displayTxs.length > 0 ? displayTxs : roleTxs).filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
   const profit = revenue - expenses;
   const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
 
