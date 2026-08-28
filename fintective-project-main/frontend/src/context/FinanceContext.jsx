@@ -186,17 +186,19 @@ export const FinanceProvider = ({ children }) => {
           let enquiries = [];
           if (enqRes.status === 'fulfilled' && enqRes.value.ok) {
             const json = await enqRes.value.json();
-            enquiries = json.data || (Array.isArray(json) ? json : []);
+            enquiries = Array.isArray(json) ? json : (json.data || json.enquiries || []);
           }
 
           let invoices = [];
           if (invRes.status === 'fulfilled' && invRes.value.ok) {
-            invoices = await invRes.value.json() || [];
+            const json = await invRes.value.json();
+            invoices = Array.isArray(json) ? json : (json.data || json.invoices || []);
           }
 
           let currentFranList = franchisees;
           if (franRes.status === 'fulfilled' && franRes.value.ok) {
-            const fData = await franRes.value.json() || [];
+            const json = await franRes.value.json();
+            const fData = Array.isArray(json) ? json : (json.data || json.franchisees || []);
             if (fData.length > 0) {
               currentFranList = fData;
               setFranchisees(fData);
@@ -205,7 +207,8 @@ export const FinanceProvider = ({ children }) => {
 
           let liveExp = [];
           if (expRes.status === 'fulfilled' && expRes.value.ok) {
-            liveExp = await expRes.value.json() || [];
+            const json = await expRes.value.json();
+            liveExp = Array.isArray(json) ? json : (json.data || json.expenses || []);
           }
 
           const liveTxs = [];
