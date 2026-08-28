@@ -362,11 +362,10 @@ export const FinanceProvider = ({ children }) => {
   // Derived filtered transactions based on active module
   const moduleFilteredTransactions = Array.isArray(transactions) ? transactions.filter(tx => {
     if (!tx) return false;
-    if (activeModule === 'franchise_bd_revenue') {
-      return tx.category !== 'Job portal' && tx.category !== 'Portal subscriptions';
-    } else {
+    if (activeModule === 'job_portal') {
       return tx.category === 'Job portal' || tx.category === 'Portal subscriptions';
     }
+    return tx.category !== 'Job portal' && tx.category !== 'Portal subscriptions';
   }) : [];
 
   // Actions
