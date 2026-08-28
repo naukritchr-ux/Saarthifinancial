@@ -409,7 +409,7 @@ const Dashboard = ({ setActivePage }) => {
 
       {/* Narrative AI Insight Sentence */}
       <div className="dashboard-insight-banner" style={{ background: 'rgba(37, 99, 235, 0.08)', border: '1px solid rgba(37, 99, 235, 0.15)', borderRadius: '8px', padding: '1rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        <span style={{ fontSize: '1.25rem' }}>ðŸ’¡</span>
+        <span style={{ fontSize: '1.25rem' }}>💡</span>
         <p style={{ margin: 0, fontSize: '0.9rem', color: '#1e3a8a', lineHeight: '1.4' }}>
           <strong>Finance Insight:</strong> {getNarrativeSummary()}
         </p>
@@ -443,11 +443,11 @@ const Dashboard = ({ setActivePage }) => {
             </div>
 
             {/* Dynamic Moving Average Trend Forecast */}
-            <div className="forecast-mini-card" style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <div className="forecast-mini-card" style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid #e2e8f0' }}>
               <span className="hero-label" style={{ display: 'block', fontSize: '0.65rem', color: 'var(--accent-teal)', letterSpacing: '0.05em' }}>NEXT MONTH FORECAST (AUGUST 2026)</span>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.85rem', color: '#94a3b8' }}>
-                <span>Exp. Inflow: <strong style={{ color: '#e2e8f0' }}>{formatLakhs(avgInflow)}</strong></span>
-                <span>Exp. Outflow: <strong style={{ color: '#e2e8f0' }}>{formatLakhs(avgOutflow)}</strong></span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.85rem', color: '#475569' }}>
+                <span>Exp. Inflow: <strong style={{ color: '#0f172a' }}>{formatLakhs(avgInflow)}</strong></span>
+                <span>Exp. Outflow: <strong style={{ color: '#0f172a' }}>{formatLakhs(avgOutflow)}</strong></span>
                 <span>Projected Net: <strong style={{ color: avgNet >= 0 ? 'var(--accent-teal)' : '#ef4444' }}>{formatLakhs(avgNet)}</strong></span>
               </div>
             </div>

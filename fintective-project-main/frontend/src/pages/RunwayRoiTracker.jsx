@@ -1443,76 +1443,76 @@ const RunwayRoiTracker = () => {
         {/* Tab 7: Revenue Recovery & Audit Command Center */}
         {activeTab === 'leakage' && (
           <div className="leakage-wrapper animate-fade-in" style={{ padding: '8px 0' }}>
-            <h4 style={{ marginBottom: '8px' }}>💰 Saarthi360 Revenue Recovery Command Center</h4>
-            <p className="flow-subtitle" style={{ marginBottom: '24px' }}>
+            <h4 style={{ marginBottom: '8px', color: '#0f172a', fontSize: '1.25rem', fontWeight: '800' }}>💰 Saarthi360 Revenue Recovery Command Center</h4>
+            <p className="flow-subtitle" style={{ marginBottom: '24px', color: '#475569', fontSize: '0.9rem' }}>
               Real-time audit scanner identifying ghost placements, duplicate overhead expenses, and invoice collection alerts.
             </p>
 
-            {/* A. GLASSMORPHIC HERO CARDS ROW */}
+            {/* A. HIGH-CONTRAST HERO CARDS ROW */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '32px' }}>
               
               {/* Card 1: Outstanding Leakage */}
               <div style={{
-                background: 'rgba(249,115,22,0.06)',
+                background: '#fff7ed',
                 padding: '24px',
                 borderRadius: '16px',
-                border: '1.5px solid rgba(249,115,22,0.25)',
-                boxShadow: '0 0 15px rgba(249,115,22,0.1)',
+                border: '1.5px solid #fed7aa',
+                boxShadow: 'var(--shadow-sm)',
                 position: 'relative',
                 overflow: 'hidden'
               }}>
-                <div style={{ position: 'absolute', right: '-10px', top: '-10px', opacity: 0.1, color: '#f97316' }}>
+                <div style={{ position: 'absolute', right: '-10px', top: '-10px', opacity: 0.08, color: '#ea580c' }}>
                   <ShieldAlert size={100} />
                 </div>
-                <span style={{ fontSize: '0.85rem', color: '#cbd5e1', display: 'block', marginBottom: '6px', fontWeight: 'bold' }}>Unbilled Ghost Placement Fee</span>
-                <span style={{ fontSize: '2.2rem', fontWeight: 'bold', color: '#f97316', textShadow: '0 0 10px rgba(249,115,22,0.2)' }}>
+                <span style={{ fontSize: '0.85rem', color: '#9a3412', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Unbilled Ghost Placement Fee</span>
+                <span style={{ fontSize: '2.2rem', fontWeight: '800', color: '#c2410c' }}>
                   {formatCurrency(ghostDeals.reduce((sum, d) => sum + d.service_charges, 0))}
                 </span>
-                <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginTop: '6px' }}>
+                <span style={{ fontSize: '0.75rem', color: '#9a3412', display: 'block', marginTop: '6px', fontWeight: '600' }}>
                   ⚠️ {ghostDeals.length} ghost deals currently active without bill dates.
                 </span>
               </div>
 
               {/* Card 2: Duplicate Expenditures */}
               <div style={{
-                background: 'rgba(239,68,68,0.06)',
+                background: '#fef2f2',
                 padding: '24px',
                 borderRadius: '16px',
-                border: '1.5px solid rgba(239,68,68,0.25)',
-                boxShadow: '0 0 15px rgba(239,68,68,0.1)',
+                border: '1.5px solid #fecaca',
+                boxShadow: 'var(--shadow-sm)',
                 position: 'relative',
                 overflow: 'hidden'
               }}>
-                <div style={{ position: 'absolute', right: '-10px', top: '-10px', opacity: 0.1, color: '#ef4444' }}>
+                <div style={{ position: 'absolute', right: '-10px', top: '-10px', opacity: 0.08, color: '#dc2626' }}>
                   <AlertTriangle size={100} />
                 </div>
-                <span style={{ fontSize: '0.85rem', color: '#cbd5e1', display: 'block', marginBottom: '6px', fontWeight: 'bold' }}>Duplicate Expense Overhead</span>
-                <span style={{ fontSize: '2.2rem', fontWeight: 'bold', color: '#ef4444', textShadow: '0 0 10px rgba(239,68,68,0.2)' }}>
+                <span style={{ fontSize: '0.85rem', color: '#991b1b', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Duplicate Expense Overhead</span>
+                <span style={{ fontSize: '2.2rem', fontWeight: '800', color: '#dc2626' }}>
                   {formatCurrency(duplicateExpenses.reduce((sum, d) => sum + d.amount, 0))}
                 </span>
-                <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginTop: '6px' }}>
+                <span style={{ fontSize: '0.75rem', color: '#991b1b', display: 'block', marginTop: '6px', fontWeight: '600' }}>
                   🔴 {duplicateExpenses.length} potential duplicate double-entries detected.
                 </span>
               </div>
 
               {/* Card 3: Overdue Outstanding Receivables */}
               <div style={{
-                background: 'rgba(59,130,246,0.06)',
+                background: '#eff6ff',
                 padding: '24px',
                 borderRadius: '16px',
-                border: '1.5px solid rgba(59,130,246,0.25)',
-                boxShadow: '0 0 15px rgba(59,130,246,0.1)',
+                border: '1.5px solid #bfdbfe',
+                boxShadow: 'var(--shadow-sm)',
                 position: 'relative',
                 overflow: 'hidden'
               }}>
-                <div style={{ position: 'absolute', right: '-10px', top: '-10px', opacity: 0.1, color: '#3b82f6' }}>
+                <div style={{ position: 'absolute', right: '-10px', top: '-10px', opacity: 0.08, color: '#2563eb' }}>
                   <DollarSign size={100} />
                 </div>
-                <span style={{ fontSize: '0.85rem', color: '#cbd5e1', display: 'block', marginBottom: '6px', fontWeight: 'bold' }}>Outstanding Receivables (&gt;30d)</span>
-                <span style={{ fontSize: '2.2rem', fontWeight: 'bold', color: '#3b82f6', textShadow: '0 0 10px rgba(59,130,246,0.2)' }}>
+                <span style={{ fontSize: '0.85rem', color: '#1e40af', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Outstanding Receivables (&gt;30d)</span>
+                <span style={{ fontSize: '2.2rem', fontWeight: '800', color: '#2563eb' }}>
                   {formatCurrency(outstandingReceivables.reduce((sum, d) => sum + (d.bill_amount - d.amount_received), 0))}
                 </span>
-                <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginTop: '6px' }}>
+                <span style={{ fontSize: '0.75rem', color: '#1e40af', display: 'block', marginTop: '6px', fontWeight: '600' }}>
                   🔵 {outstandingReceivables.length} uncollected invoices overdue.
                 </span>
               </div>
@@ -1520,24 +1520,25 @@ const RunwayRoiTracker = () => {
             </div>
 
             {/* B. TRUST INGESTION PIPELINE (REAL-TIME FILE UPLOADER) */}
-            <div className="dashboard-card" style={{ marginBottom: '32px', border: '1.5px solid rgba(45,212,191,0.15)', background: 'rgba(20, 24, 33, 0.5)', padding: '24px' }}>
-              <h5 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: '#2dd4bf' }}>
+            <div className="dashboard-card" style={{ marginBottom: '32px', border: '1.5px solid #99f6e4', background: '#ffffff', padding: '24px', boxShadow: 'var(--shadow-md)' }}>
+              <h5 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: '#0d9488', fontSize: '1.05rem', fontWeight: '700' }}>
                 <UploadCloud size={20} />
                 Trust Ingestion Data Sanitization Pipeline
               </h5>
-              <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginBottom: '16px' }}>
+              <p style={{ fontSize: '0.825rem', color: '#475569', marginBottom: '16px' }}>
                 Upload raw recruitment database CSV sheets. Our sanitizer intercepts the upload, normalizes spelling, validates and deduplicates bill records, and flags leaks before inserting into database.
               </p>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{
-                  border: '2px dashed rgba(255,255,255,0.1)',
-                  padding: '24px',
+                  border: '2px dashed #cbd5e1',
+                  padding: '28px',
                   borderRadius: '12px',
                   textAlign: 'center',
-                  background: 'rgba(255,255,255,0.01)',
+                  background: '#f8fafc',
                   cursor: 'pointer',
-                  position: 'relative'
+                  position: 'relative',
+                  transition: 'border-color 0.2s'
                 }}>
                   <input 
                     type="file" 
@@ -1545,24 +1546,24 @@ const RunwayRoiTracker = () => {
                     onChange={handleFileUpload}
                     style={{ position: 'absolute', left: 0, top: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }}
                   />
-                  <UploadCloud size={40} style={{ color: '#94a3b8', marginBottom: '12px' }} />
-                  <span style={{ display: 'block', fontSize: '0.9rem', color: '#cbd5e1', fontWeight: 'bold' }}>
+                  <UploadCloud size={44} style={{ color: '#0d9488', marginBottom: '12px' }} />
+                  <span style={{ display: 'block', fontSize: '0.95rem', color: '#0f172a', fontWeight: '700' }}>
                     {uploadedFile ? `Selected: ${uploadedFile.name}` : "Drag and drop raw CRM CSV sheet here, or click to browse"}
                   </span>
-                  <span style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
+                  <span style={{ display: 'block', fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
                     Maximum size: 10MB (Autodetects casing, blanks, and duplicates)
                   </span>
                 </div>
 
                 {uploaderStatus === 'dry-run' && healthCheckReport && (
                   <div style={{
-                    background: 'rgba(15,23,42,0.8)',
+                    background: '#fefce8',
                     padding: '20px',
                     borderRadius: '12px',
-                    border: '1.5px solid rgba(234,179,8,0.3)',
-                    color: '#cbd5e1'
+                    border: '1.5px solid #fef08a',
+                    color: '#334155'
                   }}>
-                    <h6 style={{ color: '#eab308', marginBottom: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h6 style={{ color: '#854d0e', marginBottom: '12px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <AlertTriangle size={18} />
                       Pre-Approval Data Health Check Sanitizer Report (Dry-Run Mode)
                     </h6>
@@ -1571,15 +1572,15 @@ const RunwayRoiTracker = () => {
                       <div>📋 <strong>File Stats:</strong> {healthCheckReport.fileSize}</div>
                       <div>🔹 <strong>Spelling Normalization:</strong> 37 Casing discrepancies fixed</div>
                       <div>✔️ <strong>Null-Preserved Fields:</strong> Cleaned salary & averages blanks</div>
-                      <div style={{ color: '#10b981' }}>🤝 <strong>Duplicates Auto-Merged:</strong> {healthCheckReport.duplicatesMerged} overlapping records</div>
-                      <div style={{ color: '#f97316' }}>⚠️ <strong>Revenue Leakage Detected:</strong> {healthCheckReport.ghostDealsDetected} ghost placements</div>
+                      <div style={{ color: '#047857', fontWeight: '700' }}>🤝 <strong>Duplicates Auto-Merged:</strong> {healthCheckReport.duplicatesMerged} overlapping records</div>
+                      <div style={{ color: '#c2410c', fontWeight: '700' }}>⚠️ <strong>Revenue Leakage Detected:</strong> {healthCheckReport.ghostDealsDetected} ghost placements</div>
                     </div>
                     <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
                       <button 
                         onClick={publishSanitizedData}
                         style={{
-                          backgroundColor: '#10b981',
-                          color: '#0b132b',
+                          backgroundColor: '#059669',
+                          color: '#ffffff',
                           padding: '10px 20px',
                           borderRadius: '8px',
                           border: 'none',
@@ -1592,11 +1593,12 @@ const RunwayRoiTracker = () => {
                       <button 
                         onClick={() => { setUploadedFile(null); setUploaderStatus('idle'); }}
                         style={{
-                          backgroundColor: 'rgba(255,255,255,0.04)',
-                          color: '#cbd5e1',
+                          backgroundColor: '#ffffff',
+                          color: '#475569',
                           padding: '10px 20px',
                           borderRadius: '8px',
-                          border: '1px solid rgba(255,255,255,0.1)',
+                          border: '1px solid #cbd5e1',
+                          fontWeight: '600',
                           cursor: 'pointer'
                         }}
                       >
@@ -1607,14 +1609,14 @@ const RunwayRoiTracker = () => {
                 )}
 
                 {uploaderStatus === 'publishing' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#38bdf8', fontSize: '0.9rem', fontWeight: 'bold' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#0284c7', fontSize: '0.9rem', fontWeight: 'bold' }}>
                     <Activity className="animate-spin" />
                     <span>Deduplicating entries against database, writing row-level hashes, and regenerating dashboard indexes...</span>
                   </div>
                 )}
 
                 {uploaderStatus === 'complete' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontSize: '0.9rem', fontWeight: 'bold' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#059669', fontSize: '0.9rem', fontWeight: 'bold' }}>
                     <CheckCircle2 />
                     <span>Ingestion Complete. All database tables and financial reports synchronized with clean data!</span>
                   </div>
@@ -1627,21 +1629,21 @@ const RunwayRoiTracker = () => {
               
               {/* DECK 1: GHOST DEALS CARDS */}
               <div>
-                <h5 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: '#cbd5e1' }}>
-                  <ShieldAlert size={18} style={{ color: '#f97316' }} />
+                <h5 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: '#0f172a', fontWeight: '800' }}>
+                  <ShieldAlert size={18} style={{ color: '#c2410c' }} />
                   Action Box: Missing Placement Invoice Dates ({ghostDeals.length})
                 </h5>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '420px', overflowY: 'auto', paddingRight: '8px' }}>
                   {ghostDeals.map((deal) => {
-                    const priorityColor = deal.priority === 'High' ? '#ef4444' : (deal.priority === 'Medium' ? '#f97316' : '#eab308');
-                    const priorityBg = deal.priority === 'High' ? 'rgba(239,68,68,0.08)' : (deal.priority === 'Medium' ? 'rgba(249,115,22,0.08)' : 'rgba(234,179,8,0.08)');
-                    const priorityBorder = deal.priority === 'High' ? 'rgba(239,68,68,0.35)' : (deal.priority === 'Medium' ? 'rgba(249,115,22,0.35)' : 'rgba(234,179,8,0.35)');
+                    const priorityColor = deal.priority === 'High' ? '#b91c1c' : (deal.priority === 'Medium' ? '#c2410c' : '#a16207');
+                    const priorityBg = deal.priority === 'High' ? '#fef2f2' : (deal.priority === 'Medium' ? '#fff7ed' : '#fefce8');
+                    const priorityBorder = deal.priority === 'High' ? '#fca5a5' : (deal.priority === 'Medium' ? '#fed7aa' : '#fef08a');
                     
                     return (
                       <div 
                         key={deal.id}
                         style={{
-                          background: 'rgba(30,41,59,0.5)',
+                          background: '#ffffff',
                           border: `1.5px solid ${priorityBorder}`,
                           padding: '16px',
                           borderRadius: '12px',
@@ -1650,21 +1652,13 @@ const RunwayRoiTracker = () => {
                           gap: '12px',
                           transition: 'transform 0.2s, box-shadow 0.2s',
                           cursor: 'pointer',
-                          boxShadow: `0 4px 12px ${priorityBg}`
-                        }}
-                        onMouseOver={(e) => {
-                          e.currentTarget.style.transform = 'translateY(-2px)';
-                          e.currentTarget.style.boxShadow = `0 6px 16px ${priorityBorder}`;
-                        }}
-                        onMouseOut={(e) => {
-                          e.currentTarget.style.transform = 'none';
-                          e.currentTarget.style.boxShadow = `0 4px 12px ${priorityBg}`;
+                          boxShadow: 'var(--shadow-sm)'
                         }}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
-                            <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>Company / Candidate Position</span>
-                            <strong style={{ fontSize: '0.9rem', color: '#f8fafc' }}>{deal.company_name}</strong> - <span style={{ fontSize: '0.8rem', color: '#cbd5e1' }}>{deal.position_name}</span>
+                            <span style={{ fontSize: '0.75rem', color: '#475569', display: 'block', fontWeight: '600' }}>Company / Candidate Position</span>
+                            <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>{deal.company_name}</strong> - <span style={{ fontSize: '0.8rem', color: '#334155' }}>{deal.position_name}</span>
                           </div>
                           <span style={{
                             fontSize: '0.7rem',
@@ -1678,9 +1672,9 @@ const RunwayRoiTracker = () => {
                             {deal.priority} Alert ({deal.age_days || 0}d)
                           </span>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#cbd5e1' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#334155' }}>
                           <div>BD: <strong>{deal.bd_member}</strong></div>
-                          <div style={{ color: '#10b981', fontWeight: 'bold' }}>Placement Fee: {formatCurrency(deal.service_charges)}</div>
+                          <div style={{ color: '#059669', fontWeight: 'bold' }}>Placement Fee: {formatCurrency(deal.service_charges)}</div>
                         </div>
                         
                         {/* Date, Bill & Root Cause Form */}
@@ -1697,14 +1691,15 @@ const RunwayRoiTracker = () => {
                             name="billDate"
                             defaultValue={deal.suggested_date || ''}
                             style={{
-                              backgroundColor: 'rgba(15,23,42,0.8)',
-                              color: '#cbd5e1',
-                              border: '1px solid rgba(255,255,255,0.1)',
+                              backgroundColor: '#f8fafc',
+                              color: '#0f172a',
+                              border: '1px solid #cbd5e1',
                               borderRadius: '6px',
                               padding: '6px 10px',
                               fontSize: '0.8rem',
                               flex: 1,
-                              minWidth: '120px'
+                              minWidth: '120px',
+                              fontWeight: '600'
                             }}
                           />
                           <input 
@@ -1713,25 +1708,27 @@ const RunwayRoiTracker = () => {
                             placeholder="Bill Number"
                             defaultValue={deal.bill_no || ''}
                             style={{
-                              backgroundColor: 'rgba(15,23,42,0.8)',
-                              color: '#cbd5e1',
-                              border: '1px solid rgba(255,255,255,0.1)',
+                              backgroundColor: '#f8fafc',
+                              color: '#0f172a',
+                              border: '1px solid #cbd5e1',
                               borderRadius: '6px',
                               padding: '6px 10px',
                               fontSize: '0.8rem',
-                              width: '100px'
+                              width: '100px',
+                              fontWeight: '600'
                             }}
                           />
                           <select
                             name="reasonCode"
                             style={{
-                              backgroundColor: 'rgba(15,23,42,0.8)',
-                              color: '#cbd5e1',
-                              border: '1px solid rgba(255,255,255,0.1)',
+                              backgroundColor: '#f8fafc',
+                              color: '#0f172a',
+                              border: '1px solid #cbd5e1',
                               borderRadius: '6px',
                               padding: '6px 10px',
                               fontSize: '0.8rem',
-                              width: '150px'
+                              width: '150px',
+                              fontWeight: '600'
                             }}
                           >
                             <option value="forgot_invoice">Forgot to raise invoice</option>
@@ -1743,7 +1740,7 @@ const RunwayRoiTracker = () => {
                           <button 
                             type="submit"
                             style={{
-                              backgroundColor: '#f97316',
+                              backgroundColor: '#ea580c',
                               color: '#fff',
                               border: 'none',
                               borderRadius: '6px',
@@ -1760,7 +1757,7 @@ const RunwayRoiTracker = () => {
                     );
                   })}
                   {ghostDeals.length === 0 && (
-                    <div style={{ padding: '24px', textAlign: 'center', color: '#64748b', background: 'rgba(255,255,255,0.01)', borderRadius: '12px' }}>
+                    <div style={{ padding: '24px', textAlign: 'center', color: '#059669', background: '#ecfdf5', borderRadius: '12px', border: '1px solid #a7f3d0', fontWeight: 'bold' }}>
                       ✔️ No uninvoiced placements detected!
                     </div>
                   )}
@@ -1769,8 +1766,8 @@ const RunwayRoiTracker = () => {
 
               {/* DECK 2: DUPLICATE EXPENSES */}
               <div>
-                <h5 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: '#cbd5e1' }}>
-                  <AlertTriangle size={18} style={{ color: '#ef4444' }} />
+                <h5 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: '#0f172a', fontWeight: '800' }}>
+                  <AlertTriangle size={18} style={{ color: '#dc2626' }} />
                   Action Box: Potential Expense Duplicates ({duplicateExpenses.length})
                 </h5>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '420px', overflowY: 'auto' }}>
@@ -1789,7 +1786,7 @@ const RunwayRoiTracker = () => {
                           <td>{exp.date}</td>
                           <td>
                             <strong>{exp.vendors || 'Office Rent'}</strong>
-                            <span style={{ display: 'block', fontSize: '0.7rem', color: '#94a3b8' }}>{exp.category}</span>
+                            <span style={{ display: 'block', fontSize: '0.7rem', color: '#475569' }}>{exp.category}</span>
                           </td>
                           <td className="text-right font-bold text-red">{formatCurrency(exp.amount)}</td>
                           <td style={{ textAlign: 'center' }}>
@@ -1797,8 +1794,8 @@ const RunwayRoiTracker = () => {
                               onClick={() => handleDeleteDuplicate(exp.id, exp)}
                               style={{
                                 border: 'none',
-                                background: 'rgba(239,68,68,0.1)',
-                                color: '#ef4444',
+                                background: '#fef2f2',
+                                color: '#dc2626',
                                 padding: '6px 12px',
                                 borderRadius: '6px',
                                 fontWeight: 'bold',
@@ -1816,7 +1813,7 @@ const RunwayRoiTracker = () => {
                       ))}
                       {duplicateExpenses.length === 0 && (
                         <tr>
-                          <td colSpan="4" style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>
+                          <td colSpan="4" style={{ textAlign: 'center', color: '#059669', padding: '20px', backgroundColor: '#ecfdf5', fontWeight: 'bold' }}>
                             🎉 All duplicate overheads resolved!
                           </td>
                         </tr>
@@ -1829,54 +1826,54 @@ const RunwayRoiTracker = () => {
             </div>
 
             {/* D. OUTSTANDING RECEIVABLES & OVER-COLLECTIONS */}
-            <div className="dashboard-card" style={{ background: 'rgba(15,23,42,0.3)', padding: '20px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '32px' }}>
-              <h5 style={{ marginBottom: '16px', color: '#cbd5e1' }}>Margin Reconciliation Warnings & Receivables Over 30 Days</h5>
+            <div className="dashboard-card" style={{ background: '#ffffff', padding: '20px', border: '1px solid var(--border-color)', marginBottom: '32px', boxShadow: 'var(--shadow-md)' }}>
+              <h5 style={{ marginBottom: '16px', color: '#0f172a', fontWeight: '800' }}>Margin Reconciliation Warnings & Receivables Over 30 Days</h5>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
                 
                 {/* Outstanding Receivables list */}
                 <div>
-                  <h6 style={{ color: '#3b82f6', marginBottom: '10px', fontSize: '0.85rem', fontWeight: 'bold' }}>Unpaid Receivables (&gt;30 days) ({outstandingReceivables.length})</h6>
+                  <h6 style={{ color: '#2563eb', marginBottom: '10px', fontSize: '0.85rem', fontWeight: 'bold' }}>Unpaid Receivables (&gt;30 days) ({outstandingReceivables.length})</h6>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '250px', overflowY: 'auto' }}>
                     {outstandingReceivables.map(item => (
-                      <div key={item.id} style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(59,130,246,0.15)', fontSize: '0.75rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: '#f8fafc' }}>
+                      <div key={item.id} style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #bfdbfe', fontSize: '0.75rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: '#0f172a' }}>
                           <span>{item.company_name}</span>
                           <span>Bill: {formatCurrency(item.bill_amount)}</span>
                         </div>
-                        <div style={{ color: '#94a3b8', marginTop: '4px' }}>
+                        <div style={{ color: '#475569', marginTop: '4px' }}>
                           Invoice: {item.invoice_no} | Date: {item.bill_date} ({item.days_overdue} days old)
                         </div>
-                        <div style={{ color: '#f97316', fontWeight: 'bold', marginTop: '2px' }}>
+                        <div style={{ color: '#c2410c', fontWeight: 'bold', marginTop: '2px' }}>
                           Received: {formatCurrency(item.amount_received)} (Due: {formatCurrency(item.bill_amount - item.amount_received)})
                         </div>
                       </div>
                     ))}
                     {outstandingReceivables.length === 0 && (
-                      <div style={{ padding: '12px', fontSize: '0.75rem', color: '#64748b' }}>No overdue receivables.</div>
+                      <div style={{ padding: '12px', fontSize: '0.75rem', color: '#475569', fontStyle: 'italic' }}>No overdue receivables.</div>
                     )}
                   </div>
                 </div>
 
                 {/* Over-collections list */}
                 <div>
-                  <h6 style={{ color: '#ef4444', marginBottom: '10px', fontSize: '0.85rem', fontWeight: 'bold' }}>Over-collections / Reconciliation Errors ({overCollections.length})</h6>
+                  <h6 style={{ color: '#dc2626', marginBottom: '10px', fontSize: '0.85rem', fontWeight: 'bold' }}>Over-collections / Reconciliation Errors ({overCollections.length})</h6>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '250px', overflowY: 'auto' }}>
                     {overCollections.map(item => (
-                      <div key={item.id} style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.15)', fontSize: '0.75rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: '#f8fafc' }}>
+                      <div key={item.id} style={{ background: '#fef2f2', padding: '12px', borderRadius: '8px', border: '1px solid #fca5a5', fontSize: '0.75rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: '#0f172a' }}>
                           <span>{item.company_name}</span>
-                          <span style={{ color: '#ef4444' }}>Recv: {formatCurrency(item.amount_received)}</span>
+                          <span style={{ color: '#dc2626' }}>Recv: {formatCurrency(item.amount_received)}</span>
                         </div>
-                        <div style={{ color: '#94a3b8', marginTop: '4px' }}>
+                        <div style={{ color: '#475569', marginTop: '4px' }}>
                           Invoice: {item.invoice_no} | Bill Amount: {formatCurrency(item.bill_amount)}
                         </div>
-                        <div style={{ color: '#eab308', marginTop: '2px', fontWeight: 'bold' }}>
+                        <div style={{ color: '#a16207', marginTop: '2px', fontWeight: 'bold' }}>
                           ⚠️ Paid Amount exceeds Billing Limit!
                         </div>
                       </div>
                     ))}
                     {overCollections.length === 0 && (
-                      <div style={{ padding: '12px', fontSize: '0.75rem', color: '#64748b' }}>No billing over-collection warnings.</div>
+                      <div style={{ padding: '12px', fontSize: '0.75rem', color: '#475569', fontStyle: 'italic' }}>No billing over-collection warnings.</div>
                     )}
                   </div>
                 </div>
@@ -1888,25 +1885,25 @@ const RunwayRoiTracker = () => {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '24px', marginBottom: '32px' }}>
               
               {/* AI Deal Copilot Watchlist */}
-              <div className="dashboard-card" style={{ background: 'rgba(20,24,33,0.6)', padding: '24px', border: '1.5px solid rgba(139,92,246,0.2)' }}>
+              <div className="dashboard-card" style={{ background: '#ffffff', padding: '24px', border: '1.5px solid #ddd6fe', boxShadow: 'var(--shadow-md)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h5 style={{ color: '#a78bfa', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h5 style={{ color: '#6d28d9', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '800' }}>
                     <Activity size={20} />
                     AI Deal Copilot: Active Leakage Risk Watchlist
                   </h5>
                   <span style={{
                     fontSize: '0.7rem',
-                    padding: '3px 8px',
-                    borderRadius: '4px',
+                    padding: '4px 10px',
+                    borderRadius: '6px',
                     fontWeight: 'bold',
-                    backgroundColor: isMlActive ? 'rgba(16,185,129,0.1)' : 'rgba(249,115,22,0.1)',
-                    color: isMlActive ? '#10b981' : '#f97316',
-                    border: isMlActive ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(249,115,22,0.2)'
+                    backgroundColor: isMlActive ? '#ecfdf5' : '#fff7ed',
+                    color: isMlActive ? '#047857' : '#c2410c',
+                    border: isMlActive ? '1px solid #a7f3d0' : '1px solid #fed7aa'
                   }}>
                     {isMlActive ? '✓ ML Predictor Active' : 'Heuristic Baseline Active'}
                   </span>
                 </div>
-                <p style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '16px' }}>
+                <p style={{ fontSize: '0.75rem', color: '#475569', marginBottom: '16px' }}>
                   AI evaluates active, uninvoiced deals using recruiter compliance histories, position sectors, and fee thresholds to calculate default/leakage probability scores.
                 </p>
                 <div style={{ overflowY: 'auto', maxHeight: '300px' }}>
@@ -1921,18 +1918,18 @@ const RunwayRoiTracker = () => {
                     </thead>
                     <tbody>
                       {activePredictions.slice(0, 8).map((pred) => {
-                        const riskColor = pred.leakage_risk > 60 ? '#ef4444' : (pred.leakage_risk > 30 ? '#f97316' : '#10b981');
-                        const riskBg = pred.leakage_risk > 60 ? 'rgba(239,68,68,0.1)' : (pred.leakage_risk > 30 ? 'rgba(249,115,22,0.1)' : 'rgba(16,185,129,0.1)');
-                        const riskBorder = pred.leakage_risk > 60 ? 'rgba(239,68,68,0.25)' : (pred.leakage_risk > 30 ? 'rgba(249,115,22,0.25)' : 'rgba(16,185,129,0.25)');
+                        const riskColor = pred.leakage_risk > 60 ? '#b91c1c' : (pred.leakage_risk > 30 ? '#c2410c' : '#047857');
+                        const riskBg = pred.leakage_risk > 60 ? '#fef2f2' : (pred.leakage_risk > 30 ? '#fff7ed' : '#ecfdf5');
+                        const riskBorder = pred.leakage_risk > 60 ? '#fca5a5' : (pred.leakage_risk > 30 ? '#fed7aa' : '#a7f3d0');
                         
                         return (
                           <tr key={pred.id}>
                             <td>
                               <strong>{pred.company_name}</strong>
-                              <span style={{ display: 'block', fontSize: '0.7rem', color: '#64748b' }}>{pred.position_name}</span>
+                              <span style={{ display: 'block', fontSize: '0.7rem', color: '#475569' }}>{pred.position_name}</span>
                             </td>
-                            <td>{pred.bd_member}</td>
-                            <td className="text-center" style={{ color: '#38bdf8', fontWeight: 'bold' }}>{pred.predicted_days} days</td>
+                            <td className="font-bold">{pred.bd_member}</td>
+                            <td className="text-center" style={{ color: '#0284c7', fontWeight: 'bold' }}>{pred.predicted_days} days</td>
                             <td style={{ textAlign: 'center' }}>
                               <span style={{
                                 padding: '4px 10px',
@@ -1962,12 +1959,12 @@ const RunwayRoiTracker = () => {
               </div>
 
               {/* Recruiter Leakage Leaderboard */}
-              <div className="dashboard-card" style={{ background: 'rgba(20,24,33,0.6)', padding: '24px', border: '1.5px solid rgba(239,68,68,0.2)' }}>
-                <h5 style={{ color: '#f87171', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="dashboard-card" style={{ background: '#ffffff', padding: '24px', border: '1.5px solid #fecaca', boxShadow: 'var(--shadow-md)' }}>
+                <h5 style={{ color: '#dc2626', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '800' }}>
                   <TrendingDown size={20} />
                   Recruiter Leakage Scoreboard (Outstanding Leaks)
                 </h5>
-                <p style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: '16px' }}>
+                <p style={{ fontSize: '0.75rem', color: '#475569', marginBottom: '16px' }}>
                   Rankings of recruitment agents with closed placements that are currently missing invoice dates or billing data.
                 </p>
                 <div style={{ overflowY: 'auto', maxHeight: '300px' }}>
@@ -1989,7 +1986,7 @@ const RunwayRoiTracker = () => {
                           <tr key={idx}>
                             <td className="font-bold">{item.bd_name}</td>
                             <td className="text-center" style={{ fontWeight: 'bold' }}>{item.open_leaks}</td>
-                            <td className="text-right font-bold" style={{ color: item.leak_amount > 0 ? '#f87171' : '#cbd5e1' }}>
+                            <td className="text-right font-bold" style={{ color: item.leak_amount > 0 ? '#dc2626' : '#475569' }}>
                               {formatCurrency(item.leak_amount)}
                             </td>
                             <td style={{ textAlign: 'center' }}>
