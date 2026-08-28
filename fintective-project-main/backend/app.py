@@ -2790,9 +2790,8 @@ def get_active_predictions():
         conn.close()
 
 if __name__ == '__main__':
-    # Initialize DB (create schema, load SQL files if applicable)
     init_db()
     
     port = int(os.getenv("PORT", 5000))
     print(f"Starting Python Flask server on port {port}...")
-    app.run(host='::', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port, debug=False)
