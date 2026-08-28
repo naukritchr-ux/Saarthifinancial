@@ -233,6 +233,7 @@ def get_transactions():
                     SELECT 
                         CONCAT('enq-pay-', e.id) AS id,
                         CONCAT('Recruitment Fee - ', e.companyName) AS title,
+                        e.companyName AS companyName,
                         COALESCE(i.serviceCharges, e.bill_amount, 0) AS amount,
                         'income' AS type,
                         'Recruitment' AS category,
@@ -274,7 +275,7 @@ def get_transactions():
                     raw_bd_name = (row.get('bdMemberName') or '').strip().lower()
                     raw_fran_name = (row.get('franchiseeName') or '').strip().lower()
                     
-                    # Exact lowercase match first, then partial â€” prevents false cross-matches
+                    # Exact lowercase match first, then partial — prevents false cross-matches
                     bd = next((b for b in bd_agents_list if b['name'] == raw_bd_name), None)
                     if not bd:
                         bd = next((b for b in bd_agents_list if raw_bd_name and raw_bd_name in b['name']), None)
@@ -296,6 +297,7 @@ def get_transactions():
                     combined.append({
                         'id': row['id'],
                         'title': row['title'],
+                        'companyName': row.get('companyName') or 'N/A',
                         'amount': float(row['amount']) if row.get('amount') is not None else 0.0,
                         'type': row['type'],
                         'category': row['category'],
@@ -321,6 +323,7 @@ def get_transactions():
                         combined.append({
                             'id': f"fran-royalty-payout-{row['id']}",
                             'title': f"Franchisee Royalty Payout - {row['title']}",
+                            'companyName': row.get('companyName') or 'N/A',
                             'amount': f_share,
                             'type': 'expense',
                             'category': 'Other',
@@ -458,9 +461,11 @@ def get_transactions():
                 outflow_rows = cursor.fetchall()
                 for row in outflow_rows:
                     cat = map_category(row['crmCat'], 'expense')
+                    comp_name = row.get('companyName') or 'N/A'
                     combined.append({
                         'id': row['id'],
                         'title': row['title'],
+                        'companyName': comp_name,
                         'amount': float(row['amount']) if row.get('amount') is not None else 0.0,
                         'type': row['type'],
                         'category': cat,
@@ -742,6 +747,7 @@ def add_transaction():
         'paymentMode': data.get('paymentMode', 'Net Banking'),
         'referenceId': data.get('referenceId') or f"TXN-{str(int(datetime.datetime.now().timestamp() * 1000))[-8:].upper()}",
         'description': data.get('description', ''),
+        'companyName': data.get('companyName') or 'N/A',
         'bdAgentId': data.get('bdAgentId') or None,
         'franchiseeId': data.get('franchiseeId') or None
     }
