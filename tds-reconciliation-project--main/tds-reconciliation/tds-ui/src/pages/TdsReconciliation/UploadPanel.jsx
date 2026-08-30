@@ -35,16 +35,16 @@ export default function UploadPanel({ onUploadSuccess }) {
     let filename = '';
     if (type === '26as') {
       filename = 'sample_form_26as.csv';
-      content = `Deductor TAN,Deductor Name,Amount Paid,TDS Deducted,Section,Quarter\n` +
-        `MUMK12345F,MUMBAI TECH LABS PVT LTD,500000.00,50000.00,194J,Q4\n` +
-        `DELG03106F,GARIMA SYSTEM SOLUTIONS,250000.00,25000.00,194C,Q4\n` +
-        `BLRN98765A,ALPHA CONSULTING SERVICES,120000.00,12000.00,194J,Q4`;
+      content = `Name of the Company,TAN No,Invoice Amount,TDS Amt,Section,Quarter\n` +
+        `MUMBAI TECH LABS PVT LTD,MUMK12345F,500000.00,50000.00,194J,Q4\n` +
+        `GARIMA SYSTEM SOLUTIONS,DELG03106F,250000.00,25000.00,194C,Q4\n` +
+        `ALPHA CONSULTING SERVICES,BLRN98765A,120000.00,12000.00,194J,Q4`;
     } else {
       filename = 'sample_tally_ledger.csv';
-      content = `Deductor TAN,Party Name,Voucher Date,Amount,TDS Amount,Ledger Name\n` +
-        `MUMK12345F,MUMBAI TECH LABS PVT LTD,2026-03-15,500000.00,50000.00,TDS Payable Ledger\n` +
-        `DELG03106F,GARIMA SYSTEM SOLUTIONS,2026-03-18,250000.00,25000.00,TDS Deducted Account\n` +
-        `BLRN98765A,ALPHA CONSULTING SERVICES,2026-03-20,120000.00,12000.00,Professional Fees TDS`;
+      content = `Name of the Company,GST Num,PAN No,Gross Total,TDS Amt,TAN No,Voucher Date\n` +
+        `MUMBAI TECH LABS PVT LTD,27AAAAA0000A1Z5,AAAAA0000A,500000.00,50000.00,MUMK12345F,2026-03-15\n` +
+        `GARIMA SYSTEM SOLUTIONS,07BBBBB1111B1Z2,BBBBB1111B,250000.00,25000.00,DELG03106F,2026-03-18\n` +
+        `ALPHA CONSULTING SERVICES,29CCCCC2222C1Z9,CCCCC2222C,120000.00,12000.00,BLRN98765A,2026-03-20`;
     }
 
     const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
@@ -130,7 +130,7 @@ export default function UploadPanel({ onUploadSuccess }) {
               Expected CSV & Tally Header Specification
             </h2>
             <p className="text-xs text-slate-300 mt-1">
-              Verify column names in your CSV or Excel file before uploading. Autodetects TAN numbers and TDS amounts.
+              Verify column names in your CSV or Excel file before uploading. Autodetects TAN/PAN numbers, GST, and TDS amounts.
             </p>
           </div>
 
@@ -161,12 +161,10 @@ export default function UploadPanel({ onUploadSuccess }) {
               <span className="text-[10px] bg-indigo-900/60 text-indigo-300 px-2 py-0.5 rounded border border-indigo-700/50">Govt Portal Format</span>
             </div>
             <div className="flex flex-wrap gap-1.5 text-xs font-mono">
-              <span className="bg-slate-900 text-amber-300 px-2 py-1 rounded border border-slate-700 font-bold">Deductor TAN *</span>
-              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Deductor Name</span>
-              <span className="bg-slate-900 text-amber-300 px-2 py-1 rounded border border-slate-700 font-bold">TDS Deducted *</span>
-              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Amount Paid</span>
-              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Section</span>
-              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Quarter</span>
+              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Name of the Company</span>
+              <span className="bg-slate-900 text-amber-300 px-2 py-1 rounded border border-slate-700 font-bold">TAN No *</span>
+              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Invoice Amount</span>
+              <span className="bg-slate-900 text-amber-300 px-2 py-1 rounded border border-slate-700 font-bold">TDS Amt *</span>
             </div>
           </div>
 
@@ -177,12 +175,11 @@ export default function UploadPanel({ onUploadSuccess }) {
               <span className="text-[10px] bg-teal-900/60 text-teal-300 px-2 py-0.5 rounded border border-teal-700/50">Accountant Sheet</span>
             </div>
             <div className="flex flex-wrap gap-1.5 text-xs font-mono">
-              <span className="bg-slate-900 text-amber-300 px-2 py-1 rounded border border-slate-700 font-bold">Deductor TAN *</span>
-              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Party Name</span>
-              <span className="bg-slate-900 text-amber-300 px-2 py-1 rounded border border-slate-700 font-bold">TDS Amount *</span>
-              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Total Amount</span>
-              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Voucher Date</span>
-              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Ledger Name</span>
+              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Name of the Company</span>
+              <span className="bg-slate-900 text-emerald-400 px-2 py-1 rounded border border-slate-700 font-semibold">GST Num (pull)</span>
+              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">PAN No</span>
+              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Gross Total</span>
+              <span className="bg-slate-900 text-amber-300 px-2 py-1 rounded border border-slate-700 font-bold">TDS Amt *</span>
             </div>
           </div>
         </div>

@@ -247,19 +247,25 @@ export const uploadTally = async (req, res) => {
         headerRowIdx = r;
         row.forEach((cell, col) => {
           const text = String(cell || '').toLowerCase().trim();
-          if (text === 'tan' || text === 'tan no' || text === 'tan number' || text.includes('tan of deductor') || text.includes('deductor tan')) {
+          if (text === 'tan' || text === 'tan no' || text === 'tan_no' || text === 'tan number' || text.includes('tan of deductor') || text.includes('deductor tan')) {
             colMap.tan_no = col;
           }
-          if (text.includes('party name') || text === 'company name' || text === 'ledger name' || text === 'ledger' || text.includes('name')) {
+          if (text.includes('name of the company') || text.includes('party name') || text.includes('company name') || text === 'company' || text === 'ledger name' || text === 'ledger' || text.includes('name')) {
             colMap.party_name = col;
+          }
+          if (text.includes('gstnum') || text.includes('gst num') || text.includes('gstin') || text.includes('gst')) {
+            colMap.gst_num = col;
+          }
+          if (text.includes('pan no') || text.includes('panno') || text.includes('pan number') || text === 'pan') {
+            colMap.pan_no = col;
           }
           if (text.includes('date') || text.includes('voucher date')) {
             colMap.voucher_date = col;
           }
-          if (text.includes('amount') || text.includes('value')) {
+          if (text.includes('gross total') || text.includes('total amount') || text.includes('amount') || text.includes('value')) {
             colMap.amount = col;
           }
-          if (text.includes('tds amount') || text === 'tds' || text === 'tds deducted' || text.includes('tax')) {
+          if (text.includes('tdsamt') || text.includes('tds amt') || text.includes('tds amount') || text === 'tds' || text === 'tds deducted' || text.includes('tax')) {
             colMap.tds_amount = col;
           }
           if (text.includes('ledger') && colMap.ledger_name === -1) {
@@ -317,6 +323,8 @@ export const uploadTally = async (req, res) => {
       if (!tanRegex.test(tan)) continue;
 
       const partyName = colMap.party_name !== -1 ? String(row[colMap.party_name] || '').trim() : 'Unknown Client';
+      const gstNum = colMap.gst_num !== -1 ? String(row[colMap.gst_num] || '').trim() : '';
+      const panNo = colMap.pan_no !== -1 ? String(row[colMap.pan_no] || '').trim() : '';
       const voucherDateRaw = colMap.voucher_date !== -1 ? String(row[colMap.voucher_date] || '').trim() : null;
       
       // Basic date parsing helper
@@ -333,7 +341,7 @@ export const uploadTally = async (req, res) => {
       const ledgerName = colMap.ledger_name !== -1 ? String(row[colMap.ledger_name] || '').trim() : 'Tally Ledger';
 
       entries.push({
-        tan, partyName, voucherDate, amount, tdsAmount, ledgerName, uploadBatchId
+        tan, partyName, gstNum, panNo, voucherDate, amount, tdsAmount, ledgerName, uploadBatchId
       });
     }
 
@@ -346,12 +354,12 @@ export const uploadTally = async (req, res) => {
     for (let i = 0; i < entries.length; i += BATCH_SIZE) {
       const chunk = entries.slice(i, i + BATCH_SIZE);
       const insertQuery = `
-        INSERT INTO tds_tally_entries (tan_no, party_name, voucher_date, amount, tds_amount, ledger_name, upload_batch_id)
-        VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ')}
+        INSERT INTO tds_tally_entries (tan_no, party_name, gst_num, pan_no, voucher_date, amount, tds_amount, ledger_name, upload_batch_id)
+        VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}
       `;
       const params = [];
       chunk.forEach(e => {
-        params.push(e.tan, e.partyName, e.voucherDate, e.amount, e.tdsAmount, e.ledgerName, e.uploadBatchId);
+        params.push(e.tan, e.partyName, e.gstNum, e.panNo, e.voucherDate, e.amount, e.tdsAmount, e.ledgerName, e.uploadBatchId);
       });
       await db.execute(insertQuery, params);
     }
@@ -703,6 +711,7 @@ export const getReconciliationReport = async (req, res) => {
         d.company_name as companyName,
         d.bill_number as billNumber,
         d.bill_date as billDate,
+        d.total_bill_amount as totalBillAmount,
         'FY 2024-25' as financialYear,
 
         tr.books_tds as booksTds,
@@ -715,7 +724,15 @@ export const getReconciliationReport = async (req, res) => {
         tr.as26_batch_id as as26BatchId,
         tr.tally_batch_id as tallyBatchId,
         tr.is_manually_edited as isManuallyEdited,
-        tr.updated_at as updatedAt
+        tr.updated_at as updatedAt,
+
+        (SELECT t.party_name FROM tds_tally_entries t WHERE (t.upload_batch_id = tr.tally_batch_id OR tr.tally_batch_id IS NULL) AND t.tan_no = tr.tan_no LIMIT 1) as tallyPartyName,
+        (SELECT t.gst_num FROM tds_tally_entries t WHERE (t.upload_batch_id = tr.tally_batch_id OR tr.tally_batch_id IS NULL) AND t.tan_no = tr.tan_no LIMIT 1) as gstNum,
+        (SELECT t.pan_no FROM tds_tally_entries t WHERE (t.upload_batch_id = tr.tally_batch_id OR tr.tally_batch_id IS NULL) AND t.tan_no = tr.tan_no LIMIT 1) as panNo,
+        (SELECT t.amount FROM tds_tally_entries t WHERE (t.upload_batch_id = tr.tally_batch_id OR tr.tally_batch_id IS NULL) AND t.tan_no = tr.tan_no LIMIT 1) as tallyGrossTotal,
+
+        (SELECT a.deductor_name FROM tds_26as_entries a WHERE (a.upload_batch_id = tr.as26_batch_id OR tr.as26_batch_id IS NULL) AND a.tan_no = tr.tan_no LIMIT 1) as as26DeductorName,
+        (SELECT a.amount_paid FROM tds_26as_entries a WHERE (a.upload_batch_id = tr.as26_batch_id OR tr.as26_batch_id IS NULL) AND a.tan_no = tr.tan_no LIMIT 1) as as26InvoiceAmount
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
       ${whereSQL}
