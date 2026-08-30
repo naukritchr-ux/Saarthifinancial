@@ -69,6 +69,8 @@ export async function ensureTablesExist() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         tan_no TEXT NOT NULL,
         party_name TEXT,
+        gst_num TEXT,
+        pan_no TEXT,
         voucher_date TEXT,
         amount DECIMAL(15,2),
         tds_amount DECIMAL(15,2) NOT NULL,
@@ -77,6 +79,9 @@ export async function ensureTablesExist() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    try { await db.execute(`ALTER TABLE tds_tally_entries ADD COLUMN gst_num TEXT;`); } catch (e) {}
+    try { await db.execute(`ALTER TABLE tds_tally_entries ADD COLUMN pan_no TEXT;`); } catch (e) {}
 
     await db.execute(`
       CREATE TABLE IF NOT EXISTS tds_reconciliation_results (
@@ -234,10 +239,12 @@ async function seedEmbeddedDatasetFallback() {
 
       // 3. Insert Tally
       if (e.tallyTds > 0) {
+        const mockGst = `27${e.tan.slice(0, 10)}1Z5`;
+        const mockPan = e.tan.slice(0, 5) + '1234A';
         await db.execute(`
-          INSERT INTO tds_tally_entries (tan_no, party_name, voucher_date, amount, tds_amount, ledger_name, upload_batch_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, [e.tan, e.tallyName, '2024-04-10', e.tallyTds * 10, e.tallyTds, 'TDS Payable', tallyBatchId]);
+          INSERT INTO tds_tally_entries (tan_no, party_name, gst_num, pan_no, voucher_date, amount, tds_amount, ledger_name, upload_batch_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [e.tan, e.tallyName, mockGst, mockPan, '2024-04-10', e.tallyTds * 10, e.tallyTds, 'TDS Payable', tallyBatchId]);
       }
 
       // 4. Pairwise Status
