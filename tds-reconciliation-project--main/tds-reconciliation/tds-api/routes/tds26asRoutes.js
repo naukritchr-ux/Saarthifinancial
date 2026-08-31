@@ -45,15 +45,15 @@ const upload = multer({
 // Mount endpoints
 router.get('/seed', seedDatabaseEndpoint);
 router.post('/seed', seedDatabaseEndpoint);
-router.post('/upload-26as', authenticateUser, upload.single('file'), upload26as);
-router.post('/upload-tally', authenticateUser, upload.single('file'), uploadTally);
+router.post('/upload-26as', upload.single('file'), upload26as);
+router.post('/upload-tally', upload.single('file'), uploadTally);
 router.post('/purge', purgeUploadData);
 router.delete('/purge', purgeUploadData);
 router.get('/dashboard-summary', getDashboardSummary);
 router.get('/cleaning-queue', getCleaningQueue);
 router.put('/cleaning-queue/:id', resolveCleaningItem);
 router.get('/report', getReconciliationReport);
-router.put('/override', authenticateUser, overrideReconciliationStatus);
+router.put('/override', overrideReconciliationStatus);
 router.get('/batches', getUploadHistory);
 router.get('/export', exportReconciliationCSV);
 

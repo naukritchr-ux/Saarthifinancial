@@ -360,7 +360,7 @@ async function seedFromMasterExcel(excelPath) {
       const as26Source = String(row[11] || '').trim();
 
       const validTan = (tallyTan && tanRegex.test(tallyTan)) ? tallyTan : ((as26Tan && tanRegex.test(as26Tan)) ? as26Tan : null);
-      const companyName = tallyName || as26Name || 'Client Entity';
+      const companyName = (tallyName && tallyName !== 'Client Entity') ? tallyName : ((as26Name && as26Name !== 'Client Entity') ? as26Name : 'Saarthi Partner Entity');
 
       if (!validTan && !companyName) continue;
 
