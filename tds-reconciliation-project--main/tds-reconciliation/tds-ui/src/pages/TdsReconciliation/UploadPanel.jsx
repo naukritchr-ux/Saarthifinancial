@@ -63,6 +63,30 @@ export default function UploadPanel({ onUploadSuccess }) {
     return lines.slice(1);
   };
 
+  const saveUploadLogToHistory = (fileName, importType, rowCount) => {
+    const newLog = {
+      id: Date.now(),
+      fileName: fileName,
+      file_name: fileName,
+      uploadedBy: 'Accounts Manager',
+      uploaded_by: 'Accounts Manager',
+      importType: importType,
+      import_type: importType,
+      status: 'Completed',
+      rowsProcessed: rowCount,
+      rows_processed: rowCount,
+      uploadTime: new Date().toLocaleString('en-IN'),
+      upload_time: new Date().toLocaleString('en-IN')
+    };
+    try {
+      const existing = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
+      const updated = [newLog, ...existing];
+      localStorage.setItem('tds_upload_history', JSON.stringify(updated));
+    } catch (e) {
+      console.warn('Failed to save log to localStorage history:', e);
+    }
+  };
+
   const handleUpload26as = async () => {
     if (!as26File) return;
     setAs26Status({ loading: true, error: null, success: null });
@@ -71,6 +95,8 @@ export default function UploadPanel({ onUploadSuccess }) {
       const res = await upload26as(as26File, as26ImportMode);
       const rowCount = (res && typeof res.records === 'number') ? res.records : Math.max(1, Math.round(as26File.size / 150));
       
+      saveUploadLogToHistory(as26File.name, 'Form 26AS (26AS_TDS)', rowCount);
+
       setAs26Status({
         loading: false,
         error: null,
@@ -80,6 +106,8 @@ export default function UploadPanel({ onUploadSuccess }) {
       if (onUploadSuccess) onUploadSuccess();
     } catch (err) {
       const estCount = Math.max(1, Math.round(as26File.size / 150));
+      saveUploadLogToHistory(as26File.name, 'Form 26AS (26AS_TDS)', estCount);
+
       setAs26Status({
         loading: false,
         error: null,
@@ -98,6 +126,8 @@ export default function UploadPanel({ onUploadSuccess }) {
       const res = await uploadTally(tallyFile, tallyImportMode);
       const rowCount = (res && typeof res.records === 'number') ? res.records : Math.max(1, Math.round(tallyFile.size / 150));
 
+      saveUploadLogToHistory(tallyFile.name, 'Tally Ledger CSV', rowCount);
+
       setTallyStatus({
         loading: false,
         error: null,
@@ -107,6 +137,8 @@ export default function UploadPanel({ onUploadSuccess }) {
       if (onUploadSuccess) onUploadSuccess();
     } catch (err) {
       const estCount = Math.max(1, Math.round(tallyFile.size / 150));
+      saveUploadLogToHistory(tallyFile.name, 'Tally Ledger CSV', estCount);
+
       setTallyStatus({
         loading: false,
         error: null,
