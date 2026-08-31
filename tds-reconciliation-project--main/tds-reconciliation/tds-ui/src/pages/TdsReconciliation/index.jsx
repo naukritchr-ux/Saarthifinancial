@@ -202,9 +202,11 @@ export default function TdsReconciliation() {
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-amber-500"
             >
               <option value="All">Coverage: All Coverage</option>
-              <option value="3/3">3 of 3 Match (All Sources)</option>
-              <option value="2/3">2 of 3 Match (Dual Source)</option>
-              <option value="1/3">1 of 3 Match (Single Source)</option>
+              <option value="3/3">All 3 (Saarthi + Tally + 26AS)</option>
+              <option value="saarthi_tally">Saarthi + Tally</option>
+              <option value="tally_26as">Tally + 26AS</option>
+              <option value="as26_saarthi">26AS + Saarthi</option>
+              <option value="1/3">Single Source Only</option>
             </select>
           </div>
 

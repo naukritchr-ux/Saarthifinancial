@@ -54,23 +54,43 @@ export default function ReconciliationTable({
     }
   };
 
-  const getCoveragePill = (coverage) => {
-    if (!coverage) return <span className="text-gray-400 text-xs">—</span>;
-    const count = coverage.count || `${coverage.sourcesCount || 0}/3`;
-    const is3 = count.startsWith('3');
-    const is2 = count.startsWith('2');
-    const is1 = count.startsWith('1');
+  const getCoveragePill = (coverage, row) => {
+    const tally = parseFloat(row?.tallyTds || 0) > 0;
+    const as26 = parseFloat(row?.as26Tds || 0) > 0;
+    const saarthi = (parseFloat(row?.saarthiTds || row?.booksTds || 0) > 0) || (row?.tdsDuesId ? true : false);
 
-    let bgClass = 'bg-gray-100 text-gray-600 border-gray-200';
-    if (is3) bgClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-    else if (is2) bgClass = 'bg-blue-50 text-blue-700 border-blue-200';
-    else if (is1) bgClass = 'bg-orange-50 text-orange-700 border-orange-200';
-
-    return (
-      <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${bgClass}`}>
-        {coverage.label || `${count} Match`}
-      </span>
-    );
+    if (tally && as26 && saarthi) {
+      return (
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold border bg-emerald-50 text-emerald-700 border-emerald-200">
+          3/3 · All 3 (Saarthi + Tally + 26AS)
+        </span>
+      );
+    } else if (saarthi && tally) {
+      return (
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold border bg-blue-50 text-blue-700 border-blue-200">
+          2/3 · Saarthi + Tally
+        </span>
+      );
+    } else if (tally && as26) {
+      return (
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold border bg-teal-50 text-teal-700 border-teal-200">
+          2/3 · Tally + 26AS
+        </span>
+      );
+    } else if (as26 && saarthi) {
+      return (
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold border bg-indigo-50 text-indigo-700 border-indigo-200">
+          2/3 · 26AS + Saarthi
+        </span>
+      );
+    } else {
+      const activeName = saarthi ? 'Saarthi' : tally ? 'Tally' : as26 ? '26AS' : 'Single';
+      return (
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold border bg-orange-50 text-orange-700 border-orange-200">
+          1/3 · {activeName} Only
+        </span>
+      );
+    }
   };
 
   const toggleRow = (id) => {
@@ -92,7 +112,7 @@ export default function ReconciliationTable({
               <th className="px-4 py-3 text-right">Tally TDS</th>
               <th className="px-4 py-3 text-right">26AS TDS</th>
               <th className="px-4 py-3 text-right">Saarthi TDS</th>
-              <th className="px-4 py-3 text-right">Difference</th>
+              <th className="px-4 py-3 text-right">Difference (Tally - 26AS)</th>
               <th className="px-4 py-3 text-center">Financial Status</th>
               <th className="px-4 py-3 text-center">Source Coverage</th>
               <th className="px-4 py-3 text-center">Follow-up</th>
@@ -111,8 +131,17 @@ export default function ReconciliationTable({
               </tr>
             ) : (
               rows.map((row) => {
-                const diff = row.difference !== undefined ? row.difference : ((parseFloat(row.saarthiTds || row.booksTds || 0) || parseFloat(row.tallyTds || 0)) - parseFloat(row.as26Tds || 0));
+                // Difference: Strictly (Tally TDS - 26AS TDS)
+                const tallyVal = parseFloat(row.tallyTds || 0);
+                const as26Val = parseFloat(row.as26Tds || 0);
+                const diff = tallyVal - as26Val;
                 const isShort = diff < 0;
+
+                // Company Name Fallback: NEVER show "Client Entity" or "Unknown Client"
+                const validCompany = row.companyName && !['Client Entity', 'Unknown Client', 'Unknown Company'].includes(row.companyName.trim());
+                const displayName = validCompany 
+                  ? row.companyName 
+                  : (row.tallyPartyName || row.as26DeductorName || row.deductorName || row.partyName || 'Company Name Not Specified');
 
                 return (
                   <React.Fragment key={row.id}>
@@ -130,7 +159,7 @@ export default function ReconciliationTable({
                       </td>
 
                       <td className="px-4 py-3.5">
-                        <div className="font-bold text-gray-900">{row.companyName || 'Unknown Company'}</div>
+                        <div className="font-bold text-gray-900">{displayName}</div>
                         <div className="text-[10px] text-gray-400 mt-0.5">
                           Bill: {row.billNumber || 'N/A'}
                         </div>
@@ -146,7 +175,7 @@ export default function ReconciliationTable({
 
                       <td className="px-4 py-3.5 text-right font-semibold text-purple-700">{formatCurrency(row.saarthiTds || row.booksTds)}</td>
 
-                      {/* Difference */}
+                      {/* Difference: (Tally - 26AS) */}
                       <td className="px-4 py-3.5 text-right font-bold">
                         <div className={`inline-flex items-center gap-0.5 ${isShort ? 'text-red-600' : diff > 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
                           {isShort ? <ArrowDownRight className="w-3.5 h-3.5 flex-shrink-0" /> : diff > 0 ? <ArrowUpRight className="w-3.5 h-3.5 flex-shrink-0" /> : null}
@@ -158,7 +187,7 @@ export default function ReconciliationTable({
                       <td className="px-4 py-3.5 text-center">{getFinancialStatusPill(row.financialStatus || row.overallStatus)}</td>
 
                       {/* Source Coverage */}
-                      <td className="px-4 py-3.5 text-center">{getCoveragePill(row.sourceCoverage)}</td>
+                      <td className="px-4 py-3.5 text-center">{getCoveragePill(row.sourceCoverage, row)}</td>
 
                       {/* Follow-up button */}
                       <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>

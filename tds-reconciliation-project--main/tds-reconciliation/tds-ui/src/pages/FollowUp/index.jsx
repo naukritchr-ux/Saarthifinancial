@@ -34,7 +34,7 @@ export default function FollowUp() {
 
   // Filters state
   const [selectedStatuses, setSelectedStatuses] = useState([]);
-  const [dateRange, setDateRange] = useState('year'); // 'year', 'quarter', 'month', 'custom'
+  const [dateRange, setDateRange] = useState('all'); // 'all', 'year', 'quarter', 'month', 'custom'
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [search, setSearch] = useState('');
@@ -365,16 +365,41 @@ export default function FollowUp() {
                     <span>Loading follow-up records...</span>
                   </td>
                 </tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan="9" className="px-4 py-12 text-center text-gray-400">
-                    <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    <span className="font-bold text-gray-700 block">No Follow-up Entries Found</span>
-                    <span className="text-[11px]">Click "+ Log New Follow-up" to record client outreach.</span>
-                  </td>
-                </tr>
-              ) : (
-                items.map((row) => (
+              ) : (() => {
+                const displayItems = items.filter(row => {
+                  if (selectedStatuses.length > 0 && !selectedStatuses.includes(row.status)) return false;
+                  if (search.trim()) {
+                    const q = search.toLowerCase().trim();
+                    const matchCompany = (row.companyName || '').toLowerCase().includes(q);
+                    const matchTan = (row.tanNo || '').toLowerCase().includes(q);
+                    const matchPerson = (row.contactPerson || '').toLowerCase().includes(q);
+                    const matchDept = (row.department || '').toLowerCase().includes(q);
+                    if (!matchCompany && !matchTan && !matchPerson && !matchDept) return false;
+                  }
+                  if (responseFilter === 'responded') {
+                    if (!['TDS Paid', 'Form Received', 'Check & Revert', 'Mail Reply'].includes(row.status)) return false;
+                  } else if (responseFilter === 'no_response') {
+                    if (!['Call Not Picked Up', 'Call Tomorrow', 'HR Left', 'Mailed'].includes(row.status)) return false;
+                  }
+                  if (dueOnly) {
+                    if (['TDS Paid', 'Form Received'].includes(row.status)) return false;
+                  }
+                  return true;
+                });
+
+                if (displayItems.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan="9" className="px-4 py-12 text-center text-gray-400">
+                        <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                        <span className="font-bold text-gray-700 block">No Follow-up Entries Found</span>
+                        <span className="text-[11px]">No items match the selected filters. Click "+ Log New Follow-up" to record outreach.</span>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return displayItems.map((row) => (
                   <tr key={row.id} className="hover:bg-slate-50 transition">
                     <td className="px-4 py-3.5">
                       <div className="font-bold text-gray-900">{row.companyName}</div>
