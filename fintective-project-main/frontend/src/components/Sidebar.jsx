@@ -69,9 +69,9 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
       </div>
 
       {/* High-Fidelity Module Switcher Selector */}
-      <div className="module-switcher-wrapper" style={{ padding: '8px 12px 16px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="module-switcher-wrapper" style={{ padding: '8px 12px 14px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <span className="section-title" style={{ paddingLeft: 0, marginBottom: '6px' }}>Active Module</span>
-        <div className="module-switcher-pill" style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '3px', border: '1px solid rgba(255,255,255,0.05)', gap: '2px' }}>
+        <div className="module-switcher-pill" style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '3px', border: '1px solid rgba(255,255,255,0.05)' }}>
           <button 
             onClick={() => handleModuleChange('franchise_bd_revenue')}
             style={{
@@ -79,7 +79,7 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
               background: activeModule === 'franchise_bd_revenue' ? 'rgba(13, 148, 136, 0.2)' : 'transparent',
               color: activeModule === 'franchise_bd_revenue' ? '#2dd4bf' : 'var(--text-sidebar-muted)',
               border: 'none',
-              padding: '6px 4px',
+              padding: '6px 8px',
               borderRadius: '6px',
               fontSize: '11px',
               fontWeight: 'bold',
@@ -96,7 +96,7 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
               background: activeModule === 'job_portal' ? 'rgba(234, 88, 12, 0.2)' : 'transparent',
               color: activeModule === 'job_portal' ? '#ff7849' : 'var(--text-sidebar-muted)',
               border: 'none',
-              padding: '6px 4px',
+              padding: '6px 8px',
               borderRadius: '6px',
               fontSize: '11px',
               fontWeight: 'bold',
@@ -106,23 +106,35 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
           >
             Job Portal
           </button>
+        </div>
+
+        {/* Dedicated Standalone TDS Reconciliation App Button */}
+        <div style={{ marginTop: '10px' }}>
           <button 
             onClick={() => window.open('https://saarthifinancial-l7f7.vercel.app', '_self')}
             title="Open TDS Reconciliation App"
             style={{
-              flex: 1,
-              background: 'rgba(168, 85, 247, 0.15)',
-              color: '#c084fc',
-              border: '1px solid rgba(168, 85, 247, 0.3)',
-              padding: '6px 4px',
-              borderRadius: '6px',
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justify: 'space-between',
+              background: 'linear-gradient(135deg, rgba(147, 51, 234, 0.25), rgba(168, 85, 247, 0.15))',
+              color: '#d8b4fe',
+              border: '1px solid rgba(168, 85, 247, 0.4)',
+              padding: '8px 12px',
+              borderRadius: '8px',
               fontSize: '11px',
               fontWeight: 'bold',
               cursor: 'pointer',
-              transition: 'var(--transition-smooth)'
+              transition: 'all 0.2s ease',
+              boxShadow: '0 2px 10px rgba(147, 51, 234, 0.2)'
             }}
           >
-            TDS Recon ↗
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ background: '#9333ea', color: '#fff', padding: '2px 5px', borderRadius: '4px', fontSize: '9px', fontWeight: '900' }}>TDS</span>
+              Reconciliation App
+            </span>
+            <span style={{ fontSize: '13px', fontWeight: 'bold' }}>↗</span>
           </button>
         </div>
       </div>
