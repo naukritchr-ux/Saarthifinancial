@@ -474,7 +474,7 @@ export default function FollowUp() {
                     </td>
                   </tr>
                 ))
-              )}
+              })()}
             </tbody>
           </table>
         </div>
