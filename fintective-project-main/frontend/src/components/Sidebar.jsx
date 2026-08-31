@@ -71,7 +71,7 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
       {/* High-Fidelity Module Switcher Selector */}
       <div className="module-switcher-wrapper" style={{ padding: '8px 12px 16px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <span className="section-title" style={{ paddingLeft: 0, marginBottom: '6px' }}>Active Module</span>
-        <div className="module-switcher-pill" style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '3px', border: '1px solid rgba(255,255,255,0.05)' }}>
+        <div className="module-switcher-pill" style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '3px', border: '1px solid rgba(255,255,255,0.05)', gap: '2px' }}>
           <button 
             onClick={() => handleModuleChange('franchise_bd_revenue')}
             style={{
@@ -105,6 +105,24 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
             }}
           >
             Job Portal
+          </button>
+          <button 
+            onClick={() => window.open('https://saarthifinancial-l7f7.vercel.app', '_self')}
+            title="Open TDS Reconciliation App"
+            style={{
+              flex: 1,
+              background: 'rgba(168, 85, 247, 0.15)',
+              color: '#c084fc',
+              border: '1px solid rgba(168, 85, 247, 0.3)',
+              padding: '6px 4px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'var(--transition-smooth)'
+            }}
+          >
+            TDS Recon ↗
           </button>
         </div>
       </div>
