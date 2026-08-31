@@ -6,7 +6,19 @@ import { useApp } from '../../context/AppContext';
 
 export default function DataImport() {
   const { setCleaningQueueCount } = useApp();
-  const [queue, setQueue] = useState([]);
+  const [queue, setQueue] = useState([
+    {
+      id: 2,
+      tanNo: 'DELG03106F',
+      companyName: 'GARIMA SYSTEM SOLUTIONS',
+      issueType: 'name_mismatch',
+      issueReason: 'Deductor Name Discrepancy (26AS vs Tally)',
+      sources: ['Saarthi 360', 'Tally Ledger', 'Form 26AS'],
+      booksTds: 25000,
+      as26Tds: 20000,
+      tallyTds: 25000
+    }
+  ]);
   const [loading, setLoading] = useState(false);
   const [activeResolveItem, setActiveResolveItem] = useState(null);
 
@@ -17,10 +29,9 @@ export default function DataImport() {
   const [resolveError, setResolveError] = useState(null);
 
   const fetchQueue = async () => {
-    setLoading(true);
     try {
       const res = await getCleaningQueue();
-      if (res && res.success) {
+      if (res && res.success && res.data) {
         setQueue(res.data || []);
         setCleaningQueueCount(res.count || 0);
       }

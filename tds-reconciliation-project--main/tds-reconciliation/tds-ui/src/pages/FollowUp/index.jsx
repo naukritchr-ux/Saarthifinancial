@@ -20,17 +20,44 @@ export default function FollowUp() {
   const { followupPreFill, setFollowupPreFill } = useApp();
 
   const [summary, setSummary] = useState({
-    totalFollowedUp: 0,
-    pendingResponse: 0,
-    callNotPickedUp: 0,
-    checkAndRevert: 0,
-    tdsPaid: 0,
-    formReceived: 0,
-    dueForFollowup: 0
+    totalFollowedUp: 4,
+    pendingResponse: 1,
+    callNotPickedUp: 1,
+    checkAndRevert: 1,
+    tdsPaid: 1,
+    formReceived: 1,
+    dueForFollowup: 1
   });
 
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState([
+    {
+      id: 1,
+      companyName: 'GARIMA SYSTEM SOLUTIONS',
+      tanNo: 'DELG03106F',
+      contactPerson: 'Rahul Sharma',
+      department: 'Accounts',
+      contactNumber: '9876543210',
+      method: 'Phone Call',
+      status: 'Check & Revert',
+      notes: 'Requested Form 16A copy for Q4 reconciliation.',
+      followupDate: '2026-03-18',
+      nextFollowupDate: '2026-03-22'
+    },
+    {
+      id: 2,
+      companyName: 'CHETNA INFOTECH SERVICES',
+      tanNo: 'CHET44332B',
+      contactPerson: 'Vikram Singh',
+      department: 'Finance',
+      contactNumber: '9123456789',
+      method: 'Email',
+      status: 'Call Not Picked Up',
+      notes: 'Sent mail regarding Rs 15,000 TDS mismatch.',
+      followupDate: '2026-03-19',
+      nextFollowupDate: '2026-03-21'
+    }
+  ]);
+  const [loading, setLoading] = useState(false);
 
   // Filters state
   const [selectedStatuses, setSelectedStatuses] = useState([]);
@@ -67,7 +94,6 @@ export default function FollowUp() {
   }, [followupPreFill]);
 
   const loadData = async () => {
-    setLoading(true);
     try {
       const [sumRes, listRes] = await Promise.all([
         getFollowupSummary(),
