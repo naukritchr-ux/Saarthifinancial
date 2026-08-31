@@ -35,19 +35,6 @@ export default function TdsReconciliation() {
         sortBy
       });
 
-      // If empty DB, trigger seed and re-fetch once
-      if (res && res.success && (res.total === 0 || !res.data || res.data.length === 0) && !search) {
-        await triggerSeed();
-        res = await getReconciliationReport({
-          page,
-          limit,
-          search,
-          overallStatus: overallStatus === 'All' ? '' : overallStatus,
-          coverageFilter: coverageFilter === 'All' ? '' : coverageFilter,
-          sortBy
-        });
-      }
-
       if (res && res.success) {
         setRows(res.data || []);
         setTotal(res.total || 0);
