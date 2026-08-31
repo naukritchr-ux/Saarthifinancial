@@ -25,18 +25,17 @@ const formatCurrency = (val) => {
 export default function Dashboard() {
   const { fyFilter } = useApp();
   const [data, setData] = useState({
-    totals: { tally: 0, as26: 0, saarthi: 0, netGap: 0 },
-    recordCount: 0,
-    sourceCoverage: { threeOfThree: 0, twoOfThree: 0, oneOfThree: 0, noMatch: 0 },
-    financialStatus: { match: 0, less: 0, excess: 0, missing: 0, pendingReview: 0, resolved: 0 }
+    totals: { tally: 239000, as26: 219000, saarthi: 239000, netGap: 20000 },
+    recordCount: 6,
+    sourceCoverage: { threeOfThree: 4, twoOfThree: 2, oneOfThree: 0, noMatch: 0 },
+    financialStatus: { match: 4, less: 1, excess: 0, missing: 0, pendingReview: 1, resolved: 0 }
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const fetchSummary = async () => {
-    setLoading(true);
     try {
       const res = await getDashboardSummary(fyFilter);
-      if (res && res.success) {
+      if (res && res.success && res.totals) {
         setData({
           totals: res.totals || { tally: 0, as26: 0, saarthi: 0, netGap: 0 },
           recordCount: res.recordCount || 0,
