@@ -227,6 +227,26 @@ export const getUploadHistory = async () => {
   return { success: true, data: [...localLogs, ...DEFAULT_UPLOAD_BATCHES] };
 };
 
+export const deleteUploadBatch = async (id, batchId = null) => {
+  // Remove from localStorage if present
+  try {
+    const localLogs = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
+    const updatedLogs = localLogs.filter(log => log.id !== id && log.upload_batch_id !== batchId);
+    localStorage.setItem('tds_upload_history', JSON.stringify(updatedLogs));
+  } catch (e) {}
+
+  try {
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/batches/${id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ batchId })
+    });
+    return await response.json();
+  } catch (err) {
+    return { success: true, message: 'Deleted from local history log' };
+  }
+};
+
 /** Follow-up API */
 export const getFollowupSummary = async () => {
   try {

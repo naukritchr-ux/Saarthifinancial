@@ -14,7 +14,8 @@ import {
   getCleaningQueue,
   resolveCleaningItem,
   seedDatabaseEndpoint,
-  purgeUploadData
+  purgeUploadData,
+  deleteUploadBatch
 } from '../controllers/tds26asController.js';
 
 const router = express.Router();
@@ -55,6 +56,7 @@ router.put('/cleaning-queue/:id', resolveCleaningItem);
 router.get('/report', getReconciliationReport);
 router.put('/override', overrideReconciliationStatus);
 router.get('/batches', getUploadHistory);
+router.delete('/batches/:id', deleteUploadBatch);
 router.get('/export', exportReconciliationCSV);
 
 
