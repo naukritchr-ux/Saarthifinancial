@@ -109,14 +109,14 @@ export const getReconciliationReport = async (filters = {}) => {
     const q = buildQuery(filters);
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/report?${q}`);
     const data = await response.json();
-    if (data && data.success && data.data && data.data.length > 0) {
+    if (data && data.success && Array.isArray(data.data)) {
       return data;
     }
   } catch (err) {
     // API slow or offline, proceed to instant fallback
   }
 
-  // Instant fallback response
+  // Instant fallback response (only on network/connection error)
   let items = [...DEFAULT_RECON_ITEMS];
   if (filters.search) {
     const q = filters.search.toLowerCase();
