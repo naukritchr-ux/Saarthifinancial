@@ -11,7 +11,9 @@ export default function ImportHistory() {
   const getInitialBatches = () => {
     try {
       const localLogs = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
-      return [...localLogs, ...DEFAULT_BATCHES];
+      const deletedIds = JSON.parse(localStorage.getItem('tds_deleted_batches') || '[]');
+      const combined = [...localLogs, ...DEFAULT_BATCHES];
+      return combined.filter(b => !deletedIds.includes(String(b.id)) && !deletedIds.includes(String(b.upload_batch_id)));
     } catch (e) {
       return DEFAULT_BATCHES;
     }
@@ -25,7 +27,7 @@ export default function ImportHistory() {
   const fetchHistory = async () => {
     try {
       const res = await getUploadHistory();
-      if (res && res.success && res.data && res.data.length > 0) {
+      if (res && res.success && Array.isArray(res.data)) {
         setBatches(res.data);
       }
     } catch (err) {
