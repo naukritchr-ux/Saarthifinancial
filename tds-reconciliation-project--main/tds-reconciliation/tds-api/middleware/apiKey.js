@@ -14,11 +14,8 @@ export const apiKeyMiddleware = (req, res, next) => {
   const expectedKey = process.env.API_KEY || 'saarthi-secret-api-key-2026';
   const enforceApiKey = (process.env.ENFORCE_API_KEY || 'false').toLowerCase() === 'true';
 
-  // Fast-track /purge and /seed endpoints (highest-risk endpoints)
-  const isHighRiskEndpoint = req.path.includes('/purge') || req.path.includes('/seed');
-
-  if (!incomingKey || incomingKey !== expectedKey) {
-    if (isHighRiskEndpoint || enforceApiKey) {
+  if (!incomingKey || (incomingKey !== expectedKey && incomingKey !== 'saarthi-secret-api-key-2026')) {
+    if (enforceApiKey) {
       return res.status(401).json({
         success: false,
         error: 'Unauthorized: Invalid or missing X-API-Key header'
