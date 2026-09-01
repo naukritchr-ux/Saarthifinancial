@@ -197,6 +197,14 @@ export const uploadTally = async (file, financialYear, importMode = 'update') =>
 
 export const purgeData = async (target = 'all') => {
   try {
+    if (target === 'all') {
+      localStorage.removeItem('tds_upload_history');
+      const deleted = ['101', '102', '103', 101, 102, 103];
+      localStorage.setItem('tds_deleted_batches', JSON.stringify(deleted));
+    }
+  } catch (e) {}
+
+  try {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/purge`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -217,28 +225,51 @@ const DEFAULT_UPLOAD_BATCHES = [
 /** Upload History API */
 export const getUploadHistory = async () => {
   let localLogs = [];
+  let deletedIds = [];
   try {
     localLogs = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
+    deletedIds = JSON.parse(localStorage.getItem('tds_deleted_batches') || '[]');
   } catch (e) {}
+
+  const filterDeleted = (list) => {
+    return list.filter(item => {
+      const idStr = String(item.id);
+      const meta = item.metadata || {};
+      const batchId = String(meta.upload_batch_id || item.upload_batch_id || item.batchId || '');
+      return !deletedIds.includes(idStr) && (!batchId || !deletedIds.includes(batchId));
+    });
+  };
 
   try {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/batches`);
     const data = await response.json();
-    if (data && data.success && data.data && data.data.length > 0) {
-      return { success: true, data: [...localLogs, ...data.data] };
+    if (data && data.success && Array.isArray(data.data)) {
+      const combined = [...localLogs, ...data.data];
+      const uniqueMap = new Map();
+      combined.forEach(item => uniqueMap.set(String(item.id), item));
+      return { success: true, data: filterDeleted(Array.from(uniqueMap.values())) };
     }
   } catch (err) {
     // API offline/slow
   }
-  return { success: true, data: [...localLogs, ...DEFAULT_UPLOAD_BATCHES] };
+
+  const combined = [...localLogs, ...DEFAULT_UPLOAD_BATCHES];
+  const uniqueMap = new Map();
+  combined.forEach(item => uniqueMap.set(String(item.id), item));
+  return { success: true, data: filterDeleted(Array.from(uniqueMap.values())) };
 };
 
 export const deleteUploadBatch = async (id, batchId = null) => {
-  // Remove from localStorage if present
+  // Remove from localStorage logs and add to deleted_batches
   try {
     const localLogs = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
-    const updatedLogs = localLogs.filter(log => log.id !== id && log.upload_batch_id !== batchId);
+    const updatedLogs = localLogs.filter(log => String(log.id) !== String(id) && log.upload_batch_id !== batchId);
     localStorage.setItem('tds_upload_history', JSON.stringify(updatedLogs));
+
+    const deletedIds = JSON.parse(localStorage.getItem('tds_deleted_batches') || '[]');
+    if (id && !deletedIds.includes(String(id))) deletedIds.push(String(id));
+    if (batchId && !deletedIds.includes(String(batchId))) deletedIds.push(String(batchId));
+    localStorage.setItem('tds_deleted_batches', JSON.stringify(deletedIds));
   } catch (e) {}
 
   try {
