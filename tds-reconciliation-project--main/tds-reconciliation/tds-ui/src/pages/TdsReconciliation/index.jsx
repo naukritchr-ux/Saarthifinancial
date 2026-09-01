@@ -43,12 +43,12 @@ export default function TdsReconciliation() {
         sortBy
       });
 
-      if (res && res.success && res.data && res.data.length > 0) {
-        setRows(res.data || []);
-        setTotal(res.total || 0);
+      if (res && res.success && Array.isArray(res.data)) {
+        setRows(res.data);
+        setTotal(res.total ?? res.data.length);
         
-        const tempStats = { total: res.total || 0, matched: 0, partial: 0, major: 0 };
-        (res.data || []).forEach(r => {
+        const tempStats = { total: res.total ?? res.data.length, matched: 0, partial: 0, major: 0 };
+        res.data.forEach(r => {
           if (r.overallStatus === 'All Matched') tempStats.matched++;
           else if (r.overallStatus === 'Partial Mismatch') tempStats.partial++;
           else if (r.overallStatus === 'Major Mismatch') tempStats.major++;
