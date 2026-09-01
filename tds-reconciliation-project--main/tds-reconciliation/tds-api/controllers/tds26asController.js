@@ -982,10 +982,18 @@ export const purgeUploadData = async (req, res) => {
     const { target } = req.body || {}; // '26as', 'tally', 'all'
     if (target === '26as') {
       await db.execute('DELETE FROM tds_26as_entries');
-      await db.execute('UPDATE tds_reconciliation_results SET as26_tds = 0, as26_batch_id = NULL WHERE is_manually_edited = 0');
+      await db.execute(
+        `UPDATE tds_reconciliation_results 
+         SET as26_tds = 0, as26_batch_id = NULL, books_vs_26as_status = 'Not Received', as26_vs_tally_status = 'Not Received', overall_status = 'Major Mismatch' 
+         WHERE is_manually_edited = 0`
+      );
     } else if (target === 'tally') {
       await db.execute('DELETE FROM tds_tally_entries');
-      await db.execute('UPDATE tds_reconciliation_results SET tally_tds = 0, tally_batch_id = NULL WHERE is_manually_edited = 0');
+      await db.execute(
+        `UPDATE tds_reconciliation_results 
+         SET tally_tds = 0, tally_batch_id = NULL, books_vs_tally_status = 'Not Received', as26_vs_tally_status = 'Not Received', overall_status = 'Major Mismatch' 
+         WHERE is_manually_edited = 0`
+      );
     } else {
       await db.execute('DELETE FROM tds_26as_entries');
       await db.execute('DELETE FROM tds_tally_entries');
