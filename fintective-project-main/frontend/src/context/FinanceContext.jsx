@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect } from 'react';
+import { fetchWithApiKey } from '../utils/apiClient';
 
 export const FinanceContext = createContext();
 
@@ -129,7 +130,7 @@ export const FinanceProvider = ({ children }) => {
     const fetchData = async () => {
       let loadedFromBackend = false;
       try {
-        const txRes = await fetch(`${API_BASE_URL}/transactions`);
+        const txRes = await fetchWithApiKey(`${API_BASE_URL}/transactions`);
         if (txRes.ok) {
           const txData = await txRes.json();
           if (Array.isArray(txData) && txData.length > 0) {
@@ -139,25 +140,25 @@ export const FinanceProvider = ({ children }) => {
           }
         }
         
-        const franRes = await fetch(`${API_BASE_URL}/franchisees`);
+        const franRes = await fetchWithApiKey(`${API_BASE_URL}/franchisees`);
         if (franRes.ok) {
           const franData = await franRes.json();
           if (Array.isArray(franData) && franData.length > 0) setFranchisees(franData);
         }
         
-        const bdRes = await fetch(`${API_BASE_URL}/bd-agents`);
+        const bdRes = await fetchWithApiKey(`${API_BASE_URL}/bd-agents`);
         if (bdRes.ok) {
           const bdData = await bdRes.json();
           if (Array.isArray(bdData) && bdData.length > 0) setBdAgents(bdData);
         }
 
-        const tlRes = await fetch(`${API_BASE_URL}/team-leaders`);
+        const tlRes = await fetchWithApiKey(`${API_BASE_URL}/team-leaders`);
         if (tlRes.ok) {
           const tlData = await tlRes.json();
           if (Array.isArray(tlData) && tlData.length > 0) setTeamLeaders(tlData);
         }
 
-        const budgetRes = await fetch(`${API_BASE_URL}/budgets`);
+        const budgetRes = await fetchWithApiKey(`${API_BASE_URL}/budgets`);
         if (budgetRes.ok) {
           const budgetData = await budgetRes.json();
           if (Object.keys(budgetData).length > 0) setBudgets(budgetData);
@@ -350,7 +351,7 @@ export const FinanceProvider = ({ children }) => {
 
   useEffect(() => {
     const asOf = getAsOfDate(selectedMonth, selectedYear);
-    fetch(`${API_BASE_URL}/finance/cash-balance?as_of=${asOf}`)
+    fetchWithApiKey(`${API_BASE_URL}/finance/cash-balance?as_of=${asOf}`)
       .then(res => { if (res.ok) return res.json(); })
       .then(data => {
         if (data) {
@@ -361,7 +362,7 @@ export const FinanceProvider = ({ children }) => {
   }, [selectedMonth, selectedYear, transactions]);
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/finance/moving-avg-burn`)
+    fetchWithApiKey(`${API_BASE_URL}/finance/moving-avg-burn`)
       .then(res => { if (res.ok) return res.json(); })
       .then(data => {
         if (data) {
@@ -395,7 +396,7 @@ export const FinanceProvider = ({ children }) => {
     setTransactions((prev) => [newTx, ...prev]);
 
     try {
-      await fetch(`${API_BASE_URL}/transactions`, {
+      await fetchWithApiKey(`${API_BASE_URL}/transactions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newTx)
@@ -408,7 +409,7 @@ export const FinanceProvider = ({ children }) => {
   const deleteTransaction = async (id) => {
     setTransactions((prev) => prev.filter((tx) => tx.id !== id));
     try {
-      await fetch(`${API_BASE_URL}/transactions/${id}`, {
+      await fetchWithApiKey(`${API_BASE_URL}/transactions/${id}`, {
         method: 'DELETE'
       });
     } catch (err) {
@@ -423,7 +424,7 @@ export const FinanceProvider = ({ children }) => {
       [category]: updatedVal
     }));
     try {
-      await fetch(`${API_BASE_URL}/budgets`, {
+      await fetchWithApiKey(`${API_BASE_URL}/budgets`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [category]: updatedVal })
@@ -442,7 +443,7 @@ export const FinanceProvider = ({ children }) => {
     };
     setFranchisees((prev) => [...prev, newFran]);
     try {
-      await fetch(`${API_BASE_URL}/franchisees`, {
+      await fetchWithApiKey(`${API_BASE_URL}/franchisees`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newFran)
@@ -461,7 +462,7 @@ export const FinanceProvider = ({ children }) => {
     };
     setBdAgents((prev) => [...prev, newBd]);
     try {
-      await fetch(`${API_BASE_URL}/bd-agents`, {
+      await fetchWithApiKey(`${API_BASE_URL}/bd-agents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newBd)
@@ -476,7 +477,7 @@ export const FinanceProvider = ({ children }) => {
       prev.map((agent) => (agent.id === id ? { ...agent, ...updatedFields } : agent))
     );
     try {
-      await fetch(`${API_BASE_URL}/bd-agents/${id}`, {
+      await fetchWithApiKey(`${API_BASE_URL}/bd-agents/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedFields)

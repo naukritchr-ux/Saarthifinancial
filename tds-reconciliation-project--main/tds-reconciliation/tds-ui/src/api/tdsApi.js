@@ -14,12 +14,18 @@ const buildQuery = (params = {}) => {
   return query.toString();
 };
 
+const API_KEY = import.meta.env.VITE_API_KEY || 'saarthi-secret-api-key-2026';
+
 // Fast fetch wrapper with 2.5s timeout to prevent cold-start delays
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 2500) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const headers = {
+    'X-API-Key': API_KEY,
+    ...(options.headers || {})
+  };
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
+    const res = await fetch(url, { ...options, headers, signal: controller.signal });
     clearTimeout(timeoutId);
     return res;
   } catch (err) {
@@ -92,7 +98,7 @@ export const getCleaningQueue = async () => {
 
 export const resolveCleaningItem = async (id, data) => {
   try {
-    const response = await fetch(`${API_URL}/api/tds-26as/cleaning-queue/${id}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/cleaning-queue/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -138,7 +144,7 @@ export const getReconciliationReport = async (filters = {}) => {
 
 export const applyStatusOverride = async (overrideData) => {
   try {
-    const response = await fetch(`${API_URL}/api/tds-26as/override`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/override`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(overrideData)
@@ -315,7 +321,7 @@ export const getFollowups = async (filters = {}) => {
 
 export const createFollowup = async (data) => {
   try {
-    const response = await fetch(`${API_URL}/api/followups`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/followups`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -328,7 +334,7 @@ export const createFollowup = async (data) => {
 
 export const updateFollowup = async (id, data) => {
   try {
-    const response = await fetch(`${API_URL}/api/followups/${id}`, {
+    const response = await fetchWithTimeout(`${API_URL}/api/followups/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
