@@ -184,7 +184,16 @@ export default function ReconciliationTable({
                       </td>
 
                       {/* Financial Status */}
-                      <td className="px-4 py-3.5 text-center">{getFinancialStatusPill(row.financialStatus || row.overallStatus)}</td>
+                      <td className="px-4 py-3.5 text-center">
+                        <div className="flex flex-col items-center gap-1">
+                          {getFinancialStatusPill(row.financialStatus || row.overallStatus)}
+                          {(row.isManuallyEdited === 1 || row.isManuallyEdited === true || row.is_manually_edited === 1) && (
+                            <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                              Resolved
+                            </span>
+                          )}
+                        </div>
+                      </td>
 
                       {/* Source Coverage */}
                       <td className="px-4 py-3.5 text-center">{getCoveragePill(row.sourceCoverage, row)}</td>

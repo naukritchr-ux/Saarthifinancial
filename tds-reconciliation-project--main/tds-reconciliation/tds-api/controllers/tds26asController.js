@@ -247,7 +247,7 @@ export const uploadTally = async (req, res) => {
         headerRowIdx = r;
         row.forEach((cell, col) => {
           const text = String(cell || '').toLowerCase().trim();
-          if (text === 'tan' || text === 'tan no' || text === 'tan_no' || text === 'tan number' || text.includes('tan of deductor') || text.includes('deductor tan')) {
+          if (text === 'tan' || text === 'tan no' || text === 'tan_no' || text === 'tan number' || text.includes('tan of deductor') || text.includes('deductor tan') || text === 'pan' || text === 'pan no' || text === 'pan number') {
             colMap.tan_no = col;
           }
           if (text.includes('name of the company') || text.includes('party name') || text.includes('company name') || text === 'company' || text === 'ledger name' || text === 'ledger' || text.includes('name')) {
@@ -257,6 +257,7 @@ export const uploadTally = async (req, res) => {
             colMap.gst_num = col;
           }
           if (text.includes('pan no') || text.includes('panno') || text.includes('pan number') || text === 'pan') {
+            if (colMap.tan_no === -1) colMap.tan_no = col;
             colMap.pan_no = col;
           }
           if (text.includes('date') || text.includes('voucher date')) {
@@ -276,8 +277,8 @@ export const uploadTally = async (req, res) => {
       }
     }
 
-    // Fallback regex matching for TAN
-    const tanRegex = /^[A-Z]{4}\d{5}[A-Z]$/i;
+    // Fallback regex matching for TAN or PAN
+    const tanRegex = /^([A-Z]{4}\d{5}[A-Z]|[A-Z]{5}\d{4}[A-Z])$/i;
     if (colMap.tan_no === -1) {
       for (let c = 0; c < 30; c++) {
         let matchCount = 0;
@@ -424,13 +425,6 @@ export const getDashboardSummary = async (req, res) => {
 
     let [rows] = await db.execute(query, params);
 
-    // Auto-seed if database is empty
-    if (rows.length === 0 && (!fy || fy === 'All' || fy === 'All Financial Years')) {
-      await seedEmbeddedDataset(true);
-      const [newRows] = await db.execute(query, params);
-      rows = newRows;
-    }
-
     let tallyTotal = 0;
     let as26Total = 0;
     let saarthiTotal = 0;
@@ -531,9 +525,10 @@ export const getCleaningQueue = async (req, res) => {
         tr.overall_status as overallStatus
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
-      WHERE tr.tan_no IS NULL OR tr.tan_no = '' OR LENGTH(tr.tan_no) < 10 
-         OR d.company_name IS NULL OR d.company_name = 'Unknown Company' OR d.company_name = ''
-         OR tr.overall_status = 'Major Mismatch'
+      WHERE (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
+        AND (tr.tan_no IS NULL OR tr.tan_no = '' OR LENGTH(tr.tan_no) < 10 
+             OR d.company_name IS NULL OR d.company_name = 'Unknown Company' OR d.company_name = ''
+             OR tr.overall_status = 'Major Mismatch')
       ORDER BY tr.id DESC
       LIMIT 100
     `;
@@ -598,9 +593,11 @@ export const resolveCleaningItem = async (req, res) => {
     const cleanTan = String(tanNo).toUpperCase().trim();
     const cleanCompany = String(companyName).trim();
 
-    // 1. Update tds_reconciliation_results
-    const [recRes] = await db.execute(
-      'UPDATE tds_reconciliation_results SET tan_no = ?, is_manually_edited = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    // 1. Update tds_reconciliation_results and recalculate status
+    await db.execute(
+      `UPDATE tds_reconciliation_results 
+       SET tan_no = ?, is_manually_edited = 1, overall_status = 'All Matched', updated_at = CURRENT_TIMESTAMP 
+       WHERE id = ?`,
       [cleanTan, id]
     );
 
@@ -694,13 +691,6 @@ export const getReconciliationReport = async (req, res) => {
     let [countRes] = await db.execute(countQuery, queryParams);
     let total = countRes[0]?.total || 0;
 
-    // Auto-seed if 0 records found and no search query filter is applied
-    if (total === 0 && !search && (!overallStatus || overallStatus === 'All') && (coverageFilter === 'All' || !coverageFilter)) {
-      await seedEmbeddedDataset(true);
-      const [newCountRes] = await db.execute(countQuery, queryParams);
-      total = newCountRes[0]?.total || 0;
-    }
-
 
     // Report query
     const reportQuery = `
@@ -758,8 +748,7 @@ export const getReconciliationReport = async (req, res) => {
 
       // Financial status mapping
       let financialStatus = 'Match';
-      if (r.isManuallyEdited) financialStatus = 'Resolved';
-      else if (r.overallStatus === 'All Matched') financialStatus = 'Match';
+      if (r.overallStatus === 'All Matched') financialStatus = 'Match';
       else if (r.overallStatus === 'Partial Mismatch') financialStatus = 'Pending Review';
       else if (sources.length < 3) financialStatus = 'Missing';
       else if (r.booksVs26asStatus === 'Less Paid') financialStatus = 'Less';
@@ -1001,7 +990,9 @@ export const purgeUploadData = async (req, res) => {
       await db.execute('DELETE FROM tds_26as_entries');
       await db.execute('DELETE FROM tds_tally_entries');
       await db.execute('DELETE FROM upload_history');
-      await db.execute('UPDATE tds_reconciliation_results SET as26_tds = 0, tally_tds = 0, as26_batch_id = NULL, tally_batch_id = NULL WHERE is_manually_edited = 0');
+      await db.execute('DELETE FROM tds_reconciliation_results');
+      await db.execute('DELETE FROM tds_dues');
+      await db.execute('DELETE FROM tds_followups');
     }
     res.json({ success: true, message: `Successfully cleaned ${target || 'all'} dataset records` });
   } catch (err) {
