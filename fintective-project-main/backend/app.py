@@ -110,8 +110,28 @@ def get_potential_loss(cursor, group_by_field=None, start_date=None, end_date=No
         return float(row['potential_loss'] or 0.0) if row else 0.0
 
 app = Flask(__name__)
-# Enable CORS for all routes (important for React web-app communication)
-CORS(app)
+
+# Configure CORS with origins check
+allowed_origins_env = os.environ.get('ALLOWED_ORIGINS', '*')
+allowed_origins = [o.strip() for o in allowed_origins_env.split(',')] if allowed_origins_env != '*' else '*'
+CORS(app, origins=allowed_origins)
+
+@app.before_request
+def verify_api_key():
+    # Always allow preflight OPTIONS requests and /health endpoints
+    if request.method == 'OPTIONS' or request.path in ['/health', '/api/health']:
+        return None
+
+    incoming_key = request.headers.get('X-API-Key')
+    expected_key = os.environ.get('API_KEY', 'saarthi-secret-api-key-2026')
+    enforce_key = os.environ.get('ENFORCE_API_KEY', 'false').lower() == 'true'
+
+    if not incoming_key or incoming_key != expected_key:
+        if enforce_key:
+            return jsonify({'success': False, 'error': 'Unauthorized: Invalid or missing X-API-Key header'}), 401
+        else:
+            print(f"⚠️ [API-KEY WARNING] Missing or mismatched X-API-Key header on {request.method} {request.path}")
+    return None
 
 from invoice_controller import invoice_bp
 from enquiry_to_invoice_middleware import enquiry_to_invoice_after_request

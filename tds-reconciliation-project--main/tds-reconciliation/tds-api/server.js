@@ -9,6 +9,7 @@ import xlsx from 'xlsx';
 // Load unified route definitions
 import tds26asRoutes from './routes/tds26asRoutes.js';
 import followupRoutes from './routes/followupRoutes.js';
+import apiKeyMiddleware from './middleware/apiKey.js';
 import db from './config/db.js';
 import { reconcile } from './services/tdsReconciliationService.js';
 import { ensureTablesExist, seedEmbeddedDataset } from './seed_embedded_dataset.js';
@@ -24,15 +25,26 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Enable CORS
+const allowedOriginsEnv = process.env.ALLOWED_ORIGINS || '*';
+const allowedOrigins = allowedOriginsEnv !== '*' ? allowedOriginsEnv.split(',').map(s => s.trim()) : '*';
+
 app.use(cors({
-  origin: '*', // Allow all origins for standalone dev convenience
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key']
 }));
 
 // Parse JSON and URL-encoded bodies
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'OK', message: 'TDS Reconciliation API is running' });
+});
+
+// Shared API Key Verification Middleware
+app.use(apiKeyMiddleware);
 
 // Ensure uploads folder exists locally
 const uploadDirs = ['uploads'];
@@ -41,11 +53,6 @@ uploadDirs.forEach(dir => {
     fs.mkdirSync(dir, { recursive: true });
     console.log(`📁 Created upload directory: ${dir}`);
   }
-});
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', message: 'TDS Reconciliation API is running' });
 });
 
 // Mount modular TDS & Followup routes
