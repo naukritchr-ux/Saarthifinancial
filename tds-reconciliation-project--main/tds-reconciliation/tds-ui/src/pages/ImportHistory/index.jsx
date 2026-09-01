@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Search, FileText, CheckCircle2, AlertCircle, RefreshCw, Database, Filter } from 'lucide-react';
-import { getUploadHistory } from '../../api/tdsApi';
+import { Clock, Search, FileText, CheckCircle2, AlertCircle, RefreshCw, Database, Filter, Trash2 } from 'lucide-react';
+import { getUploadHistory, deleteUploadBatch } from '../../api/tdsApi';
 
 const DEFAULT_BATCHES = [
   { id: 101, file_name: 'TDS_Mearge_Data_2019-2024.xlsx', uploaded_by: 'Accounts Manager', import_type: '26AS & Tally Ledger', status: 'Completed', rows_processed: 1420, upload_time: '2026-03-18 14:32:00' },
@@ -38,6 +38,24 @@ export default function ImportHistory() {
   useEffect(() => {
     fetchHistory();
   }, []);
+
+  const handleDeleteBatch = async (batchItem) => {
+    const fileName = batchItem.fileName || batchItem.file_name || 'this file';
+    if (!window.confirm(`Are you sure you want to delete "${fileName}" and its associated dataset records?`)) {
+      return;
+    }
+
+    try {
+      const meta = batchItem.metadata || {};
+      const batchId = meta.upload_batch_id || batchItem.upload_batch_id;
+      await deleteUploadBatch(batchItem.id, batchId);
+      
+      // Update UI list
+      setBatches(prev => prev.filter(b => b.id !== batchItem.id));
+    } catch (err) {
+      console.error('Failed to delete batch:', err);
+    }
+  };
 
   const filteredBatches = batches.filter((b) => {
     const fileName = b.fileName || b.file_name || '';
@@ -111,19 +129,20 @@ export default function ImportHistory() {
                 <th className="px-4 py-3 text-center">Status</th>
                 <th className="px-4 py-3 text-right">Rows Processed</th>
                 <th className="px-4 py-3 text-right">Upload Time</th>
+                <th className="px-4 py-3 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 font-medium text-gray-800">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="px-4 py-8 text-center text-gray-400">
+                  <td colSpan="7" className="px-4 py-8 text-center text-gray-400">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-amber-500" />
                     <span>Loading import logs...</span>
                   </td>
                 </tr>
               ) : filteredBatches.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan="7" className="px-4 py-12 text-center text-gray-400">
                     <Clock className="w-8 h-8 mx-auto mb-2 text-gray-300" />
                     <span className="font-bold text-gray-700 block">No Import History Found</span>
                     <span className="text-[11px]">Uploads from Form 26AS or Tally will appear here.</span>
@@ -183,6 +202,16 @@ export default function ImportHistory() {
 
                       <td className="px-4 py-3.5 text-right text-gray-500">
                         {uploadTime ? new Date(uploadTime).toLocaleString('en-IN') : '—'}
+                      </td>
+
+                      <td className="px-4 py-3.5 text-center">
+                        <button
+                          onClick={() => handleDeleteBatch(b)}
+                          title="Delete file & associated records"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </td>
                     </tr>
                   );

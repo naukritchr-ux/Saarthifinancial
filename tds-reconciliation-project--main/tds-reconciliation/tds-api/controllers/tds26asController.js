@@ -1001,3 +1001,58 @@ export const purgeUploadData = async (req, res) => {
   }
 };
 
+/**
+ * Delete a specific upload history batch and its associated dataset entries
+ */
+export const deleteUploadBatch = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'Batch ID is required' });
+    }
+
+    // 1. Retrieve record from upload_history
+    const [rows] = await db.execute('SELECT * FROM upload_history WHERE id = ?', [id]);
+    
+    if (rows.length > 0) {
+      const batchRecord = rows[0];
+      let meta = {};
+      try {
+        meta = typeof batchRecord.metadata === 'string' ? JSON.parse(batchRecord.metadata) : (batchRecord.metadata || {});
+      } catch (e) {}
+
+      const batchId = meta.upload_batch_id || req.body?.batchId;
+      const uploadType = meta.upload_type;
+
+      if (batchId) {
+        if (uploadType === '26AS_TDS' || batchId.includes('26as')) {
+          await db.execute('DELETE FROM tds_26as_entries WHERE upload_batch_id = ?', [batchId]);
+          await db.execute(
+            'UPDATE tds_reconciliation_results SET as26_tds = 0, as26_batch_id = NULL WHERE as26_batch_id = ? AND is_manually_edited = 0',
+            [batchId]
+          );
+        } else if (uploadType === 'TALLY_TDS' || batchId.includes('tally')) {
+          await db.execute('DELETE FROM tds_tally_entries WHERE upload_batch_id = ?', [batchId]);
+          await db.execute(
+            'UPDATE tds_reconciliation_results SET tally_tds = 0, tally_batch_id = NULL WHERE tally_batch_id = ? AND is_manually_edited = 0',
+            [batchId]
+          );
+        }
+      }
+
+      // Delete log record
+      await db.execute('DELETE FROM upload_history WHERE id = ?', [id]);
+    } else if (req.body?.batchId) {
+      const batchId = req.body.batchId;
+      await db.execute('DELETE FROM tds_26as_entries WHERE upload_batch_id = ?', [batchId]);
+      await db.execute('DELETE FROM tds_tally_entries WHERE upload_batch_id = ?', [batchId]);
+    }
+
+    res.json({ success: true, message: 'Upload file batch deleted successfully', id });
+  } catch (error) {
+    console.error('💥 Error in deleteUploadBatch:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete upload batch', details: error.message });
+  }
+};
+
+
