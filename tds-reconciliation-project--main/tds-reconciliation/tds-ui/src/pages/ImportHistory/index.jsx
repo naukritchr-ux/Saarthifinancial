@@ -48,12 +48,13 @@ export default function ImportHistory() {
     }
 
     try {
-      const meta = batchItem.metadata || {};
-      const batchId = meta.upload_batch_id || batchItem.upload_batch_id;
+      const meta = typeof batchItem.metadata === 'string' ? JSON.parse(batchItem.metadata || '{}') : (batchItem.metadata || {});
+      const batchId = meta.upload_batch_id || batchItem.upload_batch_id || batchItem.batchId;
       await deleteUploadBatch(batchItem.id, batchId);
       
       // Update UI list
-      setBatches(prev => prev.filter(b => b.id !== batchItem.id));
+      setBatches(prev => prev.filter(b => String(b.id) !== String(batchItem.id) && String(b.upload_batch_id || '') !== String(batchId || '')));
+      await fetchHistory();
     } catch (err) {
       console.error('Failed to delete batch:', err);
     }
