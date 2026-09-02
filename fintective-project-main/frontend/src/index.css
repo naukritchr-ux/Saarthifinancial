@@ -94,6 +94,47 @@ button, input, select, textarea {
   transform: translateY(-1px);
 }
 
+/* Sidebar Edge Flap Toggle Button */
+.sidebar-flap-toggle {
+  position: fixed;
+  left: 250px;
+  top: 24px;
+  z-index: 1000;
+  width: 28px;
+  height: 38px;
+  background: var(--bg-sidebar);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-left: none;
+  border-radius: 0 10px 10px 0;
+  color: var(--text-sidebar);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 4px 0 14px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-flap-toggle:hover {
+  background: var(--accent-teal);
+  color: #ffffff;
+  width: 34px;
+  box-shadow: 6px 0 18px rgba(13, 148, 136, 0.4);
+}
+
+.sidebar-flap-toggle.collapsed {
+  left: 0px;
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0 10px 10px 0;
+  background: #0b132b;
+}
+
+.sidebar-flap-toggle.collapsed:hover {
+  background: var(--accent-teal);
+  color: #ffffff;
+  width: 34px;
+}
+
 .sidebar-brand {
   display: flex;
   align-items: center;
