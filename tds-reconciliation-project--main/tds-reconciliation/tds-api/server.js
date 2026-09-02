@@ -75,7 +75,7 @@ app.use((err, req, res, next) => {
 app.listen(PORT, async () => {
   console.log(`🚀 Standalone TDS backend server is listening on port ${PORT}`);
   await ensureTablesExist();
-  await seedEmbeddedDataset();
+  console.log('✅ Ready for user file uploads. Automatic Excel seeding disabled.');
 });
 
 

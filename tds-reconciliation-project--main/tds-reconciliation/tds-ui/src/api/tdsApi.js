@@ -60,21 +60,12 @@ export const getDashboardSummary = async (fy = '') => {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/dashboard-summary?${q}`);
     return await response.json();
   } catch (err) {
-    if (localStorage.getItem('tds_purged_all') === 'true') {
-      return {
-        success: true,
-        totals: { tally: 0, as26: 0, saarthi: 0, netGap: 0 },
-        recordCount: 0,
-        sourceCoverage: { threeOfThree: 0, twoOfThree: 0, oneOfThree: 0, noMatch: 0 },
-        financialStatus: { match: 0, less: 0, excess: 0, missing: 0, pendingReview: 0, resolved: 0 }
-      };
-    }
     return {
       success: true,
-      totals: { tally: 239000, as26: 219000, saarthi: 239000, netGap: 20000 },
-      recordCount: DEFAULT_RECON_ITEMS.length,
-      sourceCoverage: { threeOfThree: 4, twoOfThree: 2, oneOfThree: 0, noMatch: 0 },
-      financialStatus: { match: 4, less: 1, excess: 0, missing: 0, pendingReview: 1, resolved: 0 }
+      totals: { tally: 0, as26: 0, saarthi: 0, netGap: 0 },
+      recordCount: 0,
+      sourceCoverage: { threeOfThree: 0, twoOfThree: 0, oneOfThree: 0, noMatch: 0 },
+      financialStatus: { match: 0, less: 0, excess: 0, missing: 0, pendingReview: 0, resolved: 0 }
     };
   }
 };
@@ -85,26 +76,7 @@ export const getCleaningQueue = async () => {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/cleaning-queue`);
     return await response.json();
   } catch (err) {
-    if (localStorage.getItem('tds_purged_all') === 'true') {
-      return { success: true, count: 0, data: [] };
-    }
-    return {
-      success: true,
-      count: 1,
-      data: [
-        {
-          id: 2,
-          tanNo: 'DELG03106F',
-          companyName: 'GARIMA SYSTEM SOLUTIONS',
-          issueType: 'name_mismatch',
-          issueReason: 'Deductor Name Discrepancy (26AS vs Tally)',
-          sources: ['Saarthi 360', 'Tally Ledger', 'Form 26AS'],
-          booksTds: 25000,
-          as26Tds: 20000,
-          tallyTds: 25000
-        }
-      ]
-    };
+    return { success: true, count: 0, data: [] };
   }
 };
 
@@ -131,30 +103,10 @@ export const getReconciliationReport = async (filters = {}) => {
       return data;
     }
   } catch (err) {
-    // API slow or offline, proceed to instant fallback
+    // API slow or offline
   }
 
-  if (localStorage.getItem('tds_purged_all') === 'true') {
-    return { success: true, data: [], total: 0, page: 1, limit: 25, totalPages: 0 };
-  }
-
-  let items = [...DEFAULT_RECON_ITEMS];
-  if (filters.search) {
-    const q = filters.search.toLowerCase();
-    items = items.filter(r => r.companyName.toLowerCase().includes(q) || r.tanNo.toLowerCase().includes(q));
-  }
-  if (filters.overallStatus && filters.overallStatus !== 'All') {
-    items = items.filter(r => r.overallStatus === filters.overallStatus);
-  }
-
-  return {
-    success: true,
-    data: items,
-    total: items.length,
-    page: filters.page || 1,
-    limit: filters.limit || 25,
-    totalPages: 1
-  };
+  return { success: true, data: [], total: 0, page: 1, limit: 25, totalPages: 0 };
 };
 
 export const applyStatusOverride = async (overrideData) => {
@@ -362,31 +314,16 @@ export const getFollowupSummary = async () => {
     // API offline or error
   }
 
-  if (localStorage.getItem('tds_purged_all') === 'true') {
-    return {
-      success: true,
-      data: {
-        totalFollowedUp: 0,
-        pendingResponse: 0,
-        callNotPickedUp: 0,
-        checkAndRevert: 0,
-        tdsPaid: 0,
-        formReceived: 0,
-        dueForFollowup: 0
-      }
-    };
-  }
-
   return {
     success: true,
     data: {
-      totalFollowedUp: 4,
-      pendingResponse: 1,
-      callNotPickedUp: 1,
-      checkAndRevert: 1,
-      tdsPaid: 1,
-      formReceived: 1,
-      dueForFollowup: 1
+      totalFollowedUp: 0,
+      pendingResponse: 0,
+      callNotPickedUp: 0,
+      checkAndRevert: 0,
+      tdsPaid: 0,
+      formReceived: 0,
+      dueForFollowup: 0
     }
   };
 };
@@ -400,44 +337,10 @@ export const getFollowups = async (filters = {}) => {
       return resData;
     }
   } catch (err) {
-    // API offline/slow, fallback
+    // API offline/slow
   }
 
-  if (localStorage.getItem('tds_purged_all') === 'true') {
-    return { success: true, data: [] };
-  }
-
-  return {
-    success: true,
-    data: [
-      {
-        id: 1,
-        companyName: 'GARIMA SYSTEM SOLUTIONS',
-        tanNo: 'DELG03106F',
-        contactPerson: 'Rahul Sharma',
-        department: 'Accounts',
-        contactNumber: '9876543210',
-        method: 'Phone Call',
-        status: 'Check & Revert',
-        notes: 'Requested Form 16A copy for Q4 reconciliation.',
-        followupDate: '2026-03-18',
-        nextFollowupDate: '2026-03-22'
-      },
-      {
-        id: 2,
-        companyName: 'CHETNA INFOTECH SERVICES',
-        tanNo: 'CHET44332B',
-        contactPerson: 'Vikram Singh',
-        department: 'Finance',
-        contactNumber: '9123456789',
-        method: 'Email',
-        status: 'Call Not Picked Up',
-        notes: 'Sent mail regarding Rs 15,000 TDS mismatch.',
-        followupDate: '2026-03-19',
-        nextFollowupDate: '2026-03-21'
-      }
-    ]
-  };
+  return { success: true, data: [] };
 };
 
 export const createFollowup = async (data) => {
