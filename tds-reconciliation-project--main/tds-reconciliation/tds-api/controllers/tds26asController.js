@@ -987,12 +987,40 @@ export const purgeUploadData = async (req, res) => {
          SET as26_tds = 0, as26_batch_id = NULL, books_vs_26as_status = 'Not Received', as26_vs_tally_status = 'Not Received', overall_status = 'Major Mismatch' 
          WHERE is_manually_edited = 0`
       );
+      await db.execute(
+        `DELETE FROM upload_history 
+         WHERE metadata LIKE '%26as%' OR metadata LIKE '%26AS%' OR file_name LIKE '%26as%' OR file_name LIKE '%26AS%'`
+      );
+      await db.execute(
+        `DELETE FROM tds_reconciliation_results 
+         WHERE (books_tds IS NULL OR books_tds = 0) 
+           AND (as26_tds IS NULL OR as26_tds = 0) 
+           AND (tally_tds IS NULL OR tally_tds = 0) 
+           AND (is_manually_edited IS NULL OR is_manually_edited = 0)`
+      );
+      await db.execute(
+        `DELETE FROM tds_dues WHERE id NOT IN (SELECT tds_dues_id FROM tds_reconciliation_results WHERE tds_dues_id IS NOT NULL)`
+      );
     } else if (target === 'tally') {
       await db.execute('DELETE FROM tds_tally_entries');
       await db.execute(
         `UPDATE tds_reconciliation_results 
          SET tally_tds = 0, tally_batch_id = NULL, books_vs_tally_status = 'Not Received', as26_vs_tally_status = 'Not Received', overall_status = 'Major Mismatch' 
          WHERE is_manually_edited = 0`
+      );
+      await db.execute(
+        `DELETE FROM upload_history 
+         WHERE metadata LIKE '%tally%' OR metadata LIKE '%TALLY%' OR file_name LIKE '%tally%' OR file_name LIKE '%Tally%'`
+      );
+      await db.execute(
+        `DELETE FROM tds_reconciliation_results 
+         WHERE (books_tds IS NULL OR books_tds = 0) 
+           AND (as26_tds IS NULL OR as26_tds = 0) 
+           AND (tally_tds IS NULL OR tally_tds = 0) 
+           AND (is_manually_edited IS NULL OR is_manually_edited = 0)`
+      );
+      await db.execute(
+        `DELETE FROM tds_dues WHERE id NOT IN (SELECT tds_dues_id FROM tds_reconciliation_results WHERE tds_dues_id IS NOT NULL)`
       );
     } else {
       await db.execute('DELETE FROM tds_26as_entries');
@@ -1015,45 +1043,73 @@ export const purgeUploadData = async (req, res) => {
 export const deleteUploadBatch = async (req, res) => {
   try {
     const { id } = req.params;
-    if (!id) {
+    const reqBatchId = req.body?.batchId;
+
+    if (!id && !reqBatchId) {
       return res.status(400).json({ success: false, error: 'Batch ID is required' });
     }
 
-    // 1. Retrieve record from upload_history
-    const [rows] = await db.execute('SELECT * FROM upload_history WHERE id = ?', [id]);
-    
+    const [rows] = await db.execute(
+      'SELECT * FROM upload_history WHERE id = ? OR metadata LIKE ?',
+      [id, `%${id}%`]
+    );
+
+    let batchId = reqBatchId || (typeof id === 'string' && id.startsWith('batch_') ? id : null);
+    let uploadType = null;
+    let historyId = null;
+
     if (rows.length > 0) {
       const batchRecord = rows[0];
+      historyId = batchRecord.id;
       let meta = {};
       try {
         meta = typeof batchRecord.metadata === 'string' ? JSON.parse(batchRecord.metadata) : (batchRecord.metadata || {});
       } catch (e) {}
 
-      const batchId = meta.upload_batch_id || req.body?.batchId;
-      const uploadType = meta.upload_type;
+      batchId = meta.upload_batch_id || batchId;
+      uploadType = meta.upload_type || (batchRecord.file_name?.toLowerCase().includes('26as') ? '26AS_TDS' : 'TALLY_TDS');
+    }
 
-      if (batchId) {
-        if (uploadType === '26AS_TDS' || batchId.includes('26as')) {
-          await db.execute('DELETE FROM tds_26as_entries WHERE upload_batch_id = ?', [batchId]);
-          await db.execute(
-            'UPDATE tds_reconciliation_results SET as26_tds = 0, as26_batch_id = NULL WHERE as26_batch_id = ? AND is_manually_edited = 0',
-            [batchId]
-          );
-        } else if (uploadType === 'TALLY_TDS' || batchId.includes('tally')) {
-          await db.execute('DELETE FROM tds_tally_entries WHERE upload_batch_id = ?', [batchId]);
-          await db.execute(
-            'UPDATE tds_reconciliation_results SET tally_tds = 0, tally_batch_id = NULL WHERE tally_batch_id = ? AND is_manually_edited = 0',
-            [batchId]
-          );
-        }
+    if (batchId) {
+      const typeUpper = String(uploadType || batchId).toUpperCase();
+      if (typeUpper.includes('26AS')) {
+        await db.execute('DELETE FROM tds_26as_entries WHERE upload_batch_id = ?', [batchId]);
+        await db.execute(
+          'UPDATE tds_reconciliation_results SET as26_tds = 0, as26_batch_id = NULL WHERE as26_batch_id = ? AND is_manually_edited = 0',
+          [batchId]
+        );
+      } else if (typeUpper.includes('TALLY')) {
+        await db.execute('DELETE FROM tds_tally_entries WHERE upload_batch_id = ?', [batchId]);
+        await db.execute(
+          'UPDATE tds_reconciliation_results SET tally_tds = 0, tally_batch_id = NULL WHERE tally_batch_id = ? AND is_manually_edited = 0',
+          [batchId]
+        );
+      } else {
+        await db.execute('DELETE FROM tds_26as_entries WHERE upload_batch_id = ?', [batchId]);
+        await db.execute('DELETE FROM tds_tally_entries WHERE upload_batch_id = ?', [batchId]);
+        await db.execute(
+          'UPDATE tds_reconciliation_results SET as26_tds = 0, as26_batch_id = NULL WHERE as26_batch_id = ? AND is_manually_edited = 0',
+          [batchId]
+        );
+        await db.execute(
+          'UPDATE tds_reconciliation_results SET tally_tds = 0, tally_batch_id = NULL WHERE tally_batch_id = ? AND is_manually_edited = 0',
+          [batchId]
+        );
       }
+    }
 
-      // Delete log record
-      await db.execute('DELETE FROM upload_history WHERE id = ?', [id]);
-    } else if (req.body?.batchId) {
-      const batchId = req.body.batchId;
-      await db.execute('DELETE FROM tds_26as_entries WHERE upload_batch_id = ?', [batchId]);
-      await db.execute('DELETE FROM tds_tally_entries WHERE upload_batch_id = ?', [batchId]);
+    await db.execute(
+      `DELETE FROM tds_reconciliation_results 
+       WHERE (books_tds IS NULL OR books_tds = 0) 
+         AND (as26_tds IS NULL OR as26_tds = 0) 
+         AND (tally_tds IS NULL OR tally_tds = 0) 
+         AND (is_manually_edited IS NULL OR is_manually_edited = 0)`
+    );
+
+    if (historyId) {
+      await db.execute('DELETE FROM upload_history WHERE id = ?', [historyId]);
+    } else {
+      await db.execute('DELETE FROM upload_history WHERE id = ? OR metadata LIKE ?', [id, `%${id}%`]);
     }
 
     res.json({ success: true, message: 'Upload file batch deleted successfully', id });

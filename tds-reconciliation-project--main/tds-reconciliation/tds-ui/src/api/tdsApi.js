@@ -60,6 +60,15 @@ export const getDashboardSummary = async (fy = '') => {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/dashboard-summary?${q}`);
     return await response.json();
   } catch (err) {
+    if (localStorage.getItem('tds_purged_all') === 'true') {
+      return {
+        success: true,
+        totals: { tally: 0, as26: 0, saarthi: 0, netGap: 0 },
+        recordCount: 0,
+        sourceCoverage: { threeOfThree: 0, twoOfThree: 0, oneOfThree: 0, noMatch: 0 },
+        financialStatus: { match: 0, less: 0, excess: 0, missing: 0, pendingReview: 0, resolved: 0 }
+      };
+    }
     return {
       success: true,
       totals: { tally: 239000, as26: 219000, saarthi: 239000, netGap: 20000 },
@@ -76,6 +85,9 @@ export const getCleaningQueue = async () => {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/cleaning-queue`);
     return await response.json();
   } catch (err) {
+    if (localStorage.getItem('tds_purged_all') === 'true') {
+      return { success: true, count: 0, data: [] };
+    }
     return {
       success: true,
       count: 1,
@@ -122,7 +134,10 @@ export const getReconciliationReport = async (filters = {}) => {
     // API slow or offline, proceed to instant fallback
   }
 
-  // Instant fallback response (only on network/connection error)
+  if (localStorage.getItem('tds_purged_all') === 'true') {
+    return { success: true, data: [], total: 0, page: 1, limit: 25, totalPages: 0 };
+  }
+
   let items = [...DEFAULT_RECON_ITEMS];
   if (filters.search) {
     const q = filters.search.toLowerCase();
@@ -162,6 +177,9 @@ export const getCsvExportUrl = (filters = {}) => {
 
 /** File Upload API */
 export const upload26as = async (file, financialYear, importMode = 'update') => {
+  try {
+    localStorage.removeItem('tds_purged_all');
+  } catch (e) {}
   const formData = new FormData();
   formData.append('file', file);
   if (financialYear) formData.append('financialYear', financialYear);
@@ -179,6 +197,9 @@ export const upload26as = async (file, financialYear, importMode = 'update') => 
 };
 
 export const uploadTally = async (file, financialYear, importMode = 'update') => {
+  try {
+    localStorage.removeItem('tds_purged_all');
+  } catch (e) {}
   const formData = new FormData();
   formData.append('file', file);
   if (financialYear) formData.append('financialYear', financialYear);
@@ -197,9 +218,39 @@ export const uploadTally = async (file, financialYear, importMode = 'update') =>
 
 export const purgeData = async (target = 'all') => {
   try {
+    const deleted = JSON.parse(localStorage.getItem('tds_deleted_batches') || '[]');
+    const localLogs = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
+
     if (target === 'all') {
       localStorage.removeItem('tds_upload_history');
-      const deleted = ['101', '102', '103', 101, 102, 103];
+      localStorage.removeItem('tds_26as_data');
+      localStorage.removeItem('tds_tally_data');
+      ['101', '102', '103', 101, 102, 103].forEach(id => {
+        if (!deleted.includes(String(id))) deleted.push(String(id));
+      });
+      localStorage.setItem('tds_deleted_batches', JSON.stringify(deleted));
+      localStorage.setItem('tds_purged_all', 'true');
+    } else if (target === '26as') {
+      localStorage.removeItem('tds_26as_data');
+      const filtered = localLogs.filter(item => {
+        const type = (item.import_type || item.file_name || '').toLowerCase();
+        return !type.includes('26as');
+      });
+      localStorage.setItem('tds_upload_history', JSON.stringify(filtered));
+      ['101', '102'].forEach(id => {
+        if (!deleted.includes(String(id))) deleted.push(String(id));
+      });
+      localStorage.setItem('tds_deleted_batches', JSON.stringify(deleted));
+    } else if (target === 'tally') {
+      localStorage.removeItem('tds_tally_data');
+      const filtered = localLogs.filter(item => {
+        const type = (item.import_type || item.file_name || '').toLowerCase();
+        return !type.includes('tally');
+      });
+      localStorage.setItem('tds_upload_history', JSON.stringify(filtered));
+      ['101', '103'].forEach(id => {
+        if (!deleted.includes(String(id))) deleted.push(String(id));
+      });
       localStorage.setItem('tds_deleted_batches', JSON.stringify(deleted));
     }
   } catch (e) {}
@@ -260,7 +311,6 @@ export const getUploadHistory = async () => {
 };
 
 export const deleteUploadBatch = async (id, batchId = null) => {
-  // Remove from localStorage logs and add to deleted_batches
   try {
     const localLogs = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
     const updatedLogs = localLogs.filter(log => String(log.id) !== String(id) && log.upload_batch_id !== batchId);
