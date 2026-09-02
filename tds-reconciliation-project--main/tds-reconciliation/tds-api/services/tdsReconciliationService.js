@@ -89,11 +89,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
 
       // Pairwise evaluate helper
       const evaluatePair = (valA, valB, hasA, hasB) => {
-        if (!hasA || !hasB) {
-          if (!hasA && hasB && valB > 0) return 'Not Received';
-          if (hasA && !hasB && valA > 0) return 'Not Received';
-          if (!hasA && !hasB) return 'Not Received';
-        }
+        if (!hasA || !hasB) return 'Not Received';
         if (Math.abs(valA - valB) <= 1.0) return 'Matched';
         if (valA > valB) return 'Excess';
         return 'Less Paid';

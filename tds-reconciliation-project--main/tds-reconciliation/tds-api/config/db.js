@@ -108,9 +108,28 @@ if (DB_TYPE === 'sqlite') {
 
   // Support Aiven & Cloud MySQL SSL
   if ((process.env.DB_SSL || 'true').toLowerCase() === 'true') {
-    poolConfig.ssl = {
+    const sslOpts = {
       rejectUnauthorized: (process.env.DB_SSL_REJECT_UNAUTHORIZED || 'false').toLowerCase() === 'true'
     };
+
+    const caPaths = [
+      process.env.DB_CA_PATH,
+      path.resolve('ca.pem'),
+      path.resolve('../ca.pem'),
+      path.resolve('../../ca.pem')
+    ].filter(Boolean);
+
+    for (const caPath of caPaths) {
+      if (fs.existsSync(caPath)) {
+        try {
+          sslOpts.ca = fs.readFileSync(caPath);
+          console.log(`🔒 Loaded SSL CA certificate from: ${caPath}`);
+          break;
+        } catch (e) {}
+      }
+    }
+
+    poolConfig.ssl = sslOpts;
   }
 
   const pool = mysql.createPool(poolConfig);
