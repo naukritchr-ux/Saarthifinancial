@@ -8,7 +8,7 @@ export default function ImportHistory() {
   const [batches, setBatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
+  const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -31,12 +31,8 @@ export default function ImportHistory() {
     fetchHistory();
   }, [refreshKey]);
 
-  const handleDeleteBatch = async (batchItem) => {
-    const fileName = batchItem.fileName || batchItem.file_name || 'this file';
-    if (!window.confirm(`Are you sure you want to delete "${fileName}" and its associated dataset records?`)) {
-      return;
-    }
-
+  const executeDeleteBatch = async (batchItem) => {
+    setDeleteConfirmItem(null);
     try {
       const meta = typeof batchItem.metadata === 'string' ? JSON.parse(batchItem.metadata || '{}') : (batchItem.metadata || {});
       const batchId = meta.upload_batch_id || batchItem.upload_batch_id || batchItem.batchId;
@@ -58,6 +54,10 @@ export default function ImportHistory() {
     } catch (err) {
       alert(`Delete failed: ${err.message || 'Error connecting to server'}`);
     }
+  };
+
+  const handleDeleteBatch = (batchItem) => {
+    setDeleteConfirmItem(batchItem);
   };
 
   const filteredBatches = batches.filter((b) => {
@@ -224,6 +224,47 @@ export default function ImportHistory() {
           </table>
         </div>
       </div>
+
+      {/* Custom Confirmation Modal overlay */}
+      {deleteConfirmItem && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 text-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+              <div className="p-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-white">Delete File Batch</h3>
+                <p className="text-xs text-slate-400 font-medium">This action will delete dataset entries.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed font-semibold">
+              Are you sure you want to delete{' '}
+              <span className="text-amber-400 font-black underline">
+                "{deleteConfirmItem.fileName || deleteConfirmItem.file_name || 'this file'}"
+              </span>
+              {' '}and its associated dataset records from the database?
+            </p>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setDeleteConfirmItem(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => executeDeleteBatch(deleteConfirmItem)}
+                className="px-4 py-2 text-xs font-black text-white bg-red-600 hover:bg-red-500 rounded-xl transition shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Yes, Delete Batch
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
