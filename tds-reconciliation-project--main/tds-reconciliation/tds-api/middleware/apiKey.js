@@ -14,7 +14,7 @@ export const apiKeyMiddleware = (req, res, next) => {
   const expectedKey = process.env.API_KEY || 'saarthi-secret-api-key-2026';
   const enforceApiKey = (process.env.ENFORCE_API_KEY || 'false').toLowerCase() === 'true';
 
-  if (!incomingKey || (incomingKey !== expectedKey && incomingKey !== 'saarthi-secret-api-key-2026')) {
+  if (!incomingKey || incomingKey !== expectedKey) {
     if (enforceApiKey) {
       return res.status(401).json({
         success: false,
