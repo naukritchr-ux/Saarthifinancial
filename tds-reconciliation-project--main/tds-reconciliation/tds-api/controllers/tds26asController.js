@@ -1012,11 +1012,17 @@ export const purgeUploadData = async (req, res) => {
       await db.execute(
         `UPDATE tds_reconciliation_results 
          SET as26_tds = 0, as26_batch_id = NULL, books_vs_26as_status = 'Not Received', as26_vs_tally_status = 'Not Received', overall_status = 'Major Mismatch' 
-         WHERE is_manually_edited = 0`
+         WHERE (is_manually_edited IS NULL OR is_manually_edited = 0)`
       );
-      await db.execute(
-        `DELETE FROM tds_dues WHERE id NOT IN (SELECT tds_dues_id FROM tds_reconciliation_results WHERE tds_dues_id IS NOT NULL)`
-      );
+      if (process.env.DB_TYPE === 'mysql') {
+        await db.execute(
+          `DELETE d FROM tds_dues d LEFT JOIN tds_reconciliation_results r ON d.id = r.tds_dues_id WHERE r.tds_dues_id IS NULL`
+        );
+      } else {
+        await db.execute(
+          `DELETE FROM tds_dues WHERE id NOT IN (SELECT tds_dues_id FROM tds_reconciliation_results WHERE tds_dues_id IS NOT NULL)`
+        );
+      }
     } else if (target === 'tally') {
       await db.execute('DELETE FROM tds_tally_entries');
       await db.execute(
@@ -1031,11 +1037,17 @@ export const purgeUploadData = async (req, res) => {
       await db.execute(
         `UPDATE tds_reconciliation_results 
          SET tally_tds = 0, tally_batch_id = NULL, books_vs_tally_status = 'Not Received', as26_vs_tally_status = 'Not Received', overall_status = 'Major Mismatch' 
-         WHERE is_manually_edited = 0`
+         WHERE (is_manually_edited IS NULL OR is_manually_edited = 0)`
       );
-      await db.execute(
-        `DELETE FROM tds_dues WHERE id NOT IN (SELECT tds_dues_id FROM tds_reconciliation_results WHERE tds_dues_id IS NOT NULL)`
-      );
+      if (process.env.DB_TYPE === 'mysql') {
+        await db.execute(
+          `DELETE d FROM tds_dues d LEFT JOIN tds_reconciliation_results r ON d.id = r.tds_dues_id WHERE r.tds_dues_id IS NULL`
+        );
+      } else {
+        await db.execute(
+          `DELETE FROM tds_dues WHERE id NOT IN (SELECT tds_dues_id FROM tds_reconciliation_results WHERE tds_dues_id IS NOT NULL)`
+        );
+      }
     } else {
       await db.execute('DELETE FROM tds_26as_entries');
       await db.execute('DELETE FROM tds_tally_entries');
