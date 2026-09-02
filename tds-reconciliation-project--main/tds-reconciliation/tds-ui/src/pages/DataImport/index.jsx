@@ -192,7 +192,9 @@ export default function DataImport() {
         ) : (
           <div className="space-y-4">
             {queue.map((item, idx) => {
-              const isTanMismatch = item.issueReason?.toLowerCase().includes('tan') || item.saarthiTan;
+              if (!item) return null;
+              const issueReasonStr = String(item.issueReason || '').toLowerCase();
+              const isTanMismatch = issueReasonStr.includes('tan') || Boolean(item.saarthiTan);
               const lowConfidenceScore = item.confidence || 75;
 
               return (
