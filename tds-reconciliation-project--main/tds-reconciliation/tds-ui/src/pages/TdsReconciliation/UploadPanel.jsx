@@ -179,13 +179,18 @@ export default function UploadPanel({ onUploadSuccess }) {
         if (onUploadSuccess) onUploadSuccess();
         return;
       }
+      setPurgeStatus({
+        loading: false,
+        message: null,
+        error: res?.error || `Failed to clear ${labelMap[target]} on the server. Please try again.`
+      });
     } catch (err) {
-      console.warn('Backend purge API error, completed local purge:', err);
+      setPurgeStatus({
+        loading: false,
+        message: null,
+        error: err.message || `Failed to clear ${labelMap[target]} on the server. Please try again.`
+      });
     }
-
-    setPurgeStatus({ loading: false, message: `${labelMap[target]} cleared successfully!`, error: null });
-    triggerRefresh();
-    if (onUploadSuccess) onUploadSuccess();
   };
 
   return (
