@@ -1007,9 +1007,20 @@ export const purgeUploadData = async (req, res) => {
       await db.execute('DELETE FROM tds_26as_entries');
       await db.execute(
         `DELETE FROM upload_history 
-         WHERE metadata LIKE '%26as%' OR metadata LIKE '%26AS%' OR file_name LIKE '%26as%' OR file_name LIKE '%26AS%'`
+         WHERE metadata LIKE '%26as%' OR metadata LIKE '%26AS%' 
+            OR file_name LIKE '%26as%' OR file_name LIKE '%26AS%' OR file_name LIKE '%Form26AS%'`
       );
-      await db.execute('DELETE FROM tds_reconciliation_results');
+      await db.execute(
+        `UPDATE tds_reconciliation_results 
+         SET as26_tds = 0, as26_batch_id = NULL, books_vs_26as_status = 'Not Received', as26_vs_tally_status = 'Not Received' 
+         WHERE (is_manually_edited IS NULL OR is_manually_edited = 0)`
+      );
+      await db.execute(
+        `DELETE FROM tds_reconciliation_results 
+         WHERE (as26_tds IS NULL OR as26_tds = 0) 
+           AND (tally_tds IS NULL OR tally_tds = 0) 
+           AND (is_manually_edited IS NULL OR is_manually_edited = 0)`
+      );
       if (process.env.DB_TYPE === 'mysql') {
         await db.execute(
           `DELETE d FROM tds_dues d LEFT JOIN tds_reconciliation_results r ON d.id = r.tds_dues_id WHERE r.tds_dues_id IS NULL`
@@ -1024,9 +1035,20 @@ export const purgeUploadData = async (req, res) => {
       await db.execute('DELETE FROM tds_tally_entries');
       await db.execute(
         `DELETE FROM upload_history 
-         WHERE metadata LIKE '%tally%' OR metadata LIKE '%TALLY%' OR file_name LIKE '%tally%' OR file_name LIKE '%Tally%'`
+         WHERE metadata LIKE '%tally%' OR metadata LIKE '%TALLY%' 
+            OR file_name LIKE '%tally%' OR file_name LIKE '%Tally%'`
       );
-      await db.execute('DELETE FROM tds_reconciliation_results');
+      await db.execute(
+        `UPDATE tds_reconciliation_results 
+         SET tally_tds = 0, tally_batch_id = NULL, books_vs_tally_status = 'Not Received', as26_vs_tally_status = 'Not Received' 
+         WHERE (is_manually_edited IS NULL OR is_manually_edited = 0)`
+      );
+      await db.execute(
+        `DELETE FROM tds_reconciliation_results 
+         WHERE (as26_tds IS NULL OR as26_tds = 0) 
+           AND (tally_tds IS NULL OR tally_tds = 0) 
+           AND (is_manually_edited IS NULL OR is_manually_edited = 0)`
+      );
       if (process.env.DB_TYPE === 'mysql') {
         await db.execute(
           `DELETE d FROM tds_dues d LEFT JOIN tds_reconciliation_results r ON d.id = r.tds_dues_id WHERE r.tds_dues_id IS NULL`
