@@ -1,7 +1,7 @@
 import React, { useContext, useState } from 'react';
 import { FinanceContext } from '../context/FinanceContext';
 import { formatLakhs } from '../utils/formatters';
-import { Plus, Minus, CloudDownload } from 'lucide-react';
+import { Plus, Minus, CloudDownload, PanelLeft } from 'lucide-react';
 import SyncModal from './SyncModal';
 
 const Topbar = ({ activePage, setActivePage }) => {
@@ -16,7 +16,9 @@ const Topbar = ({ activePage, setActivePage }) => {
     userRole,
     setUserRole,
     currentUser,
-    activeModule
+    activeModule,
+    isSidebarOpen,
+    toggleSidebar
   } = useContext(FinanceContext);
 
   const [isSyncOpen, setIsSyncOpen] = useState(false);
@@ -120,6 +122,27 @@ const Topbar = ({ activePage, setActivePage }) => {
     <header className="topbar">
       <div className="topbar-header-info">
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <button
+            onClick={toggleSidebar}
+            title={isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}
+            className="sidebar-toggle-btn"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '36px',
+              height: '36px',
+              borderRadius: '10px',
+              background: 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              color: '#fff',
+              cursor: 'pointer',
+              transition: 'var(--transition-smooth)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+            }}
+          >
+            <PanelLeft size={18} />
+          </button>
           <h1 style={{ margin: 0 }}>{getPageTitle()}</h1>
           
           {/* Sarthi Financial Data - Top App Switcher Tabs */}

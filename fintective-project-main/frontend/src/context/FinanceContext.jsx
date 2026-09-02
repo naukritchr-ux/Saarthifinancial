@@ -21,6 +21,9 @@ export const FinanceProvider = ({ children }) => {
 
   const [selectedMonth, setSelectedMonth] = useState('All Months');
   const [selectedYear, setSelectedYear] = useState('All Years');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  const toggleSidebar = () => setIsSidebarOpen(prev => !prev);
 
   const availableMonths = React.useMemo(() => {
     if (!Array.isArray(transactions)) return ['All Months'];
@@ -530,7 +533,10 @@ export const FinanceProvider = ({ children }) => {
         addBdAgent,
         updateBdAgent,
         currentCashBalance,
-        movingAvgBurn
+        movingAvgBurn,
+        isSidebarOpen,
+        setIsSidebarOpen,
+        toggleSidebar
       }}
     >
       {children}

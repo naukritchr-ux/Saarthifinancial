@@ -16,7 +16,7 @@ import RunwayRoiTracker from './pages/RunwayRoiTracker';
 import Login from './pages/Login';
 
 function AppContent() {
-  const { currentUser } = useContext(FinanceContext);
+  const { currentUser, isSidebarOpen } = useContext(FinanceContext);
   const [activePage, setActivePage] = useState('dashboard');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
@@ -49,7 +49,7 @@ function AppContent() {
   };
 
   return (
-    <div className="app-container">
+    <div className={`app-container ${!isSidebarOpen ? 'sidebar-collapsed' : ''}`}>
       
       {/* Navigation Sidebar */}
       <Sidebar activePage={activePage} setActivePage={setActivePage} setIsSettingsOpen={setIsSettingsOpen} />
