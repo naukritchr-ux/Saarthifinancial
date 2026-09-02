@@ -16,7 +16,7 @@ export function AppProvider({ children }) {
   const [activePage, setActivePage] = useState(getInitialPage);
   const [fyFilter, setFyFilter] = useState('All Financial Years');
   const [role, setRole] = useState('Accounts Manager');
-  const [cleaningQueueCount, setCleaningQueueCount] = useState(11);
+  const [cleaningQueueCount, setCleaningQueueCount] = useState(0);
   const [followupPreFill, setFollowupPreFill] = useState(null);
 
   // Sync state with URL hash changes
@@ -42,20 +42,28 @@ export function AppProvider({ children }) {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Fetch initial cleaning queue count on load
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const triggerRefresh = () => {
+    setRefreshKey(prev => prev + 1);
+  };
+
+  // Fetch cleaning queue count on load and on any refresh trigger
   useEffect(() => {
     const fetchQueueCount = async () => {
       try {
         const res = await getCleaningQueue();
         if (res && res.success && typeof res.count === 'number') {
           setCleaningQueueCount(res.count);
+        } else {
+          setCleaningQueueCount(0);
         }
       } catch (err) {
-        // keep fallback default
+        setCleaningQueueCount(0);
       }
     };
     fetchQueueCount();
-  }, []);
+  }, [refreshKey]);
 
   const navigateTo = (page, queryParams = {}) => {
     let hash = `#${page}`;
