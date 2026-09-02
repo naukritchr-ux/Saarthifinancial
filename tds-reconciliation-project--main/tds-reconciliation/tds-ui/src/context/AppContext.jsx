@@ -73,6 +73,12 @@ export function AppProvider({ children }) {
     }
   };
 
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const triggerRefresh = () => {
+    setRefreshKey(prev => prev + 1);
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -86,7 +92,9 @@ export function AppProvider({ children }) {
         cleaningQueueCount,
         setCleaningQueueCount,
         followupPreFill,
-        setFollowupPreFill
+        setFollowupPreFill,
+        refreshKey,
+        triggerRefresh
       }}
     >
       {children}
