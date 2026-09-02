@@ -11,6 +11,19 @@ const cleanNumber = (val) => {
   return isNaN(num) ? 0 : num;
 };
 
+const isTanOrPanHeaderCell = (text) => {
+  const t = String(text || '').toLowerCase().trim();
+  if (!t) return false;
+  if (t === 'tan' || t === 'tan no' || t === 'tan_no' || t === 'tan number' || t === 'tan num' ||
+      t === 'pan' || t === 'pan no' || t === 'pan_no' || t === 'pan number' || t === 'pan num' ||
+      t === 'deductor tan' || t === 'party tan' || t === 'deductor pan' || t === 'party pan' ||
+      t === 'deductor id' || t === 'tan of deductor' || t === 'tan/pan' || t === 'pan/tan') {
+    return true;
+  }
+  return /^(tan|pan)(\s*(no|number|num|id|code))?$/i.test(t) ||
+         /^(deductor|party|client)\s*(tan|pan)$/i.test(t);
+};
+
 /**
  * Trigger Database Seeding Endpoint
  */
@@ -67,14 +80,14 @@ export const upload26as = async (req, res) => {
       let foundHeader = false;
       row.forEach((cell, col) => {
         const text = String(cell || '').toLowerCase().trim();
-        if (text.includes('tan') || text.includes('pan') || text.includes('deductor') || text.includes('company') || text.includes('tds') || text.includes('amount')) {
+        if (isTanOrPanHeaderCell(text) || text.includes('deductor') || text.includes('company') || text.includes('tds') || text.includes('amount')) {
           foundHeader = true;
         }
 
-        if (colMap.tan_no === -1 && (text.includes('tan') || text.includes('pan') || text.includes('deductor id'))) {
+        if (colMap.tan_no === -1 && isTanOrPanHeaderCell(text)) {
           colMap.tan_no = col;
         }
-        if (colMap.deductor_name === -1 && (text.includes('deductor') || text.includes('company') || text.includes('party') || text === 'name')) {
+        if (colMap.deductor_name === -1 && !isTanOrPanHeaderCell(text) && (text.includes('deductor') || text.includes('company') || text.includes('party') || text === 'name')) {
           colMap.deductor_name = col;
         }
         if (colMap.amount_paid === -1 && (text.includes('amount paid') || text.includes('amount credited') || text.includes('gross') || text.includes('invoice') || text === 'amount')) {
@@ -113,9 +126,11 @@ export const upload26as = async (req, res) => {
       }
     }
 
-    // Fallback for amount columns if headers not found
-    if (colMap.tds_deducted === -1 && colMap.tan_no !== -1) colMap.tds_deducted = colMap.tan_no + 3;
-    if (colMap.amount_paid === -1 && colMap.tan_no !== -1) colMap.amount_paid = colMap.tan_no + 2;
+    // Positional fallback ONLY if header row was not found
+    if (headerRowIdx === -1) {
+      if (colMap.tds_deducted === -1 && colMap.tan_no !== -1) colMap.tds_deducted = colMap.tan_no + 3;
+      if (colMap.amount_paid === -1 && colMap.tan_no !== -1) colMap.amount_paid = colMap.tan_no + 2;
+    }
 
     if (colMap.tan_no === -1) {
       return res.status(400).json({
@@ -239,38 +254,35 @@ export const uploadTally = async (req, res) => {
 
     for (let r = 0; r < Math.min(100, rawData.length); r++) {
       const row = rawData[r];
-      if (!row) continue;
-      let hasTan = false;
-      let hasTds = false;
+      if (!row || !Array.isArray(row)) continue;
+      let hasTanOrPan = false;
+      let hasTdsOrAmount = false;
       row.forEach((cell) => {
-        const text = String(cell || '').toLowerCase();
-        if (text.includes('tan')) hasTan = true;
-        if (text.includes('tds') || text.includes('tax') || text.includes('deducted')) hasTds = true;
+        const text = String(cell || '').toLowerCase().trim();
+        if (isTanOrPanHeaderCell(text) || text.includes('tan') || text.includes('pan')) hasTanOrPan = true;
+        if (text.includes('tds') || text.includes('tax') || text.includes('deducted') || text.includes('amount') || text.includes('value')) hasTdsOrAmount = true;
       });
-      if (hasTan && hasTds) {
+      if (hasTanOrPan && hasTdsOrAmount) {
         headerRowIdx = r;
         row.forEach((cell, col) => {
           const text = String(cell || '').toLowerCase().trim();
-          if (text === 'tan' || text === 'tan no' || text === 'tan_no' || text === 'tan number' || text.includes('tan of deductor') || text.includes('deductor tan') || text === 'pan' || text === 'pan no' || text === 'pan number') {
+          if (isTanOrPanHeaderCell(text) && colMap.tan_no === -1) {
             colMap.tan_no = col;
+            colMap.pan_no = col;
           }
-          if (text.includes('name of the company') || text.includes('party name') || text.includes('company name') || text === 'company' || text === 'ledger name' || text === 'ledger' || text.includes('name')) {
+          if (!isTanOrPanHeaderCell(text) && colMap.party_name === -1 && (text.includes('name of the company') || text.includes('party name') || text.includes('company name') || text === 'company' || text === 'ledger name' || text === 'ledger' || text.includes('name'))) {
             colMap.party_name = col;
           }
           if (text.includes('gstnum') || text.includes('gst num') || text.includes('gstin') || text.includes('gst')) {
             colMap.gst_num = col;
           }
-          if (text.includes('pan no') || text.includes('panno') || text.includes('pan number') || text === 'pan') {
-            if (colMap.tan_no === -1) colMap.tan_no = col;
-            colMap.pan_no = col;
-          }
           if (text.includes('date') || text.includes('voucher date')) {
             colMap.voucher_date = col;
           }
-          if (text.includes('gross total') || text.includes('total amount') || text.includes('amount') || text.includes('value')) {
+          if (colMap.amount === -1 && (text.includes('gross total') || text.includes('total amount') || text.includes('invoice amount') || text === 'amount' || text.includes('value'))) {
             colMap.amount = col;
           }
-          if (text.includes('tdsamt') || text.includes('tds amt') || text.includes('tds amount') || text === 'tds' || text === 'tds deducted' || text.includes('tax')) {
+          if (colMap.tds_amount === -1 && (text.includes('tdsamt') || text.includes('tds amt') || text.includes('tds amount') || text === 'tds' || text === 'tds deducted' || text.includes('tax'))) {
             colMap.tds_amount = col;
           }
           if (text.includes('ledger') && colMap.ledger_name === -1) {
@@ -291,7 +303,7 @@ export const uploadTally = async (req, res) => {
             matchCount++;
           }
         }
-        if (matchCount > 1) {
+        if (matchCount >= 1) {
           colMap.tan_no = c;
           break;
         }
@@ -302,9 +314,11 @@ export const uploadTally = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Could not detect client TAN number column inside Tally sheet.' });
     }
 
-    // Fallback mappings
-    if (colMap.tds_amount === -1) colMap.tds_amount = colMap.tan_no + 3;
-    if (colMap.amount === -1) colMap.amount = colMap.tan_no + 2;
+    // Fallback mappings ONLY if header row was not detected (true headerless files)
+    if (headerRowIdx === -1) {
+      if (colMap.tds_amount === -1 && colMap.tan_no !== -1) colMap.tds_amount = colMap.tan_no + 3;
+      if (colMap.amount === -1 && colMap.tan_no !== -1) colMap.amount = colMap.tan_no + 2;
+    }
 
     const importMode = req.body?.importMode || req.query?.importMode || 'update';
     if (importMode === 'clean') {
