@@ -16,8 +16,8 @@ const buildQuery = (params = {}) => {
 
 const API_KEY = import.meta.env.VITE_API_KEY || 'saarthi-secret-api-key-2026';
 
-// Fast fetch wrapper with 2.5s timeout to prevent cold-start delays
-const fetchWithTimeout = async (url, options = {}, timeoutMs = 2500) => {
+// Fetch wrapper with 15s timeout to allow Render free tier cold-starts to wake up
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 15000) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   const headers = {
