@@ -1,4 +1,24 @@
--- MySQL Schema definition for shared database integration
+-- MySQL Schema definition for shared Aiven database integration
+
+CREATE TABLE IF NOT EXISTS tds_dues (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  invoice_id VARCHAR(50) UNIQUE,
+  bill_number VARCHAR(50),
+  bill_date VARCHAR(30),
+  company_name VARCHAR(255),
+  total_bill_amount DECIMAL(15,2),
+  tds DECIMAL(15,2),
+  contact_number VARCHAR(30),
+  teamleader VARCHAR(100),
+  payment_date VARCHAR(30),
+  tan_no VARCHAR(20),
+  amount_received DECIMAL(15,2),
+  status VARCHAR(50),
+  contact_person_name VARCHAR(100),
+  note TEXT,
+  financial_year VARCHAR(20),
+  INDEX idx_tan (tan_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS tds_26as_entries (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -18,7 +38,9 @@ CREATE TABLE IF NOT EXISTS tds_tally_entries (
   id INT AUTO_INCREMENT PRIMARY KEY,
   tan_no VARCHAR(20),
   party_name VARCHAR(255),
-  voucher_date DATE,
+  gst_num VARCHAR(30),
+  pan_no VARCHAR(20),
+  voucher_date VARCHAR(30),
   amount DECIMAL(15,2),
   tds_amount DECIMAL(15,2) NOT NULL,
   ledger_name VARCHAR(255),
@@ -35,27 +57,43 @@ CREATE TABLE IF NOT EXISTS tds_reconciliation_results (
   books_tds DECIMAL(15,2) NOT NULL,
   as26_tds DECIMAL(15,2) DEFAULT 0.00,
   tally_tds DECIMAL(15,2) DEFAULT 0.00,
-  books_vs_26as_status ENUM('Excess','Less Paid','Not Received','Matched'),
-  books_vs_tally_status ENUM('Excess','Less Paid','Not Received','Matched'),
-  as26_vs_tally_status ENUM('Excess','Less Paid','Not Received','Matched'),
-  overall_status ENUM('All Matched','Partial Mismatch','Major Mismatch') NOT NULL,
+  books_vs_26as_status VARCHAR(50),
+  books_vs_tally_status VARCHAR(50),
+  as26_vs_tally_status VARCHAR(50),
+  overall_status VARCHAR(50) NOT NULL,
   as26_batch_id VARCHAR(50),
   tally_batch_id VARCHAR(50),
   is_manually_edited BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (tds_dues_id) REFERENCES tds_dues(id),
-  UNIQUE KEY unique_batch_due (as26_batch_id, tally_batch_id, tds_dues_id),
   INDEX idx_overall (overall_status),
   INDEX idx_tan (tan_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS tds_reconciliation_audit_logs (
+CREATE TABLE IF NOT EXISTS upload_history (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  reconciliation_id INT NOT NULL,
-  action VARCHAR(50) NOT NULL,
-  details TEXT,
-  changed_by VARCHAR(100),
+  file_name VARCHAR(255) NOT NULL,
+  file_path VARCHAR(255) NOT NULL,
+  uploaded_by VARCHAR(100) NOT NULL DEFAULT 'System',
+  status VARCHAR(50) NOT NULL DEFAULT 'Completed',
+  metadata JSON,
+  upload_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS tds_followups (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tan_no VARCHAR(20) NOT NULL,
+  company_name VARCHAR(255) NOT NULL,
+  contact_person VARCHAR(100),
+  department VARCHAR(100),
+  contact_number VARCHAR(30),
+  method VARCHAR(30),
+  status VARCHAR(50) NOT NULL,
+  notes TEXT,
+  followup_date VARCHAR(30) NOT NULL,
+  next_followup_date VARCHAR(30),
+  created_by VARCHAR(100) DEFAULT 'System',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (reconciliation_id) REFERENCES tds_reconciliation_results(id) ON DELETE CASCADE
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_tan (tan_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

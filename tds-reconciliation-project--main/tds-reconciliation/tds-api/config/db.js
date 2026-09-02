@@ -92,17 +92,28 @@ if (DB_TYPE === 'sqlite') {
 
 
 } else {
-  console.log('🔌 Initializing MySQL database pool');
-  const pool = mysql.createPool({
+  console.log('🔌 Initializing MySQL database pool (Aiven / Managed MySQL)');
+  
+  const poolConfig = {
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'crm_db',
+    database: process.env.DB_NAME || 'defaultdb',
     port: parseInt(process.env.DB_PORT || '3306'),
     waitForConnections: true,
     connectionLimit: 10,
-    queueLimit: 0
-  });
+    queueLimit: 0,
+    multipleStatements: true
+  };
+
+  // Support Aiven & Cloud MySQL SSL
+  if ((process.env.DB_SSL || 'true').toLowerCase() === 'true') {
+    poolConfig.ssl = {
+      rejectUnauthorized: (process.env.DB_SSL_REJECT_UNAUTHORIZED || 'false').toLowerCase() === 'true'
+    };
+  }
+
+  const pool = mysql.createPool(poolConfig);
 
   dbAdapter = {
     execute: async (query, params = []) => {
@@ -115,6 +126,20 @@ if (DB_TYPE === 'sqlite') {
       await pool.end();
     }
   };
+
+  // Auto-initialize MySQL schema if tables do not exist
+  (async () => {
+    try {
+      const mysqlSchemaPath = path.resolve('schema_mysql.sql');
+      if (fs.existsSync(mysqlSchemaPath)) {
+        const schemaSql = fs.readFileSync(mysqlSchemaPath, 'utf8');
+        await pool.query(schemaSql);
+        console.log('✅ Aiven MySQL schema initialized / verified.');
+      }
+    } catch (err) {
+      console.warn('⚠️ Aiven MySQL schema verification note:', err.message);
+    }
+  })();
 }
 
 export default dbAdapter;
