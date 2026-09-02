@@ -213,13 +213,64 @@ export default function FollowUp() {
           </p>
         </div>
 
-        <button
-          onClick={() => { setItemToEdit(null); setShowAddModal(true); }}
-          className="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-4 py-2.5 rounded-xl transition text-xs shadow cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          + Log New Follow-up
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              localStorage.removeItem('tds_purged_all');
+              setSummary({
+                totalFollowedUp: 4,
+                pendingResponse: 1,
+                callNotPickedUp: 1,
+                checkAndRevert: 1,
+                tdsPaid: 1,
+                formReceived: 1,
+                dueForFollowup: 1
+              });
+              setItems([
+                {
+                  id: 1,
+                  companyName: 'GARIMA SYSTEM SOLUTIONS',
+                  tanNo: 'DELG03106F',
+                  contactPerson: 'Rahul Sharma',
+                  department: 'Accounts',
+                  contactNumber: '9876543210',
+                  method: 'Phone Call',
+                  status: 'Check & Revert',
+                  notes: 'Requested Form 16A copy for Q4 reconciliation.',
+                  followupDate: '2026-03-18',
+                  nextFollowupDate: '2026-03-22'
+                },
+                {
+                  id: 2,
+                  companyName: 'CHETNA INFOTECH SERVICES',
+                  tanNo: 'CHET44332B',
+                  contactPerson: 'Vikram Singh',
+                  department: 'Finance',
+                  contactNumber: '9123456789',
+                  method: 'Email',
+                  status: 'Call Not Picked Up',
+                  notes: 'Sent mail regarding Rs 15,000 TDS mismatch.',
+                  followupDate: '2026-03-19',
+                  nextFollowupDate: '2026-03-21'
+                }
+              ]);
+              loadData();
+            }}
+            className="inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3.5 py-2.5 rounded-xl transition text-xs border border-slate-300 cursor-pointer shadow-sm"
+            title="Restore default sample follow-up entries"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
+            Restore Data
+          </button>
+
+          <button
+            onClick={() => { setItemToEdit(null); setShowAddModal(true); }}
+            className="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-4 py-2.5 rounded-xl transition text-xs shadow cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            + Log New Follow-up
+          </button>
+        </div>
       </div>
 
       {/* Row 1: Stat Cards (7 Cards) */}
@@ -436,8 +487,66 @@ export default function FollowUp() {
                     <tr>
                       <td colSpan="9" className="px-4 py-12 text-center text-gray-400">
                         <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                        <span className="font-bold text-gray-700 block">No Follow-up Entries Found</span>
-                        <span className="text-[11px]">No items match the selected filters. Click "+ Log New Follow-up" to record outreach.</span>
+                        <span className="font-bold text-gray-700 block text-base">No Follow-up Entries Found</span>
+                        <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
+                          No items match the selected filters. You can log a new outreach entry or restore the default follow-up tracker entries.
+                        </p>
+                        <div className="flex justify-center items-center gap-3 mt-4">
+                          <button
+                            onClick={() => {
+                              localStorage.removeItem('tds_purged_all');
+                              setSummary({
+                                totalFollowedUp: 4,
+                                pendingResponse: 1,
+                                callNotPickedUp: 1,
+                                checkAndRevert: 1,
+                                tdsPaid: 1,
+                                formReceived: 1,
+                                dueForFollowup: 1
+                              });
+                              setItems([
+                                {
+                                  id: 1,
+                                  companyName: 'GARIMA SYSTEM SOLUTIONS',
+                                  tanNo: 'DELG03106F',
+                                  contactPerson: 'Rahul Sharma',
+                                  department: 'Accounts',
+                                  contactNumber: '9876543210',
+                                  method: 'Phone Call',
+                                  status: 'Check & Revert',
+                                  notes: 'Requested Form 16A copy for Q4 reconciliation.',
+                                  followupDate: '2026-03-18',
+                                  nextFollowupDate: '2026-03-22'
+                                },
+                                {
+                                  id: 2,
+                                  companyName: 'CHETNA INFOTECH SERVICES',
+                                  tanNo: 'CHET44332B',
+                                  contactPerson: 'Vikram Singh',
+                                  department: 'Finance',
+                                  contactNumber: '9123456789',
+                                  method: 'Email',
+                                  status: 'Call Not Picked Up',
+                                  notes: 'Sent mail regarding Rs 15,000 TDS mismatch.',
+                                  followupDate: '2026-03-19',
+                                  nextFollowupDate: '2026-03-21'
+                                }
+                              ]);
+                              loadData();
+                            }}
+                            className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition cursor-pointer shadow-sm"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            Restore Sample Follow-ups
+                          </button>
+                          <button
+                            onClick={() => { setItemToEdit(null); setShowAddModal(true); }}
+                            className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-3.5 py-2 rounded-xl text-xs transition cursor-pointer shadow-sm"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            + Log New Follow-up
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
