@@ -16,9 +16,12 @@ export default function ImportHistory() {
       const res = await getUploadHistory();
       if (res && res.success && Array.isArray(res.data)) {
         setBatches(res.data);
+      } else {
+        setBatches([]);
       }
     } catch (err) {
       console.error('Failed to fetch import history:', err);
+      setBatches([]);
     } finally {
       setLoading(false);
     }
@@ -40,6 +43,12 @@ export default function ImportHistory() {
       const res = await deleteUploadBatch(batchItem.id, batchId);
       
       if (res && res.success !== false) {
+        try {
+          const stored = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
+          const updated = stored.filter(b => String(b.id) !== String(batchItem.id));
+          localStorage.setItem('tds_upload_history', JSON.stringify(updated));
+        } catch (e) {}
+
         setBatches(prev => prev.filter(b => String(b.id) !== String(batchItem.id) && String(b.upload_batch_id || '') !== String(batchId || '')));
         triggerRefresh();
         await fetchHistory();
