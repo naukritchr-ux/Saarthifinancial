@@ -14,8 +14,10 @@ const DEFAULT_ROWS = [
 ];
 
 export default function TdsReconciliation() {
-  const [rows, setRows] = useState(DEFAULT_ROWS);
-  const [total, setTotal] = useState(6);
+  const isPurged = typeof localStorage !== 'undefined' && localStorage.getItem('tds_purged_all') === 'true';
+
+  const [rows, setRows] = useState(() => (isPurged ? [] : DEFAULT_ROWS));
+  const [total, setTotal] = useState(() => (isPurged ? 0 : 6));
   const [page, setPage] = useState(1);
   const [limit] = useState(25);
   

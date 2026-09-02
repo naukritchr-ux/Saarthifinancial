@@ -304,6 +304,10 @@ export const getUploadHistory = async () => {
     // API offline/slow
   }
 
+  if (localStorage.getItem('tds_purged_all') === 'true') {
+    return { success: true, data: [] };
+  }
+
   const combined = [...localLogs, ...DEFAULT_UPLOAD_BATCHES];
   const uniqueMap = new Map();
   combined.forEach(item => uniqueMap.set(String(item.id), item));
@@ -338,21 +342,39 @@ export const deleteUploadBatch = async (id, batchId = null) => {
 export const getFollowupSummary = async () => {
   try {
     const response = await fetchWithTimeout(`${API_URL}/api/followups/summary`);
-    return await response.json();
+    const data = await response.json();
+    if (data && data.success) return data;
   } catch (err) {
+    // API offline or error
+  }
+
+  if (localStorage.getItem('tds_purged_all') === 'true') {
     return {
       success: true,
       data: {
-        totalFollowedUp: 4,
-        pendingResponse: 1,
-        callNotPickedUp: 1,
-        checkAndRevert: 1,
-        tdsPaid: 1,
-        formReceived: 1,
-        dueForFollowup: 1
+        totalFollowedUp: 0,
+        pendingResponse: 0,
+        callNotPickedUp: 0,
+        checkAndRevert: 0,
+        tdsPaid: 0,
+        formReceived: 0,
+        dueForFollowup: 0
       }
     };
   }
+
+  return {
+    success: true,
+    data: {
+      totalFollowedUp: 4,
+      pendingResponse: 1,
+      callNotPickedUp: 1,
+      checkAndRevert: 1,
+      tdsPaid: 1,
+      formReceived: 1,
+      dueForFollowup: 1
+    }
+  };
 };
 
 export const getFollowups = async (filters = {}) => {
@@ -360,11 +382,15 @@ export const getFollowups = async (filters = {}) => {
     const q = buildQuery(filters);
     const response = await fetchWithTimeout(`${API_URL}/api/followups?${q}`);
     const resData = await response.json();
-    if (resData && resData.success && resData.data) {
+    if (resData && resData.success && Array.isArray(resData.data)) {
       return resData;
     }
   } catch (err) {
     // API offline/slow, fallback
+  }
+
+  if (localStorage.getItem('tds_purged_all') === 'true') {
+    return { success: true, data: [] };
   }
 
   return {

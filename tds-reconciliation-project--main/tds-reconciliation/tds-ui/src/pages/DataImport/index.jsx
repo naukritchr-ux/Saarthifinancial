@@ -6,19 +6,24 @@ import { useApp } from '../../context/AppContext';
 
 export default function DataImport() {
   const { setCleaningQueueCount } = useApp();
-  const [queue, setQueue] = useState([
-    {
-      id: 2,
-      tanNo: 'DELG03106F',
-      companyName: 'GARIMA SYSTEM SOLUTIONS',
-      issueType: 'name_mismatch',
-      issueReason: 'Deductor Name Discrepancy (26AS vs Tally)',
-      sources: ['Saarthi 360', 'Tally Ledger', 'Form 26AS'],
-      booksTds: 25000,
-      as26Tds: 20000,
-      tallyTds: 25000
-    }
-  ]);
+  const isPurged = typeof localStorage !== 'undefined' && localStorage.getItem('tds_purged_all') === 'true';
+
+  const [queue, setQueue] = useState(() => {
+    if (isPurged) return [];
+    return [
+      {
+        id: 2,
+        tanNo: 'DELG03106F',
+        companyName: 'GARIMA SYSTEM SOLUTIONS',
+        issueType: 'name_mismatch',
+        issueReason: 'Deductor Name Discrepancy (26AS vs Tally)',
+        sources: ['Saarthi 360', 'Tally Ledger', 'Form 26AS'],
+        booksTds: 25000,
+        as26Tds: 20000,
+        tallyTds: 25000
+      }
+    ];
+  });
   const [loading, setLoading] = useState(false);
   const [activeResolveItem, setActiveResolveItem] = useState(null);
 
