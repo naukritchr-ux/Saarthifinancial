@@ -8,6 +8,7 @@ export default function ImportHistory() {
   const [batches, setBatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
   const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
 
   const fetchHistory = async () => {
