@@ -34,22 +34,12 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 15000) => {
   }
 };
 
-// Embedded instant dataset fallback
-const DEFAULT_RECON_ITEMS = [
-  { id: 1, tanNo: 'MUMK12345F', companyName: 'MUMBAI TECH LABS PVT LTD', billNumber: 'INV-2024-1001', tallyTds: 50000, as26Tds: 50000, saarthiTds: 50000, difference: 0, overallStatus: 'All Matched', financialYear: '2024-25' },
-  { id: 2, tanNo: 'DELG03106F', companyName: 'GARIMA SYSTEM SOLUTIONS', billNumber: 'INV-2024-1002', tallyTds: 25000, as26Tds: 20000, saarthiTds: 25000, difference: 5000, overallStatus: 'Partial Mismatch', financialYear: '2024-25' },
-  { id: 3, tanNo: 'BLRN98765A', companyName: 'ALPHA CONSULTING SERVICES', billNumber: 'INV-2024-1003', tallyTds: 12000, as26Tds: 12000, saarthiTds: 12000, difference: 0, overallStatus: 'All Matched', financialYear: '2024-25' },
-  { id: 4, tanNo: 'CHET44332B', companyName: 'CHETNA INFOTECH SERVICES', billNumber: 'INV-2024-1004', tallyTds: 75000, as26Tds: 60000, saarthiTds: 75000, difference: 15000, overallStatus: 'Major Mismatch', financialYear: '2024-25' },
-  { id: 5, tanNo: 'HYDH55667C', companyName: 'HYDERABAD GLOBAL LOGISTICS', billNumber: 'INV-2024-1005', tallyTds: 32000, as26Tds: 32000, saarthiTds: 32000, difference: 0, overallStatus: 'All Matched', financialYear: '2024-25' },
-  { id: 6, tanNo: 'PUNE88990D', companyName: 'PUNE FINANCIAL SERVICES LTD', billNumber: 'INV-2024-1006', tallyTds: 45000, as26Tds: 45000, saarthiTds: 45000, difference: 0, overallStatus: 'All Matched', financialYear: '2024-25' }
-];
-
 export const triggerSeed = async () => {
   try {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/seed`);
     return await response.json();
   } catch (err) {
-    return { success: true, message: 'Local seed ready' };
+    return { success: false, error: err.message || 'Failed to trigger seed' };
   }
 };
 
@@ -58,15 +48,11 @@ export const getDashboardSummary = async (fy = '') => {
   try {
     const q = buildQuery({ fy });
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/dashboard-summary?${q}`);
-    return await response.json();
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to load dashboard summary' };
   } catch (err) {
-    return {
-      success: true,
-      totals: { tally: 0, as26: 0, saarthi: 0, netGap: 0 },
-      recordCount: 0,
-      sourceCoverage: { threeOfThree: 0, twoOfThree: 0, oneOfThree: 0, noMatch: 0 },
-      financialStatus: { match: 0, less: 0, excess: 0, missing: 0, pendingReview: 0, resolved: 0 }
-    };
+    return { success: false, error: err.message || 'Error connecting to dashboard service' };
   }
 };
 
@@ -74,9 +60,11 @@ export const getDashboardSummary = async (fy = '') => {
 export const getCleaningQueue = async () => {
   try {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/cleaning-queue`);
-    return await response.json();
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to load cleaning queue', count: 0, data: [] };
   } catch (err) {
-    return { success: true, count: 0, data: [] };
+    return { success: false, error: err.message || 'Error connecting to cleaning queue', count: 0, data: [] };
   }
 };
 
@@ -87,9 +75,11 @@ export const resolveCleaningItem = async (id, data) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return await response.json();
+    const resData = await response.json();
+    if (response.ok && resData && resData.success !== false) return resData;
+    return { success: false, error: resData?.error || 'Failed to resolve cleaning item' };
   } catch (err) {
-    return { success: true, message: 'Resolved locally', id };
+    return { success: false, error: err.message || 'Network error resolving item' };
   }
 };
 
@@ -99,14 +89,13 @@ export const getReconciliationReport = async (filters = {}) => {
     const q = buildQuery(filters);
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/report?${q}`);
     const data = await response.json();
-    if (data && data.success && Array.isArray(data.data)) {
+    if (response.ok && data && data.success !== false && Array.isArray(data.data)) {
       return data;
     }
+    return { success: false, error: data?.error || 'Failed to load reconciliation report', data: [], total: 0 };
   } catch (err) {
-    // API slow or offline
+    return { success: false, error: err.message || 'Error connecting to reconciliation service', data: [], total: 0 };
   }
-
-  return { success: true, data: [], total: 0, page: 1, limit: 25, totalPages: 0 };
 };
 
 export const applyStatusOverride = async (overrideData) => {
@@ -116,9 +105,11 @@ export const applyStatusOverride = async (overrideData) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(overrideData)
     });
-    return await response.json();
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to apply status override' };
   } catch (err) {
-    return { success: true, message: 'Override applied' };
+    return { success: false, error: err.message || 'Network error applying status override' };
   }
 };
 
@@ -129,10 +120,6 @@ export const getCsvExportUrl = (filters = {}) => {
 
 /** File Upload API */
 export const upload26as = async (file, modeOrFy = 'update', modeParam = 'update') => {
-  try {
-    localStorage.removeItem('tds_purged_all');
-  } catch (e) {}
-
   let importMode = 'update';
   let financialYear = '';
   if (modeOrFy === 'clean' || modeOrFy === 'update') importMode = modeOrFy;
@@ -149,17 +136,15 @@ export const upload26as = async (file, modeOrFy = 'update', modeParam = 'update'
       method: 'POST',
       body: formData
     }, 60000);
-    return await response.json();
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to upload 26AS file' };
   } catch (err) {
-    return { success: false, error: err.message || 'Network error during upload' };
+    return { success: false, error: err.message || 'Network error during 26AS upload' };
   }
 };
 
 export const uploadTally = async (file, modeOrFy = 'update', modeParam = 'update') => {
-  try {
-    localStorage.removeItem('tds_purged_all');
-  } catch (e) {}
-
   let importMode = 'update';
   let financialYear = '';
   if (modeOrFy === 'clean' || modeOrFy === 'update') importMode = modeOrFy;
@@ -176,131 +161,57 @@ export const uploadTally = async (file, modeOrFy = 'update', modeParam = 'update
       method: 'POST',
       body: formData
     }, 60000);
-    return await response.json();
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to upload Tally file' };
   } catch (err) {
-    return { success: false, error: err.message || 'Network error during upload' };
+    return { success: false, error: err.message || 'Network error during Tally upload' };
   }
 };
 
 export const purgeData = async (target = 'all') => {
-  try {
-    const deleted = JSON.parse(localStorage.getItem('tds_deleted_batches') || '[]');
-    const localLogs = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
-
-    if (target === 'all') {
-      localStorage.removeItem('tds_upload_history');
-      localStorage.removeItem('tds_26as_data');
-      localStorage.removeItem('tds_tally_data');
-      ['101', '102', '103', 101, 102, 103].forEach(id => {
-        if (!deleted.includes(String(id))) deleted.push(String(id));
-      });
-      localStorage.setItem('tds_deleted_batches', JSON.stringify(deleted));
-      localStorage.setItem('tds_purged_all', 'true');
-    } else if (target === '26as') {
-      localStorage.removeItem('tds_26as_data');
-      const filtered = localLogs.filter(item => {
-        const type = (item.import_type || item.file_name || '').toLowerCase();
-        return !type.includes('26as');
-      });
-      localStorage.setItem('tds_upload_history', JSON.stringify(filtered));
-      ['101', '102'].forEach(id => {
-        if (!deleted.includes(String(id))) deleted.push(String(id));
-      });
-      localStorage.setItem('tds_deleted_batches', JSON.stringify(deleted));
-    } else if (target === 'tally') {
-      localStorage.removeItem('tds_tally_data');
-      const filtered = localLogs.filter(item => {
-        const type = (item.import_type || item.file_name || '').toLowerCase();
-        return !type.includes('tally');
-      });
-      localStorage.setItem('tds_upload_history', JSON.stringify(filtered));
-      ['101', '103'].forEach(id => {
-        if (!deleted.includes(String(id))) deleted.push(String(id));
-      });
-      localStorage.setItem('tds_deleted_batches', JSON.stringify(deleted));
-    }
-  } catch (e) {}
-
   try {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/purge`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ target })
     });
-    return await response.json();
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to purge data on server' };
   } catch (err) {
-    return { success: true, message: 'Purged locally' };
+    return { success: false, error: err.message || 'Network error purging data' };
   }
 };
-
-const DEFAULT_UPLOAD_BATCHES = [
-  { id: 101, file_name: 'TDS_Mearge_Data_2019-2024.xlsx', uploaded_by: 'Accounts Manager', import_type: '26AS & Tally Ledger', status: 'Completed', rows_processed: 1420, upload_time: '2026-03-18 14:32:00' },
-  { id: 102, file_name: 'Form26AS_FY2024-25_Q4.csv', uploaded_by: 'Senior Auditor', import_type: '26AS TDS Report', status: 'Completed', rows_processed: 385, upload_time: '2026-03-17 11:15:00' },
-  { id: 103, file_name: 'Tally_Ledger_Extract_FY24-25.csv', uploaded_by: 'Accounts Executive', import_type: 'Tally Ledger CSV', status: 'Completed', rows_processed: 650, upload_time: '2026-03-15 09:45:00' }
-];
 
 /** Upload History API */
 export const getUploadHistory = async () => {
-  let localLogs = [];
-  let deletedIds = [];
-  try {
-    localLogs = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
-    deletedIds = JSON.parse(localStorage.getItem('tds_deleted_batches') || '[]');
-  } catch (e) {}
-
-  const filterDeleted = (list) => {
-    return list.filter(item => {
-      const idStr = String(item.id);
-      const meta = item.metadata || {};
-      const batchId = String(meta.upload_batch_id || item.upload_batch_id || item.batchId || '');
-      return !deletedIds.includes(idStr) && (!batchId || !deletedIds.includes(batchId));
-    });
-  };
-
   try {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/batches`);
     const data = await response.json();
-    if (data && data.success && Array.isArray(data.data)) {
-      const combined = [...localLogs, ...data.data];
-      const uniqueMap = new Map();
-      combined.forEach(item => uniqueMap.set(String(item.id), item));
-      return { success: true, data: filterDeleted(Array.from(uniqueMap.values())) };
+    if (response.ok && data && data.success !== false && Array.isArray(data.data)) {
+      return data;
     }
+    return { success: false, error: data?.error || 'Failed to fetch upload history from server', data: [] };
   } catch (err) {
-    // API offline/slow
+    return { success: false, error: err.message || 'Network error fetching upload history', data: [] };
   }
-
-  if (localStorage.getItem('tds_purged_all') === 'true') {
-    return { success: true, data: [] };
-  }
-
-  const combined = [...localLogs, ...DEFAULT_UPLOAD_BATCHES];
-  const uniqueMap = new Map();
-  combined.forEach(item => uniqueMap.set(String(item.id), item));
-  return { success: true, data: filterDeleted(Array.from(uniqueMap.values())) };
 };
 
 export const deleteUploadBatch = async (id, batchId = null) => {
-  try {
-    const localLogs = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
-    const updatedLogs = localLogs.filter(log => String(log.id) !== String(id) && log.upload_batch_id !== batchId);
-    localStorage.setItem('tds_upload_history', JSON.stringify(updatedLogs));
-
-    const deletedIds = JSON.parse(localStorage.getItem('tds_deleted_batches') || '[]');
-    if (id && !deletedIds.includes(String(id))) deletedIds.push(String(id));
-    if (batchId && !deletedIds.includes(String(batchId))) deletedIds.push(String(batchId));
-    localStorage.setItem('tds_deleted_batches', JSON.stringify(deletedIds));
-  } catch (e) {}
-
   try {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/batches/${id}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ batchId })
     });
-    return await response.json();
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) {
+      return data;
+    }
+    return { success: false, error: data?.error || data?.message || 'Failed to delete upload batch from server' };
   } catch (err) {
-    return { success: true, message: 'Deleted from local history log' };
+    return { success: false, error: err.message || 'Network error deleting upload batch' };
   }
 };
 
@@ -309,38 +220,25 @@ export const getFollowupSummary = async () => {
   try {
     const response = await fetchWithTimeout(`${API_URL}/api/followups/summary`);
     const data = await response.json();
-    if (data && data.success) return data;
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to fetch follow-up summary' };
   } catch (err) {
-    // API offline or error
+    return { success: false, error: err.message || 'Network error fetching follow-up summary' };
   }
-
-  return {
-    success: true,
-    data: {
-      totalFollowedUp: 0,
-      pendingResponse: 0,
-      callNotPickedUp: 0,
-      checkAndRevert: 0,
-      tdsPaid: 0,
-      formReceived: 0,
-      dueForFollowup: 0
-    }
-  };
 };
 
 export const getFollowups = async (filters = {}) => {
   try {
     const q = buildQuery(filters);
     const response = await fetchWithTimeout(`${API_URL}/api/followups?${q}`);
-    const resData = await response.json();
-    if (resData && resData.success && Array.isArray(resData.data)) {
-      return resData;
+    const data = await response.json();
+    if (response.ok && data && data.success !== false && Array.isArray(data.data)) {
+      return data;
     }
+    return { success: false, error: data?.error || 'Failed to fetch follow-ups', data: [] };
   } catch (err) {
-    // API offline/slow
+    return { success: false, error: err.message || 'Network error fetching follow-ups', data: [] };
   }
-
-  return { success: true, data: [] };
 };
 
 export const createFollowup = async (data) => {
@@ -350,9 +248,11 @@ export const createFollowup = async (data) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return await response.json();
+    const resData = await response.json();
+    if (response.ok && resData && resData.success !== false) return resData;
+    return { success: false, error: resData?.error || 'Failed to save follow-up on server' };
   } catch (err) {
-    return { success: true, message: 'Saved locally', data };
+    return { success: false, error: err.message || 'Network error saving follow-up' };
   }
 };
 
@@ -363,8 +263,10 @@ export const updateFollowup = async (id, data) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return await response.json();
+    const resData = await response.json();
+    if (response.ok && resData && resData.success !== false) return resData;
+    return { success: false, error: resData?.error || 'Failed to update follow-up on server' };
   } catch (err) {
-    return { success: true, message: 'Updated locally', id };
+    return { success: false, error: err.message || 'Network error updating follow-up' };
   }
 };

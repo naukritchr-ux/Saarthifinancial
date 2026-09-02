@@ -37,14 +37,17 @@ export default function ImportHistory() {
     try {
       const meta = typeof batchItem.metadata === 'string' ? JSON.parse(batchItem.metadata || '{}') : (batchItem.metadata || {});
       const batchId = meta.upload_batch_id || batchItem.upload_batch_id || batchItem.batchId;
-      await deleteUploadBatch(batchItem.id, batchId);
+      const res = await deleteUploadBatch(batchItem.id, batchId);
       
-      // Update UI list & notify all tabs
-      setBatches(prev => prev.filter(b => String(b.id) !== String(batchItem.id) && String(b.upload_batch_id || '') !== String(batchId || '')));
-      triggerRefresh();
-      await fetchHistory();
+      if (res && res.success !== false) {
+        setBatches(prev => prev.filter(b => String(b.id) !== String(batchItem.id) && String(b.upload_batch_id || '') !== String(batchId || '')));
+        triggerRefresh();
+        await fetchHistory();
+      } else {
+        alert(`Delete failed: ${res?.error || 'Failed to delete file from database'}`);
+      }
     } catch (err) {
-      console.error('Failed to delete batch:', err);
+      alert(`Delete failed: ${err.message || 'Error connecting to server'}`);
     }
   };
 
