@@ -80,13 +80,6 @@ export function AppProvider({ children }) {
       setFollowupPreFill({ tan: queryParams.tan || '', company: queryParams.company || '' });
     }
   };
-
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  const triggerRefresh = () => {
-    setRefreshKey(prev => prev + 1);
-  };
-
   return (
     <AppContext.Provider
       value={{
