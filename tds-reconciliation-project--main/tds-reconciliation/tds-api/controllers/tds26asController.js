@@ -1136,9 +1136,15 @@ export const deleteUploadBatch = async (req, res) => {
          AND (is_manually_edited IS NULL OR is_manually_edited = 0)`
     );
 
-    await db.execute(
-      `DELETE FROM tds_dues WHERE id NOT IN (SELECT tds_dues_id FROM tds_reconciliation_results WHERE tds_dues_id IS NOT NULL)`
-    );
+    if (process.env.DB_TYPE === 'mysql') {
+      await db.execute(
+        `DELETE d FROM tds_dues d LEFT JOIN tds_reconciliation_results r ON d.id = r.tds_dues_id WHERE r.tds_dues_id IS NULL`
+      );
+    } else {
+      await db.execute(
+        `DELETE FROM tds_dues WHERE id NOT IN (SELECT tds_dues_id FROM tds_reconciliation_results WHERE tds_dues_id IS NOT NULL)`
+      );
+    }
 
     if (historyId) {
       await db.execute('DELETE FROM upload_history WHERE id = ?', [historyId]);
