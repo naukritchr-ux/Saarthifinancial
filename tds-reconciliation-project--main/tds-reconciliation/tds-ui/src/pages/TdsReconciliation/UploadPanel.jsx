@@ -28,6 +28,7 @@ export default function UploadPanel({ onUploadSuccess }) {
   const [as26Status, setAs26Status] = useState({ loading: false, error: null, success: null });
   const [tallyStatus, setTallyStatus] = useState({ loading: false, error: null, success: null });
   const [purgeStatus, setPurgeStatus] = useState({ loading: false, message: null, error: null });
+  const [purgeConfirmTarget, setPurgeConfirmTarget] = useState(null);
 
   const [showExpectedHeaders, setShowExpectedHeaders] = useState(true);
 
@@ -155,12 +156,9 @@ export default function UploadPanel({ onUploadSuccess }) {
     }
   };
 
-  const handlePurge = async (target) => {
+  const executePurge = async (target) => {
     const labelMap = { '26as': 'Form 26AS data', 'tally': 'Tally Ledger data', 'all': 'ALL uploaded datasets' };
-    if (!window.confirm(`Are you sure you want to clear/remove ${labelMap[target]}? This action will reset past reconciliation calculations.`)) {
-      return;
-    }
-
+    setPurgeConfirmTarget(null);
     setPurgeStatus({ loading: true, message: null, error: null });
 
     // Always clear localStorage fallback
@@ -194,6 +192,10 @@ export default function UploadPanel({ onUploadSuccess }) {
         error: err.message || `Failed to clear ${labelMap[target]} on the server. Please try again.`
       });
     }
+  };
+
+  const handlePurge = (target) => {
+    setPurgeConfirmTarget(target);
   };
 
   return (
@@ -524,6 +526,47 @@ export default function UploadPanel({ onUploadSuccess }) {
         <div className="bg-red-50 text-red-700 p-3.5 rounded-xl border border-red-200 text-xs font-bold flex items-center justify-between">
           <span>{purgeStatus.error}</span>
           <button onClick={() => setPurgeStatus({ loading: false, message: null, error: null })} className="text-red-600 hover:text-red-900 font-extrabold cursor-pointer">✕</button>
+        </div>
+      )}
+
+      {/* Confirmation Modal overlay to guarantee pop-up works across all browsers */}
+      {purgeConfirmTarget && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 text-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-scale-up">
+            <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+              <div className="p-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-white">Confirm Dataset Purge</h3>
+                <p className="text-xs text-slate-400 font-medium">This operation cannot be undone.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed font-semibold">
+              Are you sure you want to clear/remove{' '}
+              <span className="text-amber-400 font-black underline">
+                {purgeConfirmTarget === '26as' ? 'Form 26AS data' : purgeConfirmTarget === 'tally' ? 'Tally Ledger data' : 'ALL uploaded datasets'}
+              </span>
+              ? This action will reset past reconciliation calculations.
+            </p>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setPurgeConfirmTarget(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => executePurge(purgeConfirmTarget)}
+                className="px-4 py-2 text-xs font-black text-white bg-red-600 hover:bg-red-500 rounded-xl transition shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Yes, Purge Data
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
