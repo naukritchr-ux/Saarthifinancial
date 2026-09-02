@@ -5,8 +5,8 @@ dotenv.config();
  * Shared API Key Verification Middleware for TDS API
  */
 export const apiKeyMiddleware = (req, res, next) => {
-  // Always exempt OPTIONS preflight and health checks
-  if (req.method === 'OPTIONS' || req.path === '/health' || req.path === '/api/health') {
+  // Always exempt OPTIONS preflight, root status, and health checks for Render health probes
+  if (req.method === 'OPTIONS' || req.path === '/' || req.path === '/health' || req.path === '/api/health') {
     return next();
   }
 

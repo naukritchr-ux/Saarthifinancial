@@ -80,8 +80,16 @@ export async function ensureTablesExist() {
       )
     `);
 
-    try { await db.execute(`ALTER TABLE tds_tally_entries ADD COLUMN gst_num TEXT;`); } catch (e) {}
-    try { await db.execute(`ALTER TABLE tds_tally_entries ADD COLUMN pan_no TEXT;`); } catch (e) {}
+    try {
+      const [tableInfo] = await db.execute(`PRAGMA table_info(tds_tally_entries);`);
+      const cols = Array.isArray(tableInfo) ? tableInfo.map(c => c.name) : [];
+      if (!cols.includes('gst_num')) {
+        await db.execute(`ALTER TABLE tds_tally_entries ADD COLUMN gst_num TEXT;`);
+      }
+      if (!cols.includes('pan_no')) {
+        await db.execute(`ALTER TABLE tds_tally_entries ADD COLUMN pan_no TEXT;`);
+      }
+    } catch (e) {}
 
     await db.execute(`
       CREATE TABLE IF NOT EXISTS tds_reconciliation_results (

@@ -38,10 +38,10 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', message: 'TDS Reconciliation API is running' });
-});
+// Health check & status endpoints for Render deployment health probes
+app.get('/', (req, res) => res.json({ status: 'OK', service: 'Saarthi TDS API' }));
+app.head('/', (req, res) => res.status(200).end());
+app.get('/health', (req, res) => res.json({ status: 'OK', message: 'TDS Reconciliation API is running' }));
 
 // Shared API Key Verification Middleware
 app.use(apiKeyMiddleware);
