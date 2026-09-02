@@ -27,6 +27,9 @@ const parseDateValue = (dateVal) => {
 };
 
 export async function ensureTablesExist() {
+  if (process.env.DB_TYPE === 'mysql') {
+    return; // Handled automatically by db.js via schema_mysql.sql
+  }
   try {
     await db.execute(`
       CREATE TABLE IF NOT EXISTS tds_dues (
