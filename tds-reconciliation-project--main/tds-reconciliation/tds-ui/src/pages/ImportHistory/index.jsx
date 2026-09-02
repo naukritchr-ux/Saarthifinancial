@@ -10,6 +10,7 @@ const DEFAULT_BATCHES = [
 export default function ImportHistory() {
   const getInitialBatches = () => {
     try {
+      if (localStorage.getItem('tds_purged_all') === 'true') return [];
       const localLogs = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
       const deletedIds = JSON.parse(localStorage.getItem('tds_deleted_batches') || '[]');
       const combined = [...localLogs, ...DEFAULT_BATCHES];
