@@ -1,7 +1,7 @@
 import xlsx from 'xlsx';
 import db from '../config/db.js';
 import { reconcile } from '../services/tdsReconciliationService.js';
-import { seedEmbeddedDataset } from '../seed_embedded_dataset.js';
+import { seedEmbeddedDataset, markPurgedFlag, clearPurgedFlag } from '../seed_embedded_dataset.js';
 import { v4 as uuidv4 } from 'uuid';
 
 // Helper to format values
@@ -16,6 +16,7 @@ const cleanNumber = (val) => {
  */
 export const seedDatabaseEndpoint = async (req, res) => {
   try {
+    clearPurgedFlag();
     await seedEmbeddedDataset(true);
     res.json({ success: true, message: 'Database seeded successfully' });
   } catch (err) {
@@ -29,6 +30,7 @@ export const seedDatabaseEndpoint = async (req, res) => {
  */
 export const upload26as = async (req, res) => {
   try {
+    clearPurgedFlag();
     console.log('📥 Upload 26AS API called');
     const file = req.file;
     if (!file) {
@@ -208,6 +210,7 @@ export const upload26as = async (req, res) => {
  */
 export const uploadTally = async (req, res) => {
   try {
+    clearPurgedFlag();
     console.log('📥 Upload Tally API called');
     const file = req.file;
     if (!file) {
@@ -1026,6 +1029,7 @@ export const purgeUploadData = async (req, res) => {
       await db.execute('DELETE FROM tds_dues');
       await db.execute('DELETE FROM tds_followups');
     }
+    markPurgedFlag();
     res.json({ success: true, message: `Successfully cleaned ${target || 'all'} dataset records` });
   } catch (err) {
     console.error('Error in purgeUploadData:', err);

@@ -140,9 +140,35 @@ export async function ensureTablesExist() {
   }
 }
 
+const PURGED_FLAG_FILE = path.resolve('uploads/tds_purged.flag');
+
+export function markPurgedFlag() {
+  try {
+    if (!fs.existsSync('uploads')) fs.mkdirSync('uploads', { recursive: true });
+    fs.writeFileSync(PURGED_FLAG_FILE, 'purged', 'utf8');
+  } catch (e) {}
+}
+
+export function clearPurgedFlag() {
+  try {
+    if (fs.existsSync(PURGED_FLAG_FILE)) {
+      fs.unlinkSync(PURGED_FLAG_FILE);
+    }
+  } catch (e) {}
+}
+
+export function isPurgedFlag() {
+  return fs.existsSync(PURGED_FLAG_FILE);
+}
+
 export async function seedEmbeddedDataset(force = false) {
   try {
     await ensureTablesExist();
+
+    if (isPurgedFlag() && !force) {
+      console.log('ℹ️ Database was purged by user. Skipping automatic re-seeding on startup.');
+      return;
+    }
 
     const [recCountRows] = await db.execute('SELECT COUNT(*) as count FROM tds_reconciliation_results');
     const recCount = recCountRows[0]?.count ?? 0;
