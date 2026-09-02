@@ -10,6 +10,13 @@ build/
 .env.local
 .env.*.local
 
+# SSL Certificates & Keys
+ca.pem
+*.pem
+*.crt
+*.cer
+*.key
+
 # Editor directories and files
 .vscode/
 .idea/
