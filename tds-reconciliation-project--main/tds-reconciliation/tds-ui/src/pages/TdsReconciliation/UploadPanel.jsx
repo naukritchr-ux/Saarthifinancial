@@ -164,11 +164,14 @@ export default function UploadPanel({ onUploadSuccess }) {
     setPurgeStatus({ loading: true, message: null, error: null });
 
     // Always clear localStorage fallback
-    if (target === '26as') localStorage.removeItem('tds_26as_data');
-    else if (target === 'tally') localStorage.removeItem('tds_tally_data');
-    else {
+    if (target === '26as') {
+      localStorage.removeItem('tds_26as_data');
+    } else if (target === 'tally') {
+      localStorage.removeItem('tds_tally_data');
+    } else {
       localStorage.removeItem('tds_26as_data');
       localStorage.removeItem('tds_tally_data');
+      localStorage.removeItem('tds_upload_history');
     }
 
     try {
