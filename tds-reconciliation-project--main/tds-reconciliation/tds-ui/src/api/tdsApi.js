@@ -175,7 +175,7 @@ export const purgeData = async (target = 'all') => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ target })
-    });
+    }, 60000);
     const data = await response.json();
     if (response.ok && data && data.success !== false) return data;
     return { success: false, error: data?.error || 'Failed to purge data on server' };
