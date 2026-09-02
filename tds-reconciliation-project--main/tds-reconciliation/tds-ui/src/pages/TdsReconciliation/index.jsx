@@ -3,6 +3,7 @@ import { RefreshCw, Search, Download, Database, CheckCircle, AlertTriangle, X, S
 import ReconciliationTable from './ReconciliationTable';
 import EditModal from './EditModal';
 import { getReconciliationReport, getCsvExportUrl, triggerSeed } from '../../api/tdsApi';
+import { useApp } from '../../context/AppContext';
 
 const DEFAULT_ROWS = [
   { id: 1, tanNo: 'MUMK12345F', companyName: 'MUMBAI TECH LABS PVT LTD', billNumber: 'INV-2024-1001', tallyTds: 50000, as26Tds: 50000, saarthiTds: 50000, difference: 0, overallStatus: 'All Matched', financialYear: '2024-25' },
@@ -14,10 +15,10 @@ const DEFAULT_ROWS = [
 ];
 
 export default function TdsReconciliation() {
-  const isPurged = typeof localStorage !== 'undefined' && localStorage.getItem('tds_purged_all') === 'true';
+  const { refreshKey } = useApp();
 
-  const [rows, setRows] = useState(() => (isPurged ? [] : DEFAULT_ROWS));
-  const [total, setTotal] = useState(() => (isPurged ? 0 : 6));
+  const [rows, setRows] = useState([]);
+  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [limit] = useState(25);
   
@@ -26,15 +27,16 @@ export default function TdsReconciliation() {
   const [coverageFilter, setCoverageFilter] = useState('All');
   const [sortBy, setSortBy] = useState('updated_at');
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [activeEditRow, setActiveEditRow] = useState(null);
   const [activeViewRow, setActiveViewRow] = useState(null);
 
   // Statistics counters
-  const [stats, setStats] = useState({ total: 6, matched: 4, partial: 1, major: 1 });
+  const [stats, setStats] = useState({ total: 0, matched: 0, partial: 0, major: 0 });
 
   const fetchReport = async () => {
+    setLoading(true);
     try {
       let res = await getReconciliationReport({
         page,
@@ -67,7 +69,7 @@ export default function TdsReconciliation() {
 
   useEffect(() => {
     fetchReport();
-  }, [page, overallStatus, coverageFilter, sortBy, refreshTrigger]);
+  }, [page, overallStatus, coverageFilter, sortBy, refreshTrigger, refreshKey]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();

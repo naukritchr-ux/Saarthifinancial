@@ -14,8 +14,10 @@ import {
   Table
 } from 'lucide-react';
 import { upload26as, uploadTally, purgeData } from '../../api/tdsReconciliation';
+import { useApp } from '../../context/AppContext';
 
 export default function UploadPanel({ onUploadSuccess }) {
+  const { triggerRefresh } = useApp();
   const [as26File, setAs26File] = useState(null);
   const [tallyFile, setTallyFile] = useState(null);
   
@@ -102,6 +104,7 @@ export default function UploadPanel({ onUploadSuccess }) {
           success: `${as26ImportMode === 'clean' ? 'Past 26AS data cleared & imported ' : 'Imported '}${rowCount} rows successfully!`
         });
         setAs26File(null);
+        triggerRefresh();
         if (onUploadSuccess) onUploadSuccess();
       } else {
         setAs26Status({
@@ -134,6 +137,7 @@ export default function UploadPanel({ onUploadSuccess }) {
           success: `${tallyImportMode === 'clean' ? 'Past Tally data cleared & imported ' : 'Imported '}${rowCount} rows successfully!`
         });
         setTallyFile(null);
+        triggerRefresh();
         if (onUploadSuccess) onUploadSuccess();
       } else {
         setTallyStatus({
@@ -171,6 +175,7 @@ export default function UploadPanel({ onUploadSuccess }) {
       const res = await purgeData(target);
       if (res && res.success) {
         setPurgeStatus({ loading: false, message: res.message || 'Data cleared successfully', error: null });
+        triggerRefresh();
         if (onUploadSuccess) onUploadSuccess();
         return;
       }
@@ -179,6 +184,7 @@ export default function UploadPanel({ onUploadSuccess }) {
     }
 
     setPurgeStatus({ loading: false, message: `${labelMap[target]} cleared successfully!`, error: null });
+    triggerRefresh();
     if (onUploadSuccess) onUploadSuccess();
   };
 

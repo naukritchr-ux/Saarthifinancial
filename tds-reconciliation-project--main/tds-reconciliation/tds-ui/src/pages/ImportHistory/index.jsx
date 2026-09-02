@@ -1,31 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, Search, FileText, CheckCircle2, AlertCircle, RefreshCw, Database, Filter, Trash2 } from 'lucide-react';
 import { getUploadHistory, deleteUploadBatch } from '../../api/tdsApi';
-
-const DEFAULT_BATCHES = [
-  { id: 101, file_name: 'TDS_Mearge_Data_2019-2024.xlsx', uploaded_by: 'Accounts Manager', import_type: '26AS & Tally Ledger', status: 'Completed', rows_processed: 1420, upload_time: '2026-03-18 14:32:00' },
-  { id: 102, file_name: 'Form26AS_FY2024-25_Q4.csv', uploaded_by: 'Senior Auditor', import_type: '26AS TDS Report', status: 'Completed', rows_processed: 385, upload_time: '2026-03-17 11:15:00' },
-];
+import { useApp } from '../../context/AppContext';
 
 export default function ImportHistory() {
-  const getInitialBatches = () => {
-    try {
-      if (localStorage.getItem('tds_purged_all') === 'true') return [];
-      const localLogs = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
-      const deletedIds = JSON.parse(localStorage.getItem('tds_deleted_batches') || '[]');
-      const combined = [...localLogs, ...DEFAULT_BATCHES];
-      return combined.filter(b => !deletedIds.includes(String(b.id)) && !deletedIds.includes(String(b.upload_batch_id)));
-    } catch (e) {
-      return DEFAULT_BATCHES;
-    }
-  };
-
-  const [batches, setBatches] = useState(getInitialBatches);
-  const [loading, setLoading] = useState(false);
+  const { refreshKey, triggerRefresh } = useApp();
+  const [batches, setBatches] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
 
   const fetchHistory = async () => {
+    setLoading(true);
     try {
       const res = await getUploadHistory();
       if (res && res.success && Array.isArray(res.data)) {
@@ -40,7 +26,7 @@ export default function ImportHistory() {
 
   useEffect(() => {
     fetchHistory();
-  }, []);
+  }, [refreshKey]);
 
   const handleDeleteBatch = async (batchItem) => {
     const fileName = batchItem.fileName || batchItem.file_name || 'this file';
@@ -53,8 +39,9 @@ export default function ImportHistory() {
       const batchId = meta.upload_batch_id || batchItem.upload_batch_id || batchItem.batchId;
       await deleteUploadBatch(batchItem.id, batchId);
       
-      // Update UI list
+      // Update UI list & notify all tabs
       setBatches(prev => prev.filter(b => String(b.id) !== String(batchItem.id) && String(b.upload_batch_id || '') !== String(batchId || '')));
+      triggerRefresh();
       await fetchHistory();
     } catch (err) {
       console.error('Failed to delete batch:', err);
