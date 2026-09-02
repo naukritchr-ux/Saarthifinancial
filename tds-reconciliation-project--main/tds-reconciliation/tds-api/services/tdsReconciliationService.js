@@ -11,7 +11,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
 
     // 1. Fetch all unique TANs from tds_dues
     const [duesRows] = await db.execute(
-      'SELECT id, UPPER(TRIM(tan_no)) as tan, tds, company_name FROM tds_dues WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ""'
+      "SELECT id, UPPER(TRIM(tan_no)) as tan, tds, company_name FROM tds_dues WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''"
     );
     const duesMap = new Map();
     duesRows.forEach(r => duesMap.set(r.tan, r));
@@ -20,7 +20,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     const [as26Rows] = await db.execute(
       `SELECT UPPER(TRIM(tan_no)) as tan, MAX(deductor_name) as company_name, SUM(tds_deducted) as total, MAX(upload_batch_id) as batch_id 
        FROM tds_26as_entries 
-       WHERE tan_no IS NOT NULL AND TRIM(tan_no) != "" 
+       WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' 
        GROUP BY UPPER(TRIM(tan_no))`
     );
     const as26Map = new Map();
@@ -30,7 +30,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     const [tallyRows] = await db.execute(
       `SELECT UPPER(TRIM(tan_no)) as tan, MAX(party_name) as company_name, SUM(tds_amount) as total, MAX(upload_batch_id) as batch_id 
        FROM tds_tally_entries 
-       WHERE tan_no IS NOT NULL AND TRIM(tan_no) != "" 
+       WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' 
        GROUP BY UPPER(TRIM(tan_no))`
     );
     const tallyMap = new Map();

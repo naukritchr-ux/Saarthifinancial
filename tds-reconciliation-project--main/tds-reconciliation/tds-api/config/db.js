@@ -94,15 +94,19 @@ if (DB_TYPE === 'sqlite') {
 } else {
   console.log('🔌 Initializing MySQL database pool (Aiven / Managed MySQL)');
   
+  const rawHost = (process.env.DB_HOST || 'localhost').trim().replace(/^(https?:\/\/|mysql:\/\/)/i, '').split('/')[0].split(':')[0];
+  const rawPort = parseInt(process.env.DB_PORT || '3306');
+
   const poolConfig = {
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
+    host: rawHost,
+    user: (process.env.DB_USER || 'root').trim(),
     password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'defaultdb',
-    port: parseInt(process.env.DB_PORT || '3306'),
+    database: (process.env.DB_NAME || 'defaultdb').trim(),
+    port: isNaN(rawPort) ? 3306 : rawPort,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
+    connectTimeout: 20000,
     multipleStatements: true
   };
 
