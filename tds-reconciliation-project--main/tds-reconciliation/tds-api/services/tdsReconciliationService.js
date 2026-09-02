@@ -28,7 +28,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
 
     // 3. Fetch sums for Tally grouped by TAN
     const [tallyRows] = await db.execute(
-      `SELECT UPPER(TRIM(tan_no)) as tan, MAX(company_name) as company_name, SUM(tds_amount) as total, MAX(upload_batch_id) as batch_id 
+      `SELECT UPPER(TRIM(tan_no)) as tan, MAX(party_name) as company_name, SUM(tds_amount) as total, MAX(upload_batch_id) as batch_id 
        FROM tds_tally_entries 
        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != "" 
        GROUP BY UPPER(TRIM(tan_no))`
@@ -88,16 +88,20 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
       const hasTally = finalTallyBatchId !== null || tallyTds > 0;
 
       // Pairwise evaluate helper
-      const evaluatePair = (valA, valB, isMissing) => {
-        if (isMissing && valB > 0) return 'Not Received';
+      const evaluatePair = (valA, valB, hasA, hasB) => {
+        if (!hasA || !hasB) {
+          if (!hasA && hasB && valB > 0) return 'Not Received';
+          if (hasA && !hasB && valA > 0) return 'Not Received';
+          if (!hasA && !hasB) return 'Not Received';
+        }
         if (Math.abs(valA - valB) <= 1.0) return 'Matched';
         if (valA > valB) return 'Excess';
         return 'Less Paid';
       };
 
-      const booksVs26as = evaluatePair(as26Tds, booksTds, !has26as);
-      const booksVsTally = evaluatePair(tallyTds, booksTds, !hasTally);
-      const as26VsTally = evaluatePair(tallyTds, as26Tds, !has26as || !hasTally);
+      const booksVs26as = evaluatePair(as26Tds, booksTds, has26as, true);
+      const booksVsTally = evaluatePair(tallyTds, booksTds, hasTally, true);
+      const as26VsTally = evaluatePair(tallyTds, as26Tds, hasTally, has26as);
 
       let overallStatus = 'All Matched';
       if (!has26as || !hasTally) {
