@@ -11,11 +11,13 @@ import {
   Settings,
   Briefcase,
   Globe,
-  LogOut
+  LogOut,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
-  const { userRole, currentUser, logout, activeModule, setActiveModule } = useContext(FinanceContext);
+  const { userRole, currentUser, logout, activeModule, setActiveModule, isSidebarOpen, toggleSidebar } = useContext(FinanceContext);
 
   const handleModuleChange = (moduleName) => {
     setActiveModule(moduleName);
@@ -53,7 +55,18 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
   const sections = ['Overview', 'Analytics'];
 
   return (
-    <aside className="sidebar">
+    <>
+      {/* Edge Flap Toggle Button */}
+      <button 
+        className={`sidebar-flap-toggle ${!isSidebarOpen ? 'collapsed' : ''}`}
+        onClick={toggleSidebar}
+        title={isSidebarOpen ? "Close Sidebar Flap" : "Open Sidebar Flap"}
+        aria-label="Toggle Sidebar Flap"
+      >
+        {isSidebarOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+      </button>
+
+      <aside className="sidebar">
       <div className="sidebar-brand">
         <div className="brand-logo" style={{ background: activeModule === 'job_portal' ? 'linear-gradient(135deg, #ea580c, #f97316)' : 'linear-gradient(135deg, var(--accent-teal), #06b6d4)', boxShadow: activeModule === 'job_portal' ? '0 0 15px rgba(234, 88, 12, 0.4)' : '0 0 15px rgba(13, 148, 136, 0.4)' }}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -197,6 +210,7 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
         </div>
       </div>
     </aside>
+    </>
   );
 };
 
