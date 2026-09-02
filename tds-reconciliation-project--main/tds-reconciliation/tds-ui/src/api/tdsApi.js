@@ -176,14 +176,22 @@ export const getCsvExportUrl = (filters = {}) => {
 };
 
 /** File Upload API */
-export const upload26as = async (file, financialYear, importMode = 'update') => {
+export const upload26as = async (file, modeOrFy = 'update', modeParam = 'update') => {
   try {
     localStorage.removeItem('tds_purged_all');
   } catch (e) {}
+
+  let importMode = 'update';
+  let financialYear = '';
+  if (modeOrFy === 'clean' || modeOrFy === 'update') importMode = modeOrFy;
+  else if (modeOrFy) financialYear = modeOrFy;
+  if (modeParam === 'clean' || modeParam === 'update') importMode = modeParam;
+
   const formData = new FormData();
   formData.append('file', file);
   if (financialYear) formData.append('financialYear', financialYear);
-  if (importMode) formData.append('importMode', importMode);
+  formData.append('importMode', importMode);
+
   try {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/upload-26as`, {
       method: 'POST',
@@ -191,19 +199,26 @@ export const upload26as = async (file, financialYear, importMode = 'update') => 
     }, 60000);
     return await response.json();
   } catch (err) {
-    const estimatedRows = Math.max(1, Math.round((file?.size || 1000) / 120));
-    return { success: true, records: estimatedRows };
+    return { success: false, error: err.message || 'Network error during upload' };
   }
 };
 
-export const uploadTally = async (file, financialYear, importMode = 'update') => {
+export const uploadTally = async (file, modeOrFy = 'update', modeParam = 'update') => {
   try {
     localStorage.removeItem('tds_purged_all');
   } catch (e) {}
+
+  let importMode = 'update';
+  let financialYear = '';
+  if (modeOrFy === 'clean' || modeOrFy === 'update') importMode = modeOrFy;
+  else if (modeOrFy) financialYear = modeOrFy;
+  if (modeParam === 'clean' || modeParam === 'update') importMode = modeParam;
+
   const formData = new FormData();
   formData.append('file', file);
   if (financialYear) formData.append('financialYear', financialYear);
-  if (importMode) formData.append('importMode', importMode);
+  formData.append('importMode', importMode);
+
   try {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/upload-tally`, {
       method: 'POST',
@@ -211,8 +226,7 @@ export const uploadTally = async (file, financialYear, importMode = 'update') =>
     }, 60000);
     return await response.json();
   } catch (err) {
-    const estimatedRows = Math.max(1, Math.round((file?.size || 1000) / 120));
-    return { success: true, records: estimatedRows };
+    return { success: false, error: err.message || 'Network error during upload' };
   }
 };
 

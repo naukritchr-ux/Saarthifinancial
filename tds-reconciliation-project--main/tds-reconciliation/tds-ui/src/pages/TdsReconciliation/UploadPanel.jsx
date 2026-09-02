@@ -93,28 +93,29 @@ export default function UploadPanel({ onUploadSuccess }) {
     
     try {
       const res = await upload26as(as26File, as26ImportMode);
-      const rowCount = (res && typeof res.records === 'number') ? res.records : Math.max(1, Math.round(as26File.size / 150));
-      
-      saveUploadLogToHistory(as26File.name, 'Form 26AS (26AS_TDS)', rowCount);
-
-      setAs26Status({
-        loading: false,
-        error: null,
-        success: `${as26ImportMode === 'clean' ? 'Past 26AS data cleared & imported ' : 'Imported '}${rowCount} rows successfully!`
-      });
-      setAs26File(null);
-      if (onUploadSuccess) onUploadSuccess();
+      if (res && res.success) {
+        const rowCount = (typeof res.records === 'number') ? res.records : 1;
+        saveUploadLogToHistory(as26File.name, 'Form 26AS (26AS_TDS)', rowCount);
+        setAs26Status({
+          loading: false,
+          error: null,
+          success: `${as26ImportMode === 'clean' ? 'Past 26AS data cleared & imported ' : 'Imported '}${rowCount} rows successfully!`
+        });
+        setAs26File(null);
+        if (onUploadSuccess) onUploadSuccess();
+      } else {
+        setAs26Status({
+          loading: false,
+          error: res?.error || res?.details || 'Failed to parse 26AS file. Please check column format.',
+          success: null
+        });
+      }
     } catch (err) {
-      const estCount = Math.max(1, Math.round(as26File.size / 150));
-      saveUploadLogToHistory(as26File.name, 'Form 26AS (26AS_TDS)', estCount);
-
       setAs26Status({
         loading: false,
-        error: null,
-        success: `${as26ImportMode === 'clean' ? 'Past 26AS data cleared & imported ' : 'Imported '}${estCount} rows successfully!`
+        error: err.message || 'Error connecting to upload service.',
+        success: null
       });
-      setAs26File(null);
-      if (onUploadSuccess) onUploadSuccess();
     }
   };
 
@@ -124,28 +125,29 @@ export default function UploadPanel({ onUploadSuccess }) {
 
     try {
       const res = await uploadTally(tallyFile, tallyImportMode);
-      const rowCount = (res && typeof res.records === 'number') ? res.records : Math.max(1, Math.round(tallyFile.size / 150));
-
-      saveUploadLogToHistory(tallyFile.name, 'Tally Ledger CSV', rowCount);
-
-      setTallyStatus({
-        loading: false,
-        error: null,
-        success: `${tallyImportMode === 'clean' ? 'Past Tally data cleared & imported ' : 'Imported '}${rowCount} rows successfully!`
-      });
-      setTallyFile(null);
-      if (onUploadSuccess) onUploadSuccess();
+      if (res && res.success) {
+        const rowCount = (typeof res.records === 'number') ? res.records : 1;
+        saveUploadLogToHistory(tallyFile.name, 'Tally Ledger CSV', rowCount);
+        setTallyStatus({
+          loading: false,
+          error: null,
+          success: `${tallyImportMode === 'clean' ? 'Past Tally data cleared & imported ' : 'Imported '}${rowCount} rows successfully!`
+        });
+        setTallyFile(null);
+        if (onUploadSuccess) onUploadSuccess();
+      } else {
+        setTallyStatus({
+          loading: false,
+          error: res?.error || res?.details || 'Failed to parse Tally file. Please check column format.',
+          success: null
+        });
+      }
     } catch (err) {
-      const estCount = Math.max(1, Math.round(tallyFile.size / 150));
-      saveUploadLogToHistory(tallyFile.name, 'Tally Ledger CSV', estCount);
-
       setTallyStatus({
         loading: false,
-        error: null,
-        success: `${tallyImportMode === 'clean' ? 'Past Tally data cleared & imported ' : 'Imported '}${estCount} rows successfully!`
+        error: err.message || 'Error connecting to upload service.',
+        success: null
       });
-      setTallyFile(null);
-      if (onUploadSuccess) onUploadSuccess();
     }
   };
 

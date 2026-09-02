@@ -47,7 +47,7 @@ export const upload26as = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Uploaded file is empty' });
     }
 
-    // Heuristics: Scan for header row
+    // Heuristics: Scan for header row & column mapping
     let headerRowIdx = -1;
     let colMap = {
       tan_no: -1,
@@ -58,45 +58,46 @@ export const upload26as = async (req, res) => {
       quarter: -1
     };
 
+    const tanRegex = /^([A-Z]{4}\d{5}[A-Z]|[A-Z]{5}\d{4}[A-Z])$/i;
+
     for (let r = 0; r < Math.min(100, rawData.length); r++) {
       const row = rawData[r];
-      if (!row) continue;
-      let hasTan = false;
-      let hasTds = false;
-      row.forEach((cell) => {
-        const text = String(cell || '').toLowerCase();
-        if (text.includes('tan')) hasTan = true;
-        if (text.includes('tds') || text.includes('tax deducted') || text.includes('deducted')) hasTds = true;
+      if (!row || !Array.isArray(row)) continue;
+      
+      let foundHeader = false;
+      row.forEach((cell, col) => {
+        const text = String(cell || '').toLowerCase().trim();
+        if (text.includes('tan') || text.includes('pan') || text.includes('deductor') || text.includes('company') || text.includes('tds') || text.includes('amount')) {
+          foundHeader = true;
+        }
+
+        if (colMap.tan_no === -1 && (text.includes('tan') || text.includes('pan') || text.includes('deductor id'))) {
+          colMap.tan_no = col;
+        }
+        if (colMap.deductor_name === -1 && (text.includes('deductor') || text.includes('company') || text.includes('party') || text === 'name')) {
+          colMap.deductor_name = col;
+        }
+        if (colMap.amount_paid === -1 && (text.includes('amount paid') || text.includes('amount credited') || text.includes('gross') || text.includes('invoice') || text === 'amount')) {
+          colMap.amount_paid = col;
+        }
+        if (colMap.tds_deducted === -1 && (text.includes('tds') || text.includes('tax deducted') || text.includes('deducted') || text === 'tax')) {
+          colMap.tds_deducted = col;
+        }
+        if (colMap.section === -1 && text.includes('section')) {
+          colMap.section = col;
+        }
+        if (colMap.quarter === -1 && (text.includes('quarter') || text.includes('period') || text.includes('qtr'))) {
+          colMap.quarter = col;
+        }
       });
-      if (hasTan && hasTds) {
+
+      if (foundHeader && (colMap.tan_no !== -1 || colMap.tds_deducted !== -1)) {
         headerRowIdx = r;
-        row.forEach((cell, col) => {
-          const text = String(cell || '').toLowerCase().trim();
-          if (text === 'tan' || text === 'tan no' || text === 'tan number' || text.includes('tan of deductor') || text.includes('deductor tan') || text.includes('party tan')) {
-            colMap.tan_no = col;
-          }
-          if (text.includes('deductor name') || text === 'company name' || text === 'name' || text === 'deductor' || text.includes('party name')) {
-            colMap.deductor_name = col;
-          }
-          if (text.includes('amount paid') || text.includes('amount credited') || text.includes('total amount') || text === 'amount') {
-            colMap.amount_paid = col;
-          }
-          if (text.includes('tds') || text.includes('tax deducted') || text.includes('deducted')) {
-            colMap.tds_deducted = col;
-          }
-          if (text.includes('section')) {
-            colMap.section = col;
-          }
-          if (text.includes('quarter') || text.includes('period')) {
-            colMap.quarter = col;
-          }
-        });
         break;
       }
     }
 
     // Fallback: If tan_no could not be found via header labels, match based on data patterns
-    const tanRegex = /^[A-Z]{4}\d{5}[A-Z]$/i;
     if (colMap.tan_no === -1) {
       for (let c = 0; c < 30; c++) {
         let matchCount = 0;
@@ -105,7 +106,7 @@ export const upload26as = async (req, res) => {
             matchCount++;
           }
         }
-        if (matchCount > 1) {
+        if (matchCount >= 1) {
           colMap.tan_no = c;
           break;
         }
@@ -113,13 +114,13 @@ export const upload26as = async (req, res) => {
     }
 
     // Fallback for amount columns if headers not found
-    if (colMap.tds_deducted === -1) colMap.tds_deducted = colMap.tan_no + 3; // heuristic offset
-    if (colMap.amount_paid === -1) colMap.amount_paid = colMap.tan_no + 2;
+    if (colMap.tds_deducted === -1 && colMap.tan_no !== -1) colMap.tds_deducted = colMap.tan_no + 3;
+    if (colMap.amount_paid === -1 && colMap.tan_no !== -1) colMap.amount_paid = colMap.tan_no + 2;
 
     if (colMap.tan_no === -1) {
       return res.status(400).json({
         success: false,
-        error: 'Could not detect client TAN number column inside the uploaded file structure.'
+        error: 'Could not detect TAN/PAN column in uploaded file. Please ensure your file contains a valid TAN column (e.g. DELG03106F).'
       });
     }
 
