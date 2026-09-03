@@ -790,10 +790,12 @@ export const resolveCleaningItem = async (req, res) => {
         [id, targetTan || id]
       );
       if (targetTan) {
-        await db.execute(
-          'DELETE FROM tds_dues WHERE UPPER(TRIM(tan_no)) = ? AND (saarthi_client_id IS NULL OR saarthi_client_id = 0) AND (tds IS NULL OR tds = 0)',
-          [targetTan]
-        );
+        try {
+          await db.execute(
+            'DELETE FROM tds_dues WHERE UPPER(TRIM(tan_no)) = ? AND (tds IS NULL OR tds = 0)',
+            [targetTan]
+          );
+        } catch (e) {}
       }
 
       return res.json({
