@@ -891,12 +891,12 @@ export const getReconciliationReport = async (req, res) => {
         tr.tds_dues_id as tdsDuesId,
         tr.tan_no as tanNo,
         COALESCE(NULLIF(TRIM(d.company_name), ''), tr.tan_no, 'Client Entity') as companyName,
-        d.bill_number as billNumber,
-        d.bill_date as billDate,
-        COALESCE(d.total_bill_amount, 0) as totalBillAmount,
-        COALESCE(d.financial_year, 'FY 2024-25') as financialYear,
+        'N/A' as billNumber,
+        'N/A' as billDate,
+        0 as totalBillAmount,
+        'FY 2024-25' as financialYear,
 
-        COALESCE(tr.books_tds, d.tds, 0) as booksTds,
+        COALESCE(tr.books_tds, 0) as booksTds,
         COALESCE(tr.as26_tds, 0) as as26Tds,
         COALESCE(tr.tally_tds, 0) as tallyTds,
         tr.books_vs_26as_status as booksVs26asStatus,
@@ -908,19 +908,19 @@ export const getReconciliationReport = async (req, res) => {
         tr.is_manually_edited as isManuallyEdited,
         tr.updated_at as updatedAt,
 
-        COALESCE(d.contact_person_name, '') as contactPersonName,
+        '' as contactPersonName,
         'N/A' as designation,
-        COALESCE(d.contact_number, '') as contactNumber,
-        COALESCE(d.email_id, '') as emailId,
-        COALESCE(d.teamleader, '') as teamleader,
+        '' as contactNumber,
+        '' as emailId,
+        '' as teamleader,
 
         d.company_name as tallyPartyName,
         '' as gstNum,
         '' as panNo,
-        COALESCE(d.total_bill_amount, 0) as tallyGrossTotal,
+        0 as tallyGrossTotal,
 
         d.company_name as as26DeductorName,
-        COALESCE(d.total_bill_amount, 0) as as26InvoiceAmount
+        0 as as26InvoiceAmount
 
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
