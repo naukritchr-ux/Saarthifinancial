@@ -954,11 +954,11 @@ export const getReconciliationReport = async (req, res) => {
         tr.is_manually_edited as isManuallyEdited,
         tr.updated_at as updatedAt,
 
-        COALESCE(NULLIF(TRIM(d.contact_person_name), ''), 'HR Manager') as contactPersonName,
-        COALESCE(NULLIF(TRIM(d.designation), ''), 'Accounts Lead') as designation,
-        COALESCE(NULLIF(TRIM(d.contact_number), ''), NULLIF(TRIM(d.note), ''), '+91 98200 12345') as contactNumber,
-        COALESCE(NULLIF(TRIM(d.email_id), ''), 'accounts@saarthi360.in') as emailId,
-        COALESCE(NULLIF(TRIM(d.teamleader), ''), 'Accounts Lead') as teamleader,
+        COALESCE(NULLIF(TRIM(d.contact_person_name), ''), '') as contactPersonName,
+        COALESCE(NULLIF(TRIM(d.designation), ''), '') as designation,
+        COALESCE(NULLIF(TRIM(d.contact_number), ''), '') as contactNumber,
+        COALESCE(NULLIF(TRIM(d.email_id), ''), '') as emailId,
+        COALESCE(NULLIF(TRIM(d.teamleader), ''), '') as teamleader,
 
         d.company_name as tallyPartyName,
         '' as gstNum,
@@ -1014,49 +1014,10 @@ export const getReconciliationReport = async (req, res) => {
       const diffCalc = (tally || saarthi) - as26;
       const displayFy = (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') ? activeFy : (r.financialYear || 'FY 2025-26');
 
-      const generateContactForCompany = (compName, tan) => {
-        const seedStr = (compName || tan || 'Client').toUpperCase();
-        let hash = 0;
-        for (let i = 0; i < seedStr.length; i++) {
-          hash = (hash * 31 + seedStr.charCodeAt(i)) % 100000;
-        }
-        
-        const firstNames = ['Rajesh', 'Vikram', 'Amit', 'Neha', 'Siddharth', 'Kavita', 'Praveen', 'Deepak', 'Anita', 'Suresh', 'Pooja', 'Rohan', 'Sunil', 'Meena', 'Rakesh', 'Sanjay', 'Tarun', 'Anil', 'Alok', 'Manoj'];
-        const lastNames = ['Sharma', 'Mehta', 'Verma', 'Gupta', 'Rao', 'Shah', 'Nambiar', 'Kulkarni', 'Desai', 'Kumar', 'Nair', 'Joshi', 'Patel', 'Singh', 'Chawla', 'Agarwal', 'Kapoor', 'Bhatia', 'Reddy'];
-        const designations = ['VP Finance & Operations', 'Director Accounts', 'Finance Controller', 'Head of Taxation', 'Chief Financial Officer', 'HR Lead & Payroll', 'Accounts Manager', 'Senior Financial Analyst'];
-        
-        const fn = firstNames[hash % firstNames.length];
-        const ln = lastNames[(hash + 3) % lastNames.length];
-        const desig = designations[hash % designations.length];
-        
-        const numPart = String(9820000000 + (hash * 7317) % 89999999);
-        const phone = `+91 ${numPart.slice(0, 5)} ${numPart.slice(5)}`;
-        
-        const cleanComp = seedStr.replace(/[^A-Z]/g, '').toLowerCase().slice(0, 8) || 'saarthi';
-        const email = `${fn.toLowerCase()}.${ln.toLowerCase()}@${cleanComp}.com`;
-
-        return { name: `${fn} ${ln}`, desig, phone, email };
-      };
-
-      const MASTER_CONTACTS = {
-        'STULZ CHSPL (INDIA) PRIVATE LIMITED': { name: 'Rajesh Sharma', desig: 'VP Finance & Operations', phone: '+91 98201 54321', email: 'rajesh.sharma@stulz.in' },
-        'SHREE ASHAPURA PROJECTS LLP': { name: 'Vikram Mehta', desig: 'Director Accounts', phone: '+91 98210 98765', email: 'vikram.mehta@ashapura.com' },
-        'RISHA CONTROL ENGINEERS PVT LTD.': { name: 'Amit Verma', desig: 'Finance Controller', phone: '+91 98112 33445', email: 'amit.verma@rishacontrol.com' },
-        'SPECTRUM SCAN PVT LTD.': { name: 'Neha Gupta', desig: 'Head of Taxation', phone: '+91 98205 66778', email: 'neha.gupta@spectrumscan.in' },
-        'SMARTBEAM AI': { name: 'Siddharth Rao', desig: 'Chief Financial Officer', phone: '+91 98450 11223', email: 'siddharth@smartbeam.ai' },
-        'SMARTBEAM AI PRIVATE LIMITED': { name: 'Siddharth Rao', desig: 'Chief Financial Officer', phone: '+91 98450 11223', email: 'siddharth@smartbeam.ai' },
-        'SIMPLE AND HOMELY PRIVATE LIMITED': { name: 'Kavita Shah', desig: 'HR Lead & Payroll', phone: '+91 98203 44556', email: 'kavita@simplehomely.com' },
-        'NAMBIAR BUILDERS': { name: 'Praveen Nambiar', desig: 'VP Finance', phone: '+91 98800 77889', email: 'praveen@nambiarbuilders.com' },
-        'NAMBIAR BUILDERS PRIVATE LIMITED': { name: 'Praveen Nambiar', desig: 'VP Finance', phone: '+91 98800 77889', email: 'praveen@nambiarbuilders.com' },
-        'PUNE E - STOCK BROKING LIMITED': { name: 'Deepak Kulkarni', desig: 'Accounts Manager', phone: '+91 98220 33441', email: 'deepak@puneestock.com' }
-      };
-
-      const generated = generateContactForCompany(r.companyName, r.tanNo);
-      const masterInfo = MASTER_CONTACTS[r.companyName] || generated;
-      const personName = (r.contactPersonName && r.contactPersonName !== 'HR Manager' && r.contactPersonName !== 'HR & Finance Team') ? r.contactPersonName : masterInfo.name;
-      const desig = (r.designation && r.designation !== 'Accounts Lead' && r.designation !== 'HR Manager') ? r.designation : masterInfo.desig;
-      const phone = (r.contactNumber && r.contactNumber !== '+91 98200 12345') ? r.contactNumber : masterInfo.phone;
-      const email = (r.emailId && r.emailId !== 'accounts@saarthi360.in') ? r.emailId : masterInfo.email;
+      const personName = (r.contactPersonName && r.contactPersonName.trim() !== '') ? r.contactPersonName.trim() : '—';
+      const desig = (r.designation && r.designation.trim() !== '') ? r.designation.trim() : '—';
+      const phone = (r.contactNumber && r.contactNumber.trim() !== '') ? r.contactNumber.trim() : '—';
+      const email = (r.emailId && r.emailId.trim() !== '') ? r.emailId.trim() : '—';
 
       return {
         ...r,
