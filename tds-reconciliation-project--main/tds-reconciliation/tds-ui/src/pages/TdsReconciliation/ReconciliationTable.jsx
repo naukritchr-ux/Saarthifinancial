@@ -104,7 +104,7 @@ export default function ReconciliationTable({
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse text-xs">
           <thead>
-            <tr className="bg-slate-900 text-white border-b border-slate-800 font-bold uppercase tracking-wider">
+            <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 font-bold uppercase tracking-wider text-[11px]">
               <th className="px-4 py-3 text-center"></th>
               <th className="px-4 py-3">Company</th>
               <th className="px-4 py-3">TAN</th>
@@ -236,22 +236,22 @@ export default function ReconciliationTable({
                         <td colSpan="12" className="px-8 py-4 border-b border-gray-100">
                           <div className="bg-white p-4 rounded-xl border border-gray-200 space-y-4 shadow-inner text-xs">
                             {/* HR Contact Person & Team Info */}
-                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 p-3 bg-amber-50/40 rounded-xl border border-amber-200/60 text-slate-800 font-semibold">
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 p-3.5 bg-amber-50/50 rounded-xl border border-amber-200/80 text-slate-800 font-semibold shadow-2xs">
                               <div>
-                                <span className="block text-[10px] font-bold text-amber-700 uppercase">HR / Contact Person</span>
-                                <span className="font-extrabold text-slate-900">{row.contactPersonName || row.contactPerson || 'N/A'}</span>
+                                <span className="block text-[10px] font-black text-amber-800 uppercase tracking-wider">HR / Contact Person</span>
+                                <span className="font-extrabold text-slate-900 text-xs">{row.contactPersonName && row.contactPersonName !== '—' ? row.contactPersonName : 'HR Manager'}</span>
                               </div>
                               <div>
-                                <span className="block text-[10px] font-bold text-amber-700 uppercase">Designation</span>
-                                <span>{row.designation || 'HR Manager'}</span>
+                                <span className="block text-[10px] font-black text-amber-800 uppercase tracking-wider">Designation</span>
+                                <span className="text-xs">{row.designation && row.designation !== '—' ? row.designation : 'Accounts Lead'}</span>
                               </div>
                               <div>
-                                <span className="block text-[10px] font-bold text-amber-700 uppercase">Contact Number</span>
-                                <span>{row.contactNumber || 'N/A'}</span>
+                                <span className="block text-[10px] font-black text-amber-800 uppercase tracking-wider">Contact Number</span>
+                                <span className="font-mono font-bold text-slate-900 text-xs">{row.contactNumber && row.contactNumber !== '—' ? row.contactNumber : 'Not Available'}</span>
                               </div>
                               <div>
-                                <span className="block text-[10px] font-bold text-amber-700 uppercase">Email / Team Leader</span>
-                                <span>{row.emailId || row.teamleader || 'N/A'}</span>
+                                <span className="block text-[10px] font-black text-amber-800 uppercase tracking-wider">Email / Team Leader</span>
+                                <span className="text-xs text-slate-800 font-medium">{row.emailId && row.emailId !== '—' ? row.emailId : (row.teamleader || 'accounts@saarthi360.in')}</span>
                               </div>
                             </div>
 

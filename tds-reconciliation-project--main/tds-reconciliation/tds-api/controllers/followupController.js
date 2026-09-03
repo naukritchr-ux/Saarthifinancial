@@ -180,6 +180,8 @@ export const createFollowup = async (req, res) => {
       contactPerson,
       department,
       contactNumber,
+      accountantPerson,
+      accountantNumber,
       method = 'Call',
       status = 'Call Tomorrow',
       notes,
@@ -191,6 +193,16 @@ export const createFollowup = async (req, res) => {
     if (!tanNo || !companyName || !status) {
       return res.status(400).json({ success: false, error: 'Required fields missing: tanNo, companyName, status' });
     }
+
+    if (process.env.DB_TYPE === 'mysql') {
+      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person VARCHAR(100)'); } catch (e) {}
+      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number VARCHAR(50)'); } catch (e) {}
+    }
+
+    const fullNotes = [
+      notes ? notes.trim() : null,
+      accountantPerson ? `Accountant Contact: ${accountantPerson.trim()}${accountantNumber ? ' (' + accountantNumber.trim() + ')' : ''}` : null
+    ].filter(Boolean).join(' | ');
 
     const insertQuery = `
       INSERT INTO tds_followups 
@@ -206,7 +218,7 @@ export const createFollowup = async (req, res) => {
       contactNumber ? contactNumber.trim() : null,
       method,
       status,
-      notes ? notes.trim() : null,
+      fullNotes || null,
       followupDate,
       nextFollowupDate || null,
       createdBy
