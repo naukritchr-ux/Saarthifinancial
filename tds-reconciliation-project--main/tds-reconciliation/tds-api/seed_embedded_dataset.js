@@ -190,29 +190,11 @@ export function isPurgedFlag() {
 export async function seedEmbeddedDataset(force = false) {
   try {
     await ensureTablesExist();
-
-    if (isPurgedFlag() && !force) {
-      console.log('ℹ️ Database was purged by user. Skipping automatic re-seeding on startup.');
+    if (!force) {
+      console.log('ℹ️ Automatic database seeding on startup disabled. Ready for user file uploads.');
       return;
     }
-
-    const [recCountRows] = await db.execute('SELECT COUNT(*) as count FROM tds_reconciliation_results');
-    const recCount = recCountRows[0]?.count ?? 0;
-
-    if (recCount > 0 && !force) {
-      console.log(`✅ Database already contains ${recCount} reconciliation records. Skipping seed.`);
-      return;
-    }
-
-    const excelPath = path.resolve('TDS Mearge Data 2019-2024.xlsx');
-    
-    if (fs.existsSync(excelPath)) {
-      console.log(`🌱 Importing REAL data from Excel file "${excelPath}"...`);
-      await seedFromMasterExcel(excelPath);
-      return;
-    }
-
-    console.log('⚠️ Excel master file not found on server, seeding robust embedded dataset...');
+    console.log('🌱 Explicitly seeding database...');
     await seedEmbeddedDatasetFallback();
   } catch (err) {
     console.error('💥 Error seeding database:', err);

@@ -284,7 +284,12 @@ export const uploadTally = async (req, res) => {
       voucher_date: -1,
       amount: -1,
       tds_amount: -1,
-      ledger_name: -1
+      ledger_name: -1,
+      contact_person: -1,
+      designation: -1,
+      contact_number: -1,
+      email_id: -1,
+      teamleader: -1
     };
 
     const tanRegex = /^([A-Z]{4}\d{5}[A-Z]|[A-Z]{5}\d{4}[A-Z]|[A-Z0-9]{8,15})$/i;
@@ -292,14 +297,12 @@ export const uploadTally = async (req, res) => {
     for (let r = 0; r < Math.min(100, rawData.length); r++) {
       const row = rawData[r];
       if (!row || !Array.isArray(row)) continue;
-      let hasTanOrPan = false;
-      let hasTdsOrAmount = false;
+      let hasTanOrPanOrCompany = false;
       row.forEach((cell) => {
         const text = String(cell || '').toLowerCase().trim();
-        if (isTanOrPanHeaderCell(text) || text.includes('tan') || text.includes('pan')) hasTanOrPan = true;
-        if (text.includes('tds') || text.includes('tax') || text.includes('deducted') || text.includes('amount') || text.includes('value')) hasTdsOrAmount = true;
+        if (isTanOrPanHeaderCell(text) || text.includes('tan') || text.includes('pan') || text.includes('company') || text.includes('tally')) hasTanOrPanOrCompany = true;
       });
-      if (hasTanOrPan && hasTdsOrAmount) {
+      if (hasTanOrPanOrCompany) {
         headerRowIdx = r;
         row.forEach((cell, col) => {
           const text = String(cell || '').toLowerCase().trim();
@@ -307,7 +310,7 @@ export const uploadTally = async (req, res) => {
             colMap.tan_no = col;
             colMap.pan_no = col;
           }
-          if (!isTanOrPanHeaderCell(text) && colMap.party_name === -1 && (text.includes('name of the company') || text.includes('party name') || text.includes('company name') || text === 'company' || text === 'ledger name' || text === 'ledger' || text.includes('name'))) {
+          if (!isTanOrPanHeaderCell(text) && colMap.party_name === -1 && (text.includes('company') || text.includes('party') || text === 'name' || text.includes('client'))) {
             colMap.party_name = col;
           }
           if (text.includes('gstnum') || text.includes('gst num') || text.includes('gstin') || text.includes('gst')) {
@@ -324,6 +327,21 @@ export const uploadTally = async (req, res) => {
           }
           if (text.includes('ledger') && colMap.ledger_name === -1) {
             colMap.ledger_name = col;
+          }
+          if (text.includes('contactperson') || text.includes('contact person') || text === 'person' || text.includes('hr')) {
+            colMap.contact_person = col;
+          }
+          if (text.includes('designation') || text.includes('role')) {
+            colMap.designation = col;
+          }
+          if (text.includes('phone') || text.includes('mobile') || text.includes('contactnumber') || text.includes('contact number')) {
+            colMap.contact_number = col;
+          }
+          if (text.includes('email')) {
+            colMap.email_id = col;
+          }
+          if (text.includes('teamleader') || text.includes('team leader') || text.includes('manager')) {
+            colMap.teamleader = col;
           }
         });
         break;
@@ -346,12 +364,7 @@ export const uploadTally = async (req, res) => {
     }
 
     if (colMap.tan_no === -1) {
-      return res.status(400).json({ success: false, error: 'Could not detect client TAN number column inside Tally sheet.' });
-    }
-
-    if (headerRowIdx === -1) {
-      if (colMap.tds_amount === -1 && colMap.tan_no !== -1) colMap.tds_amount = colMap.tan_no + 3;
-      if (colMap.amount === -1 && colMap.tan_no !== -1) colMap.amount = colMap.tan_no + 2;
+      return res.status(400).json({ success: false, error: 'Could not detect client TAN number column inside uploaded Tally file.' });
     }
 
     const importMode = req.body?.importMode || req.query?.importMode || 'update';
@@ -388,11 +401,18 @@ export const uploadTally = async (req, res) => {
       }
 
       const amount = colMap.amount !== -1 ? cleanNumber(row[colMap.amount]) : 0.00;
-      const tdsAmount = cleanNumber(row[colMap.tds_amount]);
+      const tdsAmount = colMap.tds_amount !== -1 ? cleanNumber(row[colMap.tds_amount]) : 0.00;
       const ledgerName = colMap.ledger_name !== -1 ? String(row[colMap.ledger_name] || '').trim() : 'Tally Ledger';
 
+      const contactPerson = colMap.contact_person !== -1 ? String(row[colMap.contact_person] || '').trim() : null;
+      const designation = colMap.designation !== -1 ? String(row[colMap.designation] || '').trim() : null;
+      const contactNumber = colMap.contact_number !== -1 ? String(row[colMap.contact_number] || '').trim() : null;
+      const emailId = colMap.email_id !== -1 ? String(row[colMap.email_id] || '').trim() : null;
+      const teamleader = colMap.teamleader !== -1 ? String(row[colMap.teamleader] || '').trim() : null;
+
       entries.push({
-        tan, partyName, gstNum, panNo, voucherDate, amount, tdsAmount, ledgerName, uploadBatchId
+        tan, partyName, gstNum, panNo, voucherDate, amount, tdsAmount, ledgerName, uploadBatchId,
+        contactPerson, designation, contactNumber, emailId, teamleader
       });
     }
 
@@ -405,6 +425,20 @@ export const uploadTally = async (req, res) => {
         'INSERT INTO tds_tally_entries (tan_no, party_name, gst_num, pan_no, voucher_date, amount, tds_amount, ledger_name, upload_batch_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [e.tan, e.partyName, e.gstNum, e.panNo, e.voucherDate, e.amount, e.tdsAmount, e.ledgerName, e.uploadBatchId]
       );
+      if (e.tan && (e.contactPerson || e.designation || e.contactNumber || e.emailId || e.teamleader)) {
+        try {
+          await db.execute(`
+            UPDATE tds_dues 
+            SET 
+              contact_person_name = COALESCE(?, contact_person_name),
+              designation = COALESCE(?, designation),
+              contact_number = COALESCE(?, contact_number),
+              email_id = COALESCE(?, email_id),
+              teamleader = COALESCE(?, teamleader)
+            WHERE UPPER(TRIM(tan_no)) = ?
+          `, [e.contactPerson, e.designation, e.contactNumber, e.emailId, e.teamleader, e.tan.toUpperCase()]);
+        } catch (err) {}
+      }
     }
 
     try {
@@ -790,17 +824,6 @@ export const resolveCleaningItem = async (req, res) => {
  */
 export const getReconciliationReport = async (req, res) => {
   try {
-    // Auto-ensure reconciliation table is populated if empty
-    try {
-      const [checkRows] = await db.query('SELECT COUNT(*) as cnt FROM tds_reconciliation_results');
-      const totalRecs = checkRows[0]?.cnt || checkRows[0]?.['COUNT(*)'] || 0;
-      if (totalRecs === 0) {
-        console.log('⚡ Reconciliation results table empty; running initial 3-way reconciliation...');
-        await reconcile(null, null);
-      }
-    } catch (checkErr) {
-      console.warn('Auto-reconcile check warning:', checkErr.message);
-    }
 
     const {
       page = 1,
