@@ -283,3 +283,29 @@ export const updateFollowup = async (id, data) => {
     return { success: false, error: err.message || 'Network error updating follow-up' };
   }
 };
+
+export const deleteFollowup = async (id) => {
+  try {
+    const response = await fetchWithTimeout(`${API_URL}/api/followups/${id}`, {
+      method: 'DELETE'
+    });
+    const resData = await response.json();
+    if (response.ok && resData && resData.success !== false) return resData;
+    return { success: false, error: resData?.error || 'Failed to delete follow-up entry' };
+  } catch (err) {
+    return { success: false, error: err.message || 'Network error deleting follow-up entry' };
+  }
+};
+
+export const purgeFollowups = async () => {
+  try {
+    const response = await fetchWithTimeout(`${API_URL}/api/followups/purge`, {
+      method: 'DELETE'
+    });
+    const resData = await response.json();
+    if (response.ok && resData && resData.success !== false) return resData;
+    return { success: false, error: resData?.error || 'Failed to purge follow-up history log' };
+  } catch (err) {
+    return { success: false, error: err.message || 'Network error purging follow-up history log' };
+  }
+};

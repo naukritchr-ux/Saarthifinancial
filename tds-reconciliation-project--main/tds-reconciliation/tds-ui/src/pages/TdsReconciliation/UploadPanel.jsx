@@ -13,7 +13,7 @@ import {
   Check,
   Table
 } from 'lucide-react';
-import { upload26as, uploadTally, purgeData } from '../../api/tdsReconciliation';
+import { upload26as, uploadTally, purgeData, purgeFollowups } from '../../api/tdsReconciliation';
 import { useApp } from '../../context/AppContext';
 
 export default function UploadPanel({ onUploadSuccess }) {
@@ -131,14 +131,25 @@ export default function UploadPanel({ onUploadSuccess }) {
   };
 
   const executePurge = async (target) => {
-    const labelMap = { '26as': 'Form 26AS data', 'tally': 'Tally Ledger data', 'all': 'ALL uploaded datasets' };
+    const labelMap = { 
+      '26as': 'Form 26AS data', 
+      'tally': 'Tally Ledger data', 
+      'followups': 'Follow-up Call Logs', 
+      'all': 'ALL uploaded datasets' 
+    };
     setPurgeConfirmTarget(null);
     setPurgeStatus({ loading: true, message: null, error: null });
 
     try {
-      const res = await purgeData(target);
+      let res;
+      if (target === 'followups') {
+        res = await purgeFollowups();
+      } else {
+        res = await purgeData(target);
+      }
+
       if (res && res.success) {
-        setPurgeStatus({ loading: false, message: res.message || 'Data cleared successfully', error: null });
+        setPurgeStatus({ loading: false, message: res.message || `${labelMap[target]} cleared successfully`, error: null });
         triggerRefresh();
         if (onUploadSuccess) onUploadSuccess();
         return;
@@ -468,6 +479,13 @@ export default function UploadPanel({ onUploadSuccess }) {
             Clear Tally Data
           </button>
           <button
+            onClick={() => handlePurge('followups')}
+            disabled={purgeStatus.loading}
+            className="bg-slate-800 hover:bg-amber-600/20 text-amber-300 hover:text-amber-200 text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer border border-amber-500/30"
+          >
+            Clear Follow-up Logs Only
+          </button>
+          <button
             onClick={() => handlePurge('all')}
             disabled={purgeStatus.loading}
             className="bg-red-600 hover:bg-red-500 text-white text-xs font-black px-3 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1.5"
@@ -501,7 +519,7 @@ export default function UploadPanel({ onUploadSuccess }) {
                 <Trash2 className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-lg font-black text-white">Confirm Dataset Purge</h3>
+                <h3 className="text-lg font-black text-white">Confirm Purge Action</h3>
                 <p className="text-xs text-slate-400 font-medium">This operation cannot be undone.</p>
               </div>
             </div>
@@ -509,9 +527,19 @@ export default function UploadPanel({ onUploadSuccess }) {
             <p className="text-xs text-slate-300 leading-relaxed font-semibold">
               Are you sure you want to clear/remove{' '}
               <span className="text-amber-400 font-black underline">
-                {purgeConfirmTarget === '26as' ? 'Form 26AS data' : purgeConfirmTarget === 'tally' ? 'Tally Ledger data' : 'ALL uploaded datasets'}
+                {purgeConfirmTarget === '26as' 
+                  ? 'Form 26AS data' 
+                  : purgeConfirmTarget === 'tally' 
+                  ? 'Tally Ledger data' 
+                  : purgeConfirmTarget === 'followups'
+                  ? 'Follow-up Call Logs'
+                  : 'ALL uploaded datasets'}
               </span>
-              ? This action will reset past reconciliation calculations.
+              ? {purgeConfirmTarget === 'all' 
+                  ? 'Uploaded 26AS and Tally datasets will be cleared. Your client Follow-up call logs will stay completely safe and preserved.' 
+                  : purgeConfirmTarget === 'followups'
+                  ? 'This will clear client call updates and notes from previous communications.'
+                  : 'This action will reset past reconciliation calculations.'}
             </p>
 
             <div className="flex justify-end gap-3 pt-2">

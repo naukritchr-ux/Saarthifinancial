@@ -488,10 +488,14 @@ export const getDashboardSummary = async (req, res) => {
 
     let whereClause = '';
     const params = [];
-    if (fy && fy !== 'All' && fy !== 'All Financial Years' && fy !== 'FY 2024-25' && fy !== '2024-25') {
+    if (fy && fy !== 'All' && fy !== 'All Financial Years') {
       const cleanFy = String(fy).replace(/^FY\s*/i, '').trim();
-      whereClause = 'WHERE (d.financial_year LIKE ? OR d.financial_year LIKE ? OR tr.as26_batch_id LIKE ?)';
-      params.push(`%${cleanFy}%`, `%${fy}%`, `%${cleanFy}%`);
+      if (cleanFy === '2025-26') {
+        whereClause = 'WHERE (COALESCE(d.financial_year, "FY 2025-26") LIKE ? OR tr.as26_batch_id LIKE ?)';
+      } else {
+        whereClause = 'WHERE (d.financial_year LIKE ? OR tr.as26_batch_id LIKE ?)';
+      }
+      params.push(`%${cleanFy}%`, `%${cleanFy}%`);
     }
 
     const query = `
@@ -857,10 +861,14 @@ export const getReconciliationReport = async (req, res) => {
     const queryParams = [];
 
     const activeFy = fy || financialYear;
-    if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years' && activeFy !== 'FY 2024-25' && activeFy !== '2024-25') {
+    if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
       const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push('(tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)');
-      queryParams.push(`%${cleanFy}%`, `%${cleanFy}%`);
+      if (cleanFy === '2025-26') {
+        whereClauses.push('(COALESCE(d.financial_year, "FY 2025-26") LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)');
+      } else {
+        whereClauses.push('(d.financial_year LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)');
+      }
+      queryParams.push(`%${cleanFy}%`, `%${cleanFy}%`, `%${cleanFy}%`);
     }
 
     if (search && String(search).trim() !== '') {
@@ -1282,7 +1290,7 @@ export const purgeUploadData = async (req, res) => {
       await db.execute('DELETE FROM upload_history');
       await db.execute('DELETE FROM tds_reconciliation_results');
       await db.execute('DELETE FROM tds_dues');
-      await db.execute('DELETE FROM tds_followups');
+      // NOTE: Follow-up logs (tds_followups) are preserved and never deleted during dataset purge
     }
 
     if (process.env.DB_TYPE === 'mysql') {
