@@ -93,7 +93,7 @@ export default function FollowUp() {
 
   useEffect(() => {
     loadData();
-  }, [selectedStatuses, dateRange, customStart, customEnd, dueOnly, responseFilter, refreshKey]);
+  }, [selectedStatuses, dateRange, customStart, customEnd, search, dueOnly, responseFilter, refreshKey]);
 
   const handleStatusToggle = (st) => {
     if (selectedStatuses.includes(st)) {
@@ -317,6 +317,7 @@ export default function FollowUp() {
           {/* Date Range Tabs */}
           <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl w-full lg:w-auto text-xs font-bold">
             {[
+              { id: 'all', label: 'All Time' },
               { id: 'year', label: 'Current Year' },
               { id: 'quarter', label: 'Current Quarter' },
               { id: 'month', label: 'Current Month' },

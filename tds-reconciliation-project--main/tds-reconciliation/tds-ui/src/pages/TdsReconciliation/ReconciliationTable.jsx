@@ -234,28 +234,50 @@ export default function ReconciliationTable({
                     {expandedRow === row.id && (
                       <tr className="bg-slate-50/40">
                         <td colSpan="12" className="px-8 py-4 border-b border-gray-100">
-                          <div className="bg-white p-4 rounded-xl border border-gray-200 grid grid-cols-1 md:grid-cols-3 gap-6 shadow-inner text-xs">
-                            <div className="flex flex-col gap-1">
-                              <span className="font-bold text-gray-400 uppercase text-[10px]">Saarthi 360 vs 26AS</span>
-                              <div className="flex justify-between items-center bg-gray-50 p-2 rounded-lg border border-gray-100">
-                                <span>Status:</span>
-                                <span className="font-bold text-indigo-700">{row.booksVs26asStatus || 'Matched'}</span>
+                          <div className="bg-white p-4 rounded-xl border border-gray-200 space-y-4 shadow-inner text-xs">
+                            {/* HR Contact Person & Team Info */}
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 p-3 bg-amber-50/40 rounded-xl border border-amber-200/60 text-slate-800 font-semibold">
+                              <div>
+                                <span className="block text-[10px] font-bold text-amber-700 uppercase">HR / Contact Person</span>
+                                <span className="font-extrabold text-slate-900">{row.contactPersonName || row.contactPerson || 'N/A'}</span>
+                              </div>
+                              <div>
+                                <span className="block text-[10px] font-bold text-amber-700 uppercase">Designation</span>
+                                <span>{row.designation || 'HR Manager'}</span>
+                              </div>
+                              <div>
+                                <span className="block text-[10px] font-bold text-amber-700 uppercase">Contact Number</span>
+                                <span>{row.contactNumber || 'N/A'}</span>
+                              </div>
+                              <div>
+                                <span className="block text-[10px] font-bold text-amber-700 uppercase">Email / Team Leader</span>
+                                <span>{row.emailId || row.teamleader || 'N/A'}</span>
                               </div>
                             </div>
 
-                            <div className="flex flex-col gap-1">
-                              <span className="font-bold text-gray-400 uppercase text-[10px]">Saarthi 360 vs Tally</span>
-                              <div className="flex justify-between items-center bg-gray-50 p-2 rounded-lg border border-gray-100">
-                                <span>Status:</span>
-                                <span className="font-bold text-teal-700">{row.booksVsTallyStatus || 'Matched'}</span>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                              <div className="flex flex-col gap-1">
+                                <span className="font-bold text-gray-400 uppercase text-[10px]">Saarthi 360 vs 26AS</span>
+                                <div className="flex justify-between items-center bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                  <span>Status:</span>
+                                  <span className="font-bold text-indigo-700">{row.booksVs26asStatus || 'Matched'}</span>
+                                </div>
                               </div>
-                            </div>
 
-                            <div className="flex flex-col gap-1">
-                              <span className="font-bold text-gray-400 uppercase text-[10px]">26AS vs Tally</span>
-                              <div className="flex justify-between items-center bg-gray-50 p-2 rounded-lg border border-gray-100">
-                                <span>Status:</span>
-                                <span className="font-bold text-purple-700">{row.as26VsTallyStatus || 'Matched'}</span>
+                              <div className="flex flex-col gap-1">
+                                <span className="font-bold text-gray-400 uppercase text-[10px]">Saarthi 360 vs Tally</span>
+                                <div className="flex justify-between items-center bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                  <span>Status:</span>
+                                  <span className="font-bold text-teal-700">{row.booksVsTallyStatus || 'Matched'}</span>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-col gap-1">
+                                <span className="font-bold text-gray-400 uppercase text-[10px]">26AS vs Tally</span>
+                                <div className="flex justify-between items-center bg-gray-50 p-2 rounded-lg border border-gray-100">
+                                  <span>Status:</span>
+                                  <span className="font-bold text-purple-700">{row.as26VsTallyStatus || 'Matched'}</span>
+                                </div>
                               </div>
                             </div>
                           </div>

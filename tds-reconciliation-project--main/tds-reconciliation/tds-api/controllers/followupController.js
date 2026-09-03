@@ -68,8 +68,8 @@ export const getFollowups = async (req, res) => {
 
     if (search && search.trim()) {
       const wild = `%${search.trim()}%`;
-      whereClauses.push('(company_name LIKE ? OR tan_no LIKE ? OR contact_person LIKE ? OR department LIKE ?)');
-      params.push(wild, wild, wild, wild);
+      whereClauses.push('(company_name LIKE ? OR tan_no LIKE ? OR contact_person LIKE ? OR department LIKE ? OR notes LIKE ?)');
+      params.push(wild, wild, wild, wild, wild);
     }
 
     if (status && status !== 'All') {
@@ -105,6 +105,7 @@ export const getFollowups = async (req, res) => {
         params.push(endDate);
       }
     }
+    // Note: dateRange === 'all' will add no date constraint
 
     if (dueOnly === 'true' || dueOnly === true) {
       const todayStr = now.toISOString().split('T')[0];

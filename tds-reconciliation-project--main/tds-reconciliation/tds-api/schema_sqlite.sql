@@ -1,6 +1,7 @@
 -- Offline mock CRM Books table
 CREATE TABLE IF NOT EXISTS tds_dues (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  saarthi_client_id INTEGER,
   invoice_id TEXT UNIQUE,
   bill_number TEXT,
   bill_date TEXT,
@@ -14,6 +15,8 @@ CREATE TABLE IF NOT EXISTS tds_dues (
   amount_received DECIMAL(15,2),
   status TEXT,
   contact_person_name TEXT,
+  designation TEXT,
+  email_id TEXT,
   note TEXT,
   financial_year TEXT
 );

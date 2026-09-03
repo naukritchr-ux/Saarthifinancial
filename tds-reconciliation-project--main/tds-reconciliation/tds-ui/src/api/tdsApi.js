@@ -118,6 +118,19 @@ export const getCsvExportUrl = (filters = {}) => {
   return `${API_URL}/api/tds-26as/export?${q}`;
 };
 
+export const syncSaarthiLiveApi = async () => {
+  try {
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/sync-saarthi`, {
+      method: 'POST'
+    }, 60000);
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to sync live Saarthi data' };
+  } catch (err) {
+    return { success: false, error: err.message || 'Network error syncing live Saarthi data' };
+  }
+};
+
 /** File Upload API */
 export const upload26as = async (file, modeOrFy = 'update', modeParam = 'update') => {
   let importMode = 'update';
