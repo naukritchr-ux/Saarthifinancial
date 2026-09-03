@@ -816,8 +816,9 @@ export const getReconciliationReport = async (req, res) => {
       as26VsTallyStatus = ''
     } = req.query;
 
-    const offset = (parseInt(page) - 1) * parseInt(limit);
-    const limitNum = parseInt(limit);
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, Math.min(1000, parseInt(limit) || 20));
+    const offset = (pageNum - 1) * limitNum;
 
     let whereClauses = [];
     const queryParams = [];
