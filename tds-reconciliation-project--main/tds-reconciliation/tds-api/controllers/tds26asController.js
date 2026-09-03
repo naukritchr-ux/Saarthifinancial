@@ -488,7 +488,7 @@ export const getDashboardSummary = async (req, res) => {
 
     let whereClause = '';
     const params = [];
-    if (fy && fy !== 'All' && fy !== 'All Financial Years') {
+    if (fy && fy !== 'All' && fy !== 'All Financial Years' && fy !== 'FY 2024-25' && fy !== '2024-25') {
       const cleanFy = String(fy).replace(/^FY\s*/i, '').trim();
       whereClause = 'WHERE (d.financial_year LIKE ? OR d.financial_year LIKE ? OR tr.as26_batch_id LIKE ?)';
       params.push(`%${cleanFy}%`, `%${fy}%`, `%${cleanFy}%`);
@@ -857,7 +857,7 @@ export const getReconciliationReport = async (req, res) => {
     const queryParams = [];
 
     const activeFy = fy || financialYear;
-    if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
+    if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years' && activeFy !== 'FY 2024-25' && activeFy !== '2024-25') {
       const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
       whereClauses.push('(tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)');
       queryParams.push(`%${cleanFy}%`, `%${cleanFy}%`);
