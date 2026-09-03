@@ -99,10 +99,17 @@ export const upload26as = async (req, res) => {
       return res.status(400).json({ success: false, error: 'No file uploaded' });
     }
 
-    const workbook = xlsx.readFile(file.path);
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const rawData = xlsx.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    let rawData = [];
+    try {
+      const workbook = xlsx.readFile(file.path);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      rawData = xlsx.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    } catch (excelErr) {
+      console.warn('⚠️ xlsx.readFile failed, falling back to text split:', excelErr.message);
+      const csvText = fs.readFileSync(file.path, 'utf8');
+      rawData = csvText.split(/\r?\n/).filter(Boolean).map(l => l.split(',').map(s => s.trim().replace(/^"|"$/g, '')));
+    }
 
     if (rawData.length === 0) {
       return res.status(400).json({ success: false, error: 'Uploaded file is empty' });
@@ -127,14 +134,11 @@ export const upload26as = async (req, res) => {
       let foundHeader = false;
       row.forEach((cell, col) => {
         const text = String(cell || '').toLowerCase().trim();
-        if (isTanOrPanHeaderCell(text) || text.includes('deductor') || text.includes('company') || text.includes('tds') || text.includes('amount')) {
+        if (isTanOrPanHeaderCell(text)) {
+          colMap.tan_no = col;
           foundHeader = true;
         }
-
-        if (colMap.tan_no === -1 && isTanOrPanHeaderCell(text)) {
-          colMap.tan_no = col;
-        }
-        if (colMap.deductor_name === -1 && !isTanOrPanHeaderCell(text) && (text.includes('deductor') || text.includes('company') || text.includes('party') || text === 'name')) {
+        if (colMap.deductor_name === -1 && (text.includes('deductor') || text.includes('company') || text.includes('party') || text === 'name')) {
           colMap.deductor_name = col;
         }
         if (colMap.amount_paid === -1 && (text.includes('amount paid') || text.includes('amount credited') || text.includes('gross') || text.includes('invoice') || text === 'amount')) {
@@ -172,11 +176,6 @@ export const upload26as = async (req, res) => {
       }
     }
 
-    if (headerRowIdx === -1) {
-      if (colMap.tds_deducted === -1 && colMap.tan_no !== -1) colMap.tds_deducted = colMap.tan_no + 3;
-      if (colMap.amount_paid === -1 && colMap.tan_no !== -1) colMap.amount_paid = colMap.tan_no + 2;
-    }
-
     if (colMap.tan_no === -1) {
       return res.status(400).json({
         success: false,
@@ -206,7 +205,7 @@ export const upload26as = async (req, res) => {
 
       const deductorName = colMap.deductor_name !== -1 ? String(row[colMap.deductor_name] || '').trim() : 'Unknown Deductor';
       const amountPaid = colMap.amount_paid !== -1 ? cleanNumber(row[colMap.amount_paid]) : 0.00;
-      const tdsDeducted = cleanNumber(row[colMap.tds_deducted]);
+      const tdsDeducted = colMap.tds_deducted !== -1 ? cleanNumber(row[colMap.tds_deducted]) : 0.00;
       const section = colMap.section !== -1 ? String(row[colMap.section] || '').trim() : 'N/A';
       const quarter = colMap.quarter !== -1 ? String(row[colMap.quarter] || '').trim() : 'N/A';
 
@@ -268,10 +267,17 @@ export const uploadTally = async (req, res) => {
       return res.status(400).json({ success: false, error: 'No file uploaded' });
     }
 
-    const workbook = xlsx.readFile(file.path);
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const rawData = xlsx.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    let rawData = [];
+    try {
+      const workbook = xlsx.readFile(file.path);
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      rawData = xlsx.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    } catch (excelErr) {
+      console.warn('⚠️ xlsx.readFile failed in uploadTally, falling back to text split:', excelErr.message);
+      const csvText = fs.readFileSync(file.path, 'utf8');
+      rawData = csvText.split(/\r?\n/).filter(Boolean).map(l => l.split(',').map(s => s.trim().replace(/^"|"$/g, '')));
+    }
 
     if (rawData.length === 0) {
       return res.status(400).json({ success: false, error: 'Uploaded file is empty' });
