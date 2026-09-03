@@ -60,6 +60,7 @@ router.put('/cleaning-queue/:id', resolveCleaningItem);
 router.get('/report', getReconciliationReport);
 router.put('/override', overrideReconciliationStatus);
 router.get('/batches', getUploadHistory);
+router.get('/upload-history', getUploadHistory);
 router.delete('/batches/:id', deleteUploadBatch);
 router.get('/export', exportReconciliationCSV);
 
