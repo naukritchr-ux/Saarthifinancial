@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const DB_TYPE = process.env.DB_TYPE || 'sqlite'; // 'mysql' or 'sqlite'
+const DB_TYPE = process.env.DB_TYPE || 'mysql';
 let dbAdapter;
 
 if (DB_TYPE === 'sqlite') {
@@ -14,16 +14,13 @@ if (DB_TYPE === 'sqlite') {
   console.log(`🔌 Initializing SQLite database at: ${dbPath}`);
   
   const sqliteDb = new sqlite3.Database(dbPath);
-  
-  // Enable foreign key support in SQLite
   sqliteDb.run('PRAGMA foreign_keys = ON;');
 
-  // Translate MySQL-specific SQL functions to SQLite equivalents
   const translateSql = (query) => {
     return query
       .replace(/NOW\(\)/gi, "CURRENT_TIMESTAMP")
       .replace(/JSON_UNQUOTE\(JSON_EXTRACT\(([^,]+),\s*'([^']+)'\)\)/gi, "json_extract($1, '$2')")
-      .replace(/ON UPDATE CURRENT_TIMESTAMP/gi, ""); // SQLite handles auto-update via triggers or app-level logic
+      .replace(/ON UPDATE CURRENT_TIMESTAMP/gi, "");
   };
 
   dbAdapter = {
@@ -49,7 +46,6 @@ if (DB_TYPE === 'sqlite') {
               console.error(`❌ SQLite Exec Error: ${err.message}\nQuery: ${translatedQuery}`);
               reject(err);
             } else {
-              // Return metadata compatible with mysql2 result structure
               resolve([{
                 affectedRows: this.changes,
                 insertId: this.lastID
@@ -62,7 +58,6 @@ if (DB_TYPE === 'sqlite') {
     query: (query, params = []) => {
       return dbAdapter.execute(query, params);
     },
-    // Add close helper for clean shutdown
     close: () => {
       return new Promise((resolve, reject) => {
         sqliteDb.close((err) => {
@@ -72,8 +67,7 @@ if (DB_TYPE === 'sqlite') {
       });
     }
   };
-  
-  // Auto-initialize the SQLite database schema atomically using db.exec
+
   try {
     const schemaSqlPath = path.resolve('schema_sqlite.sql');
     if (fs.existsSync(schemaSqlPath)) {
@@ -89,7 +83,6 @@ if (DB_TYPE === 'sqlite') {
   } catch (err) {
     console.error('⚠️ Failed to read SQLite schema on startup:', err.message);
   }
-
 
 } else {
   console.log('🔌 Initializing MySQL database pool (Aiven / Managed MySQL)');
@@ -110,7 +103,6 @@ if (DB_TYPE === 'sqlite') {
     multipleStatements: true
   };
 
-  // Support Aiven & Cloud MySQL SSL
   if ((process.env.DB_SSL || 'true').toLowerCase() === 'true') {
     const sslOpts = {
       rejectUnauthorized: (process.env.DB_SSL_REJECT_UNAUTHORIZED || 'false').toLowerCase() === 'true'
@@ -150,7 +142,6 @@ if (DB_TYPE === 'sqlite') {
     }
   };
 
-  // Auto-initialize MySQL schema if tables do not exist
   (async () => {
     try {
       const mysqlSchemaPath = path.resolve('schema_mysql.sql');
