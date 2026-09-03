@@ -526,12 +526,60 @@ export const getDashboardSummary = async (req, res) => {
   }
 };
 
+const normalizeCompanyName = (name) => {
+  if (!name) return '';
+  return String(name)
+    .toUpperCase()
+    .replace(/\b(PVT|PRIVATE|LTD|LIMITED|INC|LLP|CORP|CORPORATION|CO|COMPANY|SERVICES|SOLUTIONS|INDIA)\b/g, '')
+    .replace(/[^A-Z0-9]/g, '')
+    .trim();
+};
+
+const calculateStringSimilarity = (str1, str2) => {
+  if (!str1 || !str2) return 0;
+  const s1 = String(str1).trim().toUpperCase();
+  const s2 = String(str2).trim().toUpperCase();
+  if (s1 === s2) return 100;
+
+  const n1 = normalizeCompanyName(s1);
+  const n2 = normalizeCompanyName(s2);
+  if (n1 === n2 && n1.length > 0) return 95;
+
+  const longer = n1.length > n2.length ? n1 : n2;
+  const shorter = n1.length > n2.length ? n2 : n1;
+  if (longer.length === 0) {
+    return s1 === s2 ? 100 : 80;
+  }
+
+  const costs = [];
+  for (let i = 0; i <= longer.length; i++) {
+    let lastValue = i;
+    for (let j = 0; j <= shorter.length; j++) {
+      if (i === 0) costs[j] = j;
+      else {
+        if (j > 0) {
+          let newValue = costs[j - 1];
+          if (longer.charAt(i - 1) !== shorter.charAt(j - 1)) {
+            newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+          }
+          costs[j - 1] = lastValue;
+          lastValue = newValue;
+        }
+      }
+    }
+    if (i > 0) costs[shorter.length] = lastValue;
+  }
+
+  const distance = costs[shorter.length];
+  const similarity = (longer.length - distance) / parseFloat(longer.length);
+  return Math.max(50, Math.round(similarity * 100));
+};
+
 /**
  * Get Data Import Cleaning Queue
  */
 export const getCleaningQueue = async (req, res) => {
   try {
-    // Defines rows needing cleaning: TAN missing/blank OR company name fuzzy mismatch across sources OR duplicate TAN
     const query = `
       SELECT 
         tr.id,
@@ -546,43 +594,137 @@ export const getCleaningQueue = async (req, res) => {
       WHERE (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
         AND (tr.tan_no IS NULL OR tr.tan_no = '' OR LENGTH(tr.tan_no) < 10 
              OR d.company_name IS NULL OR d.company_name = 'Unknown Company' OR d.company_name = ''
-             OR tr.overall_status = 'Major Mismatch')
+             OR tr.overall_status = 'Major Mismatch'
+             OR tr.overall_status = 'Partial Mismatch')
       ORDER BY tr.id DESC
       LIMIT 100
     `;
 
     const [rows] = await db.execute(query);
 
-    const cleaningItems = rows.map((r, idx) => {
-      let reason = 'Unmatched TAN / Missing metadata';
-      let issueType = 'unmatched_tan';
-      if (!r.tanNo || r.tanNo.length < 10) {
-        reason = 'Missing or Invalid TAN Format';
-        issueType = 'invalid_tan';
-      } else if (!r.booksCompanyName || r.booksCompanyName === 'Unknown Company') {
+    const cleaningItems = await Promise.all(rows.map(async (r) => {
+      const tan = r.tanNo ? String(r.tanNo).trim().toUpperCase() : '';
+      const booksName = r.booksCompanyName || 'Unknown Client';
+
+      // 1. Fetch 26AS entry by TAN or fuzzy name
+      let as26Name = null;
+      let as26Tan = null;
+      if (tan) {
+        const [as26Rows] = await db.execute(
+          'SELECT deductor_name, tan_no FROM tds_26as_entries WHERE UPPER(TRIM(tan_no)) = ? LIMIT 1',
+          [tan]
+        );
+        if (as26Rows.length > 0) {
+          as26Name = as26Rows[0].deductor_name;
+          as26Tan = as26Rows[0].tan_no;
+        }
+      }
+
+      // If not found by TAN, check by fuzzy name
+      if (!as26Name && booksName && booksName !== 'Unknown Client') {
+        const [as26Fuzzy] = await db.execute('SELECT deductor_name, tan_no FROM tds_26as_entries LIMIT 100');
+        for (const f of as26Fuzzy) {
+          if (calculateStringSimilarity(booksName, f.deductor_name) >= 80) {
+            as26Name = f.deductor_name;
+            as26Tan = f.tan_no;
+            break;
+          }
+        }
+      }
+
+      // 2. Fetch Tally entry by TAN or fuzzy name
+      let tallyName = null;
+      let tallyTan = null;
+      if (tan) {
+        const [tallyRows] = await db.execute(
+          'SELECT party_name, tan_no FROM tds_tally_entries WHERE UPPER(TRIM(tan_no)) = ? LIMIT 1',
+          [tan]
+        );
+        if (tallyRows.length > 0) {
+          tallyName = tallyRows[0].party_name;
+          tallyTan = tallyRows[0].tan_no;
+        }
+      }
+
+      if (!tallyName && booksName && booksName !== 'Unknown Client') {
+        const [tallyFuzzy] = await db.execute('SELECT party_name, tan_no FROM tds_tally_entries LIMIT 100');
+        for (const f of tallyFuzzy) {
+          if (calculateStringSimilarity(booksName, f.party_name) >= 80) {
+            tallyName = f.party_name;
+            tallyTan = f.tan_no;
+            break;
+          }
+        }
+      }
+
+      // 3. Compute dynamic confidence & canonical name
+      const namesToCompare = [tallyName, as26Name, booksName].filter(Boolean);
+      let confidence = 100;
+      if (namesToCompare.length >= 2) {
+        let totalSim = 0;
+        let pairCount = 0;
+        for (let i = 0; i < namesToCompare.length; i++) {
+          for (let j = i + 1; j < namesToCompare.length; j++) {
+            totalSim += calculateStringSimilarity(namesToCompare[i], namesToCompare[j]);
+            pairCount++;
+          }
+        }
+        confidence = Math.round(totalSim / pairCount);
+      }
+
+      // Suggest cleanest/longest company name
+      let saarthiSuggestion = booksName;
+      if (as26Name && as26Name.length > saarthiSuggestion.length && as26Name !== 'Unknown Deductor') {
+        saarthiSuggestion = as26Name;
+      }
+      if (tallyName && tallyName.length > saarthiSuggestion.length && tallyName !== 'Unknown Client') {
+        saarthiSuggestion = tallyName;
+      }
+
+      // 4. Check TAN mismatch flag
+      const resolvedTans = [tan, as26Tan, tallyTan].filter(Boolean);
+      const uniqueTans = Array.from(new Set(resolvedTans));
+      const isTanMismatch = uniqueTans.length > 1;
+
+      let reason = 'Multi-source Data Discrepancy';
+      let issueType = 'source_discrepancy';
+
+      if (isTanMismatch) {
+        reason = 'Conflicting TANs across datasets';
+        issueType = 'tan_mismatch';
+      } else if (confidence < 90) {
         reason = 'Deductor Name Discrepancy';
         issueType = 'name_mismatch';
-      } else {
-        reason = 'Multi-source Data Discrepancy';
-        issueType = 'source_discrepancy';
+      } else if (!tan || tan.length < 10) {
+        reason = 'Missing or Invalid TAN Format';
+        issueType = 'invalid_tan';
       }
 
       return {
         id: r.id,
-        tanNo: r.tanNo || 'UNKNOWN_TAN',
-        companyName: r.booksCompanyName || 'Unknown Client',
+        tanNo: tan || 'UNKNOWN_TAN',
+        companyName: tallyName || booksName,
+        tallyCompanyName: tallyName || booksName,
+        tallyTan: tallyTan || tan || 'UNKNOWN_TAN',
+        as26CompanyName: as26Name || null,
+        as26Tan: as26Tan || null,
+        saarthiName: booksName,
+        saarthiTan: tan || 'UNKNOWN_TAN',
+        saarthiSuggestion,
+        confidence,
+        isTanMismatch,
         issueType,
         issueReason: reason,
         sources: [
           r.booksTds > 0 ? 'Saarthi 360' : null,
-          r.as26Tds > 0 ? 'Form 26AS' : null,
-          r.tallyTds > 0 ? 'Tally Ledger' : null
+          (as26Name || r.as26Tds > 0) ? 'Form 26AS' : null,
+          (tallyName || r.tallyTds > 0) ? 'Tally Ledger' : null
         ].filter(Boolean),
         booksTds: r.booksTds,
         as26Tds: r.as26Tds,
         tallyTds: r.tallyTds
       };
-    });
+    }));
 
     res.json({
       success: true,

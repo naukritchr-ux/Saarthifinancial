@@ -69,13 +69,13 @@ export default function DataImport() {
 
   const openCleanModal = (item) => {
     setActiveEditItem(item);
-    setTallyRawName(item.companyName || '');
-    setAs26RawName('As imported from 26AS');
+    setTallyRawName(item.tallyCompanyName || item.companyName || '');
+    setAs26RawName(item.as26CompanyName || item.saarthiSuggestion || item.companyName || '');
     setSaarthiName(item.saarthiSuggestion || item.companyName || '');
     setCanonicalName(item.saarthiSuggestion || item.companyName || '');
     
-    setEntityTan(item.tanNo || '');
-    setSaarthiTan(item.saarthiTan || item.tanNo || '');
+    setEntityTan(item.tallyTan || item.tanNo || '');
+    setSaarthiTan(item.as26Tan || item.saarthiTan || item.tanNo || '');
     setSaarthiPan(item.pan || 'RHMCT2664N');
     setSaarthiGstin(item.gstin || '24RHMCT2664N3Z6');
     
@@ -193,9 +193,14 @@ export default function DataImport() {
           <div className="space-y-4">
             {queue.map((item, idx) => {
               if (!item) return null;
-              const issueReasonStr = String(item.issueReason || '').toLowerCase();
-              const isTanMismatch = issueReasonStr.includes('tan') || Boolean(item.saarthiTan);
-              const lowConfidenceScore = item.confidence || 75;
+              const isTanMismatch = item.isTanMismatch || (item.as26Tan && item.tallyTan && item.as26Tan !== item.tallyTan);
+              const confidenceScore = item.confidence ?? 100;
+              const tallyName = item.tallyCompanyName || item.companyName;
+              const as26Name = item.as26CompanyName || '—';
+              const saarthiName = item.saarthiSuggestion || item.companyName;
+              const tallyTan = item.tallyTan || item.tanNo;
+              const as26Tan = item.as26Tan || '—';
+              const saarthiTan = item.saarthiTan || item.tanNo;
 
               return (
                 <div
@@ -212,7 +217,7 @@ export default function DataImport() {
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-900 border border-amber-200 px-3 py-1 rounded-full text-xs font-black">
-                          Low Confidence — {lowConfidenceScore}%
+                          {confidenceScore < 100 ? `Match Confidence — ${confidenceScore}%` : 'Verification Required'}
                         </span>
                       )}
                     </div>
@@ -222,21 +227,27 @@ export default function DataImport() {
                   <div className="space-y-1 text-xs">
                     <div className="font-extrabold text-slate-900">
                       Tally/26AS entity:{' '}
-                      <span className="font-black text-slate-950 uppercase">{item.companyName}</span>{' '}
-                      <span className="font-mono text-gray-500">(TAN {item.tanNo})</span>
+                      <span className="font-black text-slate-950 uppercase">{tallyName}</span>{' '}
+                      <span className="font-mono text-gray-500">(TAN {tallyTan})</span>
                     </div>
 
-                    {item.saarthiSuggestion && (
+                    {saarthiName && (
                       <div className="font-bold text-slate-700">
                         Saarthi suggestion:{' '}
-                        <span className="font-extrabold text-slate-900">{item.saarthiSuggestion}</span>{' '}
-                        <span className="font-mono text-gray-500">(TAN {item.saarthiTan || item.tanNo})</span>
+                        <span className="font-extrabold text-slate-900">{saarthiName}</span>{' '}
+                        <span className="font-mono text-gray-500">(TAN {saarthiTan})</span>
                       </div>
                     )}
 
-                    <p className="text-[11px] text-red-600 font-semibold pt-0.5">
-                      Names look alike but TANs differ ({item.tanNo} vs {item.saarthiTan || item.tanNo}). Correct a TAN via Edit, or reject the suggestion.
-                    </p>
+                    {isTanMismatch ? (
+                      <p className="text-[11px] text-red-600 font-semibold pt-0.5">
+                        Names look alike but TANs differ ({tallyTan} vs {as26Tan !== '—' ? as26Tan : saarthiTan}). Correct a TAN via Edit, or reject the suggestion.
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-amber-700 font-semibold pt-0.5">
+                        Multi-source entity record ({confidenceScore}% name match score across datasets). Standardize entity name below.
+                      </p>
+                    )}
                   </div>
 
                   {/* Field Comparison Grid */}
@@ -253,15 +264,15 @@ export default function DataImport() {
                       <tbody className="divide-y divide-gray-200/60 bg-white">
                         <tr>
                           <td className="px-4 py-2.5 font-bold text-slate-500">Company</td>
-                          <td className="px-4 py-2.5 font-black text-slate-900 uppercase">{item.companyName}</td>
-                          <td className="px-4 py-2.5 text-gray-400 font-semibold">—</td>
-                          <td className="px-4 py-2.5 font-bold text-slate-800">{item.saarthiSuggestion || item.companyName}</td>
+                          <td className="px-4 py-2.5 font-black text-slate-900 uppercase">{tallyName}</td>
+                          <td className="px-4 py-2.5 font-black text-slate-800 uppercase">{as26Name}</td>
+                          <td className="px-4 py-2.5 font-bold text-slate-800">{saarthiName}</td>
                         </tr>
                         <tr>
                           <td className="px-4 py-2.5 font-bold text-slate-500">TAN</td>
-                          <td className="px-4 py-2.5 font-mono font-black text-red-600">{item.tanNo}</td>
-                          <td className="px-4 py-2.5 font-mono font-black text-red-600">{item.tanNo}</td>
-                          <td className="px-4 py-2.5 font-mono font-black text-emerald-700">{item.saarthiTan || item.tanNo}</td>
+                          <td className="px-4 py-2.5 font-mono font-black text-red-600">{tallyTan}</td>
+                          <td className="px-4 py-2.5 font-mono font-black text-red-600">{as26Tan}</td>
+                          <td className="px-4 py-2.5 font-mono font-black text-emerald-700">{saarthiTan}</td>
                         </tr>
                       </tbody>
                     </table>
