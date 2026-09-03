@@ -193,8 +193,12 @@ export const upload26as = async (req, res) => {
       await db.execute(insertQuery, params);
     }
 
-    // Run reconciliation logic for the new batch
-    await reconcile(uploadBatchId, null);
+    // Run reconciliation logic for the new batch safely
+    try {
+      await reconcile(uploadBatchId, null);
+    } catch (recErr) {
+      console.warn('⚠️ Background reconciliation warning:', recErr.message);
+    }
 
     // Save history log
     const metadata = JSON.stringify({
@@ -383,8 +387,12 @@ export const uploadTally = async (req, res) => {
       await db.execute(insertQuery, params);
     }
 
-    // Run reconciliation matching
-    await reconcile(null, uploadBatchId);
+    // Run reconciliation matching safely
+    try {
+      await reconcile(null, uploadBatchId);
+    } catch (recErr) {
+      console.warn('⚠️ Background reconciliation warning:', recErr.message);
+    }
 
     // Save history logs
     const metadata = JSON.stringify({
@@ -737,9 +745,18 @@ export const getCleaningQueue = async (req, res) => {
     // Filter to only include items that actually require manual data cleaning:
     // 1. Genuine TAN mismatch across sources
     // 2. Low confidence name match (< 90%)
+    // Filter to only include items that actually require manual data cleaning:
+    // 1. Genuine TAN mismatch across sources
+    // 2. Low confidence name match (< 90%)
     // 3. Invalid or missing TAN format (< 10 chars)
-    // 4. Missing/Unknown company name
+    // 4. Missing/Unknown company name with non-zero financial data
     const flaggedItems = cleaningItems.filter(item => {
+      const isZeroData = (item.booksTds || 0) === 0 && (item.as26Tds || 0) === 0 && (item.tallyTds || 0) === 0;
+      const isUnknownDummy = (item.companyName || item.saarthiName || '').toUpperCase().includes('UNKNOWN');
+
+      // Ignore zero-data dummy placeholders
+      if (isZeroData && isUnknownDummy) return false;
+
       const invalidTan = !item.tanNo || item.tanNo.length < 10 || item.tanNo.includes('UNKNOWN');
       const missingName = !item.saarthiName || item.saarthiName === 'Unknown Client' || item.saarthiName === 'Unknown Company';
       const lowConfidence = item.confidence < 90;
@@ -765,14 +782,29 @@ export const getCleaningQueue = async (req, res) => {
 export const resolveCleaningItem = async (req, res) => {
   try {
     const { id } = req.params;
-    const { tanNo, companyName } = req.body;
+    const { tanNo, companyName, status } = req.body;
 
-    if (!id || !tanNo || !companyName) {
-      return res.status(400).json({ success: false, error: 'Required: id, tanNo, companyName' });
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'Cleaning Item ID is required' });
     }
 
-    const cleanTan = String(tanNo).toUpperCase().trim();
-    const cleanCompany = String(companyName).trim();
+    if (status === 'Rejected') {
+      // If user rejected the match, mark as resolved / remove dummy placeholder
+      const [recRows] = await db.execute('SELECT tds_dues_id FROM tds_reconciliation_results WHERE id = ?', [id]);
+      if (recRows.length > 0 && recRows[0].tds_dues_id) {
+        await db.execute('DELETE FROM tds_dues WHERE id = ? AND (saarthi_client_id IS NULL OR saarthi_client_id = "") AND (tds IS NULL OR tds = 0)', [recRows[0].tds_dues_id]);
+      }
+      await db.execute('DELETE FROM tds_reconciliation_results WHERE id = ?', [id]);
+
+      return res.json({
+        success: true,
+        message: 'Cleaning item rejected and removed successfully',
+        id
+      });
+    }
+
+    const cleanTan = String(tanNo || 'N/A').toUpperCase().trim();
+    const cleanCompany = String(companyName || 'Cleaned Entity').trim();
 
     // 1. Update tds_reconciliation_results and recalculate status
     await db.execute(

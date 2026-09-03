@@ -69,83 +69,87 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     let processedCount = 0;
 
     for (const due of duesList) {
-      const tan = due.tan || `NO_TAN_${due.id}`;
-      const booksTds = due.tds;
+      try {
+        const tan = due.tan || `NO_TAN_${due.id}`;
+        const booksTds = due.tds;
 
-      // Check existing reconciliation record by tds_dues_id
-      const [existingRows] = await db.execute(
-        'SELECT id, is_manually_edited, as26_batch_id, tally_batch_id FROM tds_reconciliation_results WHERE tds_dues_id = ?',
-        [due.id]
-      );
-      const existing = existingRows[0] || {};
-
-      if (existing.is_manually_edited) {
-        continue; // Respect manual overrides
-      }
-
-      const as26Data = due.tan ? as26Map.get(due.tan) : null;
-      const as26Tds = as26Data ? as26Data.total : 0;
-      const finalAs26BatchId = as26Data ? as26Data.batchId : (existing.as26_batch_id || null);
-
-      const tallyData = due.tan ? tallyMap.get(due.tan) : null;
-      const tallyTds = tallyData ? tallyData.total : 0;
-      const finalTallyBatchId = tallyData ? tallyData.batchId : (existing.tally_batch_id || null);
-
-      const has26as = finalAs26BatchId !== null || as26Tds > 0;
-      const hasTally = finalTallyBatchId !== null || tallyTds > 0;
-
-      // Pairwise evaluate helper
-      const evaluatePair = (valA, valB, hasA, hasB) => {
-        if (!hasA || !hasB) return 'Not Received';
-        if (Math.abs(valA - valB) <= 1.0) return 'Matched';
-        if (valA > valB) return 'Excess';
-        return 'Less Paid';
-      };
-
-      const booksVs26as = evaluatePair(as26Tds, booksTds, has26as, true);
-      const booksVsTally = evaluatePair(tallyTds, booksTds, hasTally, true);
-      const as26VsTally = evaluatePair(tallyTds, as26Tds, hasTally, has26as);
-
-      let overallStatus = 'All Matched';
-      if (!has26as || !hasTally) {
-        overallStatus = 'Major Mismatch';
-      } else {
-        const offCount = [booksVs26as, booksVsTally, as26VsTally].filter(s => s !== 'Matched').length;
-        if (offCount === 0) overallStatus = 'All Matched';
-        else if (offCount === 1) overallStatus = 'Partial Mismatch';
-        else overallStatus = 'Major Mismatch';
-      }
-
-      if (existing.id) {
-        await db.execute(
-          `UPDATE tds_reconciliation_results 
-           SET tan_no = ?, books_tds = ?, as26_tds = ?, tally_tds = ?, 
-               books_vs_26as_status = ?, books_vs_tally_status = ?, as26_vs_tally_status = ?, 
-               overall_status = ?, as26_batch_id = ?, tally_batch_id = ?
-           WHERE id = ?`,
-          [
-            tan, booksTds, as26Tds, tallyTds,
-            booksVs26as, booksVsTally, as26VsTally,
-            overallStatus, finalAs26BatchId, finalTallyBatchId,
-            existing.id
-          ]
+        // Check existing reconciliation record by tds_dues_id
+        const [existingRows] = await db.execute(
+          'SELECT id, is_manually_edited, as26_batch_id, tally_batch_id FROM tds_reconciliation_results WHERE tds_dues_id = ?',
+          [due.id]
         );
-      } else {
-        await db.execute(
-          `INSERT INTO tds_reconciliation_results 
-           (tds_dues_id, tan_no, books_tds, as26_tds, tally_tds, 
-            books_vs_26as_status, books_vs_tally_status, as26_vs_tally_status, 
-            overall_status, as26_batch_id, tally_batch_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            due.id, tan, booksTds, as26Tds, tallyTds,
-            booksVs26as, booksVsTally, as26VsTally,
-            overallStatus, finalAs26BatchId, finalTallyBatchId
-          ]
-        );
-      }
+        const existing = (existingRows && existingRows.length > 0) ? existingRows[0] : null;
 
-      processedCount++;
+        if (existing && existing.is_manually_edited) {
+          continue; // Respect manual overrides
+        }
+
+        const as26Data = due.tan ? as26Map.get(due.tan) : null;
+        const as26Tds = as26Data ? as26Data.total : 0;
+        const finalAs26BatchId = as26Data ? as26Data.batchId : (existing ? existing.as26_batch_id : null);
+
+        const tallyData = due.tan ? tallyMap.get(due.tan) : null;
+        const tallyTds = tallyData ? tallyData.total : 0;
+        const finalTallyBatchId = tallyData ? tallyData.batchId : (existing ? existing.tally_batch_id : null);
+
+        const has26as = finalAs26BatchId !== null || as26Tds > 0;
+        const hasTally = finalTallyBatchId !== null || tallyTds > 0;
+
+        // Pairwise evaluate helper
+        const evaluatePair = (valA, valB, hasA, hasB) => {
+          if (!hasA || !hasB) return 'Not Received';
+          if (Math.abs(valA - valB) <= 1.0) return 'Matched';
+          if (valA > valB) return 'Excess';
+          return 'Less Paid';
+        };
+
+        const booksVs26as = evaluatePair(as26Tds, booksTds, has26as, true);
+        const booksVsTally = evaluatePair(tallyTds, booksTds, hasTally, true);
+        const as26VsTally = evaluatePair(tallyTds, as26Tds, hasTally, has26as);
+
+        let overallStatus = 'All Matched';
+        if (!has26as || !hasTally) {
+          overallStatus = 'Major Mismatch';
+        } else {
+          const offCount = [booksVs26as, booksVsTally, as26VsTally].filter(s => s !== 'Matched').length;
+          if (offCount === 0) overallStatus = 'All Matched';
+          else if (offCount === 1) overallStatus = 'Partial Mismatch';
+          else overallStatus = 'Major Mismatch';
+        }
+
+        if (existing && existing.id) {
+          await db.execute(
+            `UPDATE tds_reconciliation_results 
+             SET tan_no = ?, books_tds = ?, as26_tds = ?, tally_tds = ?, 
+                 books_vs_26as_status = ?, books_vs_tally_status = ?, as26_vs_tally_status = ?, 
+                 overall_status = ?, as26_batch_id = ?, tally_batch_id = ?
+             WHERE id = ?`,
+            [
+              tan, booksTds, as26Tds, tallyTds,
+              booksVs26as, booksVsTally, as26VsTally,
+              overallStatus, finalAs26BatchId, finalTallyBatchId,
+              existing.id
+            ]
+          );
+        } else {
+          await db.execute(
+            `INSERT INTO tds_reconciliation_results 
+             (tds_dues_id, tan_no, books_tds, as26_tds, tally_tds, 
+              books_vs_26as_status, books_vs_tally_status, as26_vs_tally_status, 
+              overall_status, as26_batch_id, tally_batch_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              due.id, tan, booksTds, as26Tds, tallyTds,
+              booksVs26as, booksVsTally, as26VsTally,
+              overallStatus, finalAs26BatchId, finalTallyBatchId
+            ]
+          );
+        }
+
+        processedCount++;
+      } catch (rowErr) {
+        console.warn(`⚠️ Skipped reconciliation row ${due.id}:`, rowErr.message);
+      }
     }
 
     console.log(`✅ Three-way reconciliation completed. Processed ${processedCount} records.`);
