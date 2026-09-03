@@ -30,6 +30,10 @@ export async function ensureTablesExist() {
   if (process.env.DB_TYPE === 'mysql') {
     try { await db.execute('ALTER TABLE tds_dues ADD COLUMN designation VARCHAR(100)'); } catch (err) {}
     try { await db.execute('ALTER TABLE tds_dues ADD COLUMN financial_year VARCHAR(50)'); } catch (err) {}
+    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN contact_person_name VARCHAR(100)'); } catch (err) {}
+    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN contact_number VARCHAR(50)'); } catch (err) {}
+    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN email_id VARCHAR(255)'); } catch (err) {}
+    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN teamleader VARCHAR(100)'); } catch (err) {}
     try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year VARCHAR(50)'); } catch (err) {}
     return;
   }
