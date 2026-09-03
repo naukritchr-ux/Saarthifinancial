@@ -202,6 +202,7 @@ export const upload26as = async (req, res) => {
       if (!rawTan) continue;
 
       const tan = rawTan.toUpperCase();
+      if (['TANNO', 'TAN_NO', 'TAN', 'PAN', 'PANNO', 'COMPANYNAME', 'PARTYNAME', 'DEDUCTORNAME', 'DEDUCTOR_NAME'].includes(tan)) continue;
 
       const deductorName = colMap.deductor_name !== -1 ? String(row[colMap.deductor_name] || '').trim() : 'Unknown Deductor';
       const amountPaid = colMap.amount_paid !== -1 ? cleanNumber(row[colMap.amount_paid]) : 0.00;
@@ -392,6 +393,7 @@ export const uploadTally = async (req, res) => {
       if (!rawTan) continue;
 
       const tan = rawTan.toUpperCase();
+      if (['TANNO', 'TAN_NO', 'TAN', 'PAN', 'PANNO', 'COMPANYNAME', 'PARTYNAME', 'DEDUCTORNAME', 'DEDUCTOR_NAME'].includes(tan)) continue;
 
       const partyName = colMap.party_name !== -1 ? String(row[colMap.party_name] || '').trim() : 'Unknown Client';
       const gstNum = colMap.gst_num !== -1 ? String(row[colMap.gst_num] || '').trim() : '';
@@ -611,6 +613,8 @@ export const getCleaningQueue = async (req, res) => {
              OR d.company_name IS NULL OR d.company_name = 'Unknown Company' OR d.company_name = ''
              OR tr.overall_status = 'Major Mismatch'
              OR tr.overall_status = 'Partial Mismatch')
+        AND tr.tan_no NOT IN ('COMPANYNAME', 'TANNO', 'TAN_NO', 'PANNO', 'TAN')
+        AND UPPER(COALESCE(d.company_name, '')) NOT IN ('UNKNOWN CLIENT', 'COMPANYNAME')
       ORDER BY tr.id DESC
       LIMIT 100
     `;
@@ -973,18 +977,25 @@ export const getReconciliationReport = async (req, res) => {
       const countStr = `${sources.length}/3`;
       let coverageLabel = `${countStr} · ${sources.join(' + ') || 'No match'}`;
 
-      const compareBase = saarthi || tally;
-      const diff = compareBase - as26;
-
-      let financialStatus = 'Match';
-      if (r.isManuallyEdited || r.overallStatus === 'All Matched') {
+      let financialStatus = 'Not Received';
+      if (r.isManuallyEdited) {
         financialStatus = 'Match';
-      } else if (Math.abs(diff) <= 1.0) {
-        financialStatus = 'Match';
-      } else if (diff < -1.0) {
-        financialStatus = 'Less Paid';
-      } else if (diff > 1.0) {
+      } else if (as26 > 0 && tally > 0) {
+        const diffVal = tally - as26;
+        if (Math.abs(diffVal) <= 1.0) financialStatus = 'Match';
+        else if (diffVal < -1.0) financialStatus = 'Less Paid';
+        else financialStatus = 'Excess';
+      } else if (tally > 0 && as26 === 0) {
         financialStatus = 'Excess';
+      } else if (as26 > 0 && tally === 0) {
+        financialStatus = 'Less Paid';
+      } else if (saarthi > 0 && as26 > 0) {
+        const diffVal = saarthi - as26;
+        if (Math.abs(diffVal) <= 1.0) financialStatus = 'Match';
+        else if (diffVal < -1.0) financialStatus = 'Less Paid';
+        else financialStatus = 'Excess';
+      } else {
+        financialStatus = 'Not Received';
       }
 
       return {

@@ -111,7 +111,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
 
         // Pairwise evaluate helper
         const evaluatePair = (valA, valB, hasA, hasB) => {
-          if (!hasA || !hasB) return 'Not Received';
+          if (!hasA || !hasB || (valA === 0 && valB === 0)) return 'Not Received';
           if (Math.abs(valA - valB) <= 1.0) return 'Matched';
           if (valA > valB) return 'Excess';
           return 'Less Paid';
@@ -121,14 +121,15 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
         const booksVsTally = evaluatePair(tallyTds, booksTds, hasTally, true);
         const as26VsTally = evaluatePair(tallyTds, as26Tds, hasTally, has26as);
 
-        let overallStatus = 'All Matched';
-        if (!has26as || !hasTally) {
-          overallStatus = 'Major Mismatch';
+        let overallStatus = 'Major Mismatch';
+        if (as26Tds > 0 && tallyTds > 0) {
+          if (Math.abs(as26Tds - tallyTds) <= 1.0) {
+            overallStatus = 'All Matched';
+          } else {
+            overallStatus = 'Major Mismatch';
+          }
         } else {
-          const offCount = [booksVs26as, booksVsTally, as26VsTally].filter(s => s !== 'Matched').length;
-          if (offCount === 0) overallStatus = 'All Matched';
-          else if (offCount === 1) overallStatus = 'Partial Mismatch';
-          else overallStatus = 'Major Mismatch';
+          overallStatus = 'Major Mismatch';
         }
 
         if (existing && existing.id) {

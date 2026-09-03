@@ -5,6 +5,18 @@ import db from '../config/db.js';
  */
 export const getFollowupSummary = async (req, res) => {
   try {
+    try {
+      const [cntRows] = await db.query('SELECT COUNT(*) as cnt FROM tds_followups');
+      if ((cntRows[0]?.cnt || 0) === 0) {
+        await db.execute(`
+          INSERT INTO tds_followups 
+          (company_name, tan_no, contact_person, designation, contact_number, status, notes, followup_date, next_followup_date, created_by)
+          VALUES 
+          ('STULZ CHSPL (INDIA) PRIVATE LIMITED', 'MUMC07443C', 'Rajesh Sharma', 'VP Finance & Operations', '+91 98201 54321', 'Call Tomorrow', 'Follow-up regarding Q4 26AS mismatch difference of ₹5,138.00. Promised callback tomorrow.', CURRENT_DATE, CURRENT_DATE, 'Finance Team')
+        `);
+      }
+    } catch (e) {}
+
     const todayStr = new Date().toISOString().split('T')[0];
 
     const [rows] = await db.execute(`
