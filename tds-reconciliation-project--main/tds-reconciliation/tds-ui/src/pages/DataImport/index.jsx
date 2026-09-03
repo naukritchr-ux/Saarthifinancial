@@ -85,6 +85,10 @@ export default function DataImport() {
 
   const handleQuickDecision = async (item, decision) => {
     setResolving(true);
+    if (decision === 'reject') {
+      setQueue(prev => prev.filter(q => q.id !== item.id));
+      setCleaningQueueCount(prev => Math.max(0, prev - 1));
+    }
     try {
       const res = await resolveCleaningItem(item.id, {
         tanNo: decision === 'confirm' ? (item.saarthiTan || item.tanNo) : item.tanNo,

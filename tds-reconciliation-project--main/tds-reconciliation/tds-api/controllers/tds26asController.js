@@ -783,12 +783,18 @@ export const resolveCleaningItem = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Cleaning Item ID is required' });
     }
 
-    if (status === 'Rejected') {
-      const [recRows] = await db.execute('SELECT tds_dues_id FROM tds_reconciliation_results WHERE id = ?', [id]);
-      if (recRows.length > 0 && recRows[0].tds_dues_id) {
-        await db.execute('DELETE FROM tds_dues WHERE id = ? AND (saarthi_client_id IS NULL OR saarthi_client_id = "") AND (tds IS NULL OR tds = 0)', [recRows[0].tds_dues_id]);
+    if (String(status || '').toLowerCase() === 'rejected') {
+      const targetTan = String(tanNo || '').trim().toUpperCase();
+      await db.execute(
+        'DELETE FROM tds_reconciliation_results WHERE id = ? OR (tan_no IS NOT NULL AND UPPER(TRIM(tan_no)) = ?)',
+        [id, targetTan || id]
+      );
+      if (targetTan) {
+        await db.execute(
+          'DELETE FROM tds_dues WHERE UPPER(TRIM(tan_no)) = ? AND (saarthi_client_id IS NULL OR saarthi_client_id = 0) AND (tds IS NULL OR tds = 0)',
+          [targetTan]
+        );
       }
-      await db.execute('DELETE FROM tds_reconciliation_results WHERE id = ?', [id]);
 
       return res.json({
         success: true,
