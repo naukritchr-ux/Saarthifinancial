@@ -10,10 +10,11 @@ import {
   Filter, 
   Calendar,
   Edit2,
+  Trash2,
   RefreshCw
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { getFollowups, getFollowupSummary } from '../../api/tdsApi';
+import { getFollowups, getFollowupSummary, deleteFollowup, purgeFollowups } from '../../api/tdsApi';
 import AddFollowupModal from './AddFollowupModal';
 
 export default function FollowUp() {
@@ -106,6 +107,32 @@ export default function FollowUp() {
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     loadData();
+  };
+
+  const handleDeleteSingle = async (id, companyName) => {
+    if (window.confirm(`Are you sure you want to delete follow-up log for "${companyName || 'this client'}"?`)) {
+      try {
+        const res = await deleteFollowup(id);
+        if (res && res.success) {
+          loadData();
+        }
+      } catch (err) {
+        console.error('Failed to delete follow-up:', err);
+      }
+    }
+  };
+
+  const handlePurgeAllFollowups = async () => {
+    if (window.confirm('Are you sure you want to clear/delete ALL Client Follow-up Call Logs? This will remove previous client call updates.')) {
+      try {
+        const res = await purgeFollowups();
+        if (res && res.success) {
+          loadData();
+        }
+      } catch (err) {
+        console.error('Failed to purge follow-ups:', err);
+      }
+    }
   };
 
   const handleExportCSV = () => {
@@ -472,13 +499,22 @@ export default function FollowUp() {
                     </td>
 
                     <td className="px-4 py-3.5 text-center">
-                      <button
-                        onClick={() => { setItemToEdit(row); setShowAddModal(true); }}
-                        className="p-1.5 rounded-lg border border-gray-200 text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-                        title="Edit Log"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => { setItemToEdit(row); setShowAddModal(true); }}
+                          className="p-1.5 rounded-lg border border-gray-200 text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                          title="Edit Follow-up Log"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSingle(row.id, row.companyName)}
+                          className="p-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition cursor-pointer"
+                          title="Delete Follow-up Log Entry"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

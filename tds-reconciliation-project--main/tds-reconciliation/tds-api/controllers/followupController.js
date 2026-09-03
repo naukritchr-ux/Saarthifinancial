@@ -313,3 +313,32 @@ export const updateFollowup = async (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to update follow-up', details: error.message });
   }
 };
+
+/**
+ * Delete a Single Follow-up Entry
+ */
+export const deleteFollowup = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ success: false, error: 'Follow-up ID is required' });
+
+    await db.execute('DELETE FROM tds_followups WHERE id = ?', [id]);
+    res.json({ success: true, message: 'Follow-up entry deleted successfully', id });
+  } catch (error) {
+    console.error('💥 Error in deleteFollowup:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete follow-up entry', details: error.message });
+  }
+};
+
+/**
+ * Purge / Clear All Follow-up Entries (Dedicated Action)
+ */
+export const purgeFollowups = async (req, res) => {
+  try {
+    await db.execute('DELETE FROM tds_followups');
+    res.json({ success: true, message: 'Follow-up history log purged successfully' });
+  } catch (error) {
+    console.error('💥 Error in purgeFollowups:', error);
+    res.status(500).json({ success: false, error: 'Failed to purge follow-up history log', details: error.message });
+  }
+};
