@@ -109,9 +109,18 @@ export default function Layout({ children }) {
                 <select
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
+                  className="bg-transparent text-slate-900 font-bold focus:outline-none cursor-pointer"
+                >
+                  <option value="Accounts Lead" className="bg-white text-slate-900">Accounts Lead</option>
+                  <option value="Finance Manager" className="bg-white text-slate-900">Finance Manager</option>
+                  <option value="Auditor" className="bg-white text-slate-900">Auditor</option>
+                </select>
+              </div>
+
+              {/* Return to Finance App Link */}
               <button 
                 onClick={() => window.open('https://saarthifinancial-7zni.vercel.app', '_self')} 
-                className="flex items-center gap-1.5 bg-teal-900/40 hover:bg-teal-900/60 border border-teal-500/40 rounded-xl px-3 py-1.5 text-xs font-bold text-teal-300 transition cursor-pointer"
+                className="flex items-center gap-1.5 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-xl px-3 py-1.5 text-xs font-bold text-teal-800 transition cursor-pointer shadow-2xs"
                 title="Switch to Saarthi Financial App"
               >
                 <span>Finance App ↗</span>

@@ -968,11 +968,11 @@ export const getReconciliationReport = async (req, res) => {
     if (coverageFilter === '3/3' || coverageFilter === '3 of 3' || coverageFilter === 'all_3' || coverageFilter === 'all3' || coverageFilter === 'All 3 (Saarthi + Tally + 26AS)') {
       whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL} AND ${has26asSQL})`);
     } else if (coverageFilter === 'saarthi_tally' || coverageFilter === 'tally_saarthi' || coverageFilter === 'Saarthi + Tally') {
-      whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL})`);
+      whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL} AND NOT ${has26asSQL})`);
     } else if (coverageFilter === 'tally_26as' || coverageFilter === '26as_tally' || coverageFilter === 'Tally + 26AS') {
-      whereClauses.push(`(${hasTallySQL} AND ${has26asSQL})`);
+      whereClauses.push(`(${hasTallySQL} AND ${has26asSQL} AND NOT ${hasSaarthiSQL})`);
     } else if (coverageFilter === 'as26_saarthi' || coverageFilter === 'saarthi_26as' || coverageFilter === '26as_saarthi' || coverageFilter === '26AS + Saarthi') {
-      whereClauses.push(`(${has26asSQL} AND ${hasSaarthiSQL})`);
+      whereClauses.push(`(${has26asSQL} AND ${hasSaarthiSQL} AND NOT ${hasTallySQL})`);
     } else if (coverageFilter === '2/3' || coverageFilter === '2 of 3') {
       whereClauses.push(`(((CASE WHEN ${hasSaarthiSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${has26asSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${hasTallySQL} THEN 1 ELSE 0 END)) = 2)`);
     } else if (coverageFilter === '1/3' || coverageFilter === '1 of 3' || coverageFilter === 'Single Source Only') {
