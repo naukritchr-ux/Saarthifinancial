@@ -946,11 +946,11 @@ export const getReconciliationReport = async (req, res) => {
         tr.is_manually_edited as isManuallyEdited,
         tr.updated_at as updatedAt,
 
-        'HR & Finance Team' as contactPersonName,
-        'HR Manager' as designation,
-        '+91 98200 12345' as contactNumber,
-        'accounts@saarthi360.in' as emailId,
-        'Accounts Lead' as teamleader,
+        COALESCE(NULLIF(TRIM(d.contact_person_name), ''), 'HR Manager') as contactPersonName,
+        COALESCE(NULLIF(TRIM(d.designation), ''), 'Accounts Lead') as designation,
+        COALESCE(NULLIF(TRIM(d.contact_number), ''), NULLIF(TRIM(d.note), ''), '+91 98200 12345') as contactNumber,
+        COALESCE(NULLIF(TRIM(d.email_id), ''), 'accounts@saarthi360.in') as emailId,
+        COALESCE(NULLIF(TRIM(d.teamleader), ''), 'Accounts Lead') as teamleader,
 
         d.company_name as tallyPartyName,
         '' as gstNum,
