@@ -795,7 +795,8 @@ export const getReconciliationReport = async (req, res) => {
       const [checkRows] = await db.execute('SELECT COUNT(*) as cnt FROM tds_reconciliation_results');
       const totalRecs = checkRows[0]?.cnt || checkRows[0]?.['COUNT(*)'] || 0;
       if (totalRecs === 0) {
-        console.log('⚡ Reconciliation results table empty; running initial 3-way reconciliation...');
+        console.log('⚡ Reconciliation results table empty; seeding master dataset and running initial 3-way reconciliation...');
+        await seedEmbeddedDataset(true);
         await reconcile(null, null);
       }
     } catch (checkErr) {
