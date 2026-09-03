@@ -792,7 +792,7 @@ export const getReconciliationReport = async (req, res) => {
   try {
     // Auto-ensure reconciliation table is populated if empty
     try {
-      const [checkRows] = await db.execute('SELECT COUNT(*) as cnt FROM tds_reconciliation_results');
+      const [checkRows] = await db.query('SELECT COUNT(*) as cnt FROM tds_reconciliation_results');
       const totalRecs = checkRows[0]?.cnt || checkRows[0]?.['COUNT(*)'] || 0;
       if (totalRecs === 0) {
         console.log('⚡ Reconciliation results table empty; running initial 3-way reconciliation...');
