@@ -863,9 +863,9 @@ export const getReconciliationReport = async (req, res) => {
       queryParams.push(`%${cleanFy}%`, `%${cleanFy}%`);
     }
 
-    if (search.trim() !== '') {
+    if (search && String(search).trim() !== '') {
       whereClauses.push('(tr.tan_no LIKE ? OR COALESCE(d.company_name, "") LIKE ?)');
-      const wild = `%${search.trim()}%`;
+      const wild = `%${String(search).trim()}%`;
       queryParams.push(wild, wild);
     }
 
