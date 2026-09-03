@@ -998,10 +998,12 @@ export const getReconciliationReport = async (req, res) => {
         financialStatus = 'Not Received';
       }
 
+      const diffCalc = (tally || saarthi) - as26;
+
       return {
         ...r,
         saarthiTds: saarthi,
-        difference: diff,
+        difference: diffCalc,
         sourceCoverage: {
           count: countStr,
           label: coverageLabel,
