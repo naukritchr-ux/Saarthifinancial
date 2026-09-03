@@ -10,10 +10,10 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
   const [error, setError] = useState(null);
 
   const statusOptions = {
-    overall_status: ['All Matched', 'Partial Mismatch', 'Major Mismatch'],
-    books_vs_26as_status: ['Excess', 'Less Paid', 'Not Received', 'Matched'],
-    books_vs_tally_status: ['Excess', 'Less Paid', 'Not Received', 'Matched'],
-    as26_vs_tally_status: ['Excess', 'Less Paid', 'Not Received', 'Matched']
+    overall_status: ['All Matched', 'Partial Mismatch', 'Major Mismatch', 'Match', 'Less Paid', 'Excess'],
+    books_vs_26as_status: ['Matched', 'Less Paid', 'Excess', 'Not Received'],
+    books_vs_tally_status: ['Matched', 'Less Paid', 'Excess', 'Not Received'],
+    as26_vs_tally_status: ['Matched', 'Less Paid', 'Excess', 'Not Received']
   };
 
   // Close on Escape key
@@ -24,6 +24,13 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
+
+  // Set initial default value
+  useEffect(() => {
+    if (!value || !statusOptions[field].includes(value)) {
+      setValue(statusOptions[field][0]);
+    }
+  }, [field]);
 
   const handleSave = async (e) => {
     e.preventDefault();
