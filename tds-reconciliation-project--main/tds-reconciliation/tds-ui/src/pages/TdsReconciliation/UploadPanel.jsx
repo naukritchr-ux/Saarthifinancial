@@ -66,30 +66,6 @@ export default function UploadPanel({ onUploadSuccess }) {
     return lines.slice(1);
   };
 
-  const saveUploadLogToHistory = (fileName, importType, rowCount) => {
-    const newLog = {
-      id: Date.now(),
-      fileName: fileName,
-      file_name: fileName,
-      uploadedBy: 'Accounts Manager',
-      uploaded_by: 'Accounts Manager',
-      importType: importType,
-      import_type: importType,
-      status: 'Completed',
-      rowsProcessed: rowCount,
-      rows_processed: rowCount,
-      uploadTime: new Date().toLocaleString('en-IN'),
-      upload_time: new Date().toLocaleString('en-IN')
-    };
-    try {
-      const existing = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
-      const updated = [newLog, ...existing];
-      localStorage.setItem('tds_upload_history', JSON.stringify(updated));
-    } catch (e) {
-      console.warn('Failed to save log to localStorage history:', e);
-    }
-  };
-
   const handleUpload26as = async () => {
     if (!as26File) return;
     setAs26Status({ loading: true, error: null, success: null });
@@ -98,7 +74,6 @@ export default function UploadPanel({ onUploadSuccess }) {
       const res = await upload26as(as26File, as26ImportMode);
       if (res && res.success) {
         const rowCount = (typeof res.records === 'number') ? res.records : 1;
-        saveUploadLogToHistory(as26File.name, 'Form 26AS (26AS_TDS)', rowCount);
         setAs26Status({
           loading: false,
           error: null,
@@ -131,7 +106,6 @@ export default function UploadPanel({ onUploadSuccess }) {
       const res = await uploadTally(tallyFile, tallyImportMode);
       if (res && res.success) {
         const rowCount = (typeof res.records === 'number') ? res.records : 1;
-        saveUploadLogToHistory(tallyFile.name, 'Tally Ledger CSV', rowCount);
         setTallyStatus({
           loading: false,
           error: null,
@@ -160,17 +134,6 @@ export default function UploadPanel({ onUploadSuccess }) {
     const labelMap = { '26as': 'Form 26AS data', 'tally': 'Tally Ledger data', 'all': 'ALL uploaded datasets' };
     setPurgeConfirmTarget(null);
     setPurgeStatus({ loading: true, message: null, error: null });
-
-    // Always clear localStorage fallback
-    if (target === '26as') {
-      localStorage.removeItem('tds_26as_data');
-    } else if (target === 'tally') {
-      localStorage.removeItem('tds_tally_data');
-    } else {
-      localStorage.removeItem('tds_26as_data');
-      localStorage.removeItem('tds_tally_data');
-      localStorage.removeItem('tds_upload_history');
-    }
 
     try {
       const res = await purgeData(target);

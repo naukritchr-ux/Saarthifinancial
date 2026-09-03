@@ -178,19 +178,12 @@ export const upload26as = async (req, res) => {
       return res.status(400).json({ success: false, error: 'No valid data rows matching standard TAN format found.' });
     }
 
-    // Batch insert parsed rows in chunks
-    const BATCH_SIZE = 1000;
-    for (let i = 0; i < entries.length; i += BATCH_SIZE) {
-      const chunk = entries.slice(i, i + BATCH_SIZE);
-      const insertQuery = `
-        INSERT INTO tds_26as_entries (tan_no, deductor_name, amount_paid, tds_deducted, section, quarter, upload_batch_id)
-        VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ')}
-      `;
-      const params = [];
-      chunk.forEach(e => {
-        params.push(e.tan, e.deductorName, e.amountPaid, e.tdsDeducted, e.section, e.quarter, e.uploadBatchId);
-      });
-      await db.execute(insertQuery, params);
+    // Insert parsed rows into Aiven MySQL / SQLite database
+    for (const e of entries) {
+      await db.execute(
+        'INSERT INTO tds_26as_entries (tan_no, deductor_name, amount_paid, tds_deducted, section, quarter, upload_batch_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [e.tan, e.deductorName, e.amountPaid, e.tdsDeducted, e.section, e.quarter, e.uploadBatchId]
+      );
     }
 
     // Run reconciliation logic for the new batch safely
@@ -372,19 +365,12 @@ export const uploadTally = async (req, res) => {
       return res.status(400).json({ success: false, error: 'No valid Tally rows with matching TAN format found.' });
     }
 
-    // Chunked insertions
-    const BATCH_SIZE = 1000;
-    for (let i = 0; i < entries.length; i += BATCH_SIZE) {
-      const chunk = entries.slice(i, i + BATCH_SIZE);
-      const insertQuery = `
-        INSERT INTO tds_tally_entries (tan_no, party_name, gst_num, pan_no, voucher_date, amount, tds_amount, ledger_name, upload_batch_id)
-        VALUES ${chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}
-      `;
-      const params = [];
-      chunk.forEach(e => {
-        params.push(e.tan, e.partyName, e.gstNum, e.panNo, e.voucherDate, e.amount, e.tdsAmount, e.ledgerName, e.uploadBatchId);
-      });
-      await db.execute(insertQuery, params);
+    // Insert parsed rows into Aiven MySQL / SQLite database
+    for (const e of entries) {
+      await db.execute(
+        'INSERT INTO tds_tally_entries (tan_no, party_name, gst_num, pan_no, voucher_date, amount, tds_amount, ledger_name, upload_batch_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [e.tan, e.partyName, e.gstNum, e.panNo, e.voucherDate, e.amount, e.tdsAmount, e.ledgerName, e.uploadBatchId]
+      );
     }
 
     // Run reconciliation matching safely
@@ -1472,7 +1458,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
     
     clientsData.forEach(item => {
       if (!item || (!item.companyName && !item.id)) return;
-      const gst = String(item.gstNumber || '').trim().toUpperCase();
+      const gst = String(item.gstNumber || item.gstNo || '').trim().toUpperCase();
       const pan = extractPanFromGst(gst);
       clientMasters.push({
         saarthi_client_id: item.id ? parseInt(item.id) : null,
@@ -1480,12 +1466,12 @@ export const syncSaarthiLiveApi = async (req, res) => {
         normalized_name: normalizeCompanyName(item.companyName || ''),
         gst_no: gstRegex.test(gst) ? gst : null,
         pan_no: pan,
-        tan_no: null,
-        contact_person_name: String(item.contactPersonName || '').trim() || null,
-        designation: String(item.contactDesignation || '').trim() || null,
-        contact_number: String(item.contactPhone || '').trim() || null,
-        email_id: String(item.contactEmail || '').trim() || null,
-        teamleader: String(item.teamLeader || '').trim() || null,
+        tan_no: String(item.tanNo || item.tanNumber || '').trim().toUpperCase() || null,
+        contact_person_name: String(item.contactPersonName || item.contactPerson || item.clientName || item.personName || item.contact_name || '').trim() || null,
+        designation: String(item.contactDesignation || item.designation || item.contact_designation || item.role || '').trim() || null,
+        contact_number: String(item.contactPhone || item.contactPhoneNumber || item.phoneNumber || item.mobile || item.mobileNo || item.phone || item.contact_no || '').trim() || null,
+        email_id: String(item.contactEmail || item.contactEmailId || item.emailId || item.email || item.contact_email || '').trim() || null,
+        teamleader: String(item.teamLeader || item.teamleader || item.tlName || item.manager || '').trim() || null,
         status: String(item.status || 'active').toLowerCase(),
         updated_at: item.created_at || item.updated_at || ''
       });
@@ -1493,9 +1479,9 @@ export const syncSaarthiLiveApi = async (req, res) => {
 
     legalsData.forEach(item => {
       if (!item || (!item.companyName && !item.id)) return;
-      const gst = String(item.gstNo || '').trim().toUpperCase();
-      const tan = String(item.tanNo || '').trim().toUpperCase();
-      const pan = String(item.panNo || '').trim().toUpperCase() || extractPanFromGst(gst);
+      const gst = String(item.gstNo || item.gstNumber || '').trim().toUpperCase();
+      const tan = String(item.tanNo || item.tanNumber || '').trim().toUpperCase();
+      const pan = String(item.panNo || item.panNumber || '').trim().toUpperCase() || extractPanFromGst(gst);
       
       clientMasters.push({
         saarthi_client_id: item.id ? parseInt(item.id) : null,
@@ -1504,11 +1490,11 @@ export const syncSaarthiLiveApi = async (req, res) => {
         gst_no: gstRegex.test(gst) ? gst : null,
         pan_no: panRegex.test(pan) ? pan : null,
         tan_no: tanRegex.test(tan) ? tan : null,
-        contact_person_name: String(item.contactPersonName || '').trim() || null,
-        designation: String(item.designation || '').trim() || null,
-        contact_number: String(item.contactPhoneNumber || item.phoneNumber || '').trim() || null,
-        email_id: String(item.contactEmailId || item.emailId || '').trim() || null,
-        teamleader: String(item.teamLeader || '').trim() || null,
+        contact_person_name: String(item.contactPersonName || item.contactPerson || item.clientName || item.personName || item.contact_name || '').trim() || null,
+        designation: String(item.designation || item.contactDesignation || item.contact_designation || item.role || '').trim() || null,
+        contact_number: String(item.contactPhoneNumber || item.phoneNumber || item.mobile || item.mobileNo || item.contactPhone || item.phone || item.contact_no || '').trim() || null,
+        email_id: String(item.contactEmailId || item.emailId || item.email || item.contactEmail || item.contact_email || '').trim() || null,
+        teamleader: String(item.teamLeader || item.teamleader || item.tlName || item.manager || '').trim() || null,
         status: String(item.status || 'ACTIVE').toLowerCase(),
         updated_at: item.updated_at || item.created_at || ''
       });
