@@ -10,7 +10,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     console.log(`🔄 Running 3-way reconciliation. 26AS Batch: ${as26BatchId || 'all'} | Tally Batch: ${tallyBatchId || 'all'}`);
 
     // 1. Fetch all rows from tds_dues (including ones without TAN yet)
-    const [duesRows] = await db.execute(
+    const [duesRows] = await db.query(
       "SELECT id, tan_no, tds, company_name FROM tds_dues"
     );
     const duesList = duesRows.map(r => ({
@@ -21,7 +21,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     }));
 
     // 2. Fetch sums for 26AS grouped by TAN
-    const [as26Rows] = await db.execute(
+    const [as26Rows] = await db.query(
       `SELECT UPPER(TRIM(tan_no)) as tan, MAX(deductor_name) as company_name, SUM(tds_deducted) as total, MAX(upload_batch_id) as batch_id 
        FROM tds_26as_entries 
        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' 
@@ -31,7 +31,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     as26Rows.forEach(r => as26Map.set(r.tan, { total: parseFloat(r.total || 0), batchId: r.batch_id, companyName: r.company_name }));
 
     // 3. Fetch sums for Tally grouped by TAN
-    const [tallyRows] = await db.execute(
+    const [tallyRows] = await db.query(
       `SELECT UPPER(TRIM(tan_no)) as tan, MAX(party_name) as company_name, SUM(tds_amount) as total, MAX(upload_batch_id) as batch_id 
        FROM tds_tally_entries 
        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' 
