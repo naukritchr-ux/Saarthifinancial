@@ -15,7 +15,7 @@ const DEFAULT_ROWS = [
 ];
 
 export default function TdsReconciliation() {
-  const { refreshKey } = useApp();
+  const { fyFilter, refreshKey } = useApp();
 
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
@@ -33,7 +33,7 @@ export default function TdsReconciliation() {
   const [activeViewRow, setActiveViewRow] = useState(null);
 
   // Statistics counters
-  const [stats, setStats] = useState({ total: 0, matched: 0, partial: 0, major: 0 });
+  const [stats, setStats] = useState({ total: 0, matched: 0, less: 0, excess: 0 });
 
   const fetchReport = async () => {
     setLoading(true);
@@ -44,6 +44,7 @@ export default function TdsReconciliation() {
         search,
         overallStatus: overallStatus === 'All' ? '' : overallStatus,
         coverageFilter: coverageFilter === 'All' ? '' : coverageFilter,
+        fy: fyFilter,
         sortBy
       });
 
@@ -51,11 +52,12 @@ export default function TdsReconciliation() {
         setRows(res.data);
         setTotal(res.total ?? res.data.length);
         
-        const tempStats = { total: res.total ?? res.data.length, matched: 0, partial: 0, major: 0 };
+        const tempStats = { total: res.total ?? res.data.length, matched: 0, less: 0, excess: 0 };
         res.data.forEach(r => {
-          if (r.overallStatus === 'All Matched') tempStats.matched++;
-          else if (r.overallStatus === 'Partial Mismatch') tempStats.partial++;
-          else if (r.overallStatus === 'Major Mismatch') tempStats.major++;
+          if (r.financialStatus === 'Match' || r.overallStatus === 'All Matched') tempStats.matched++;
+          else if (r.financialStatus === 'Less Paid') tempStats.less++;
+          else if (r.financialStatus === 'Excess') tempStats.excess++;
+          else tempStats.matched++;
         });
         setStats(tempStats);
       }
@@ -66,10 +68,9 @@ export default function TdsReconciliation() {
     }
   };
 
-
   useEffect(() => {
     fetchReport();
-  }, [page, overallStatus, coverageFilter, sortBy, refreshTrigger, refreshKey]);
+  }, [page, overallStatus, coverageFilter, sortBy, refreshTrigger, refreshKey, fyFilter]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -85,7 +86,8 @@ export default function TdsReconciliation() {
     const exportUrl = getCsvExportUrl({
       search,
       overallStatus: overallStatus === 'All' ? '' : overallStatus,
-      coverageFilter: coverageFilter === 'All' ? '' : coverageFilter
+      coverageFilter: coverageFilter === 'All' ? '' : coverageFilter,
+      fy: fyFilter
     });
     window.open(exportUrl, '_blank');
   };
@@ -129,7 +131,7 @@ export default function TdsReconciliation() {
             <CheckCircle className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">All Matched</div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Match</div>
             <div className="text-xl font-extrabold text-emerald-600 mt-0.5">{stats.matched}</div>
           </div>
         </div>
@@ -139,8 +141,8 @@ export default function TdsReconciliation() {
             <AlertTriangle className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Partial Mismatches</div>
-            <div className="text-xl font-extrabold text-amber-600 mt-0.5">{stats.partial}</div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Less Paid</div>
+            <div className="text-xl font-extrabold text-amber-600 mt-0.5">{stats.less}</div>
           </div>
         </div>
 
@@ -149,8 +151,8 @@ export default function TdsReconciliation() {
             <AlertTriangle className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Major Mismatches</div>
-            <div className="text-xl font-extrabold text-red-600 mt-0.5">{stats.major}</div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Excess Paid</div>
+            <div className="text-xl font-extrabold text-red-600 mt-0.5">{stats.excess}</div>
           </div>
         </div>
       </div>
@@ -228,7 +230,7 @@ export default function TdsReconciliation() {
 
       {/* Status Tabs */}
       <div className="flex gap-2 border-b border-gray-200 pb-px overflow-x-auto text-xs">
-        {['All', 'All Matched', 'Partial Mismatch', 'Major Mismatch'].map((tab) => (
+        {['All', 'Match', 'Less Paid', 'Excess'].map((tab) => (
           <button
             key={tab}
             onClick={() => { setPage(1); setOverallStatus(tab); }}

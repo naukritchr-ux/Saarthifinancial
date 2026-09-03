@@ -2,6 +2,7 @@
 
 CREATE TABLE IF NOT EXISTS tds_dues (
   id INT AUTO_INCREMENT PRIMARY KEY,
+  saarthi_client_id INT,
   invoice_id VARCHAR(50) UNIQUE,
   bill_number VARCHAR(50),
   bill_date VARCHAR(30),
@@ -15,9 +16,12 @@ CREATE TABLE IF NOT EXISTS tds_dues (
   amount_received DECIMAL(15,2),
   status VARCHAR(50),
   contact_person_name VARCHAR(100),
+  designation VARCHAR(100),
+  email_id VARCHAR(255),
   note TEXT,
   financial_year VARCHAR(20),
-  INDEX idx_tan (tan_no)
+  INDEX idx_tan (tan_no),
+  INDEX idx_saarthi_client (saarthi_client_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS tds_26as_entries (

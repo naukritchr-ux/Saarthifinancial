@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
   Upload, 
@@ -6,12 +6,32 @@ import {
   PhoneCall, 
   Clock, 
   Settings,
-  ShieldCheck
+  ShieldCheck,
+  RefreshCw
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { syncSaarthiLiveApi } from '../api/tdsApi';
 
 export default function Layout({ children }) {
-  const { activePage, navigateTo, fyFilter, setFyFilter, role, setRole, cleaningQueueCount } = useApp();
+  const { activePage, navigateTo, fyFilter, setFyFilter, role, setRole, cleaningQueueCount, triggerRefresh } = useApp();
+  const [syncing, setSyncing] = useState(false);
+
+  const handleSyncSaarthi = async () => {
+    setSyncing(true);
+    try {
+      const res = await syncSaarthiLiveApi();
+      if (res && res.success) {
+        alert(`✅ ${res.message || 'Saarthi 360 live sync completed successfully!'}`);
+        triggerRefresh();
+      } else {
+        alert(`⚠️ Sync Warning: ${res?.error || 'Unable to sync live Saarthi data'}`);
+      }
+    } catch (err) {
+      alert(`💥 Error syncing live data: ${err.message}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -46,8 +66,19 @@ export default function Layout({ children }) {
               </div>
             </div>
 
-            {/* Right Controls: FY, Role, Settings */}
+            {/* Right Controls: FY, Sync, Role, Settings */}
             <div className="flex items-center gap-3">
+              {/* Sync Live Saarthi Button */}
+              <button
+                onClick={handleSyncSaarthi}
+                disabled={syncing}
+                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-extrabold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer shadow-sm"
+                title="Fetch & sync live client invoices from Saarthi 360 APIs"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+                <span>{syncing ? 'Syncing...' : 'Sync Saarthi 360'}</span>
+              </button>
+
               {/* FY Selector */}
               <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-300">
                 <span className="text-amber-500 font-bold">FY:</span>
@@ -57,9 +88,13 @@ export default function Layout({ children }) {
                   className="bg-transparent text-white font-medium focus:outline-none cursor-pointer"
                 >
                   <option value="All Financial Years" className="bg-slate-900 text-white">All Financial Years</option>
-                  <option value="2024-25" className="bg-slate-900 text-white">FY 2024-25</option>
-                  <option value="2023-24" className="bg-slate-900 text-white">FY 2023-24</option>
-                  <option value="2022-23" className="bg-slate-900 text-white">FY 2022-23</option>
+                  <option value="FY 2026-27" className="bg-slate-900 text-white">FY 2026-27</option>
+                  <option value="FY 2025-26" className="bg-slate-900 text-white">FY 2025-26</option>
+                  <option value="FY 2024-25" className="bg-slate-900 text-white">FY 2024-25</option>
+                  <option value="FY 2023-24" className="bg-slate-900 text-white">FY 2023-24</option>
+                  <option value="FY 2022-23" className="bg-slate-900 text-white">FY 2022-23</option>
+                  <option value="FY 2021-22" className="bg-slate-900 text-white">FY 2021-22</option>
+                  <option value="FY 2020-21" className="bg-slate-900 text-white">FY 2020-21</option>
                 </select>
               </div>
 

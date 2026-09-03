@@ -34,6 +34,7 @@ export async function ensureTablesExist() {
     await db.execute(`
       CREATE TABLE IF NOT EXISTS tds_dues (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        saarthi_client_id INTEGER,
         invoice_id TEXT UNIQUE,
         bill_number TEXT,
         bill_date TEXT,
@@ -47,10 +48,20 @@ export async function ensureTablesExist() {
         amount_received DECIMAL(15,2),
         status TEXT,
         contact_person_name TEXT,
+        designation TEXT,
+        email_id TEXT,
         note TEXT,
         financial_year TEXT
       )
     `);
+
+    try {
+      const [duesInfo] = await db.execute(`PRAGMA table_info(tds_dues);`);
+      const duesCols = Array.isArray(duesInfo) ? duesInfo.map(c => c.name) : [];
+      if (!duesCols.includes('saarthi_client_id')) await db.execute(`ALTER TABLE tds_dues ADD COLUMN saarthi_client_id INTEGER;`);
+      if (!duesCols.includes('email_id')) await db.execute(`ALTER TABLE tds_dues ADD COLUMN email_id TEXT;`);
+      if (!duesCols.includes('designation')) await db.execute(`ALTER TABLE tds_dues ADD COLUMN designation TEXT;`);
+    } catch (e) {}
 
     await db.execute(`
       CREATE TABLE IF NOT EXISTS tds_26as_entries (

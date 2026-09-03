@@ -421,10 +421,10 @@ export const getDashboardSummary = async (req, res) => {
     let whereClause = '';
     const params = [];
     if (fy && fy !== 'All' && fy !== 'All Financial Years') {
-      whereClause = 'WHERE tr.as26_batch_id LIKE ?';
-      params.push(`%${fy}%`);
+      const cleanFy = String(fy).replace(/^FY\s*/i, '').trim();
+      whereClause = 'WHERE (d.financial_year LIKE ? OR d.financial_year LIKE ? OR tr.as26_batch_id LIKE ?)';
+      params.push(`%${cleanFy}%`, `%${fy}%`, `%${cleanFy}%`);
     }
-
 
     const query = `
       SELECT 
@@ -816,6 +816,8 @@ export const getReconciliationReport = async (req, res) => {
       search = '',
       overallStatus = '',
       coverageFilter = 'All',
+      fy = '',
+      financialYear = '',
       sortBy = 'updated_at',
       booksVs26asStatus = '',
       booksVsTallyStatus = '',
@@ -828,18 +830,35 @@ export const getReconciliationReport = async (req, res) => {
     let whereClauses = [];
     const queryParams = [];
 
-    // Search filter
-    if (search.trim() !== '') {
-      whereClauses.push('(tr.tan_no LIKE ? OR d.company_name LIKE ?)');
-      const wild = `%${search.trim()}%`;
-      queryParams.push(wild, wild);
+    // Financial Year Filter
+    const activeFy = fy || financialYear;
+    if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
+      const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
+      whereClauses.push('(d.financial_year LIKE ? OR d.financial_year LIKE ?)');
+      queryParams.push(`%${cleanFy}%`, `%${activeFy}%`);
     }
 
-    // Status filters
-    if (overallStatus && overallStatus !== 'All') {
-      whereClauses.push('tr.overall_status = ?');
-      queryParams.push(overallStatus);
+    // Search filter
+    if (search.trim() !== '') {
+      whereClauses.push('(tr.tan_no LIKE ? OR d.company_name LIKE ? OR d.contact_person_name LIKE ?)');
+      const wild = `%${search.trim()}%`;
+      queryParams.push(wild, wild, wild);
     }
+
+    // Financial Status filter
+    if (overallStatus && overallStatus !== 'All') {
+      if (overallStatus === 'Match' || overallStatus === 'All Matched') {
+        whereClauses.push('(tr.overall_status = "All Matched" OR ABS((COALESCE(tr.books_tds, tr.tally_tds, 0)) - COALESCE(tr.as26_tds, 0)) <= 1.0)');
+      } else if (overallStatus === 'Less Paid' || overallStatus === 'Less') {
+        whereClauses.push('(COALESCE(tr.books_tds, tr.tally_tds, 0) < COALESCE(tr.as26_tds, 0) - 1.0)');
+      } else if (overallStatus === 'Excess') {
+        whereClauses.push('(COALESCE(tr.books_tds, tr.tally_tds, 0) > COALESCE(tr.as26_tds, 0) + 1.0)');
+      } else {
+        whereClauses.push('tr.overall_status = ?');
+        queryParams.push(overallStatus);
+      }
+    }
+
     if (booksVs26asStatus && booksVs26asStatus !== 'All') {
       whereClauses.push('tr.books_vs_26as_status = ?');
       queryParams.push(booksVs26asStatus);
@@ -872,8 +891,7 @@ export const getReconciliationReport = async (req, res) => {
     let [countRes] = await db.execute(countQuery, queryParams);
     let total = countRes[0]?.total || 0;
 
-
-    // Report query
+    // Report query with LEFT JOIN aggregations to prevent N+1 and fan-out
     const reportQuery = `
       SELECT 
         tr.id,
@@ -883,11 +901,11 @@ export const getReconciliationReport = async (req, res) => {
         d.bill_number as billNumber,
         d.bill_date as billDate,
         d.total_bill_amount as totalBillAmount,
-        'FY 2024-25' as financialYear,
+        COALESCE(d.financial_year, 'FY 2024-25') as financialYear,
 
-        tr.books_tds as booksTds,
-        tr.as26_tds as as26Tds,
-        tr.tally_tds as tallyTds,
+        COALESCE(tr.books_tds, d.tds, 0) as booksTds,
+        COALESCE(tr.as26_tds, as26_agg.as26TdsSum, 0) as as26Tds,
+        COALESCE(tr.tally_tds, tally_agg.tallyTdsSum, 0) as tallyTds,
         tr.books_vs_26as_status as booksVs26asStatus,
         tr.books_vs_tally_status as booksVsTallyStatus,
         tr.as26_vs_tally_status as as26VsTallyStatus,
@@ -897,15 +915,45 @@ export const getReconciliationReport = async (req, res) => {
         tr.is_manually_edited as isManuallyEdited,
         tr.updated_at as updatedAt,
 
-        (SELECT t.party_name FROM tds_tally_entries t WHERE (t.upload_batch_id = tr.tally_batch_id OR tr.tally_batch_id IS NULL) AND t.tan_no = tr.tan_no LIMIT 1) as tallyPartyName,
-        (SELECT t.gst_num FROM tds_tally_entries t WHERE (t.upload_batch_id = tr.tally_batch_id OR tr.tally_batch_id IS NULL) AND t.tan_no = tr.tan_no LIMIT 1) as gstNum,
-        (SELECT t.pan_no FROM tds_tally_entries t WHERE (t.upload_batch_id = tr.tally_batch_id OR tr.tally_batch_id IS NULL) AND t.tan_no = tr.tan_no LIMIT 1) as panNo,
-        (SELECT t.amount FROM tds_tally_entries t WHERE (t.upload_batch_id = tr.tally_batch_id OR tr.tally_batch_id IS NULL) AND t.tan_no = tr.tan_no LIMIT 1) as tallyGrossTotal,
+        d.contact_person_name as contactPersonName,
+        d.designation as designation,
+        d.contact_number as contactNumber,
+        d.email_id as emailId,
+        d.teamleader as teamleader,
 
-        (SELECT a.deductor_name FROM tds_26as_entries a WHERE (a.upload_batch_id = tr.as26_batch_id OR tr.as26_batch_id IS NULL) AND a.tan_no = tr.tan_no LIMIT 1) as as26DeductorName,
-        (SELECT a.amount_paid FROM tds_26as_entries a WHERE (a.upload_batch_id = tr.as26_batch_id OR tr.as26_batch_id IS NULL) AND a.tan_no = tr.tan_no LIMIT 1) as as26InvoiceAmount
+        COALESCE(tally_agg.tallyPartyName, d.company_name) as tallyPartyName,
+        tally_agg.gstNum as gstNum,
+        tally_agg.panNo as panNo,
+        COALESCE(tally_agg.tallyGrossTotal, 0) as tallyGrossTotal,
+
+        COALESCE(as26_agg.as26DeductorName, d.company_name) as as26DeductorName,
+        COALESCE(as26_agg.as26InvoiceAmount, 0) as as26InvoiceAmount
+
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+      LEFT JOIN (
+        SELECT 
+          UPPER(TRIM(tan_no)) as tan, 
+          MAX(party_name) as tallyPartyName, 
+          MAX(gst_num) as gstNum, 
+          MAX(pan_no) as panNo, 
+          SUM(amount) as tallyGrossTotal, 
+          SUM(tds_amount) as tallyTdsSum 
+        FROM tds_tally_entries 
+        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''
+        GROUP BY UPPER(TRIM(tan_no))
+      ) tally_agg ON UPPER(TRIM(tr.tan_no)) = tally_agg.tan
+      LEFT JOIN (
+        SELECT 
+          UPPER(TRIM(tan_no)) as tan, 
+          MAX(deductor_name) as as26DeductorName, 
+          SUM(amount_paid) as as26InvoiceAmount, 
+          SUM(tds_deducted) as as26TdsSum 
+        FROM tds_26as_entries 
+        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''
+        GROUP BY UPPER(TRIM(tan_no))
+      ) as26_agg ON UPPER(TRIM(tr.tan_no)) = as26_agg.tan
+
       ${whereSQL}
       ${orderSQL}
       LIMIT ${limitNum} OFFSET ${offset}
@@ -913,7 +961,7 @@ export const getReconciliationReport = async (req, res) => {
 
     const [rawRows] = await db.execute(reportQuery, queryParams);
 
-    // Enrich rows with sourceCoverage and financialStatus
+    // Enrich rows with sourceCoverage and financialStatus (with ₹1.00 tolerance)
     const rows = rawRows.map(r => {
       const tally = parseFloat(r.tallyTds || 0);
       const as26 = parseFloat(r.as26Tds || 0);
@@ -927,22 +975,24 @@ export const getReconciliationReport = async (req, res) => {
       const countStr = `${sources.length}/3`;
       let coverageLabel = `${countStr} · ${sources.join(' + ') || 'No match'}`;
 
-      // Financial status mapping
-      let financialStatus = 'Match';
-      if (r.overallStatus === 'All Matched') financialStatus = 'Match';
-      else if (r.overallStatus === 'Partial Mismatch') financialStatus = 'Pending Review';
-      else if (sources.length < 3) financialStatus = 'Missing';
-      else if (r.booksVs26asStatus === 'Less Paid') financialStatus = 'Less';
-      else if (r.booksVs26asStatus === 'Excess') financialStatus = 'Excess';
-      else financialStatus = 'Match';
+      const compareBase = saarthi || tally;
+      const diff = compareBase - as26;
 
-      // Net difference (Saarthi/Tally vs 26AS)
-      const difference = (saarthi || tally) - as26;
+      let financialStatus = 'Match';
+      if (r.isManuallyEdited || r.overallStatus === 'All Matched') {
+        financialStatus = 'Match';
+      } else if (Math.abs(diff) <= 1.0) {
+        financialStatus = 'Match';
+      } else if (diff < -1.0) {
+        financialStatus = 'Less Paid';
+      } else if (diff > 1.0) {
+        financialStatus = 'Excess';
+      }
 
       return {
         ...r,
         saarthiTds: saarthi,
-        difference,
+        difference: diff,
         sourceCoverage: {
           count: countStr,
           label: coverageLabel,
@@ -1322,6 +1372,341 @@ export const deleteUploadBatch = async (req, res) => {
   } catch (error) {
     console.error('💥 Error in deleteUploadBatch:', error);
     res.status(500).json({ success: false, error: 'Failed to delete upload batch', details: error.message });
+  }
+};
+
+/**
+ * Sync Live Saarthi 360 API Data (clients_info + legals_info + api/Invoice)
+ */
+export const syncSaarthiLiveApi = async (req, res) => {
+  try {
+    clearPurgedFlag();
+    console.log('🔄 Syncing live Saarthi 360 API data...');
+
+    const fetchTimeout = (url, ms = 15000) => {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), ms);
+      return fetch(url, { signal: controller.signal })
+        .then(r => (r.ok ? r.json() : null))
+        .catch(err => {
+          console.warn(`Fetch error for ${url}:`, err.message);
+          return null;
+        })
+        .finally(() => clearTimeout(id));
+    };
+
+    const [cRes, lRes, iRes] = await Promise.all([
+      fetchTimeout('https://api.sarthi360.in/api/clients_info'),
+      fetchTimeout('https://api.sarthi360.in/legals_info'),
+      fetchTimeout('https://api.sarthi360.in/api/Invoice')
+    ]);
+
+    let clientsData = Array.isArray(cRes) ? cRes : [];
+    let legalsData = Array.isArray(lRes) ? lRes : [];
+    let invoicesData = Array.isArray(iRes) ? iRes : [];
+
+    if (clientsData.length === 0 && legalsData.length === 0 && invoicesData.length === 0) {
+      return res.status(502).json({
+        success: false,
+        error: 'Unable to reach Saarthi 360 live APIs. Please check internet connection or remote service status.'
+      });
+    }
+
+    const tanRegex = /^[A-Z]{4}\d{5}[A-Z]$/i;
+    const gstRegex = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i;
+    const panRegex = /^[A-Z]{5}\d{4}[A-Z]$/i;
+
+    const extractPanFromGst = (gst) => {
+      const clean = String(gst || '').trim().toUpperCase();
+      if (gstRegex.test(clean)) {
+        return clean.substring(2, 12);
+      }
+      return null;
+    };
+
+    // Build master clients pool
+    const clientMasters = [];
+    
+    clientsData.forEach(item => {
+      if (!item || (!item.companyName && !item.id)) return;
+      const gst = String(item.gstNumber || '').trim().toUpperCase();
+      const pan = extractPanFromGst(gst);
+      clientMasters.push({
+        saarthi_client_id: item.id ? parseInt(item.id) : null,
+        company_name: String(item.companyName || '').trim(),
+        normalized_name: normalizeCompanyName(item.companyName || ''),
+        gst_no: gstRegex.test(gst) ? gst : null,
+        pan_no: pan,
+        tan_no: null,
+        contact_person_name: String(item.contactPersonName || '').trim() || null,
+        designation: String(item.contactDesignation || '').trim() || null,
+        contact_number: String(item.contactPhone || '').trim() || null,
+        email_id: String(item.contactEmail || '').trim() || null,
+        teamleader: String(item.teamLeader || '').trim() || null,
+        status: String(item.status || 'active').toLowerCase(),
+        updated_at: item.created_at || item.updated_at || ''
+      });
+    });
+
+    legalsData.forEach(item => {
+      if (!item || (!item.companyName && !item.id)) return;
+      const gst = String(item.gstNo || '').trim().toUpperCase();
+      const tan = String(item.tanNo || '').trim().toUpperCase();
+      const pan = String(item.panNo || '').trim().toUpperCase() || extractPanFromGst(gst);
+      
+      clientMasters.push({
+        saarthi_client_id: item.id ? parseInt(item.id) : null,
+        company_name: String(item.companyName || '').trim(),
+        normalized_name: normalizeCompanyName(item.companyName || ''),
+        gst_no: gstRegex.test(gst) ? gst : null,
+        pan_no: panRegex.test(pan) ? pan : null,
+        tan_no: tanRegex.test(tan) ? tan : null,
+        contact_person_name: String(item.contactPersonName || '').trim() || null,
+        designation: String(item.designation || '').trim() || null,
+        contact_number: String(item.contactPhoneNumber || item.phoneNumber || '').trim() || null,
+        email_id: String(item.contactEmailId || item.emailId || '').trim() || null,
+        teamleader: String(item.teamLeader || '').trim() || null,
+        status: String(item.status || 'ACTIVE').toLowerCase(),
+        updated_at: item.updated_at || item.created_at || ''
+      });
+    });
+
+    // Linking Helper with Tiebreaker across master sources
+    const findMasterClient = (invGst, invName) => {
+      const cleanGst = String(invGst || '').trim().toUpperCase();
+      const cleanName = String(invName || '').trim();
+      const normName = normalizeCompanyName(cleanName);
+
+      if (gstRegex.test(cleanGst)) {
+        const matches = clientMasters.filter(c => c.gst_no === cleanGst);
+        if (matches.length > 0) {
+          matches.sort((a, b) => {
+            if ((a.status === 'active') !== (b.status === 'active')) return a.status === 'active' ? -1 : 1;
+            if ((a.tan_no ? 1 : 0) !== (b.tan_no ? 1 : 0)) return a.tan_no ? -1 : 1;
+            return (b.saarthi_client_id || 0) - (a.saarthi_client_id || 0);
+          });
+          return matches[0];
+        }
+      }
+
+      if (normName) {
+        const matches = clientMasters.filter(c => c.normalized_name === normName);
+        if (matches.length > 0) {
+          matches.sort((a, b) => {
+            if ((a.status === 'active') !== (b.status === 'active')) return a.status === 'active' ? -1 : 1;
+            if ((a.tan_no ? 1 : 0) !== (b.tan_no ? 1 : 0)) return a.tan_no ? -1 : 1;
+            return (b.saarthi_client_id || 0) - (a.saarthi_client_id || 0);
+          });
+          return matches[0];
+        }
+      }
+
+      if (normName) {
+        let bestMatch = null;
+        let bestScore = 0;
+        for (const c of clientMasters) {
+          if (!c.normalized_name) continue;
+          const score = calculateStringSimilarity(normName, c.normalized_name);
+          if (score >= 85 && score > bestScore) {
+            bestScore = score;
+            bestMatch = c;
+          }
+        }
+        if (bestMatch) return bestMatch;
+      }
+
+      return null;
+    };
+
+    const parseFinancialYear = (fyRaw) => {
+      if (!fyRaw) return 'FY 2024-25';
+      const str = String(fyRaw).trim();
+      const matchFull = str.match(/(\d{4})[-–/](\d{4})/);
+      if (matchFull) {
+        const y1 = matchFull[1];
+        const y2 = matchFull[2].slice(-2);
+        return `FY ${y1}-${y2}`;
+      }
+      const matchShort = str.match(/(\d{4})[-–/](\d{2})/);
+      if (matchShort) {
+        return `FY ${matchShort[1]}-${matchShort[2]}`;
+      }
+      const matchBare = str.match(/\b(20\d{2})\b/);
+      if (matchBare) {
+        const y1 = parseInt(matchBare[1]);
+        return `FY ${y1}-${(y1 + 1).toString().slice(-2)}`;
+      }
+      return 'FY 2024-25';
+    };
+
+    // Aggregate Invoices per Client per FY
+    const aggregatedDues = new Map();
+
+    invoicesData.forEach(inv => {
+      if (!inv || !inv.companyName) return;
+      
+      const client = findMasterClient(inv.gstNo, inv.companyName);
+      const fy = parseFinancialYear(inv.financialYear);
+      
+      const key = client 
+        ? `client_${client.saarthi_client_id || client.normalized_name}_${fy}`
+        : `unmatched_${normalizeCompanyName(inv.companyName)}_${fy}`;
+
+      const totalBill = cleanNumber(inv.totalBillAmt || inv.serviceCharges);
+      let tdsVal = cleanNumber(inv.tds);
+      if (tdsVal <= 0 && totalBill > 0) {
+        tdsVal = cleanNumber(inv.serviceCharges || totalBill) * 0.10;
+      }
+
+      if (!aggregatedDues.has(key)) {
+        aggregatedDues.set(key, {
+          saarthi_client_id: client ? client.saarthi_client_id : null,
+          company_name: client ? client.company_name : String(inv.companyName).trim(),
+          tan_no: client ? client.tan_no : null,
+          bill_number: inv.billNumber ? String(inv.billNumber) : null,
+          bill_date: inv.billDate ? String(inv.billDate).split('T')[0] : null,
+          total_bill_amount: 0,
+          tds: 0,
+          contact_number: client?.contact_number || inv.contactNumber || inv.contactPhone || null,
+          contact_person_name: client?.contact_person_name || inv.contactPersonName || inv.contactPerson || null,
+          designation: client?.designation || inv.designation || null,
+          email_id: client?.email_id || inv.contactEmail || null,
+          teamleader: client?.teamleader || inv.teamLeader || null,
+          financial_year: fy
+        });
+      }
+
+      const rec = aggregatedDues.get(key);
+      rec.total_bill_amount += totalBill;
+      rec.tds += tdsVal;
+    });
+
+    // Upsert into database
+    let inserted = 0;
+    let updated = 0;
+
+    for (const [key, rec] of aggregatedDues.entries()) {
+      let existingRows = [];
+      if (rec.saarthi_client_id) {
+        [existingRows] = await db.execute(
+          'SELECT id, company_name, tan_no FROM tds_dues WHERE saarthi_client_id = ? AND financial_year = ?',
+          [rec.saarthi_client_id, rec.financial_year]
+        );
+      }
+      if (existingRows.length === 0) {
+        [existingRows] = await db.execute(
+          'SELECT id, company_name, tan_no FROM tds_dues WHERE UPPER(TRIM(company_name)) = ? AND financial_year = ?',
+          [rec.company_name.toUpperCase(), rec.financial_year]
+        );
+      }
+
+      if (existingRows.length > 0) {
+        const existing = existingRows[0];
+        const [manRows] = await db.execute(
+          'SELECT is_manually_edited FROM tds_reconciliation_results WHERE tds_dues_id = ?',
+          [existing.id]
+        );
+        const isManuallyEdited = manRows.length > 0 && Number(manRows[0].is_manually_edited) === 1;
+
+        if (isManuallyEdited) {
+          // PROTECT company_name and tan_no, REFRESH contact details
+          await db.execute(`
+            UPDATE tds_dues 
+            SET 
+              total_bill_amount = ?,
+              tds = ?,
+              contact_number = COALESCE(?, contact_number),
+              contact_person_name = COALESCE(?, contact_person_name),
+              designation = COALESCE(?, designation),
+              email_id = COALESCE(?, email_id),
+              teamleader = COALESCE(?, teamleader)
+            WHERE id = ?
+          `, [
+            rec.total_bill_amount,
+            rec.tds,
+            rec.contact_number,
+            rec.contact_person_name,
+            rec.designation,
+            rec.email_id,
+            rec.teamleader,
+            existing.id
+          ]);
+        } else {
+          // Update all fields
+          await db.execute(`
+            UPDATE tds_dues 
+            SET 
+              saarthi_client_id = COALESCE(?, saarthi_client_id),
+              company_name = ?,
+              tan_no = COALESCE(?, tan_no),
+              total_bill_amount = ?,
+              tds = ?,
+              contact_number = ?,
+              contact_person_name = ?,
+              designation = ?,
+              email_id = ?,
+              teamleader = ?
+            WHERE id = ?
+          `, [
+            rec.saarthi_client_id,
+            rec.company_name,
+            rec.tan_no,
+            rec.total_bill_amount,
+            rec.tds,
+            rec.contact_number,
+            rec.contact_person_name,
+            rec.designation,
+            rec.email_id,
+            rec.teamleader,
+            existing.id
+          ]);
+        }
+        updated++;
+      } else {
+        // Insert new row
+        const invId = `saarthi_sync_${rec.saarthi_client_id || Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        await db.execute(`
+          INSERT INTO tds_dues 
+          (saarthi_client_id, invoice_id, bill_number, bill_date, company_name, total_bill_amount, tds, contact_number, teamleader, tan_no, contact_person_name, designation, email_id, financial_year)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          rec.saarthi_client_id,
+          invId,
+          rec.bill_number,
+          rec.bill_date,
+          rec.company_name,
+          rec.total_bill_amount,
+          rec.tds,
+          rec.contact_number,
+          rec.teamleader,
+          rec.tan_no,
+          rec.contact_person_name,
+          rec.designation,
+          rec.email_id,
+          rec.financial_year
+        ]);
+        inserted++;
+      }
+    }
+
+    // 4. Run 3-way reconciliation across all rows
+    await reconcile(null, null);
+
+    res.json({
+      success: true,
+      message: `Successfully synced live Saarthi 360 data (${inserted} inserted, ${updated} updated). Reconciliation completed.`,
+      stats: {
+        clientsFound: clientsData.length + legalsData.length,
+        invoicesProcessed: invoicesData.length,
+        aggregatedRows: aggregatedDues.size,
+        inserted,
+        updated
+      }
+    });
+
+  } catch (error) {
+    console.error('💥 Error in syncSaarthiLiveApi:', error);
+    res.status(500).json({ success: false, error: 'Failed to sync live Saarthi data', details: error.message });
   }
 };
 
