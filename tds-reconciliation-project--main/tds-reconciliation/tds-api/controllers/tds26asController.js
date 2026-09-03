@@ -1491,6 +1491,47 @@ export const syncSaarthiLiveApi = async (req, res) => {
       });
     });
 
+    if (clientMasters.length === 0) {
+      const parseCsvDisk = (filename) => {
+        try {
+          const filePath = path.resolve('data', filename);
+          if (!fs.existsSync(filePath)) return [];
+          const content = fs.readFileSync(filePath, 'utf8');
+          const lines = content.split(/\r?\n/).filter(l => l.trim() !== '');
+          if (lines.length <= 1) return [];
+          const headers = lines[0].split(',').map(h => h.replace(/^["']|["']$/g, '').trim());
+          const results = [];
+          for (let i = 1; i < lines.length; i++) {
+            const vals = lines[i].split(',').map(v => v.replace(/^["']|["']$/g, '').trim());
+            const obj = {};
+            headers.forEach((h, idx) => { obj[h] = vals[idx] || ''; });
+            results.push(obj);
+          }
+          return results;
+        } catch (e) {
+          return [];
+        }
+      };
+
+      const diskClients = parseCsvDisk('clients_info.csv');
+      diskClients.forEach(item => {
+        if (!item || !item.companyName) return;
+        clientMasters.push({
+          saarthi_client_id: null,
+          company_name: String(item.companyName || '').trim(),
+          normalized_name: normalizeCompanyName(item.companyName || ''),
+          gst_no: null,
+          pan_no: null,
+          tan_no: String(item.tanNo || '').trim().toUpperCase() || null,
+          contact_person_name: String(item.contactPersonName || '').trim() || null,
+          designation: String(item.designation || '').trim() || null,
+          contact_number: String(item.contactPhoneNumber || '').trim() || null,
+          email_id: String(item.contactEmailId || '').trim() || null,
+          teamleader: String(item.teamLeader || '').trim() || null
+        });
+      });
+    }
+
     let updated = 0;
 
     for (const master of clientMasters) {
@@ -1513,13 +1554,6 @@ export const syncSaarthiLiveApi = async (req, res) => {
           [master.company_name.toUpperCase()]
         );
       }
-      if (existingRows.length === 0 && master.normalized_name && master.normalized_name.length >= 4) {
-        const shortNorm = master.normalized_name.slice(0, 12);
-        [existingRows] = await db.execute(
-          `SELECT id FROM tds_dues WHERE UPPER(company_name) LIKE ?`,
-          [`%${shortNorm}%`]
-        );
-      }
 
       if (existingRows.length > 0) {
         for (const row of existingRows) {
@@ -1528,11 +1562,11 @@ export const syncSaarthiLiveApi = async (req, res) => {
             SET 
               saarthi_client_id = COALESCE(?, saarthi_client_id),
               tan_no = COALESCE(?, tan_no),
-              contact_person_name = COALESCE(?, contact_person_name),
-              designation = COALESCE(?, designation),
-              contact_number = COALESCE(?, contact_number),
-              email_id = COALESCE(?, email_id),
-              teamleader = COALESCE(?, teamleader)
+              contact_person_name = ?,
+              designation = ?,
+              contact_number = ?,
+              email_id = ?,
+              teamleader = ?
             WHERE id = ?
           `, [
             master.saarthi_client_id,
