@@ -73,15 +73,26 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
 
     for (const due of duesList) {
       try {
-        const tan = due.tan || `NO_TAN_${due.id}`;
+        const dueId = due.id ? parseInt(due.id) : 0;
+        const tan = due.tan || `NO_TAN_${dueId}`;
         const booksTds = due.tds;
 
-        // Check existing reconciliation record by tds_dues_id
-        const [existingRows] = await db.execute(
-          'SELECT id, is_manually_edited, as26_batch_id, tally_batch_id FROM tds_reconciliation_results WHERE tds_dues_id = ?',
-          [due.id]
-        );
-        const existing = (existingRows && existingRows.length > 0) ? existingRows[0] : null;
+        // Check existing reconciliation record by tds_dues_id or tan_no
+        let existing = null;
+        if (dueId > 0) {
+          const [existingRows] = await db.execute(
+            'SELECT id, is_manually_edited, as26_batch_id, tally_batch_id FROM tds_reconciliation_results WHERE tds_dues_id = ?',
+            [dueId]
+          );
+          existing = (existingRows && existingRows.length > 0) ? existingRows[0] : null;
+        }
+        if (!existing && tan) {
+          const [existingRows] = await db.execute(
+            'SELECT id, is_manually_edited, as26_batch_id, tally_batch_id FROM tds_reconciliation_results WHERE UPPER(TRIM(tan_no)) = ?',
+            [tan.toUpperCase()]
+          );
+          existing = (existingRows && existingRows.length > 0) ? existingRows[0] : null;
+        }
 
         if (existing && existing.is_manually_edited) {
           continue; // Respect manual overrides
@@ -123,12 +134,13 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
         if (existing && existing.id) {
           await db.execute(
             `UPDATE tds_reconciliation_results 
-             SET tan_no = ?, books_tds = ?, as26_tds = ?, tally_tds = ?, 
+             SET tds_dues_id = COALESCE(NULLIF(?, 0), tds_dues_id),
+                 tan_no = ?, books_tds = ?, as26_tds = ?, tally_tds = ?, 
                  books_vs_26as_status = ?, books_vs_tally_status = ?, as26_vs_tally_status = ?, 
                  overall_status = ?, as26_batch_id = ?, tally_batch_id = ?
              WHERE id = ?`,
             [
-              tan, booksTds, as26Tds, tallyTds,
+              dueId, tan, booksTds, as26Tds, tallyTds,
               booksVs26as, booksVsTally, as26VsTally,
               overallStatus, finalAs26BatchId, finalTallyBatchId,
               existing.id
@@ -142,7 +154,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
               overall_status, as26_batch_id, tally_batch_id)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-              due.id, tan, booksTds, as26Tds, tallyTds,
+              dueId, tan, booksTds, as26Tds, tallyTds,
               booksVs26as, booksVsTally, as26VsTally,
               overallStatus, finalAs26BatchId, finalTallyBatchId
             ]
