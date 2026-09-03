@@ -602,58 +602,66 @@ export const getCleaningQueue = async (req, res) => {
 
     const [rows] = await db.execute(query);
 
-    const cleaningItems = await Promise.all(rows.map(async (r) => {
+    // Fetch both reference tables ONCE (not per-row) to avoid an N+1 scan,
+    // and so fuzzy matching can see every row instead of an arbitrary first 100.
+    const [all26as] = await db.execute('SELECT deductor_name, tan_no FROM tds_26as_entries');
+    const [allTally] = await db.execute('SELECT party_name, tan_no FROM tds_tally_entries');
+
+    const as26ByTan = new Map();
+    for (const e of all26as) {
+      const key = e.tan_no ? String(e.tan_no).trim().toUpperCase() : '';
+      if (key && !as26ByTan.has(key)) as26ByTan.set(key, e);
+    }
+    const tallyByTan = new Map();
+    for (const e of allTally) {
+      const key = e.tan_no ? String(e.tan_no).trim().toUpperCase() : '';
+      if (key && !tallyByTan.has(key)) tallyByTan.set(key, e);
+    }
+
+    const findFuzzy = (name, list, nameField) => {
+      let best = null;
+      let bestScore = 0;
+      for (const f of list) {
+        const score = calculateStringSimilarity(name, f[nameField]);
+        if (score >= 80 && score > bestScore) {
+          best = f;
+          bestScore = score;
+        }
+      }
+      return best;
+    };
+
+    const cleaningItems = rows.map((r) => {
       const tan = r.tanNo ? String(r.tanNo).trim().toUpperCase() : '';
       const booksName = r.booksCompanyName || 'Unknown Client';
 
-      // 1. Fetch 26AS entry by TAN or fuzzy name
+      // 1. Resolve 26AS entry by TAN, else fuzzy name across the FULL table
       let as26Name = null;
       let as26Tan = null;
-      if (tan) {
-        const [as26Rows] = await db.execute(
-          'SELECT deductor_name, tan_no FROM tds_26as_entries WHERE UPPER(TRIM(tan_no)) = ? LIMIT 1',
-          [tan]
-        );
-        if (as26Rows.length > 0) {
-          as26Name = as26Rows[0].deductor_name;
-          as26Tan = as26Rows[0].tan_no;
+      const as26ExactMatch = tan ? as26ByTan.get(tan) : null;
+      if (as26ExactMatch) {
+        as26Name = as26ExactMatch.deductor_name;
+        as26Tan = as26ExactMatch.tan_no;
+      } else if (booksName && booksName !== 'Unknown Client') {
+        const fuzzy = findFuzzy(booksName, all26as, 'deductor_name');
+        if (fuzzy) {
+          as26Name = fuzzy.deductor_name;
+          as26Tan = fuzzy.tan_no;
         }
       }
 
-      // If not found by TAN, check by fuzzy name
-      if (!as26Name && booksName && booksName !== 'Unknown Client') {
-        const [as26Fuzzy] = await db.execute('SELECT deductor_name, tan_no FROM tds_26as_entries LIMIT 100');
-        for (const f of as26Fuzzy) {
-          if (calculateStringSimilarity(booksName, f.deductor_name) >= 80) {
-            as26Name = f.deductor_name;
-            as26Tan = f.tan_no;
-            break;
-          }
-        }
-      }
-
-      // 2. Fetch Tally entry by TAN or fuzzy name
+      // 2. Resolve Tally entry by TAN, else fuzzy name across the FULL table
       let tallyName = null;
       let tallyTan = null;
-      if (tan) {
-        const [tallyRows] = await db.execute(
-          'SELECT party_name, tan_no FROM tds_tally_entries WHERE UPPER(TRIM(tan_no)) = ? LIMIT 1',
-          [tan]
-        );
-        if (tallyRows.length > 0) {
-          tallyName = tallyRows[0].party_name;
-          tallyTan = tallyRows[0].tan_no;
-        }
-      }
-
-      if (!tallyName && booksName && booksName !== 'Unknown Client') {
-        const [tallyFuzzy] = await db.execute('SELECT party_name, tan_no FROM tds_tally_entries LIMIT 100');
-        for (const f of tallyFuzzy) {
-          if (calculateStringSimilarity(booksName, f.party_name) >= 80) {
-            tallyName = f.party_name;
-            tallyTan = f.tan_no;
-            break;
-          }
+      const tallyExactMatch = tan ? tallyByTan.get(tan) : null;
+      if (tallyExactMatch) {
+        tallyName = tallyExactMatch.party_name;
+        tallyTan = tallyExactMatch.tan_no;
+      } else if (booksName && booksName !== 'Unknown Client') {
+        const fuzzy = findFuzzy(booksName, allTally, 'party_name');
+        if (fuzzy) {
+          tallyName = fuzzy.party_name;
+          tallyTan = fuzzy.tan_no;
         }
       }
 
@@ -724,7 +732,7 @@ export const getCleaningQueue = async (req, res) => {
         as26Tds: r.as26Tds,
         tallyTds: r.tallyTds
       };
-    }));
+    });
 
     // Filter to only include items that actually require manual data cleaning:
     // 1. Genuine TAN mismatch across sources
