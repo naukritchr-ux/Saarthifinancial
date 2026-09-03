@@ -1029,8 +1029,8 @@ export const getReconciliationReport = async (req, res) => {
         const ln = lastNames[(hash + 3) % lastNames.length];
         const desig = designations[hash % designations.length];
         
-        const numPart = String(10000 + (hash * 73) % 89999);
-        const phone = `+91 9820${numPart.slice(0, 1)} ${numPart.slice(1)}`;
+        const numPart = String(9820000000 + (hash * 7317) % 89999999);
+        const phone = `+91 ${numPart.slice(0, 5)} ${numPart.slice(5)}`;
         
         const cleanComp = seedStr.replace(/[^A-Z]/g, '').toLowerCase().slice(0, 8) || 'saarthi';
         const email = `${fn.toLowerCase()}.${ln.toLowerCase()}@${cleanComp}.com`;
