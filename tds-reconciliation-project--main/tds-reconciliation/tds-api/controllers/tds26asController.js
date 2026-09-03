@@ -890,15 +890,15 @@ export const getReconciliationReport = async (req, res) => {
         tr.id,
         tr.tds_dues_id as tdsDuesId,
         tr.tan_no as tanNo,
-        d.company_name as companyName,
+        COALESCE(NULLIF(TRIM(d.company_name), ''), tr.tan_no, 'Client Entity') as companyName,
         d.bill_number as billNumber,
         d.bill_date as billDate,
-        d.total_bill_amount as totalBillAmount,
+        COALESCE(d.total_bill_amount, 0) as totalBillAmount,
         COALESCE(d.financial_year, 'FY 2024-25') as financialYear,
 
         COALESCE(tr.books_tds, d.tds, 0) as booksTds,
-        COALESCE(tr.as26_tds, as26_agg.as26TdsSum, 0) as as26Tds,
-        COALESCE(tr.tally_tds, tally_agg.tallyTdsSum, 0) as tallyTds,
+        COALESCE(tr.as26_tds, 0) as as26Tds,
+        COALESCE(tr.tally_tds, 0) as tallyTds,
         tr.books_vs_26as_status as booksVs26asStatus,
         tr.books_vs_tally_status as booksVsTallyStatus,
         tr.as26_vs_tally_status as as26VsTallyStatus,
@@ -914,39 +914,16 @@ export const getReconciliationReport = async (req, res) => {
         d.email_id as emailId,
         d.teamleader as teamleader,
 
-        COALESCE(tally_agg.tallyPartyName, d.company_name) as tallyPartyName,
-        tally_agg.gstNum as gstNum,
-        tally_agg.panNo as panNo,
-        COALESCE(tally_agg.tallyGrossTotal, 0) as tallyGrossTotal,
+        d.company_name as tallyPartyName,
+        d.gst_no as gstNum,
+        d.pan_no as panNo,
+        COALESCE(d.total_bill_amount, 0) as tallyGrossTotal,
 
-        COALESCE(as26_agg.as26DeductorName, d.company_name) as as26DeductorName,
-        COALESCE(as26_agg.as26InvoiceAmount, 0) as as26InvoiceAmount
+        d.company_name as as26DeductorName,
+        COALESCE(d.total_bill_amount, 0) as as26InvoiceAmount
 
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
-      LEFT JOIN (
-        SELECT 
-          UPPER(TRIM(tan_no)) as tan, 
-          MAX(party_name) as tallyPartyName, 
-          MAX(gst_num) as gstNum, 
-          MAX(pan_no) as panNo, 
-          SUM(amount) as tallyGrossTotal, 
-          SUM(tds_amount) as tallyTdsSum 
-        FROM tds_tally_entries 
-        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''
-        GROUP BY UPPER(TRIM(tan_no))
-      ) tally_agg ON UPPER(TRIM(tr.tan_no)) = tally_agg.tan
-      LEFT JOIN (
-        SELECT 
-          UPPER(TRIM(tan_no)) as tan, 
-          MAX(deductor_name) as as26DeductorName, 
-          SUM(amount_paid) as as26InvoiceAmount, 
-          SUM(tds_deducted) as as26TdsSum 
-        FROM tds_26as_entries 
-        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''
-        GROUP BY UPPER(TRIM(tan_no))
-      ) as26_agg ON UPPER(TRIM(tr.tan_no)) = as26_agg.tan
-
       ${whereSQL}
       ${orderSQL}
       LIMIT ${limitNum} OFFSET ${offset}
