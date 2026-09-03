@@ -1373,29 +1373,9 @@ export const syncSaarthiLiveApi = async (req, res) => {
     let clientsData = cRes.data || [];
     let legalsData = lRes.data || [];
 
-    if (clientsData.length === 0) {
-      try {
-        const localClientsPath = path.join(process.cwd(), 'data', 'clients_info.json');
-        if (fs.existsSync(localClientsPath)) {
-          clientsData = JSON.parse(fs.readFileSync(localClientsPath, 'utf8'));
-          console.log(`📁 Loaded ${clientsData.length} master clients from local data/clients_info.json`);
-        }
-      } catch (e) {}
-    }
-
-    if (legalsData.length === 0) {
-      try {
-        const localLegalsPath = path.join(process.cwd(), 'data', 'legals_info.json');
-        if (fs.existsSync(localLegalsPath)) {
-          legalsData = JSON.parse(fs.readFileSync(localLegalsPath, 'utf8'));
-          console.log(`📁 Loaded ${legalsData.length} legal entities from local data/legals_info.json`);
-        }
-      } catch (e) {}
-    }
-
     const liveApiStatus = {
-      clients_info: cRes.ok ? 'ok' : 'loaded_fallback_sheet',
-      legals_info: lRes.ok ? 'ok' : 'loaded_fallback_sheet'
+      clients_info: cRes.ok ? 'ok' : 'unreachable',
+      legals_info: lRes.ok ? 'ok' : 'unreachable'
     };
 
     const gstRegex = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i;
