@@ -9,12 +9,16 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
   try {
     console.log(`🔄 Running 3-way reconciliation. 26AS Batch: ${as26BatchId || 'all'} | Tally Batch: ${tallyBatchId || 'all'}`);
 
-    // 1. Fetch all unique TANs from tds_dues
+    // 1. Fetch all rows from tds_dues (including ones without TAN yet)
     const [duesRows] = await db.execute(
-      "SELECT id, UPPER(TRIM(tan_no)) as tan, tds, company_name FROM tds_dues WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''"
+      "SELECT id, tan_no, tds, company_name FROM tds_dues"
     );
-    const duesMap = new Map();
-    duesRows.forEach(r => duesMap.set(r.tan, r));
+    const duesList = duesRows.map(r => ({
+      id: r.id,
+      tan: (r.tan_no || '').trim().toUpperCase(),
+      tds: parseFloat(r.tds || 0),
+      company_name: r.company_name || 'Client Entity'
+    }));
 
     // 2. Fetch sums for 26AS grouped by TAN
     const [as26Rows] = await db.execute(
@@ -36,39 +40,42 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     const tallyMap = new Map();
     tallyRows.forEach(r => tallyMap.set(r.tan, { total: parseFloat(r.total || 0), batchId: r.batch_id, companyName: r.company_name }));
 
-    // Collect all unique TANs across all 3 datasets
-    const allTans = new Set([
-      ...duesMap.keys(),
-      ...as26Map.keys(),
-      ...tallyMap.keys()
-    ]);
+    // Ensure all orphan TANs from 26AS / Tally also exist in duesList
+    const existingDuesTans = new Set(duesList.map(d => d.tan).filter(Boolean));
+    const allExternalTans = new Set([...as26Map.keys(), ...tallyMap.keys()]);
 
-    if (allTans.size === 0) {
+    for (const extTan of allExternalTans) {
+      if (!existingDuesTans.has(extTan)) {
+        const companyName = as26Map.get(extTan)?.companyName || tallyMap.get(extTan)?.companyName || `Entity ${extTan}`;
+        const [insertRes] = await db.execute(
+          'INSERT INTO tds_dues (tan_no, company_name, tds) VALUES (?, ?, 0.00)',
+          [extTan, companyName]
+        );
+        duesList.push({
+          id: insertRes.insertId,
+          tan: extTan,
+          tds: 0.00,
+          company_name: companyName
+        });
+        existingDuesTans.add(extTan);
+      }
+    }
+
+    if (duesList.length === 0) {
       console.log('⚠️ No data entries found across dues, 26AS, or Tally. Reconciliation finished with 0 records.');
       return { success: true, count: 0 };
     }
 
     let processedCount = 0;
 
-    for (const tan of allTans) {
-      // 4. Ensure a due entry exists for this TAN
-      let due = duesMap.get(tan);
-      if (!due) {
-        const companyName = as26Map.get(tan)?.companyName || tallyMap.get(tan)?.companyName || `Entity ${tan}`;
-        const [insertRes] = await db.execute(
-          'INSERT INTO tds_dues (tan_no, company_name, tds) VALUES (?, ?, 0.00)',
-          [tan, companyName]
-        );
-        due = { id: insertRes.insertId, tan, tds: 0.00, company_name: companyName };
-        duesMap.set(tan, due);
-      }
+    for (const due of duesList) {
+      const tan = due.tan || `NO_TAN_${due.id}`;
+      const booksTds = due.tds;
 
-      const booksTds = parseFloat(due.tds || 0);
-
-      // Check existing reconciliation record
+      // Check existing reconciliation record by tds_dues_id
       const [existingRows] = await db.execute(
-        'SELECT id, is_manually_edited, as26_batch_id, tally_batch_id FROM tds_reconciliation_results WHERE tds_dues_id = ? OR UPPER(TRIM(tan_no)) = ?',
-        [due.id, tan]
+        'SELECT id, is_manually_edited, as26_batch_id, tally_batch_id FROM tds_reconciliation_results WHERE tds_dues_id = ?',
+        [due.id]
       );
       const existing = existingRows[0] || {};
 
@@ -76,11 +83,11 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
         continue; // Respect manual overrides
       }
 
-      const as26Data = as26Map.get(tan);
+      const as26Data = due.tan ? as26Map.get(due.tan) : null;
       const as26Tds = as26Data ? as26Data.total : 0;
       const finalAs26BatchId = as26Data ? as26Data.batchId : (existing.as26_batch_id || null);
 
-      const tallyData = tallyMap.get(tan);
+      const tallyData = due.tan ? tallyMap.get(due.tan) : null;
       const tallyTds = tallyData ? tallyData.total : 0;
       const finalTallyBatchId = tallyData ? tallyData.batchId : (existing.tally_batch_id || null);
 
@@ -141,7 +148,8 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
       processedCount++;
     }
 
-    console.log(`✅ Three-way reconciliation completed. Processed ${processedCount} TAN entities.`);
+    console.log(`✅ Three-way reconciliation completed. Processed ${processedCount} records.`);
+    return { success: true, count: processedCount };
     return { success: true, count: processedCount };
 
   } catch (error) {

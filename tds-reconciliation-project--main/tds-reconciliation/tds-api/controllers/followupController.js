@@ -219,6 +219,8 @@ export const updateFollowup = async (req, res) => {
   try {
     const { id } = req.params;
     const {
+      tanNo,
+      companyName,
       contactPerson,
       department,
       contactNumber,
@@ -226,13 +228,15 @@ export const updateFollowup = async (req, res) => {
       status,
       notes,
       followupDate,
-      nextFollowupDate
+      nextFollowupDate,
+      createdBy = 'Accounts Manager'
     } = req.body;
 
     if (!id) {
       return res.status(400).json({ success: false, error: 'Follow-up ID required' });
     }
 
+    const targetId = isNaN(parseInt(id)) ? id : parseInt(id);
     const updates = [];
     const params = [];
 
@@ -249,7 +253,7 @@ export const updateFollowup = async (req, res) => {
       return res.status(400).json({ success: false, error: 'No fields provided to update' });
     }
 
-    params.push(id);
+    params.push(targetId);
 
     const updateQuery = `
       UPDATE tds_followups 
@@ -259,8 +263,32 @@ export const updateFollowup = async (req, res) => {
 
     const [result] = await db.execute(updateQuery, params);
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ success: false, error: 'Follow-up record not found' });
+    if (!result || result.affectedRows === 0) {
+      // Auto-insert fallback if editing an unpersisted or sample record
+      const insertQuery = `
+        INSERT INTO tds_followups 
+        (tan_no, company_name, contact_person, department, contact_number, method, status, notes, followup_date, next_followup_date, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      const [insertRes] = await db.execute(insertQuery, [
+        String(tanNo || 'N/A').toUpperCase().trim(),
+        companyName ? companyName.trim() : 'Company Name',
+        contactPerson ? contactPerson.trim() : null,
+        department ? department.trim() : null,
+        contactNumber ? contactNumber.trim() : null,
+        method || 'Call',
+        status || 'Call Tomorrow',
+        notes ? notes.trim() : null,
+        followupDate || new Date().toISOString().split('T')[0],
+        nextFollowupDate || null,
+        createdBy
+      ]);
+
+      return res.json({
+        success: true,
+        message: 'Follow-up created successfully',
+        id: insertRes.insertId
+      });
     }
 
     res.json({
