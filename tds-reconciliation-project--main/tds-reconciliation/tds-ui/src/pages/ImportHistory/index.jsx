@@ -121,7 +121,7 @@ export default function ImportHistory() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-slate-900 text-white border-b border-slate-800 font-bold uppercase tracking-wider">
+              <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 font-bold uppercase tracking-wider text-[11px]">
                 <th className="px-4 py-3">File Name</th>
                 <th className="px-4 py-3">Uploaded By</th>
                 <th className="px-4 py-3">Import Type</th>

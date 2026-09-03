@@ -88,15 +88,20 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
         className="bg-white rounded-2xl shadow-2xl border border-slate-200/80 max-w-md w-full max-h-[90vh] flex flex-col overflow-hidden my-auto animate-scale-up"
       >
         {/* Header */}
-        <div className="flex-none flex justify-between items-center bg-slate-900 border-b border-slate-800 px-6 py-4 text-white">
+        <div className="flex-none flex justify-between items-center bg-slate-100 text-slate-900 px-6 py-4 border-b border-slate-200">
           <div>
-            <h3 className="font-bold text-gray-100 text-base">Manual Status Override</h3>
-            <p className="text-xs text-slate-400 mt-0.5">{row.companyName} ({row.tanNo})</p>
+            <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+              <Wrench className="w-4 h-4 text-amber-600" />
+              Manual Reconciliation & TAN Clean-Up
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Entity record #{row.id} — Correct TAN mismatch or standardize deductor name
+            </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+            className="p-1 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-200 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>

@@ -100,21 +100,21 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
         onClick={(e) => e.stopPropagation()}
         className="bg-white rounded-2xl shadow-2xl border border-slate-200/80 max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden my-auto animate-scale-up"
       >
-        {/* Header */}
-        <div className="flex-none flex justify-between items-center bg-slate-950 text-white px-6 py-4 border-b border-slate-800">
+        {/* Header - Crisp Light Theme */}
+        <div className="flex-none flex justify-between items-center bg-slate-100 text-slate-900 px-6 py-4 border-b border-slate-200">
           <div>
-            <h3 className="font-bold text-base text-amber-400 flex items-center gap-2">
-              <PhoneCall className="w-4 h-4 text-amber-400" />
+            <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
+              <PhoneCall className="w-4 h-4 text-amber-600" />
               {isEditing ? 'Edit Client Follow-up Log' : 'Log New Client Follow-up'}
             </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 mt-0.5">
               {isEditing ? `Entry #${itemToEdit.id}` : 'Record communication attempt and next action date'}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+            className="p-1 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-200 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
