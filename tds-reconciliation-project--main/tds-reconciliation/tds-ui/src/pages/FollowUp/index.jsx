@@ -172,51 +172,13 @@ export default function FollowUp() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
-              localStorage.removeItem('tds_purged_all');
-              setSummary({
-                totalFollowedUp: 4,
-                pendingResponse: 1,
-                callNotPickedUp: 1,
-                checkAndRevert: 1,
-                tdsPaid: 1,
-                formReceived: 1,
-                dueForFollowup: 1
-              });
-              setItems([
-                {
-                  id: 1,
-                  companyName: 'GARIMA SYSTEM SOLUTIONS',
-                  tanNo: 'DELG03106F',
-                  contactPerson: 'Rahul Sharma',
-                  department: 'Accounts',
-                  contactNumber: '9876543210',
-                  method: 'Phone Call',
-                  status: 'Check & Revert',
-                  notes: 'Requested Form 16A copy for Q4 reconciliation.',
-                  followupDate: '2026-03-18',
-                  nextFollowupDate: '2026-03-22'
-                },
-                {
-                  id: 2,
-                  companyName: 'CHETNA INFOTECH SERVICES',
-                  tanNo: 'CHET44332B',
-                  contactPerson: 'Vikram Singh',
-                  department: 'Finance',
-                  contactNumber: '9123456789',
-                  method: 'Email',
-                  status: 'Call Not Picked Up',
-                  notes: 'Sent mail regarding Rs 15,000 TDS mismatch.',
-                  followupDate: '2026-03-19',
-                  nextFollowupDate: '2026-03-21'
-                }
-              ]);
               loadData();
             }}
             className="inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3.5 py-2.5 rounded-xl transition text-xs border border-slate-300 cursor-pointer shadow-sm"
-            title="Restore default sample follow-up entries"
+            title="Refresh follow-up entries from database"
           >
             <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
-            Restore Data
+            Refresh Data
           </button>
 
           <button
@@ -451,50 +413,12 @@ export default function FollowUp() {
                         <div className="flex justify-center items-center gap-3 mt-4">
                           <button
                             onClick={() => {
-                              localStorage.removeItem('tds_purged_all');
-                              setSummary({
-                                totalFollowedUp: 4,
-                                pendingResponse: 1,
-                                callNotPickedUp: 1,
-                                checkAndRevert: 1,
-                                tdsPaid: 1,
-                                formReceived: 1,
-                                dueForFollowup: 1
-                              });
-                              setItems([
-                                {
-                                  id: 1,
-                                  companyName: 'GARIMA SYSTEM SOLUTIONS',
-                                  tanNo: 'DELG03106F',
-                                  contactPerson: 'Rahul Sharma',
-                                  department: 'Accounts',
-                                  contactNumber: '9876543210',
-                                  method: 'Phone Call',
-                                  status: 'Check & Revert',
-                                  notes: 'Requested Form 16A copy for Q4 reconciliation.',
-                                  followupDate: '2026-03-18',
-                                  nextFollowupDate: '2026-03-22'
-                                },
-                                {
-                                  id: 2,
-                                  companyName: 'CHETNA INFOTECH SERVICES',
-                                  tanNo: 'CHET44332B',
-                                  contactPerson: 'Vikram Singh',
-                                  department: 'Finance',
-                                  contactNumber: '9123456789',
-                                  method: 'Email',
-                                  status: 'Call Not Picked Up',
-                                  notes: 'Sent mail regarding Rs 15,000 TDS mismatch.',
-                                  followupDate: '2026-03-19',
-                                  nextFollowupDate: '2026-03-21'
-                                }
-                              ]);
                               loadData();
                             }}
                             className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition cursor-pointer shadow-sm"
                           >
                             <RefreshCw className="w-3.5 h-3.5" />
-                            Restore Sample Follow-ups
+                            Refresh Follow-ups
                           </button>
                           <button
                             onClick={() => { setItemToEdit(null); setShowAddModal(true); }}
