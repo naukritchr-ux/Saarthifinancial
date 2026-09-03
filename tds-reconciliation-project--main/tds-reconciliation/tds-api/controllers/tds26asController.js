@@ -490,12 +490,8 @@ export const getDashboardSummary = async (req, res) => {
     const params = [];
     if (fy && fy !== 'All' && fy !== 'All Financial Years') {
       const cleanFy = String(fy).replace(/^FY\s*/i, '').trim();
-      if (cleanFy === '2025-26') {
-        whereClause = 'WHERE (COALESCE(d.financial_year, "FY 2025-26") LIKE ? OR tr.as26_batch_id LIKE ?)';
-      } else {
-        whereClause = 'WHERE (d.financial_year LIKE ? OR tr.as26_batch_id LIKE ?)';
-      }
-      params.push(`%${cleanFy}%`, `%${cleanFy}%`);
+      whereClause = 'WHERE COALESCE(NULLIF(TRIM(d.financial_year), ""), "FY 2025-26") LIKE ?';
+      params.push(`%${cleanFy}%`);
     }
 
     const query = `
@@ -863,12 +859,8 @@ export const getReconciliationReport = async (req, res) => {
     const activeFy = fy || financialYear;
     if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
       const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
-      if (cleanFy === '2025-26') {
-        whereClauses.push('(COALESCE(d.financial_year, "FY 2025-26") LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)');
-      } else {
-        whereClauses.push('(d.financial_year LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)');
-      }
-      queryParams.push(`%${cleanFy}%`, `%${cleanFy}%`, `%${cleanFy}%`);
+      whereClauses.push('COALESCE(NULLIF(TRIM(d.financial_year), ""), "FY 2025-26") LIKE ?');
+      queryParams.push(`%${cleanFy}%`);
     }
 
     if (search && String(search).trim() !== '') {
