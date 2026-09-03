@@ -48,7 +48,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
       if (!existingDuesTans.has(extTan)) {
         const companyName = as26Map.get(extTan)?.companyName || tallyMap.get(extTan)?.companyName || `Entity ${extTan}`;
         const [insertRes] = await db.execute(
-          'INSERT INTO tds_dues (tan_no, company_name, tds) VALUES (?, ?, 0.00)',
+          'INSERT INTO tds_dues (tan_no, company_name, tds, financial_year) VALUES (?, ?, 0.00, "FY 2024-25")',
           [extTan, companyName]
         );
         duesList.push({

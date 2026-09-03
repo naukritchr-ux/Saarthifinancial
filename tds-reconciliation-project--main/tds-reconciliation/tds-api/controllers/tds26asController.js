@@ -834,7 +834,7 @@ export const getReconciliationReport = async (req, res) => {
     const activeFy = fy || financialYear;
     if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
       const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push('(d.financial_year LIKE ? OR d.financial_year LIKE ?)');
+      whereClauses.push('(d.financial_year IS NULL OR d.financial_year = "" OR d.financial_year LIKE ? OR d.financial_year LIKE ?)');
       queryParams.push(`%${cleanFy}%`, `%${activeFy}%`);
     }
 
