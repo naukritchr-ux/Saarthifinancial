@@ -51,13 +51,16 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
           'INSERT INTO tds_dues (tan_no, company_name, tds, financial_year) VALUES (?, ?, 0.00, "FY 2024-25")',
           [extTan, companyName]
         );
-        duesList.push({
-          id: insertRes.insertId,
-          tan: extTan,
-          tds: 0.00,
-          company_name: companyName
-        });
-        existingDuesTans.add(extTan);
+        const newId = insertRes?.insertId || insertRes?.lastInsertRowid || insertRes?.id;
+        if (newId) {
+          duesList.push({
+            id: newId,
+            tan: extTan,
+            tds: 0.00,
+            company_name: companyName
+          });
+          existingDuesTans.add(extTan);
+        }
       }
     }
 
