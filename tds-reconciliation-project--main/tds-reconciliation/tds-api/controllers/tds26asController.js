@@ -910,17 +910,17 @@ export const getReconciliationReport = async (req, res) => {
 
     // 3-Way Source Coverage Filter
     if (coverageFilter === '3/3' || coverageFilter === '3 of 3' || coverageFilter === 'all_3' || coverageFilter === 'all3') {
-      whereClauses.push('((tr.books_tds > 0 OR tr.tds_dues_id IS NOT NULL) AND tr.as26_tds > 0 AND tr.tally_tds > 0)');
+      whereClauses.push('(COALESCE(tr.books_tds, 0) > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND COALESCE(tr.tally_tds, 0) > 0)');
     } else if (coverageFilter === 'saarthi_tally' || coverageFilter === 'tally_saarthi') {
-      whereClauses.push('((tr.books_tds > 0 OR tr.tds_dues_id IS NOT NULL) AND tr.tally_tds > 0)');
+      whereClauses.push('(COALESCE(tr.books_tds, 0) > 0 AND COALESCE(tr.tally_tds, 0) > 0)');
     } else if (coverageFilter === 'tally_26as' || coverageFilter === '26as_tally') {
-      whereClauses.push('(tr.tally_tds > 0 AND tr.as26_tds > 0)');
+      whereClauses.push('(COALESCE(tr.tally_tds, 0) > 0 AND COALESCE(tr.as26_tds, 0) > 0)');
     } else if (coverageFilter === 'as26_saarthi' || coverageFilter === 'saarthi_26as' || coverageFilter === '26as_saarthi') {
-      whereClauses.push('(tr.as26_tds > 0 AND (tr.books_tds > 0 OR tr.tds_dues_id IS NOT NULL))');
+      whereClauses.push('(COALESCE(tr.as26_tds, 0) > 0 AND COALESCE(tr.books_tds, 0) > 0)');
     } else if (coverageFilter === '2/3' || coverageFilter === '2 of 3') {
-      whereClauses.push('(((CASE WHEN (tr.books_tds > 0 OR tr.tds_dues_id IS NOT NULL) THEN 1 ELSE 0 END) + (CASE WHEN tr.as26_tds > 0 THEN 1 ELSE 0 END) + (CASE WHEN tr.tally_tds > 0 THEN 1 ELSE 0 END)) = 2)');
+      whereClauses.push('(((CASE WHEN COALESCE(tr.books_tds, 0) > 0 THEN 1 ELSE 0 END) + (CASE WHEN COALESCE(tr.as26_tds, 0) > 0 THEN 1 ELSE 0 END) + (CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN 1 ELSE 0 END)) = 2)');
     } else if (coverageFilter === '1/3' || coverageFilter === '1 of 3') {
-      whereClauses.push('(((CASE WHEN (tr.books_tds > 0 OR tr.tds_dues_id IS NOT NULL) THEN 1 ELSE 0 END) + (CASE WHEN tr.as26_tds > 0 THEN 1 ELSE 0 END) + (CASE WHEN tr.tally_tds > 0 THEN 1 ELSE 0 END)) = 1)');
+      whereClauses.push('(((CASE WHEN COALESCE(tr.books_tds, 0) > 0 THEN 1 ELSE 0 END) + (CASE WHEN COALESCE(tr.as26_tds, 0) > 0 THEN 1 ELSE 0 END) + (CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN 1 ELSE 0 END)) = 1)');
     }
 
     const whereSQL = whereClauses.length ? 'WHERE ' + whereClauses.join(' AND ') : '';
