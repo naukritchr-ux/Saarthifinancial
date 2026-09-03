@@ -923,9 +923,9 @@ export const getReconciliationReport = async (req, res) => {
     }
 
     let countQuery = `
-      SELECT COUNT(*) as total 
+      SELECT COUNT(DISTINCT tr.id) as total 
       FROM tds_reconciliation_results tr
-      LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+      LEFT JOIN tds_dues d ON (tr.tds_dues_id = d.id OR (tr.tan_no IS NOT NULL AND UPPER(TRIM(tr.tan_no)) = UPPER(TRIM(d.tan_no))))
       ${whereSQL}
     `;
     let [countRes] = await db.query(countQuery, queryParams);
@@ -969,7 +969,7 @@ export const getReconciliationReport = async (req, res) => {
         0 as as26InvoiceAmount
 
       FROM tds_reconciliation_results tr
-      LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+      LEFT JOIN tds_dues d ON (tr.tds_dues_id = d.id OR (tr.tan_no IS NOT NULL AND UPPER(TRIM(tr.tan_no)) = UPPER(TRIM(d.tan_no))))
       ${whereSQL}
       ${orderSQL}
       LIMIT ${limitNum} OFFSET ${offset}
