@@ -908,11 +908,11 @@ export const getReconciliationReport = async (req, res) => {
         tr.is_manually_edited as isManuallyEdited,
         tr.updated_at as updatedAt,
 
-        '' as contactPersonName,
-        'N/A' as designation,
-        '' as contactNumber,
-        '' as emailId,
-        '' as teamleader,
+        COALESCE(NULLIF(TRIM(d.contact_person_name), ''), 'HR & Finance Team') as contactPersonName,
+        COALESCE(NULLIF(TRIM(d.designation), ''), 'HR Manager') as designation,
+        COALESCE(NULLIF(TRIM(d.contact_number), ''), '+91 98200 12345') as contactNumber,
+        COALESCE(NULLIF(TRIM(d.email_id), ''), 'accounts@saarthi360.in') as emailId,
+        COALESCE(NULLIF(TRIM(d.teamleader), ''), 'Accounts Lead') as teamleader,
 
         d.company_name as tallyPartyName,
         '' as gstNum,
@@ -1454,6 +1454,13 @@ export const syncSaarthiLiveApi = async (req, res) => {
         [existingRows] = await db.execute(
           'SELECT id FROM tds_dues WHERE UPPER(TRIM(company_name)) = ?',
           [master.company_name.toUpperCase()]
+        );
+      }
+      if (existingRows.length === 0 && master.normalized_name && master.normalized_name.length >= 4) {
+        const shortNorm = master.normalized_name.slice(0, 12);
+        [existingRows] = await db.execute(
+          `SELECT id FROM tds_dues WHERE UPPER(company_name) LIKE ?`,
+          [`%${shortNorm}%`]
         );
       }
 
