@@ -16,8 +16,8 @@ const buildQuery = (params = {}) => {
 
 const API_KEY = import.meta.env.VITE_API_KEY || 'saarthi-secret-api-key-2026';
 
-// Fetch wrapper with 15s timeout to allow Render free tier cold-starts to wake up
-const fetchWithTimeout = async (url, options = {}, timeoutMs = 15000) => {
+// Fetch wrapper with 45s timeout to allow Render free tier cold-starts and heavy DB queries to wake up
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 45000) => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   const headers = {
@@ -122,7 +122,7 @@ export const syncSaarthiLiveApi = async () => {
   try {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/sync-saarthi`, {
       method: 'POST'
-    }, 60000);
+    }, 120000);
     const data = await response.json();
     if (response.ok && data && data.success !== false) return data;
     return { success: false, error: data?.error || 'Failed to sync live Saarthi data' };
