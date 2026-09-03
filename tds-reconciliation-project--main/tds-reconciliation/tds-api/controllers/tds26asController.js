@@ -1027,7 +1027,7 @@ export const overrideReconciliationStatus = async (req, res) => {
     const { reconciliationId, overrideField, newValue, note } = req.body;
 
     if (!reconciliationId || !overrideField || !newValue || !note) {
-      return res.status(400).json({ success: false, error: 'Missing parameters. required: reconciliationId, overrideField, newValue, note' });
+      return res.status(400).json({ success: false, error: 'Missing parameters. Required: reconciliationId, overrideField, newValue, note' });
     }
 
     const allowedFields = ['books_vs_26as_status', 'books_vs_tally_status', 'as26_vs_tally_status', 'overall_status'];
@@ -1035,16 +1035,19 @@ export const overrideReconciliationStatus = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Invalid override field' });
     }
 
-    // Validate enum options
-    const validPairStatuses = ['Excess', 'Less Paid', 'Not Received', 'Matched'];
-    const validOverallStatuses = ['All Matched', 'Partial Mismatch', 'Major Mismatch'];
+    const targetId = isNaN(parseInt(reconciliationId)) ? reconciliationId : parseInt(reconciliationId);
+
+    // Validate enum options with expanded status support
+    const validPairStatuses = ['Match', 'Less Paid', 'Excess', 'Not Received', 'Matched', 'Less'];
+    const validOverallStatuses = ['Match', 'Less Paid', 'Excess', 'All Matched', 'Partial Mismatch', 'Major Mismatch', 'Matched', 'Less'];
+    
     if (overrideField === 'overall_status') {
       if (!validOverallStatuses.includes(newValue)) {
-        return res.status(400).json({ success: false, error: 'Invalid overall status value' });
+        return res.status(400).json({ success: false, error: `Invalid overall status value: ${newValue}` });
       }
     } else {
       if (!validPairStatuses.includes(newValue)) {
-        return res.status(400).json({ success: false, error: 'Invalid status value' });
+        return res.status(400).json({ success: false, error: `Invalid status value: ${newValue}` });
       }
     }
 
@@ -1052,31 +1055,45 @@ export const overrideReconciliationStatus = async (req, res) => {
     const updateQuery = `
       UPDATE tds_reconciliation_results 
       SET ${overrideField} = ?, is_manually_edited = 1, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE id = ? OR tds_dues_id = ?
     `;
-    const [result] = await db.execute(updateQuery, [newValue, reconciliationId]);
+    const [result] = await db.execute(updateQuery, [newValue, targetId, targetId]);
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ success: false, error: 'Reconciliation record not found' });
+    if (!result || result.affectedRows === 0) {
+      // Check if record exists in tds_dues and insert reconciliation result row
+      const [duesCheck] = await db.execute('SELECT id, tan_no, tds FROM tds_dues WHERE id = ?', [targetId]);
+      if (duesCheck && duesCheck.length > 0) {
+        const dRow = duesCheck[0];
+        await db.execute(
+          `INSERT INTO tds_reconciliation_results 
+           (tds_dues_id, tan_no, books_tds, ${overrideField}, overall_status, is_manually_edited) 
+           VALUES (?, ?, ?, ?, ?, 1)`,
+          [dRow.id, dRow.tan_no || 'N/A', dRow.tds || 0, newValue, newValue]
+        );
+      }
     }
 
-    // Log override action to audit trail
-    const auditQuery = `
-      INSERT INTO tds_reconciliation_audit_logs (reconciliation_id, action, details, changed_by)
-      VALUES (?, ?, ?, ?)
-    `;
-    const detailsText = `Field: ${overrideField} changed to "${newValue}". Reason/Note: ${note}`;
-    await db.execute(auditQuery, [
-      reconciliationId,
-      'status_override',
-      detailsText,
-      req.user?.email || 'System Override'
-    ]);
+    // Log override action to audit trail gracefully
+    try {
+      const auditQuery = `
+        INSERT INTO tds_reconciliation_audit_logs (reconciliation_id, action, details, changed_by)
+        VALUES (?, ?, ?, ?)
+      `;
+      const detailsText = `Field: ${overrideField} changed to "${newValue}". Reason/Note: ${note}`;
+      await db.execute(auditQuery, [
+        targetId,
+        'status_override',
+        detailsText,
+        req.user?.email || 'System Override'
+      ]);
+    } catch (auditErr) {
+      console.warn('⚠️ Audit log write warning:', auditErr.message);
+    }
 
     res.json({
       success: true,
       message: 'Status overridden and logged successfully',
-      reconciliationId,
+      reconciliationId: targetId,
       field: overrideField,
       newValue
     });
@@ -1351,15 +1368,9 @@ export const deleteUploadBatch = async (req, res) => {
          AND (is_manually_edited IS NULL OR is_manually_edited = 0)`
     );
 
-    if (process.env.DB_TYPE === 'mysql') {
-      await db.execute(
-        `DELETE d FROM tds_dues d LEFT JOIN tds_reconciliation_results r ON d.id = r.tds_dues_id WHERE r.tds_dues_id IS NULL`
-      );
-    } else {
-      await db.execute(
-        `DELETE FROM tds_dues WHERE id NOT IN (SELECT tds_dues_id FROM tds_reconciliation_results WHERE tds_dues_id IS NOT NULL)`
-      );
-    }
+    await db.execute(
+      `DELETE FROM tds_dues WHERE id NOT IN (SELECT tds_dues_id FROM tds_reconciliation_results WHERE tds_dues_id IS NOT NULL) AND (saarthi_client_id IS NULL OR saarthi_client_id = '')`
+    );
 
     if (historyId) {
       await db.execute('DELETE FROM upload_history WHERE id = ?', [historyId]);

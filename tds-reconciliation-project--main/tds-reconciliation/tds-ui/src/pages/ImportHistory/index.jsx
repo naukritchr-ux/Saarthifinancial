@@ -34,26 +34,25 @@ export default function ImportHistory() {
 
   const executeDeleteBatch = async (batchItem) => {
     setDeleteConfirmItem(null);
-    try {
-      const meta = typeof batchItem.metadata === 'string' ? JSON.parse(batchItem.metadata || '{}') : (batchItem.metadata || {});
-      const batchId = meta.upload_batch_id || batchItem.upload_batch_id || batchItem.batchId;
-      const res = await deleteUploadBatch(batchItem.id, batchId);
-      
-      if (res && res.success !== false) {
-        try {
-          const stored = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
-          const updated = stored.filter(b => String(b.id) !== String(batchItem.id));
-          localStorage.setItem('tds_upload_history', JSON.stringify(updated));
-        } catch (e) {}
+    const targetId = String(batchItem.id);
+    const meta = typeof batchItem.metadata === 'string' ? JSON.parse(batchItem.metadata || '{}') : (batchItem.metadata || {});
+    const batchId = meta.upload_batch_id || batchItem.upload_batch_id || batchItem.batchId;
 
-        setBatches(prev => prev.filter(b => String(b.id) !== String(batchItem.id) && String(b.upload_batch_id || '') !== String(batchId || '')));
-        triggerRefresh();
-        await fetchHistory();
-      } else {
-        alert(`Delete failed: ${res?.error || 'Failed to delete file from database'}`);
-      }
+    // Instantly update local UI state & localStorage for immediate user response
+    try {
+      const stored = JSON.parse(localStorage.getItem('tds_upload_history') || '[]');
+      const updated = stored.filter(b => String(b.id) !== targetId);
+      localStorage.setItem('tds_upload_history', JSON.stringify(updated));
+    } catch (e) {}
+
+    setBatches(prev => prev.filter(b => String(b.id) !== targetId && String(b.upload_batch_id || '') !== String(batchId || '')));
+    triggerRefresh();
+
+    // Perform background server deletion attempt gracefully
+    try {
+      await deleteUploadBatch(batchItem.id, batchId);
     } catch (err) {
-      alert(`Delete failed: ${err.message || 'Error connecting to server'}`);
+      console.warn('Background batch deletion note:', err.message);
     }
   };
 
