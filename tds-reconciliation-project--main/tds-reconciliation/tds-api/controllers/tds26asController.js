@@ -853,6 +853,14 @@ export const getReconciliationReport = async (req, res) => {
     const limitNum = Math.max(1, Math.min(1000, parseInt(limit) || 20));
     const offset = (pageNum - 1) * limitNum;
 
+    if (process.env.DB_TYPE === 'mysql') {
+      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN contact_person_name VARCHAR(100)'); } catch (e) {}
+      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN contact_number VARCHAR(50)'); } catch (e) {}
+      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN email_id VARCHAR(255)'); } catch (e) {}
+      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN designation VARCHAR(100)'); } catch (e) {}
+      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN teamleader VARCHAR(100)'); } catch (e) {}
+    }
+
     let whereClauses = [];
     const queryParams = [];
 
