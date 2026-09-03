@@ -927,7 +927,7 @@ export const getReconciliationReport = async (req, res) => {
         'N/A' as billNumber,
         'N/A' as billDate,
         0 as totalBillAmount,
-        'FY 2024-25' as financialYear,
+        COALESCE(NULLIF(TRIM(d.financial_year), ''), 'FY 2025-26') as financialYear,
 
         COALESCE(tr.books_tds, 0) as booksTds,
         COALESCE(tr.as26_tds, 0) as as26Tds,
