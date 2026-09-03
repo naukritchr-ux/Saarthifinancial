@@ -826,14 +826,14 @@ export const getReconciliationReport = async (req, res) => {
     const activeFy = fy || financialYear;
     if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
       const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push('(d.financial_year IS NULL OR d.financial_year = "" OR d.financial_year LIKE ? OR d.financial_year LIKE ?)');
-      queryParams.push(`%${cleanFy}%`, `%${activeFy}%`);
+      whereClauses.push('(tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)');
+      queryParams.push(`%${cleanFy}%`, `%${cleanFy}%`);
     }
 
     if (search.trim() !== '') {
-      whereClauses.push('(tr.tan_no LIKE ? OR d.company_name LIKE ? OR d.contact_person_name LIKE ?)');
+      whereClauses.push('(tr.tan_no LIKE ? OR COALESCE(d.company_name, "") LIKE ?)');
       const wild = `%${search.trim()}%`;
-      queryParams.push(wild, wild, wild);
+      queryParams.push(wild, wild);
     }
 
     if (overallStatus && overallStatus !== 'All') {
@@ -871,7 +871,7 @@ export const getReconciliationReport = async (req, res) => {
 
     const whereSQL = whereClauses.length ? 'WHERE ' + whereClauses.join(' AND ') : '';
 
-    let orderSQL = 'ORDER BY tr.updated_at DESC';
+    let orderSQL = 'ORDER BY tr.id DESC';
     if (sortBy === 'difference_desc' || sortBy === 'difference' || sortBy === 'Difference (High → Low)') {
       orderSQL = 'ORDER BY ABS((COALESCE(tr.books_tds, tr.tally_tds, 0)) - COALESCE(tr.as26_tds, 0)) DESC';
     }
