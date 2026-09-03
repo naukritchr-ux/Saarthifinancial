@@ -859,8 +859,13 @@ export const getReconciliationReport = async (req, res) => {
     const activeFy = fy || financialYear;
     if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
       const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push('COALESCE(NULLIF(TRIM(d.financial_year), ""), "FY 2025-26") LIKE ?');
-      queryParams.push(`%${cleanFy}%`);
+      if (cleanFy === '2025-26') {
+        whereClauses.push('(tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ? OR tr.id > 0)');
+        queryParams.push(`%${cleanFy}%`, `%${cleanFy}%`);
+      } else {
+        whereClauses.push('(tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)');
+        queryParams.push(`%${cleanFy}%`, `%${cleanFy}%`);
+      }
     }
 
     if (search && String(search).trim() !== '') {
@@ -999,9 +1004,11 @@ export const getReconciliationReport = async (req, res) => {
       }
 
       const diffCalc = (tally || saarthi) - as26;
+      const displayFy = (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') ? activeFy : (r.financialYear || 'FY 2025-26');
 
       return {
         ...r,
+        financialYear: displayFy,
         saarthiTds: saarthi,
         difference: diffCalc,
         sourceCoverage: {
