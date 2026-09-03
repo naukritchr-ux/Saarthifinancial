@@ -107,7 +107,7 @@ export default function TdsReconciliation() {
         </div>
         <button
           onClick={handleRefresh}
-          className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-amber-400 font-bold px-4 py-2 rounded-xl transition text-xs cursor-pointer shadow-sm"
+          className="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold px-4 py-2 rounded-xl transition text-xs cursor-pointer shadow-sm"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh Report
@@ -174,7 +174,7 @@ export default function TdsReconciliation() {
             </div>
             <button
               type="submit"
-              className="bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 px-4 rounded-xl transition text-xs cursor-pointer"
+              className="bg-slate-800 hover:bg-slate-900 text-white font-extrabold py-2 px-4 rounded-xl transition text-xs cursor-pointer shadow-xs"
             >
               Search
             </button>
