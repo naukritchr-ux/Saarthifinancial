@@ -48,25 +48,25 @@ export default function Layout({ children }) {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col font-sans">
-      {/* Top Navbar */}
-      <header className="bg-slate-950 text-white shadow-md border-b border-slate-800 sticky top-0 z-40">
+    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
+      {/* Top Navbar - Crisp Light Theme */}
+      <header className="bg-white text-slate-900 shadow-xs border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             
             {/* Left: Brand Logo & Title */}
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 font-black text-xl flex items-center justify-center shadow-lg shadow-amber-500/20">
+              <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 font-black text-xl flex items-center justify-center shadow-sm">
                 T
               </div>
               <div>
-                <div className="text-lg font-black tracking-tight text-white flex items-center gap-2">
+                <div className="text-lg font-black tracking-tight text-slate-900 flex items-center gap-2">
                   TDS Reconcile
-                  <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
                     Pro
                   </span>
                 </div>
-                <div className="text-[11px] text-slate-400 font-medium">
+                <div className="text-[11px] text-slate-500 font-semibold">
                   Reconciliation & Follow-up Workbench
                 </div>
               </div>
@@ -78,7 +78,7 @@ export default function Layout({ children }) {
               <button
                 onClick={handleSyncSaarthi}
                 disabled={syncing}
-                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-extrabold px-3 py-1.5 rounded-xl text-xs transition cursor-pointer shadow-sm"
+                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-extrabold px-3.5 py-1.5 rounded-xl text-xs transition cursor-pointer shadow-xs"
                 title="Fetch & sync live client invoices from Saarthi 360 APIs"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
@@ -86,40 +86,29 @@ export default function Layout({ children }) {
               </button>
 
               {/* FY Selector */}
-              <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-300">
-                <span className="text-amber-500 font-bold">FY:</span>
+              <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
+                <span className="text-amber-600 font-extrabold">FY:</span>
                 <select
                   value={fyFilter}
                   onChange={(e) => setFyFilter(e.target.value)}
-                  className="bg-transparent text-white font-medium focus:outline-none cursor-pointer"
+                  className="bg-transparent text-slate-900 font-bold focus:outline-none cursor-pointer"
                 >
-                  <option value="All Financial Years" className="bg-slate-900 text-white">All Financial Years</option>
-                  <option value="FY 2026-27" className="bg-slate-900 text-white">FY 2026-27</option>
-                  <option value="FY 2025-26" className="bg-slate-900 text-white">FY 2025-26</option>
-                  <option value="FY 2024-25" className="bg-slate-900 text-white">FY 2024-25</option>
-                  <option value="FY 2023-24" className="bg-slate-900 text-white">FY 2023-24</option>
-                  <option value="FY 2022-23" className="bg-slate-900 text-white">FY 2022-23</option>
-                  <option value="FY 2021-22" className="bg-slate-900 text-white">FY 2021-22</option>
-                  <option value="FY 2020-21" className="bg-slate-900 text-white">FY 2020-21</option>
+                  <option value="All Financial Years" className="bg-white text-slate-900">All Financial Years</option>
+                  <option value="FY 2026-27" className="bg-white text-slate-900">FY 2026-27</option>
+                  <option value="FY 2025-26" className="bg-white text-slate-900">FY 2025-26</option>
+                  <option value="FY 2024-25" className="bg-white text-slate-900">FY 2024-25</option>
+                  <option value="FY 2023-24" className="bg-white text-slate-900">FY 2023-24</option>
+                  <option value="FY 2022-23" className="bg-white text-slate-900">FY 2022-23</option>
+                  <option value="FY 2021-22" className="bg-white text-slate-900">FY 2021-22</option>
                 </select>
               </div>
 
-              {/* Role Dropdown */}
-              <div className="hidden sm:flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-300">
-                <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
+              {/* Role Selector */}
+              <div className="hidden sm:flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
+                <Users className="w-3.5 h-3.5 text-slate-500" />
                 <select
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
-                  className="bg-transparent text-white font-medium focus:outline-none cursor-pointer"
-                >
-                  <option value="Accounts Manager" className="bg-slate-900 text-white">Accounts Manager</option>
-                  <option value="Senior Auditor" className="bg-slate-900 text-white">Senior Auditor</option>
-                  <option value="Accounts Executive" className="bg-slate-900 text-white">Accounts Executive</option>
-                  <option value="Admin" className="bg-slate-900 text-white">Admin</option>
-                </select>
-              </div>
-
-              {/* Return to Finance App Link */}
               <button 
                 onClick={() => window.open('https://saarthifinancial-7zni.vercel.app', '_self')} 
                 className="flex items-center gap-1.5 bg-teal-900/40 hover:bg-teal-900/60 border border-teal-500/40 rounded-xl px-3 py-1.5 text-xs font-bold text-teal-300 transition cursor-pointer"
