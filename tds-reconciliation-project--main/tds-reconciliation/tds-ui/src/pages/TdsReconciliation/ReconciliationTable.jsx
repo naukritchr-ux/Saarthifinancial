@@ -57,7 +57,7 @@ export default function ReconciliationTable({
   const getCoveragePill = (coverage, row) => {
     const tally = parseFloat(row?.tallyTds || 0) > 0;
     const as26 = parseFloat(row?.as26Tds || 0) > 0;
-    const saarthi = parseFloat(row?.saarthiTds || row?.booksTds || 0) > 0;
+    const saarthi = parseFloat(row?.saarthiTds || row?.booksTds || 0) > 0 || (row?.tdsDuesId ? true : false);
 
     if (tally && as26 && saarthi) {
       return (

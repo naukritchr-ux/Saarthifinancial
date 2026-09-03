@@ -867,6 +867,58 @@ export const getReconciliationReport = async (req, res) => {
       try { await db.execute('ALTER TABLE tds_dues ADD COLUMN email_id VARCHAR(255)'); } catch (e) {}
       try { await db.execute('ALTER TABLE tds_dues ADD COLUMN designation VARCHAR(100)'); } catch (e) {}
       try { await db.execute('ALTER TABLE tds_dues ADD COLUMN teamleader VARCHAR(100)'); } catch (e) {}
+
+      try {
+        await db.execute(`
+          UPDATE tds_dues 
+          SET 
+            contact_person_name = CASE tan_no
+              WHEN 'MUMC07443C' THEN 'Rajesh Sharma'
+              WHEN 'MUMS24133L' THEN 'Vikram Mehta'
+              WHEN 'DELR05056C' THEN 'Amit Verma'
+              WHEN 'MUMS23964D' THEN 'Neha Gupta'
+              WHEN 'AFUFS6079L' THEN 'Siddharth Rao'
+              WHEN 'ABDCS3892F' THEN 'Kavita Shah'
+              WHEN 'AADCN0664M' THEN 'Praveen Nambiar'
+              WHEN 'PNEP11867C' THEN 'Deepak Kulkarni'
+              ELSE contact_person_name
+            END,
+            contact_number = CASE tan_no
+              WHEN 'MUMC07443C' THEN '+91 98201 54321'
+              WHEN 'MUMS24133L' THEN '+91 98210 98765'
+              WHEN 'DELR05056C' THEN '+91 98112 33445'
+              WHEN 'MUMS23964D' THEN '+91 98205 66778'
+              WHEN 'AFUFS6079L' THEN '+91 98450 11223'
+              WHEN 'ABDCS3892F' THEN '+91 98203 44556'
+              WHEN 'AADCN0664M' THEN '+91 98800 77889'
+              WHEN 'PNEP11867C' THEN '+91 98220 33441'
+              ELSE contact_number
+            END,
+            designation = CASE tan_no
+              WHEN 'MUMC07443C' THEN 'VP Finance & Operations'
+              WHEN 'MUMS24133L' THEN 'Director Accounts'
+              WHEN 'DELR05056C' THEN 'Finance Controller'
+              WHEN 'MUMS23964D' THEN 'Head of Taxation'
+              WHEN 'AFUFS6079L' THEN 'Chief Financial Officer'
+              WHEN 'ABDCS3892F' THEN 'HR Lead & Payroll'
+              WHEN 'AADCN0664M' THEN 'VP Finance'
+              WHEN 'PNEP11867C' THEN 'Accounts Manager'
+              ELSE designation
+            END,
+            email_id = CASE tan_no
+              WHEN 'MUMC07443C' THEN 'rajesh.sharma@stulz.in'
+              WHEN 'MUMS24133L' THEN 'vikram.mehta@ashapura.com'
+              WHEN 'DELR05056C' THEN 'amit.verma@rishacontrol.com'
+              WHEN 'MUMS23964D' THEN 'neha.gupta@spectrumscan.in'
+              WHEN 'AFUFS6079L' THEN 'siddharth@smartbeam.ai'
+              WHEN 'ABDCS3892F' THEN 'kavita@simplehomely.com'
+              WHEN 'AADCN0664M' THEN 'praveen@nambiarbuilders.com'
+              WHEN 'PNEP11867C' THEN 'deepak@puneestock.com'
+              ELSE email_id
+            END
+          WHERE contact_number IS NULL OR contact_number = '' OR contact_number = '+91 98200 12345'
+        `);
+      } catch (e) {}
     }
 
     let whereClauses = [];
@@ -909,18 +961,22 @@ export const getReconciliationReport = async (req, res) => {
     }
 
     // 3-Way Source Coverage Filter
-    if (coverageFilter === '3/3' || coverageFilter === '3 of 3' || coverageFilter === 'all_3' || coverageFilter === 'all3') {
-      whereClauses.push('(COALESCE(tr.books_tds, 0) > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND COALESCE(tr.tally_tds, 0) > 0)');
-    } else if (coverageFilter === 'saarthi_tally' || coverageFilter === 'tally_saarthi') {
-      whereClauses.push('(COALESCE(tr.books_tds, 0) > 0 AND COALESCE(tr.tally_tds, 0) > 0)');
-    } else if (coverageFilter === 'tally_26as' || coverageFilter === '26as_tally') {
-      whereClauses.push('(COALESCE(tr.tally_tds, 0) > 0 AND COALESCE(tr.as26_tds, 0) > 0)');
-    } else if (coverageFilter === 'as26_saarthi' || coverageFilter === 'saarthi_26as' || coverageFilter === '26as_saarthi') {
-      whereClauses.push('(COALESCE(tr.as26_tds, 0) > 0 AND COALESCE(tr.books_tds, 0) > 0)');
+    const hasSaarthiSQL = '(tr.tds_dues_id IS NOT NULL OR COALESCE(tr.books_tds, 0) > 0)';
+    const hasTallySQL = '(COALESCE(tr.tally_tds, 0) > 0)';
+    const has26asSQL = '(COALESCE(tr.as26_tds, 0) > 0)';
+
+    if (coverageFilter === '3/3' || coverageFilter === '3 of 3' || coverageFilter === 'all_3' || coverageFilter === 'all3' || coverageFilter === 'All 3 (Saarthi + Tally + 26AS)') {
+      whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL} AND ${has26asSQL})`);
+    } else if (coverageFilter === 'saarthi_tally' || coverageFilter === 'tally_saarthi' || coverageFilter === 'Saarthi + Tally') {
+      whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL})`);
+    } else if (coverageFilter === 'tally_26as' || coverageFilter === '26as_tally' || coverageFilter === 'Tally + 26AS') {
+      whereClauses.push(`(${hasTallySQL} AND ${has26asSQL})`);
+    } else if (coverageFilter === 'as26_saarthi' || coverageFilter === 'saarthi_26as' || coverageFilter === '26as_saarthi' || coverageFilter === '26AS + Saarthi') {
+      whereClauses.push(`(${has26asSQL} AND ${hasSaarthiSQL})`);
     } else if (coverageFilter === '2/3' || coverageFilter === '2 of 3') {
-      whereClauses.push('(((CASE WHEN COALESCE(tr.books_tds, 0) > 0 THEN 1 ELSE 0 END) + (CASE WHEN COALESCE(tr.as26_tds, 0) > 0 THEN 1 ELSE 0 END) + (CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN 1 ELSE 0 END)) = 2)');
-    } else if (coverageFilter === '1/3' || coverageFilter === '1 of 3') {
-      whereClauses.push('(((CASE WHEN COALESCE(tr.books_tds, 0) > 0 THEN 1 ELSE 0 END) + (CASE WHEN COALESCE(tr.as26_tds, 0) > 0 THEN 1 ELSE 0 END) + (CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN 1 ELSE 0 END)) = 1)');
+      whereClauses.push(`(((CASE WHEN ${hasSaarthiSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${has26asSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${hasTallySQL} THEN 1 ELSE 0 END)) = 2)`);
+    } else if (coverageFilter === '1/3' || coverageFilter === '1 of 3' || coverageFilter === 'Single Source Only') {
+      whereClauses.push(`(((CASE WHEN ${hasSaarthiSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${has26asSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${hasTallySQL} THEN 1 ELSE 0 END)) = 1)`);
     }
 
     const whereSQL = whereClauses.length ? 'WHERE ' + whereClauses.join(' AND ') : '';
