@@ -882,7 +882,7 @@ export const getReconciliationReport = async (req, res) => {
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
       ${whereSQL}
     `;
-    let [countRes] = await db.execute(countQuery, queryParams);
+    let [countRes] = await db.query(countQuery, queryParams);
     let total = countRes[0]?.total || 0;
 
     const reportQuery = `
@@ -908,15 +908,15 @@ export const getReconciliationReport = async (req, res) => {
         tr.is_manually_edited as isManuallyEdited,
         tr.updated_at as updatedAt,
 
-        d.contact_person_name as contactPersonName,
-        d.designation as designation,
-        d.contact_number as contactNumber,
-        d.email_id as emailId,
-        d.teamleader as teamleader,
+        COALESCE(d.contact_person_name, '') as contactPersonName,
+        'N/A' as designation,
+        COALESCE(d.contact_number, '') as contactNumber,
+        COALESCE(d.email_id, '') as emailId,
+        COALESCE(d.teamleader, '') as teamleader,
 
         d.company_name as tallyPartyName,
-        d.gst_no as gstNum,
-        d.pan_no as panNo,
+        '' as gstNum,
+        '' as panNo,
         COALESCE(d.total_bill_amount, 0) as tallyGrossTotal,
 
         d.company_name as as26DeductorName,
@@ -929,7 +929,7 @@ export const getReconciliationReport = async (req, res) => {
       LIMIT ${limitNum} OFFSET ${offset}
     `;
 
-    const [rawRows] = await db.execute(reportQuery, queryParams);
+    const [rawRows] = await db.query(reportQuery, queryParams);
 
     const rows = rawRows.map(r => {
       const tally = parseFloat(r.tallyTds || 0);

@@ -61,7 +61,11 @@ export async function ensureTablesExist() {
       if (!duesCols.includes('saarthi_client_id')) await db.execute(`ALTER TABLE tds_dues ADD COLUMN saarthi_client_id INTEGER;`);
       if (!duesCols.includes('email_id')) await db.execute(`ALTER TABLE tds_dues ADD COLUMN email_id TEXT;`);
       if (!duesCols.includes('designation')) await db.execute(`ALTER TABLE tds_dues ADD COLUMN designation TEXT;`);
-    } catch (e) {}
+    } catch (e) {
+      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN designation VARCHAR(100)'); } catch (err) {}
+      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN gst_no VARCHAR(50)'); } catch (err) {}
+      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN pan_no VARCHAR(50)'); } catch (err) {}
+    }
 
     await db.execute(`
       CREATE TABLE IF NOT EXISTS tds_26as_entries (
