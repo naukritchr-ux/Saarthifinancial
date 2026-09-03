@@ -1538,6 +1538,22 @@ export const syncSaarthiLiveApi = async (req, res) => {
           ]);
           updated++;
         }
+      } else {
+        await db.execute(`
+          INSERT INTO tds_dues 
+          (saarthi_client_id, company_name, tan_no, contact_person_name, designation, contact_number, email_id, teamleader, financial_year)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'FY 2025-26')
+        `, [
+          master.saarthi_client_id,
+          master.company_name,
+          master.tan_no,
+          master.contact_person_name,
+          master.designation,
+          master.contact_number,
+          master.email_id,
+          master.teamleader
+        ]);
+        updated++;
       }
     }
 
