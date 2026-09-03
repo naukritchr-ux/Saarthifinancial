@@ -1,0 +1,67 @@
+[
+  {
+    "id": 201,
+    "companyName": "STULZ CHSPL (INDIA) PRIVATE LIMITED",
+    "gstNo": "27AAACS1234F1Z5",
+    "tanNo": "MUMC07443C",
+    "panNo": "AAACS1234F",
+    "contactPersonName": "Rajesh Sharma",
+    "designation": "VP Finance & Operations",
+    "contactPhoneNumber": "+91 98201 54321",
+    "contactEmailId": "rajesh.sharma@stulz.in",
+    "teamLeader": "Anita Desai",
+    "status": "ACTIVE"
+  },
+  {
+    "id": 202,
+    "companyName": "SIDDHALAXMI ENGINEERING INDU P LTD -M/S",
+    "gstNo": "27PNES01856B1Z6",
+    "tanNo": "PNES01856B",
+    "panNo": "AAACS0185P",
+    "contactPersonName": "Sanjay Patil",
+    "designation": "General Manager Tax",
+    "contactPhoneNumber": "+91 98225 88990",
+    "contactEmailId": "sanjay.patil@siddhalaxmi.com",
+    "teamLeader": "Suresh Kumar",
+    "status": "ACTIVE"
+  },
+  {
+    "id": 203,
+    "companyName": "QUICK INSURE INSURANCE BROKERS PVT. LTD",
+    "gstNo": "07AAACQ4253A1Z0",
+    "tanNo": "AAACQ4253A",
+    "panNo": "AAACQ4253A",
+    "contactPersonName": "Anil Agarwal",
+    "designation": "Head of Compliance",
+    "contactPhoneNumber": "+91 98101 22334",
+    "contactEmailId": "anil.agarwal@quickinsure.co.in",
+    "teamLeader": "Pooja Nair",
+    "status": "ACTIVE"
+  },
+  {
+    "id": 204,
+    "companyName": "NORRIS ELECTRONICS PRIVATE LIMITED",
+    "gstNo": "27AAFCN3308J1Z9",
+    "tanNo": "AAFCN3308J",
+    "panNo": "AAFCN3308J",
+    "contactPersonName": "Ramesh Norris",
+    "designation": "Director",
+    "contactPhoneNumber": "+91 98209 11223",
+    "contactEmailId": "ramesh@norris.co.in",
+    "teamLeader": "Rohan Joshi",
+    "status": "ACTIVE"
+  },
+  {
+    "id": 205,
+    "companyName": "RAHO HOSPITALITIES PVT LTD",
+    "gstNo": "27AAMCR0284Q1Z5",
+    "tanNo": "AAMCR0284Q",
+    "panNo": "AAMCR0284Q",
+    "contactPersonName": "Priya Sundaram",
+    "designation": "Corporate HR Lead",
+    "contactPhoneNumber": "+91 98211 44556",
+    "contactEmailId": "priya@raho.in",
+    "teamLeader": "Anita Desai",
+    "status": "ACTIVE"
+  }
+]
