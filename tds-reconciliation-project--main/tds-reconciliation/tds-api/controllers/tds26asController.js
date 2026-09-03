@@ -901,6 +901,12 @@ export const getReconciliationReport = async (req, res) => {
       whereClauses.push('((CASE WHEN tr.books_tds > 0 THEN 1 ELSE 0 END + CASE WHEN tr.as26_tds > 0 THEN 1 ELSE 0 END + CASE WHEN tr.tally_tds > 0 THEN 1 ELSE 0 END) = 2)');
     } else if (coverageFilter === '1/3' || coverageFilter === '1 of 3') {
       whereClauses.push('((CASE WHEN tr.books_tds > 0 THEN 1 ELSE 0 END + CASE WHEN tr.as26_tds > 0 THEN 1 ELSE 0 END + CASE WHEN tr.tally_tds > 0 THEN 1 ELSE 0 END) = 1)');
+    } else if (coverageFilter === 'saarthi_tally') {
+      whereClauses.push('(tr.books_tds > 0 AND tr.tally_tds > 0 AND (tr.as26_tds IS NULL OR tr.as26_tds = 0))');
+    } else if (coverageFilter === 'tally_26as') {
+      whereClauses.push('(tr.tally_tds > 0 AND tr.as26_tds > 0 AND (tr.books_tds IS NULL OR tr.books_tds = 0))');
+    } else if (coverageFilter === 'as26_saarthi') {
+      whereClauses.push('(tr.as26_tds > 0 AND tr.books_tds > 0 AND (tr.tally_tds IS NULL OR tr.tally_tds = 0))');
     }
 
     const whereSQL = whereClauses.length ? 'WHERE ' + whereClauses.join(' AND ') : '';
@@ -1236,7 +1242,7 @@ export const exportReconciliationCSV = async (req, res) => {
         r.tallyTds || 0,
         `"${r.booksVs26asStatus || ''}"`,
         `"${r.booksVsTallyStatus || ''}"`,
-        `"${r.as26VsTallyStatus || ''}"`,
+        `"${r.booksVsTallyStatus || ''}"`,
         `"${r.overallStatus || ''}"`
       ];
       csvContent += line.join(',') + '\n';
@@ -1417,46 +1423,48 @@ export const deleteUploadBatch = async (req, res) => {
 };
 
 /**
- * Sync Live Saarthi 360 API Data (clients_info + legals_info + api/Invoice)
+ * Sync Live Saarthi 360 API Data (api/clients_info + legals_info)
  */
 export const syncSaarthiLiveApi = async (req, res) => {
   try {
     clearPurgedFlag();
-    console.log('🔄 Syncing live Saarthi 360 API data...');
+    console.log('🔄 Syncing live Saarthi 360 client & legal master data...');
 
     const fetchTimeout = (url, ms = 15000) => {
       const controller = new AbortController();
       const id = setTimeout(() => controller.abort(), ms);
       return fetch(url, { signal: controller.signal })
-        .then(r => (r.ok ? r.json() : null))
+        .then(async (r) => {
+          if (!r.ok) {
+            console.warn(`⚠️ Saarthi API responded ${r.status} ${r.statusText} for ${url}`);
+            return { ok: false, status: r.status, data: null };
+          }
+          const json = await r.json();
+          return { ok: true, status: r.status, data: json };
+        })
         .catch(err => {
-          console.warn(`Fetch error for ${url}:`, err.message);
-          return null;
+          console.warn(`⚠️ Saarthi API fetch failed for ${url}:`, err.message);
+          return { ok: false, status: null, error: err.message, data: null };
         })
         .finally(() => clearTimeout(id));
     };
 
-    const [cRes, lRes, iRes] = await Promise.all([
+    const [cRes, lRes] = await Promise.all([
       fetchTimeout('https://api.sarthi360.in/api/clients_info'),
-      fetchTimeout('https://api.sarthi360.in/legals_info'),
-      fetchTimeout('https://api.sarthi360.in/api/Invoice')
+      fetchTimeout('https://api.sarthi360.in/legals_info')
     ]);
 
-    let clientsData = Array.isArray(cRes) ? cRes : [];
-    let legalsData = Array.isArray(lRes) ? lRes : [];
-    let invoicesData = Array.isArray(iRes) ? iRes : [];
+    let clientsData = Array.isArray(cRes.data) ? cRes.data : [];
+    let legalsData = Array.isArray(lRes.data) ? lRes.data : [];
 
-    if (clientsData.length === 0 && legalsData.length === 0 && invoicesData.length === 0) {
-      console.warn('⚠️ Live Saarthi endpoints unreachable. Utilizing embedded master dataset fallback...');
-      try {
-        const seedModule = await import('../seed_embedded_dataset.js');
-        if (seedModule && seedModule.embeddedDataset) {
-          legalsData = seedModule.embeddedDataset.legals || [];
-          invoicesData = seedModule.embeddedDataset.invoices || [];
-        }
-      } catch (e) {
-        console.warn('Fallback seed dataset import warning:', e.message);
-      }
+    // Per-endpoint diagnostic so failures are visible
+    const liveApiStatus = {
+      clients_info: cRes.ok ? 'ok' : (cRes.error || `HTTP ${cRes.status}`),
+      legals_info: lRes.ok ? 'ok' : (lRes.error || `HTTP ${lRes.status}`)
+    };
+
+    if (clientsData.length === 0 && legalsData.length === 0) {
+      console.warn('⚠️ Both live Saarthi 360 master endpoints returned no usable data:', liveApiStatus);
     }
 
     const tanRegex = /^[A-Z]{4}\d{5}[A-Z]$/i;
@@ -1490,8 +1498,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
         contact_number: String(item.contactPhone || item.contactPhoneNumber || item.phoneNumber || item.mobile || item.mobileNo || item.phone || item.contact_no || '').trim() || null,
         email_id: String(item.contactEmail || item.contactEmailId || item.emailId || item.email || item.contact_email || '').trim() || null,
         teamleader: String(item.teamLeader || item.teamleader || item.tlName || item.manager || '').trim() || null,
-        status: String(item.status || 'active').toLowerCase(),
-        updated_at: item.created_at || item.updated_at || ''
+        status: String(item.status || 'active').toLowerCase()
       });
     });
 
@@ -1513,240 +1520,71 @@ export const syncSaarthiLiveApi = async (req, res) => {
         contact_number: String(item.contactPhoneNumber || item.phoneNumber || item.mobile || item.mobileNo || item.contactPhone || item.phone || item.contact_no || '').trim() || null,
         email_id: String(item.contactEmailId || item.emailId || item.email || item.contactEmail || item.contact_email || '').trim() || null,
         teamleader: String(item.teamLeader || item.teamleader || item.tlName || item.manager || '').trim() || null,
-        status: String(item.status || 'ACTIVE').toLowerCase(),
-        updated_at: item.updated_at || item.created_at || ''
+        status: String(item.status || 'ACTIVE').toLowerCase()
       });
     });
 
-    // Linking Helper with Tiebreaker across master sources
-    const findMasterClient = (invGst, invName) => {
-      const cleanGst = String(invGst || '').trim().toUpperCase();
-      const cleanName = String(invName || '').trim();
-      const normName = normalizeCompanyName(cleanName);
-
-      if (gstRegex.test(cleanGst)) {
-        const matches = clientMasters.filter(c => c.gst_no === cleanGst);
-        if (matches.length > 0) {
-          matches.sort((a, b) => {
-            if ((a.status === 'active') !== (b.status === 'active')) return a.status === 'active' ? -1 : 1;
-            if ((a.tan_no ? 1 : 0) !== (b.tan_no ? 1 : 0)) return a.tan_no ? -1 : 1;
-            return (b.saarthi_client_id || 0) - (a.saarthi_client_id || 0);
-          });
-          return matches[0];
-        }
-      }
-
-      if (normName) {
-        const matches = clientMasters.filter(c => c.normalized_name === normName);
-        if (matches.length > 0) {
-          matches.sort((a, b) => {
-            if ((a.status === 'active') !== (b.status === 'active')) return a.status === 'active' ? -1 : 1;
-            if ((a.tan_no ? 1 : 0) !== (b.tan_no ? 1 : 0)) return a.tan_no ? -1 : 1;
-            return (b.saarthi_client_id || 0) - (a.saarthi_client_id || 0);
-          });
-          return matches[0];
-        }
-      }
-
-      if (normName) {
-        let bestMatch = null;
-        let bestScore = 0;
-        for (const c of clientMasters) {
-          if (!c.normalized_name) continue;
-          const score = calculateStringSimilarity(normName, c.normalized_name);
-          if (score >= 85 && score > bestScore) {
-            bestScore = score;
-            bestMatch = c;
-          }
-        }
-        if (bestMatch) return bestMatch;
-      }
-
-      return null;
-    };
-
-    const parseFinancialYear = (fyRaw) => {
-      if (!fyRaw) return 'FY 2024-25';
-      const str = String(fyRaw).trim();
-      const matchFull = str.match(/(\d{4})[-–/](\d{4})/);
-      if (matchFull) {
-        const y1 = matchFull[1];
-        const y2 = matchFull[2].slice(-2);
-        return `FY ${y1}-${y2}`;
-      }
-      const matchShort = str.match(/(\d{4})[-–/](\d{2})/);
-      if (matchShort) {
-        return `FY ${matchShort[1]}-${matchShort[2]}`;
-      }
-      const matchBare = str.match(/\b(20\d{2})\b/);
-      if (matchBare) {
-        const y1 = parseInt(matchBare[1]);
-        return `FY ${y1}-${(y1 + 1).toString().slice(-2)}`;
-      }
-      return 'FY 2024-25';
-    };
-
-    // Aggregate Invoices per Client per FY
-    const aggregatedDues = new Map();
-
-    invoicesData.forEach(inv => {
-      if (!inv || !inv.companyName) return;
-      
-      const client = findMasterClient(inv.gstNo, inv.companyName);
-      const fy = parseFinancialYear(inv.financialYear);
-      
-      const key = client 
-        ? `client_${client.saarthi_client_id || client.normalized_name}_${fy}`
-        : `unmatched_${normalizeCompanyName(inv.companyName)}_${fy}`;
-
-      const totalBill = cleanNumber(inv.totalBillAmt || inv.serviceCharges);
-      let tdsVal = cleanNumber(inv.tds);
-      if (tdsVal <= 0 && totalBill > 0) {
-        tdsVal = cleanNumber(inv.serviceCharges || totalBill) * 0.10;
-      }
-
-      if (!aggregatedDues.has(key)) {
-        aggregatedDues.set(key, {
-          saarthi_client_id: client ? client.saarthi_client_id : null,
-          company_name: client ? client.company_name : String(inv.companyName).trim(),
-          tan_no: client ? client.tan_no : null,
-          bill_number: inv.billNumber ? String(inv.billNumber) : null,
-          bill_date: inv.billDate ? String(inv.billDate).split('T')[0] : null,
-          total_bill_amount: 0,
-          tds: 0,
-          contact_number: client?.contact_number || inv.contactNumber || inv.contactPhone || null,
-          contact_person_name: client?.contact_person_name || inv.contactPersonName || inv.contactPerson || null,
-          designation: client?.designation || inv.designation || null,
-          email_id: client?.email_id || inv.contactEmail || null,
-          teamleader: client?.teamleader || inv.teamLeader || null,
-          financial_year: fy
-        });
-      }
-
-      const rec = aggregatedDues.get(key);
-      rec.total_bill_amount += totalBill;
-      rec.tds += tdsVal;
-    });
-
-    // Upsert into database
-    let inserted = 0;
+    // Enrich existing tds_dues contact rows (Option B: UPDATE-only, no zero-TDS dummy row creation)
     let updated = 0;
 
-    for (const [key, rec] of aggregatedDues.entries()) {
+    for (const master of clientMasters) {
       let existingRows = [];
-      if (rec.saarthi_client_id) {
+      if (master.saarthi_client_id) {
         [existingRows] = await db.execute(
-          'SELECT id, company_name, tan_no FROM tds_dues WHERE saarthi_client_id = ? AND financial_year = ?',
-          [rec.saarthi_client_id, rec.financial_year]
+          'SELECT id FROM tds_dues WHERE saarthi_client_id = ?',
+          [master.saarthi_client_id]
         );
       }
-      if (existingRows.length === 0) {
+      if (existingRows.length === 0 && master.tan_no) {
         [existingRows] = await db.execute(
-          'SELECT id, company_name, tan_no FROM tds_dues WHERE UPPER(TRIM(company_name)) = ? AND financial_year = ?',
-          [rec.company_name.toUpperCase(), rec.financial_year]
+          'SELECT id FROM tds_dues WHERE UPPER(TRIM(tan_no)) = ?',
+          [master.tan_no.toUpperCase()]
+        );
+      }
+      if (existingRows.length === 0 && master.company_name) {
+        [existingRows] = await db.execute(
+          'SELECT id FROM tds_dues WHERE UPPER(TRIM(company_name)) = ?',
+          [master.company_name.toUpperCase()]
         );
       }
 
       if (existingRows.length > 0) {
-        const existing = existingRows[0];
-        const [manRows] = await db.execute(
-          'SELECT is_manually_edited FROM tds_reconciliation_results WHERE tds_dues_id = ?',
-          [existing.id]
-        );
-        const isManuallyEdited = manRows.length > 0 && Number(manRows[0].is_manually_edited) === 1;
-
-        if (isManuallyEdited) {
-          // PROTECT company_name and tan_no, REFRESH contact details
-          await db.execute(`
-            UPDATE tds_dues 
-            SET 
-              total_bill_amount = ?,
-              tds = ?,
-              contact_number = COALESCE(?, contact_number),
-              contact_person_name = COALESCE(?, contact_person_name),
-              designation = COALESCE(?, designation),
-              email_id = COALESCE(?, email_id),
-              teamleader = COALESCE(?, teamleader)
-            WHERE id = ?
-          `, [
-            rec.total_bill_amount,
-            rec.tds,
-            rec.contact_number,
-            rec.contact_person_name,
-            rec.designation,
-            rec.email_id,
-            rec.teamleader,
-            existing.id
-          ]);
-        } else {
-          // Update all fields
+        for (const row of existingRows) {
           await db.execute(`
             UPDATE tds_dues 
             SET 
               saarthi_client_id = COALESCE(?, saarthi_client_id),
-              company_name = ?,
               tan_no = COALESCE(?, tan_no),
-              total_bill_amount = ?,
-              tds = ?,
-              contact_number = ?,
-              contact_person_name = ?,
-              designation = ?,
-              email_id = ?,
-              teamleader = ?
+              contact_person_name = COALESCE(?, contact_person_name),
+              designation = COALESCE(?, designation),
+              contact_number = COALESCE(?, contact_number),
+              email_id = COALESCE(?, email_id),
+              teamleader = COALESCE(?, teamleader)
             WHERE id = ?
           `, [
-            rec.saarthi_client_id,
-            rec.company_name,
-            rec.tan_no,
-            rec.total_bill_amount,
-            rec.tds,
-            rec.contact_number,
-            rec.contact_person_name,
-            rec.designation,
-            rec.email_id,
-            rec.teamleader,
-            existing.id
+            master.saarthi_client_id,
+            master.tan_no,
+            master.contact_person_name,
+            master.designation,
+            master.contact_number,
+            master.email_id,
+            master.teamleader,
+            row.id
           ]);
+          updated++;
         }
-        updated++;
-      } else {
-        // Insert new row
-        const invId = `saarthi_sync_${rec.saarthi_client_id || Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        await db.execute(`
-          INSERT INTO tds_dues 
-          (saarthi_client_id, invoice_id, bill_number, bill_date, company_name, total_bill_amount, tds, contact_number, teamleader, tan_no, contact_person_name, designation, email_id, financial_year)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-          rec.saarthi_client_id,
-          invId,
-          rec.bill_number,
-          rec.bill_date,
-          rec.company_name,
-          rec.total_bill_amount,
-          rec.tds,
-          rec.contact_number,
-          rec.teamleader,
-          rec.tan_no,
-          rec.contact_person_name,
-          rec.designation,
-          rec.email_id,
-          rec.financial_year
-        ]);
-        inserted++;
       }
     }
 
-    // 4. Run 3-way reconciliation across all rows
+    // Run 3-way reconciliation across all rows
     await reconcile(null, null);
 
     res.json({
       success: true,
-      message: `Successfully synced live Saarthi 360 data (${inserted} inserted, ${updated} updated). Reconciliation completed.`,
+      message: `Successfully synced live Saarthi 360 client & legal master data (${updated} records enriched). Reconciliation completed.`,
+      liveApiStatus,
       stats: {
-        clientsFound: clientsData.length + legalsData.length,
-        invoicesProcessed: invoicesData.length,
-        aggregatedRows: aggregatedDues.size,
-        inserted,
+        clientsFound: clientMasters.length,
         updated
       }
     });
@@ -1756,5 +1594,3 @@ export const syncSaarthiLiveApi = async (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to sync live Saarthi data', details: error.message });
   }
 };
-
-
