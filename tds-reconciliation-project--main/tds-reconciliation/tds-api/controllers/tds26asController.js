@@ -937,14 +937,14 @@ export const getReconciliationReport = async (req, res) => {
     }
 
     if (search && String(search).trim() !== '') {
-      whereClauses.push('(tr.tan_no LIKE ? OR COALESCE(d.company_name, "") LIKE ?)');
+      whereClauses.push("(tr.tan_no LIKE ? OR COALESCE(d.company_name, '') LIKE ?)");
       const wild = `%${String(search).trim()}%`;
       queryParams.push(wild, wild);
     }
 
     if (overallStatus && overallStatus !== 'All') {
       if (overallStatus === 'Match' || overallStatus === 'All Matched') {
-        whereClauses.push('(tr.overall_status = "All Matched" OR ABS((COALESCE(tr.books_tds, tr.tally_tds, 0)) - COALESCE(tr.as26_tds, 0)) <= 1.0)');
+        whereClauses.push("(tr.overall_status = 'All Matched' OR ABS((COALESCE(tr.books_tds, tr.tally_tds, 0)) - COALESCE(tr.as26_tds, 0)) <= 1.0)");
       } else if (overallStatus === 'Less Paid' || overallStatus === 'Less') {
         whereClauses.push('(COALESCE(tr.books_tds, tr.tally_tds, 0) < COALESCE(tr.as26_tds, 0) - 1.0)');
       } else if (overallStatus === 'Excess') {
