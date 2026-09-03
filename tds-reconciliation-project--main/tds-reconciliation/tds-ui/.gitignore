@@ -29,5 +29,12 @@ ca.pem
 .DS_Store
 Thumbs.db
 
+# Excel & CSV data spreadsheets
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+*.csv
+
 # Vite cache
 .vite/

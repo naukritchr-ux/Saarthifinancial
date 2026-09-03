@@ -19,6 +19,13 @@ local.db
 # Uploaded files temp storage
 uploads/
 
+# Excel & CSV data spreadsheets
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+*.csv
+
 # Editor directories
 .vscode/
 .idea/

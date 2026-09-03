@@ -264,14 +264,22 @@ export default function DataImport() {
                       <tbody className="divide-y divide-gray-200/60 bg-white">
                         <tr>
                           <td className="px-4 py-2.5 font-bold text-slate-500">Company</td>
-                          <td className="px-4 py-2.5 font-black text-slate-900 uppercase">{tallyName}</td>
-                          <td className="px-4 py-2.5 font-black text-slate-800 uppercase">{as26Name}</td>
+                          <td className="px-4 py-2.5 font-black text-slate-900 uppercase">
+                            {tallyName && tallyName !== '—' ? tallyName : <span className="text-gray-400 font-normal italic">Not in Tally</span>}
+                          </td>
+                          <td className="px-4 py-2.5 font-black text-slate-800 uppercase">
+                            {as26Name && as26Name !== '—' ? as26Name : <span className="text-gray-400 font-normal italic">Not in Form 26AS</span>}
+                          </td>
                           <td className="px-4 py-2.5 font-bold text-slate-800">{saarthiName}</td>
                         </tr>
                         <tr>
                           <td className="px-4 py-2.5 font-bold text-slate-500">TAN</td>
-                          <td className="px-4 py-2.5 font-mono font-black text-red-600">{tallyTan}</td>
-                          <td className="px-4 py-2.5 font-mono font-black text-red-600">{as26Tan}</td>
+                          <td className="px-4 py-2.5 font-mono font-black text-red-600">
+                            {tallyTan && tallyTan !== '—' ? tallyTan : <span className="text-gray-400 font-normal italic">Not in Tally</span>}
+                          </td>
+                          <td className="px-4 py-2.5 font-mono font-black text-red-600">
+                            {as26Tan && as26Tan !== '—' ? as26Tan : <span className="text-gray-400 font-normal italic">Not in 26AS</span>}
+                          </td>
                           <td className="px-4 py-2.5 font-mono font-black text-emerald-700">{saarthiTan}</td>
                         </tr>
                       </tbody>

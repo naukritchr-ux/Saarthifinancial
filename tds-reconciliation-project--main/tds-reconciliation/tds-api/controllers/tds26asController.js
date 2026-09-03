@@ -726,10 +726,23 @@ export const getCleaningQueue = async (req, res) => {
       };
     }));
 
+    // Filter to only include items that actually require manual data cleaning:
+    // 1. Genuine TAN mismatch across sources
+    // 2. Low confidence name match (< 90%)
+    // 3. Invalid or missing TAN format (< 10 chars)
+    // 4. Missing/Unknown company name
+    const flaggedItems = cleaningItems.filter(item => {
+      const invalidTan = !item.tanNo || item.tanNo.length < 10 || item.tanNo.includes('UNKNOWN');
+      const missingName = !item.saarthiName || item.saarthiName === 'Unknown Client' || item.saarthiName === 'Unknown Company';
+      const lowConfidence = item.confidence < 90;
+      const tanMismatch = item.isTanMismatch;
+      return invalidTan || missingName || lowConfidence || tanMismatch;
+    });
+
     res.json({
       success: true,
-      count: cleaningItems.length,
-      data: cleaningItems
+      count: flaggedItems.length,
+      data: flaggedItems
     });
 
   } catch (error) {

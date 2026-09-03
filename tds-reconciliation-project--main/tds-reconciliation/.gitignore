@@ -19,6 +19,13 @@ uploads/
 /tmp/uploads/
 *.log
 
+# Excel & CSV data spreadsheets
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+*.csv
+
 # Editor configurations
 .vscode/
 .idea/
