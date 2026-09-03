@@ -157,7 +157,6 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
 
     console.log(`✅ Three-way reconciliation completed. Processed ${processedCount} records.`);
     return { success: true, count: processedCount };
-    return { success: true, count: processedCount };
 
   } catch (error) {
     console.error('❌ Error during three-way reconciliation:', error);
