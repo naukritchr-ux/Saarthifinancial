@@ -894,11 +894,13 @@ export const getReconciliationReport = async (req, res) => {
 
     if (overallStatus && overallStatus !== 'All') {
       if (overallStatus === 'Match' || overallStatus === 'All Matched') {
-        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 1 OR ((${primaryTdsSQL} > 0 OR COALESCE(tr.as26_tds, 0) > 0) AND ABS(${primaryTdsSQL} - COALESCE(tr.as26_tds, 0)) <= 1.0))`);
+        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 1 OR ((${primaryTdsSQL} > 0 AND COALESCE(tr.as26_tds, 0) > 0) AND ABS(${primaryTdsSQL} - COALESCE(tr.as26_tds, 0)) <= 1.0))`);
       } else if (overallStatus === 'Less Paid' || overallStatus === 'Less') {
-        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND (${primaryTdsSQL} > 0 OR COALESCE(tr.as26_tds, 0) > 0) AND ${primaryTdsSQL} > COALESCE(tr.as26_tds, 0) + 1.0)`);
+        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND ${primaryTdsSQL} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND ${primaryTdsSQL} > COALESCE(tr.as26_tds, 0) + 1.0)`);
       } else if (overallStatus === 'Excess' || overallStatus === 'Excess Paid') {
-        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND (${primaryTdsSQL} > 0 OR COALESCE(tr.as26_tds, 0) > 0) AND ${primaryTdsSQL} < COALESCE(tr.as26_tds, 0) - 1.0)`);
+        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND ${primaryTdsSQL} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND ${primaryTdsSQL} < COALESCE(tr.as26_tds, 0) - 1.0)`);
+      } else if (overallStatus === 'Not Received' || overallStatus === 'No Match' || overallStatus === 'Missing') {
+        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND (COALESCE(tr.as26_tds, 0) = 0 OR ${primaryTdsSQL} = 0))`);
       } else {
         whereClauses.push('tr.overall_status = ?');
         queryParams.push(overallStatus);

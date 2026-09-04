@@ -24,7 +24,7 @@ export default function TdsReconciliation() {
   const [activeViewRow, setActiveViewRow] = useState(null);
 
   // Statistics counters
-  const [stats, setStats] = useState({ total: 0, matched: 0, less: 0, excess: 0 });
+  const [stats, setStats] = useState({ total: 0, matched: 0, less: 0, excess: 0, notReceived: 0 });
 
   const fetchReport = async () => {
     setLoading(true);
@@ -43,11 +43,12 @@ export default function TdsReconciliation() {
         setRows(res.data);
         setTotal(res.total ?? res.data.length);
         
-        const tempStats = { total: res.total ?? res.data.length, matched: 0, less: 0, excess: 0 };
+        const tempStats = { total: res.total ?? res.data.length, matched: 0, less: 0, excess: 0, notReceived: 0 };
         res.data.forEach(r => {
           if (r.financialStatus === 'Match' || r.overallStatus === 'All Matched') tempStats.matched++;
           else if (r.financialStatus === 'Less Paid') tempStats.less++;
           else if (r.financialStatus === 'Excess') tempStats.excess++;
+          else if (r.financialStatus === 'Not Received') tempStats.notReceived++;
           else tempStats.matched++;
         });
         setStats(tempStats);
@@ -106,7 +107,7 @@ export default function TdsReconciliation() {
       </div>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-[#E9E4FA] shadow-sm flex items-center gap-4">
           <div className="p-3 bg-[#E8E4FF] text-[#9B87F5] rounded-xl">
             <Database className="w-6 h-6" />
@@ -144,6 +145,16 @@ export default function TdsReconciliation() {
           <div>
             <div className="text-[10px] font-bold text-[#6B6580] uppercase tracking-wider">Excess Paid</div>
             <div className="text-xl font-extrabold text-[#E11D48] mt-0.5">{stats.excess}</div>
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-[#E9E4FA] shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-gray-100 text-gray-600 rounded-xl">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="text-[10px] font-bold text-[#6B6580] uppercase tracking-wider">Not Received</div>
+            <div className="text-xl font-extrabold text-gray-700 mt-0.5">{stats.notReceived}</div>
           </div>
         </div>
       </div>
@@ -223,7 +234,7 @@ export default function TdsReconciliation() {
 
       {/* Status Tabs */}
       <div className="flex gap-2 border-b border-[#E9E4FA] pb-px overflow-x-auto text-xs">
-        {['All', 'Match', 'Less Paid', 'Excess'].map((tab) => (
+        {['All', 'Match', 'Less Paid', 'Excess', 'Not Received'].map((tab) => (
           <button
             key={tab}
             onClick={() => { setPage(1); setOverallStatus(tab); }}
