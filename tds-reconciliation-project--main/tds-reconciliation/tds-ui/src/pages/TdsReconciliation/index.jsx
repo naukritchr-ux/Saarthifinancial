@@ -95,19 +95,19 @@ export default function TdsReconciliation() {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-[#E9E4FA] shadow-sm">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <Database className="w-7 h-7 text-amber-500" />
+          <h1 className="text-2xl font-black text-[#1F1B2E] tracking-tight flex items-center gap-2">
+            <Database className="w-7 h-7 text-[#9B87F5]" />
             3-Way TDS Reconciliation Workbench
           </h1>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-[#6B6580] mt-1">
             Reconcile client TDS entries across Tally Ledgers, Form 26AS portal, and Saarthi 360 CRM.
           </p>
         </div>
         <button
           onClick={handleRefresh}
-          className="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-extrabold px-4 py-2 rounded-xl transition text-xs cursor-pointer shadow-sm"
+          className="inline-flex items-center gap-2 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-extrabold px-4 py-2 rounded-xl transition text-xs cursor-pointer shadow-sm"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh Report
@@ -116,65 +116,65 @@ export default function TdsReconciliation() {
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-slate-100 text-slate-700 rounded-xl">
+        <div className="bg-white p-5 rounded-2xl border border-[#E9E4FA] shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-[#E8E4FF] text-[#9B87F5] rounded-xl">
             <Database className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Records</div>
-            <div className="text-xl font-extrabold text-gray-900 mt-0.5">{total}</div>
+            <div className="text-[10px] font-bold text-[#6B6580] uppercase tracking-wider">Total Records</div>
+            <div className="text-xl font-extrabold text-[#1F1B2E] mt-0.5">{total}</div>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+        <div className="bg-white p-5 rounded-2xl border border-[#E9E4FA] shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-[#4ADE80]/15 text-[#2E8B57] rounded-xl">
             <CheckCircle className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Match</div>
-            <div className="text-xl font-extrabold text-emerald-600 mt-0.5">{stats.matched}</div>
+            <div className="text-[10px] font-bold text-[#6B6580] uppercase tracking-wider">Match</div>
+            <div className="text-xl font-extrabold text-[#2E8B57] mt-0.5">{stats.matched}</div>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
+        <div className="bg-white p-5 rounded-2xl border border-[#E9E4FA] shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-[#FBBF77]/15 text-[#D97706] rounded-xl">
             <AlertTriangle className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Less Paid</div>
-            <div className="text-xl font-extrabold text-amber-600 mt-0.5">{stats.less}</div>
+            <div className="text-[10px] font-bold text-[#6B6580] uppercase tracking-wider">Less Paid</div>
+            <div className="text-xl font-extrabold text-[#D97706] mt-0.5">{stats.less}</div>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-red-50 text-red-600 rounded-xl">
+        <div className="bg-white p-5 rounded-2xl border border-[#E9E4FA] shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-[#F87A9E]/15 text-[#E11D48] rounded-xl">
             <AlertTriangle className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Excess Paid</div>
-            <div className="text-xl font-extrabold text-red-600 mt-0.5">{stats.excess}</div>
+            <div className="text-[10px] font-bold text-[#6B6580] uppercase tracking-wider">Excess Paid</div>
+            <div className="text-xl font-extrabold text-[#E11D48] mt-0.5">{stats.excess}</div>
           </div>
         </div>
       </div>
 
       {/* Query Bar */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm space-y-4">
+      <div className="bg-white rounded-2xl border border-[#E9E4FA] p-5 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
           {/* Search Form */}
           <form onSubmit={handleSearchSubmit} className="flex w-full md:max-w-md gap-2">
             <div className="relative flex-grow">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-3" />
+              <Search className="w-4 h-4 text-[#6B6580] absolute left-3.5 top-3" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search by Company Name or TAN..."
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-10 pr-4 py-2 text-xs focus:outline-none focus:border-amber-500 font-medium"
+                className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl pl-10 pr-4 py-2 text-xs focus:outline-none focus:border-[#9B87F5] font-medium"
               />
             </div>
             <button
               type="submit"
-              className="bg-[#6E8CA0] hover:bg-[#5B788C] text-white font-extrabold py-2 px-4 rounded-xl transition text-xs cursor-pointer shadow-2xs"
+              className="bg-[#9B87F5] hover:bg-[#8572E0] text-white font-extrabold py-2 px-4 rounded-xl transition text-xs cursor-pointer shadow-2xs"
             >
               Search
             </button>
@@ -183,7 +183,7 @@ export default function TdsReconciliation() {
           {/* CSV Export Button */}
           <button
             onClick={handleCsvExport}
-            className="w-full md:w-auto inline-flex items-center justify-center gap-2 bg-[#6E8CA0] hover:bg-[#5B788C] text-white font-bold py-2 px-4 rounded-xl transition text-xs cursor-pointer shadow-2xs"
+            className="w-full md:w-auto inline-flex items-center justify-center gap-2 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-bold py-2 px-4 rounded-xl transition text-xs cursor-pointer shadow-2xs"
           >
             <Download className="w-4 h-4" />
             Export Selected to CSV
@@ -191,16 +191,16 @@ export default function TdsReconciliation() {
         </div>
 
         {/* Filter & Sort Controls Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-3 border-t border-[#DCE2E8] text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-3 border-t border-[#E9E4FA] text-xs">
           {/* Coverage Filter */}
           <div>
-            <label className="block text-[10px] font-bold text-[#7A8794] uppercase tracking-wider mb-1">
+            <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1">
               Source Coverage Filter
             </label>
             <select
               value={coverageFilter}
               onChange={(e) => { setPage(1); setCoverageFilter(e.target.value); }}
-              className="w-full bg-[#F6F8FA] border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#6E8CA0]"
+              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5]"
             >
               <option value="All">Coverage: All Coverage</option>
               <option value="3/3">All 3 (Saarthi + Tally + 26AS)</option>
@@ -214,13 +214,13 @@ export default function TdsReconciliation() {
 
           {/* Sort By */}
           <div>
-            <label className="block text-[10px] font-bold text-[#7A8794] uppercase tracking-wider mb-1">
+            <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1">
               Sort Order
             </label>
             <select
               value={sortBy}
               onChange={(e) => { setPage(1); setSortBy(e.target.value); }}
-              className="w-full bg-[#F6F8FA] border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#6E8CA0]"
+              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5]"
             >
               <option value="updated_at">Sort: Recently Updated</option>
               <option value="difference_desc">Sort: Difference (High → Low)</option>
@@ -230,15 +230,15 @@ export default function TdsReconciliation() {
       </div>
 
       {/* Status Tabs */}
-      <div className="flex gap-2 border-b border-[#DCE2E8] pb-px overflow-x-auto text-xs">
+      <div className="flex gap-2 border-b border-[#E9E4FA] pb-px overflow-x-auto text-xs">
         {['All', 'Match', 'Less Paid', 'Excess'].map((tab) => (
           <button
             key={tab}
             onClick={() => { setPage(1); setOverallStatus(tab); }}
             className={`px-4 py-2 font-bold border-b-2 transition cursor-pointer whitespace-nowrap ${
               overallStatus === tab
-                ? 'border-[#6E8CA0] text-[#6E8CA0] bg-[#6E8CA0]/10'
-                : 'border-transparent text-[#7A8794] hover:text-[#3A4048]'
+                ? 'border-[#9B87F5] text-[#9B87F5] bg-[#9B87F5]/10'
+                : 'border-transparent text-[#6B6580] hover:text-[#1F1B2E]'
             }`}
           >
             {tab}
@@ -270,71 +270,71 @@ export default function TdsReconciliation() {
       {activeViewRow && (
         <div
           onClick={() => setActiveViewRow(null)}
-          className="fixed inset-0 bg-[#3E4A5C]/60 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 z-50 overflow-y-auto"
+          className="fixed inset-0 bg-[#1F1B2E]/50 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 z-50 overflow-y-auto"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-[#F6F8FA] rounded-2xl shadow-2xl border border-[#DCE2E8] max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden my-auto animate-scale-up"
+            className="bg-white rounded-2xl shadow-2xl border border-[#E9E4FA] max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden my-auto animate-scale-up"
           >
-            <div className="flex-none flex justify-between items-center bg-[#3E4A5C] text-white px-6 py-4 border-b border-[#323D4D]">
+            <div className="flex-none flex justify-between items-center bg-[#9B87F5] text-white px-6 py-4 border-b border-[#8572E0]">
               <div>
                 <h3 className="font-bold text-base text-white">Reconciliation Detail Record</h3>
-                <p className="text-xs text-[#DCE2E8] mt-0.5">{activeViewRow.companyName} ({activeViewRow.tanNo})</p>
+                <p className="text-xs text-[#E8E4FF] mt-0.5">{activeViewRow.companyName} ({activeViewRow.tanNo})</p>
               </div>
               <button
                 type="button"
                 onClick={() => setActiveViewRow(null)}
-                className="p-1 rounded-lg text-[#DCE2E8] hover:text-white hover:bg-[#4F5D73] transition cursor-pointer"
+                className="p-1 rounded-lg text-[#E8E4FF] hover:text-white hover:bg-[#8572E0] transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs custom-scrollbar">
-              <div className="grid grid-cols-2 gap-4 bg-white p-4 rounded-xl border border-[#DCE2E8]">
+              <div className="grid grid-cols-2 gap-4 bg-[#F6F8FA] p-4 rounded-xl border border-[#E9E4FA]">
                 <div>
-                  <span className="text-[10px] font-bold text-[#7A8794] uppercase">Tally TDS</span>
-                  <div className="font-black text-[#6E8CA0] text-base">₹{Number(activeViewRow.tallyTds || 0).toLocaleString('en-IN')}</div>
+                  <span className="text-[10px] font-bold text-[#6B6580] uppercase">Tally TDS</span>
+                  <div className="font-black text-[#9B87F5] text-base">₹{Number(activeViewRow.tallyTds || 0).toLocaleString('en-IN')}</div>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-[#7A8794] uppercase">Form 26AS TDS</span>
-                  <div className="font-black text-[#8FA3BF] text-base">₹{Number(activeViewRow.as26Tds || 0).toLocaleString('en-IN')}</div>
+                  <span className="text-[10px] font-bold text-[#6B6580] uppercase">Form 26AS TDS</span>
+                  <div className="font-black text-[#B4A7F5] text-base">₹{Number(activeViewRow.as26Tds || 0).toLocaleString('en-IN')}</div>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-[#7A8794] uppercase">Saarthi 360 TDS</span>
-                  <div className="font-black text-[#6E8CA0] text-base">₹{Number(activeViewRow.saarthiTds || activeViewRow.booksTds || 0).toLocaleString('en-IN')}</div>
+                  <span className="text-[10px] font-bold text-[#6B6580] uppercase">Saarthi 360 TDS</span>
+                  <div className="font-black text-[#9B87F5] text-base">₹{Number(activeViewRow.saarthiTds || activeViewRow.booksTds || 0).toLocaleString('en-IN')}</div>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-[#7A8794] uppercase">Financial Status</span>
-                  <div className="font-extrabold text-[#3A4048] mt-1">{activeViewRow.financialStatus || activeViewRow.overallStatus}</div>
+                  <span className="text-[10px] font-bold text-[#6B6580] uppercase">Financial Status</span>
+                  <div className="font-extrabold text-[#1F1B2E] mt-1">{activeViewRow.financialStatus || activeViewRow.overallStatus}</div>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <div className="flex justify-between py-1 border-b border-[#DCE2E8]">
-                  <span className="text-[#7A8794] font-semibold">Source Coverage:</span>
-                  <span className="font-bold text-[#3A4048]">{activeViewRow.sourceCoverage?.label || '3/3 Match'}</span>
+                <div className="flex justify-between py-1 border-b border-[#E9E4FA]">
+                  <span className="text-[#6B6580] font-semibold">Source Coverage:</span>
+                  <span className="font-bold text-[#1F1B2E]">{activeViewRow.sourceCoverage?.label || '3/3 Match'}</span>
                 </div>
-                <div className="flex justify-between py-1 border-b border-[#DCE2E8]">
-                  <span className="text-[#7A8794] font-semibold">Bill Number:</span>
-                  <span className="font-bold text-[#3A4048]">{activeViewRow.billNumber || 'N/A'}</span>
+                <div className="flex justify-between py-1 border-b border-[#E9E4FA]">
+                  <span className="text-[#6B6580] font-semibold">Bill Number:</span>
+                  <span className="font-bold text-[#1F1B2E]">{activeViewRow.billNumber || 'N/A'}</span>
                 </div>
-                <div className="flex justify-between py-1 border-b border-[#DCE2E8]">
-                  <span className="text-[#7A8794] font-semibold">Financial Year:</span>
-                  <span className="font-bold text-[#3A4048]">{activeViewRow.financialYear || '2024-25'}</span>
+                <div className="flex justify-between py-1 border-b border-[#E9E4FA]">
+                  <span className="text-[#6B6580] font-semibold">Financial Year:</span>
+                  <span className="font-bold text-[#1F1B2E]">{activeViewRow.financialYear || '2024-25'}</span>
                 </div>
-                <div className="flex justify-between py-1 border-b border-[#DCE2E8]">
-                  <span className="text-[#7A8794] font-semibold">Is Manually Overridden:</span>
-                  <span className="font-bold text-[#6E8CA0]">{activeViewRow.isManuallyEdited ? 'Yes' : 'No'}</span>
+                <div className="flex justify-between py-1 border-b border-[#E9E4FA]">
+                  <span className="text-[#6B6580] font-semibold">Is Manually Overridden:</span>
+                  <span className="font-bold text-[#9B87F5]">{activeViewRow.isManuallyEdited ? 'Yes' : 'No'}</span>
                 </div>
               </div>
             </div>
 
-            <div className="flex-none px-6 py-4 border-t border-[#DCE2E8] bg-[#F6F8FA] flex justify-end">
+            <div className="flex-none px-6 py-4 border-t border-[#E9E4FA] bg-[#F6F8FA] flex justify-end">
               <button
                 type="button"
                 onClick={() => setActiveViewRow(null)}
-                className="bg-[#6E8CA0] hover:bg-[#5B788C] text-white font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+                className="bg-[#9B87F5] hover:bg-[#8572E0] text-white font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
               >
                 Close
               </button>

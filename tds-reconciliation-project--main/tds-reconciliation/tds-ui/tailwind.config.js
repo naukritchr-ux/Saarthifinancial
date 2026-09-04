@@ -8,18 +8,19 @@ export default {
     extend: {
       colors: {
         brand: {
-          header: '#3E4A5C',
-          primary: '#6E8CA0',
-          primaryHover: '#5B788C',
-          secondary: '#8FA3BF',
-          success: '#7FA88A',
-          warning: '#C9A778',
-          error: '#C08585',
-          card: '#F6F8FA',
-          page: '#EEF1F4',
-          border: '#DCE2E8',
-          text: '#3A4048',
-          muted: '#7A8794',
+          header: '#FFFFFF',
+          primary: '#9B87F5',
+          primaryHover: '#8572E0',
+          secondary: '#B4A7F5',
+          success: '#4ADE80',
+          warning: '#FBBF77',
+          error: '#F87A9E',
+          pro: '#C084FC',
+          card: '#FFFFFF',
+          page: '#E8E4FF',
+          border: '#E9E4FA',
+          text: '#1F1B2E',
+          muted: '#6B6580',
         }
       }
     },

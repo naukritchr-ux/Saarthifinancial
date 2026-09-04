@@ -167,18 +167,18 @@ export default function FollowUp() {
     switch (st) {
       case 'TDS Paid':
       case 'Form Received':
-        return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">{st}</span>;
+        return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#4ADE80]/15 text-[#2E8B57] border border-[#4ADE80]/30">{st}</span>;
       case 'Check & Revert':
       case 'Mail Reply':
-        return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">{st}</span>;
+        return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#9B87F5]/15 text-[#9B87F5] border border-[#9B87F5]/30">{st}</span>;
       case 'Call Tomorrow':
       case 'Mailed':
-        return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">{st}</span>;
+        return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#FBBF77]/15 text-[#D97706] border border-[#FBBF77]/30">{st}</span>;
       case 'Call Not Picked Up':
       case 'HR Left':
-        return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-50 text-red-700 border border-red-200">{st}</span>;
+        return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#F87A9E]/15 text-[#E11D48] border border-[#F87A9E]/30">{st}</span>;
       default:
-        return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">{st}</span>;
+        return <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#E8E4FF] text-[#1F1B2E] border border-[#E9E4FA]">{st}</span>;
     }
   };
 
@@ -206,13 +206,13 @@ export default function FollowUp() {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#F6F8FA] p-6 rounded-2xl border border-[#DCE2E8] shadow-2xs">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-[#E9E4FA] shadow-sm">
         <div>
-          <h1 className="text-2xl font-black text-[#3A4048] tracking-tight flex items-center gap-2">
-            <PhoneCall className="w-7 h-7 text-[#6E8CA0]" />
+          <h1 className="text-2xl font-black text-[#1F1B2E] tracking-tight flex items-center gap-2">
+            <PhoneCall className="w-7 h-7 text-[#9B87F5]" />
             Client TDS Follow-up Tracker
           </h1>
-          <p className="text-xs text-[#7A8794] mt-1">
+          <p className="text-xs text-[#6B6580] mt-1">
             Log client outreach, track missing Form 26AS certificate statuses, and manage follow-up schedules.
           </p>
         </div>
@@ -222,16 +222,16 @@ export default function FollowUp() {
             onClick={() => {
               loadData();
             }}
-            className="inline-flex items-center gap-2 bg-[#EEF1F4] hover:bg-[#DCE2E8] text-[#3A4048] font-bold px-3.5 py-2.5 rounded-xl transition text-xs border border-[#DCE2E8] cursor-pointer shadow-2xs"
+            className="inline-flex items-center gap-2 bg-[#E8E4FF] hover:bg-[#E9E4FA] text-[#1F1B2E] font-bold px-3.5 py-2.5 rounded-xl transition text-xs border border-[#E9E4FA] cursor-pointer shadow-2xs"
             title="Refresh follow-up entries from database"
           >
-            <RefreshCw className="w-3.5 h-3.5 text-[#7A8794]" />
+            <RefreshCw className="w-3.5 h-3.5 text-[#9B87F5]" />
             Refresh Data
           </button>
 
           <button
             onClick={() => { setItemToEdit(null); setShowAddModal(true); }}
-            className="inline-flex items-center gap-2 bg-[#6E8CA0] hover:bg-[#5B788C] text-white font-bold px-4 py-2.5 rounded-xl transition text-xs shadow-2xs cursor-pointer"
+            className="inline-flex items-center gap-2 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-bold px-4 py-2.5 rounded-xl transition text-xs shadow-2xs cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             + Log New Follow-up
