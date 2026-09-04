@@ -486,13 +486,17 @@ export const getDashboardSummary = async (req, res) => {
   try {
     const { fy } = req.query;
 
-    let whereClause = '';
+    let whereClauses = [
+      "(COALESCE(tr.books_tds, 0) > 0 OR COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0)"
+    ];
     const params = [];
     if (fy && fy !== 'All' && fy !== 'All Financial Years') {
       const cleanFy = String(fy).replace(/^FY\s*/i, '').trim();
-      whereClause = "WHERE COALESCE(NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') LIKE ?";
+      whereClauses.push("COALESCE(NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') LIKE ?");
       params.push(`%${cleanFy}%`);
     }
+
+    const whereSQL = 'WHERE ' + whereClauses.join(' AND ');
 
     const query = `
       SELECT 
@@ -506,7 +510,7 @@ export const getDashboardSummary = async (req, res) => {
         tr.is_manually_edited
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
-      ${whereClause}
+      ${whereSQL}
     `;
 
     let [rows] = await db.execute(query, params);
@@ -548,16 +552,16 @@ export const getDashboardSummary = async (req, res) => {
         matchCount++;
       } else if (r.overall_status === 'Partial Mismatch') {
         pendingReviewCount++;
-      } else if (sourcesPresent < 3 || r.overall_status === 'Major Mismatch') {
-        if (r.books_vs_26as_status === 'Less Paid' || r.books_vs_tally_status === 'Less Paid') lessCount++;
-        else if (r.books_vs_26as_status === 'Excess' || r.books_vs_tally_status === 'Excess') excessCount++;
-        else missingCount++;
-      } else if (r.books_vs_26as_status === 'Less Paid') {
-        lessCount++;
-      } else if (r.books_vs_26as_status === 'Excess') {
-        excessCount++;
       } else {
-        matchCount++;
+        const primaryVal = tally > 0 ? tally : saarthi;
+        if (as26 > 0 || primaryVal > 0) {
+          const diffVal = primaryVal - as26;
+          if (Math.abs(diffVal) <= 1.0) matchCount++;
+          else if (diffVal > 1.0) lessCount++;
+          else excessCount++;
+        } else {
+          missingCount++;
+        }
       }
     });
 
@@ -609,6 +613,7 @@ export const getCleaningQueue = async (req, res) => {
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
       WHERE (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
+        AND (COALESCE(tr.books_tds, 0) > 0 OR COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0)
         AND (tr.tan_no IS NULL OR tr.tan_no = '' OR LENGTH(tr.tan_no) < 10 
              OR d.company_name IS NULL OR d.company_name = 'Unknown Company' OR d.company_name = ''
              OR tr.overall_status = 'Major Mismatch'
