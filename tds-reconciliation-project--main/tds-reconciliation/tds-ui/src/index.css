@@ -9,8 +9,8 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #EEF1F4;
-  color: #3A4048;
+  background-color: #E8E4FF;
+  color: #1F1B2E;
 }
 
 @keyframes scaleUp {

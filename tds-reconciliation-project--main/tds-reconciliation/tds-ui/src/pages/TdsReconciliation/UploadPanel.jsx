@@ -176,14 +176,14 @@ export default function UploadPanel({ onUploadSuccess }) {
     <div className="space-y-6">
       
       {/* SECTION 1: Expected Headers Reference Bar */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 rounded-2xl p-6 text-white shadow-md border border-slate-700/60">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-700/80 pb-4">
+      <div className="bg-white rounded-2xl p-6 text-[#1F1B2E] shadow-sm border border-[#E9E4FA]">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-[#E9E4FA] pb-4">
           <div>
-            <h2 className="text-xl font-black tracking-tight text-amber-400 flex items-center gap-2">
-              <Table className="w-5 h-5 text-amber-400" />
+            <h2 className="text-xl font-black tracking-tight text-[#1F1B2E] flex items-center gap-2">
+              <Table className="w-5 h-5 text-[#9B87F5]" />
               Expected CSV & Tally Header Specification
             </h2>
-            <p className="text-xs text-slate-300 mt-1">
+            <p className="text-xs text-[#6B6580] mt-1">
               Verify column names in your CSV or Excel file before uploading. Autodetects TAN/PAN numbers, GST, and TDS amounts.
             </p>
           </div>
@@ -191,14 +191,14 @@ export default function UploadPanel({ onUploadSuccess }) {
           <div className="flex items-center gap-2">
             <button
               onClick={() => downloadSampleCsv('26as')}
-              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer shadow-sm"
+              className="inline-flex items-center gap-1.5 bg-[#9B87F5] hover:bg-[#8572E0] text-white text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer shadow-sm"
             >
               <Download className="w-3.5 h-3.5" />
               26AS Sample CSV
             </button>
             <button
               onClick={() => downloadSampleCsv('tally')}
-              className="inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer shadow-sm"
+              className="inline-flex items-center gap-1.5 bg-[#9B87F5] hover:bg-[#8572E0] text-white text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer shadow-sm"
             >
               <Download className="w-3.5 h-3.5" />
               Tally Sample CSV
@@ -209,57 +209,57 @@ export default function UploadPanel({ onUploadSuccess }) {
         {/* Expected Header Badges */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
           {/* 26AS Headers */}
-          <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700/50 space-y-2">
-            <div className="flex items-center justify-between text-xs font-bold text-indigo-300 uppercase tracking-wider">
+          <div className="bg-[#E8E4FF]/40 p-4 rounded-xl border border-[#E9E4FA] space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold text-[#9B87F5] uppercase tracking-wider">
               <span>Form 26AS CSV Headers</span>
-              <span className="text-[10px] bg-indigo-900/60 text-indigo-300 px-2 py-0.5 rounded border border-indigo-700/50">Govt Portal Format</span>
+              <span className="text-[10px] bg-[#9B87F5]/20 text-[#9B87F5] px-2 py-0.5 rounded border border-[#9B87F5]/30 font-extrabold">Govt Portal Format</span>
             </div>
             <div className="flex flex-wrap gap-1.5 text-xs font-mono">
-              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Name of the Company</span>
-              <span className="bg-slate-900 text-amber-300 px-2 py-1 rounded border border-slate-700 font-bold">TAN No *</span>
-              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Invoice Amount</span>
-              <span className="bg-slate-900 text-amber-300 px-2 py-1 rounded border border-slate-700 font-bold">TDS Amt *</span>
+              <span className="bg-white text-[#1F1B2E] px-2 py-1 rounded border border-[#E9E4FA] font-semibold">Name of the Company</span>
+              <span className="bg-white text-[#FBBF77] px-2 py-1 rounded border border-[#E9E4FA] font-bold">TAN No *</span>
+              <span className="bg-white text-[#1F1B2E] px-2 py-1 rounded border border-[#E9E4FA] font-semibold">Invoice Amount</span>
+              <span className="bg-white text-[#FBBF77] px-2 py-1 rounded border border-[#E9E4FA] font-bold">TDS Amt *</span>
             </div>
           </div>
 
           {/* Tally Headers */}
-          <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700/50 space-y-2">
-            <div className="flex items-center justify-between text-xs font-bold text-teal-300 uppercase tracking-wider">
+          <div className="bg-[#E8E4FF]/40 p-4 rounded-xl border border-[#E9E4FA] space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold text-[#9B87F5] uppercase tracking-wider">
               <span>Tally Ledger CSV Headers</span>
-              <span className="text-[10px] bg-teal-900/60 text-teal-300 px-2 py-0.5 rounded border border-teal-700/50">Accountant Sheet</span>
+              <span className="text-[10px] bg-[#9B87F5]/20 text-[#9B87F5] px-2 py-0.5 rounded border border-[#9B87F5]/30 font-extrabold">Accountant Sheet</span>
             </div>
             <div className="flex flex-wrap gap-1.5 text-xs font-mono">
-              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Name of the Company</span>
-              <span className="bg-slate-900 text-emerald-400 px-2 py-1 rounded border border-slate-700 font-semibold">GST Num (pull)</span>
-              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">PAN No</span>
-              <span className="bg-slate-900 text-slate-200 px-2 py-1 rounded border border-slate-700 font-semibold">Gross Total</span>
-              <span className="bg-slate-900 text-amber-300 px-2 py-1 rounded border border-slate-700 font-bold">TDS Amt *</span>
+              <span className="bg-white text-[#1F1B2E] px-2 py-1 rounded border border-[#E9E4FA] font-semibold">Name of the Company</span>
+              <span className="bg-white text-[#4ADE80] px-2 py-1 rounded border border-[#E9E4FA] font-semibold">GST Num (pull)</span>
+              <span className="bg-white text-[#1F1B2E] px-2 py-1 rounded border border-[#E9E4FA] font-semibold">PAN No</span>
+              <span className="bg-white text-[#1F1B2E] px-2 py-1 rounded border border-[#E9E4FA] font-semibold">Gross Total</span>
+              <span className="bg-white text-[#FBBF77] px-2 py-1 rounded border border-[#E9E4FA] font-bold">TDS Amt *</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* SECTION 2: Bright Upload Cards with Import Mode Selector */}
+      {/* SECTION 2: White Upload Cards with Import Mode Selector */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
         {/* 26AS File Upload Card */}
-        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm transition hover:shadow-md space-y-4">
-          <div className="flex justify-between items-start border-b border-gray-100 pb-3">
+        <div className="bg-white p-6 rounded-2xl border border-[#E9E4FA] shadow-xs space-y-4">
+          <div className="flex justify-between items-start border-b border-[#E9E4FA] pb-3">
             <div>
-              <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-indigo-600 animate-pulse"></span>
+              <h3 className="text-lg font-black text-[#1F1B2E] flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-[#9B87F5]"></span>
                 Form 26AS Import (Govt CSV)
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5 font-medium">Upload Form 26AS portal export to parse client TDS deductions</p>
+              <p className="text-xs text-[#6B6580] mt-0.5 font-medium">Upload Form 26AS portal export to parse client TDS deductions</p>
             </div>
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-indigo-50 text-indigo-700 border border-indigo-200">
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-[#C084FC]/20 text-[#9B87F5] border border-[#C084FC]/30">
               Step 1
             </span>
           </div>
 
           {/* Import Action Mode Choice */}
-          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5">
-            <label className="block text-[10px] font-black text-slate-700 uppercase tracking-wider">
+          <div className="bg-[#E8E4FF]/40 p-3 rounded-xl border border-[#E9E4FA] space-y-1.5">
+            <label className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider">
               Import Option / Cleaning Strategy:
             </label>
             <div className="grid grid-cols-2 gap-2 text-xs">
@@ -267,8 +267,8 @@ export default function UploadPanel({ onUploadSuccess }) {
                 onClick={() => setAs26ImportMode('update')}
                 className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer font-bold transition select-none ${
                   as26ImportMode === 'update'
-                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    ? 'bg-[#9B87F5] text-white border-[#9B87F5] shadow-xs'
+                    : 'bg-white text-[#1F1B2E] border-[#E9E4FA] hover:bg-[#E8E4FF]'
                 }`}
               >
                 <RefreshCcw className="w-3.5 h-3.5" />
@@ -279,8 +279,8 @@ export default function UploadPanel({ onUploadSuccess }) {
                 onClick={() => setAs26ImportMode('clean')}
                 className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer font-bold transition select-none ${
                   as26ImportMode === 'clean'
-                    ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    ? 'bg-[#FBBF77] text-[#1F1B2E] border-[#FBBF77] shadow-xs'
+                    : 'bg-white text-[#1F1B2E] border-[#E9E4FA] hover:bg-[#E8E4FF]'
                 }`}
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -291,12 +291,12 @@ export default function UploadPanel({ onUploadSuccess }) {
 
           {/* File Picker */}
           <div className="flex flex-col gap-3">
-            <label className="flex flex-col items-center justify-center border-2 border-dashed border-indigo-200 rounded-xl p-5 cursor-pointer bg-slate-50/50 hover:bg-indigo-50/30 hover:border-indigo-400 transition group">
-              <Upload className="w-7 h-7 text-indigo-500 group-hover:scale-110 transition mb-1.5" />
-              <span className="text-xs font-bold text-slate-800 group-hover:text-indigo-600">
+            <label className="flex flex-col items-center justify-center border-2 border-dashed border-[#B4A7F5] rounded-xl p-5 cursor-pointer bg-white hover:bg-[#E8E4FF]/50 transition group">
+              <Upload className="w-7 h-7 text-[#9B87F5] group-hover:scale-110 transition mb-1.5" />
+              <span className="text-xs font-bold text-[#1F1B2E] group-hover:text-[#9B87F5]">
                 {as26File ? as26File.name : 'Click to select or drag 26AS CSV file'}
               </span>
-              <span className="text-[10px] text-slate-400 mt-0.5 font-semibold">Supports .csv, .xlsx, .xls</span>
+              <span className="text-[10px] text-[#6B6580] mt-0.5 font-semibold">Supports .csv, .xlsx, .xls</span>
               <input 
                 type="file" 
                 accept=".csv,.xlsx,.xls" 
@@ -314,7 +314,7 @@ export default function UploadPanel({ onUploadSuccess }) {
               <button
                 onClick={handleUpload26as}
                 disabled={as26Status.loading}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs disabled:opacity-50 cursor-pointer shadow-sm"
+                className="w-full bg-[#9B87F5] hover:bg-[#8572E0] text-white font-black py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs disabled:opacity-50 cursor-pointer shadow-xs"
               >
                 {as26Status.loading ? (
                   <>
@@ -331,15 +331,15 @@ export default function UploadPanel({ onUploadSuccess }) {
             )}
 
             {as26Status.error && (
-              <div className="bg-red-50 text-red-700 p-3 rounded-xl flex items-start gap-2 text-xs border border-red-200 font-semibold">
+              <div className="bg-[#F87A9E]/15 text-[#F87A9E] p-3 rounded-xl flex items-start gap-2 text-xs border border-[#F87A9E]/30 font-semibold">
                 <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 <span>{as26Status.error}</span>
               </div>
             )}
 
             {as26Status.success && (
-              <div className="bg-emerald-50 text-emerald-800 p-3 rounded-xl flex items-start gap-2 text-xs border border-emerald-200 font-bold">
-                <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0 text-emerald-600" />
+              <div className="bg-[#4ADE80]/15 text-[#2E8B57] p-3 rounded-xl flex items-start gap-2 text-xs border border-[#4ADE80]/30 font-bold">
+                <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 <span>{as26Status.success}</span>
               </div>
             )}
@@ -347,23 +347,23 @@ export default function UploadPanel({ onUploadSuccess }) {
         </div>
 
         {/* Tally Sheet Upload Card */}
-        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm transition hover:shadow-md space-y-4">
-          <div className="flex justify-between items-start border-b border-gray-100 pb-3">
+        <div className="bg-white p-6 rounded-2xl border border-[#E9E4FA] shadow-xs space-y-4">
+          <div className="flex justify-between items-start border-b border-[#E9E4FA] pb-3">
             <div>
-              <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-teal-600 animate-pulse"></span>
+              <h3 className="text-lg font-black text-[#1F1B2E] flex items-center gap-2">
+                <span className="w-3 h-3 rounded-full bg-[#9B87F5]"></span>
                 Tally Ledger Import (Accountant CSV)
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5 font-medium">Upload Tally CSV ledgers to reconcile accountant entries</p>
+              <p className="text-xs text-[#6B6580] mt-0.5 font-medium">Upload Tally CSV ledgers to reconcile accountant entries</p>
             </div>
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-teal-50 text-teal-700 border border-teal-200">
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-[#C084FC]/20 text-[#9B87F5] border border-[#C084FC]/30">
               Step 2
             </span>
           </div>
 
           {/* Import Action Mode Choice */}
-          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5">
-            <label className="block text-[10px] font-black text-slate-700 uppercase tracking-wider">
+          <div className="bg-[#E8E4FF]/40 p-3 rounded-xl border border-[#E9E4FA] space-y-1.5">
+            <label className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider">
               Import Option / Cleaning Strategy:
             </label>
             <div className="grid grid-cols-2 gap-2 text-xs">
@@ -371,8 +371,8 @@ export default function UploadPanel({ onUploadSuccess }) {
                 onClick={() => setTallyImportMode('update')}
                 className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer font-bold transition select-none ${
                   tallyImportMode === 'update'
-                    ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    ? 'bg-[#9B87F5] text-white border-[#9B87F5] shadow-xs'
+                    : 'bg-white text-[#1F1B2E] border-[#E9E4FA] hover:bg-[#E8E4FF]'
                 }`}
               >
                 <RefreshCcw className="w-3.5 h-3.5" />
@@ -383,8 +383,8 @@ export default function UploadPanel({ onUploadSuccess }) {
                 onClick={() => setTallyImportMode('clean')}
                 className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer font-bold transition select-none ${
                   tallyImportMode === 'clean'
-                    ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    ? 'bg-[#FBBF77] text-[#1F1B2E] border-[#FBBF77] shadow-xs'
+                    : 'bg-white text-[#1F1B2E] border-[#E9E4FA] hover:bg-[#E8E4FF]'
                 }`}
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -395,12 +395,12 @@ export default function UploadPanel({ onUploadSuccess }) {
 
           {/* File Picker */}
           <div className="flex flex-col gap-3">
-            <label className="flex flex-col items-center justify-center border-2 border-dashed border-teal-200 rounded-xl p-5 cursor-pointer bg-slate-50/50 hover:bg-teal-50/30 hover:border-teal-400 transition group">
-              <Upload className="w-7 h-7 text-teal-500 group-hover:scale-110 transition mb-1.5" />
-              <span className="text-xs font-bold text-slate-800 group-hover:text-teal-600">
+            <label className="flex flex-col items-center justify-center border-2 border-dashed border-[#B4A7F5] rounded-xl p-5 cursor-pointer bg-white hover:bg-[#E8E4FF]/50 transition group">
+              <Upload className="w-7 h-7 text-[#9B87F5] group-hover:scale-110 transition mb-1.5" />
+              <span className="text-xs font-bold text-[#1F1B2E] group-hover:text-[#9B87F5]">
                 {tallyFile ? tallyFile.name : 'Click to select or drag Tally CSV file'}
               </span>
-              <span className="text-[10px] text-slate-400 mt-0.5 font-semibold">Supports .csv, .xlsx, .xls</span>
+              <span className="text-[10px] text-[#6B6580] mt-0.5 font-semibold">Supports .csv, .xlsx, .xls</span>
               <input 
                 type="file" 
                 accept=".csv,.xlsx,.xls" 
@@ -418,7 +418,7 @@ export default function UploadPanel({ onUploadSuccess }) {
               <button
                 onClick={handleUploadTally}
                 disabled={tallyStatus.loading}
-                className="w-full bg-teal-600 hover:bg-teal-700 text-white font-black py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs disabled:opacity-50 cursor-pointer shadow-sm"
+                className="w-full bg-[#9B87F5] hover:bg-[#8572E0] text-white font-black py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 text-xs disabled:opacity-50 cursor-pointer shadow-xs"
               >
                 {tallyStatus.loading ? (
                   <>
@@ -435,15 +435,15 @@ export default function UploadPanel({ onUploadSuccess }) {
             )}
 
             {tallyStatus.error && (
-              <div className="bg-red-50 text-red-700 p-3 rounded-xl flex items-start gap-2 text-xs border border-red-200 font-semibold">
+              <div className="bg-[#F87A9E]/15 text-[#F87A9E] p-3 rounded-xl flex items-start gap-2 text-xs border border-[#F87A9E]/30 font-semibold">
                 <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 <span>{tallyStatus.error}</span>
               </div>
             )}
 
             {tallyStatus.success && (
-              <div className="bg-emerald-50 text-emerald-800 p-3 rounded-xl flex items-start gap-2 text-xs border border-emerald-200 font-bold">
-                <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0 text-emerald-600" />
+              <div className="bg-[#4ADE80]/15 text-[#2E8B57] p-3 rounded-xl flex items-start gap-2 text-xs border border-[#4ADE80]/30 font-bold">
+                <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 <span>{tallyStatus.success}</span>
               </div>
             )}
@@ -452,13 +452,13 @@ export default function UploadPanel({ onUploadSuccess }) {
       </div>
 
       {/* SECTION 3: Dedicated Data Cleanup & Purge Tools Bar */}
-      <div className="bg-[#3E4A5C] rounded-2xl p-5 text-white border border-[#323D4D] shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
+      <div className="bg-white rounded-2xl p-5 text-[#1F1B2E] border border-[#E9E4FA] shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
         <div>
-          <h4 className="text-sm font-black text-white flex items-center gap-2">
-            <Trash2 className="w-4 h-4 text-[#8FA3BF]" />
+          <h4 className="text-sm font-black text-[#1F1B2E] flex items-center gap-2">
+            <Trash2 className="w-4 h-4 text-[#9B87F5]" />
             Data Cleanup & Dataset Management Tools
           </h4>
-          <p className="text-xs text-[#DCE2E8] mt-0.5">
+          <p className="text-xs text-[#6B6580] mt-0.5">
             Manually purge previous upload batches or clear existing entries to start a clean reconciliation cycle.
           </p>
         </div>
@@ -467,28 +467,28 @@ export default function UploadPanel({ onUploadSuccess }) {
           <button
             onClick={() => handlePurge('26as')}
             disabled={purgeStatus.loading}
-            className="bg-[#4F5D73] hover:bg-[#5C6C85] text-white text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer border border-[#6E8CA0]"
+            className="bg-[#E8E4FF] hover:bg-[#E9E4FA] text-[#9B87F5] text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer border border-[#E9E4FA]"
           >
             Clear 26AS Data
           </button>
           <button
             onClick={() => handlePurge('tally')}
             disabled={purgeStatus.loading}
-            className="bg-[#4F5D73] hover:bg-[#5C6C85] text-white text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer border border-[#6E8CA0]"
+            className="bg-[#E8E4FF] hover:bg-[#E9E4FA] text-[#9B87F5] text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer border border-[#E9E4FA]"
           >
             Clear Tally Data
           </button>
           <button
             onClick={() => handlePurge('followups')}
             disabled={purgeStatus.loading}
-            className="bg-[#4F5D73] hover:bg-[#5C6C85] text-white text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer border border-[#8FA3BF]"
+            className="bg-[#E8E4FF] hover:bg-[#E9E4FA] text-[#9B87F5] text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer border border-[#E9E4FA]"
           >
             Clear Follow-up Logs Only
           </button>
           <button
             onClick={() => handlePurge('all')}
             disabled={purgeStatus.loading}
-            className="bg-[#C08585] hover:bg-[#B07474] text-white text-xs font-black px-3 py-2 rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1.5"
+            className="bg-[#F87A9E] hover:bg-[#E11D48] text-white text-xs font-black px-3 py-2 rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1.5"
           >
             <Trash2 className="w-3.5 h-3.5" />
             Purge All Uploaded Datasets
