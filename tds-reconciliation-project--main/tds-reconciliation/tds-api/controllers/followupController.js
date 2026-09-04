@@ -288,31 +288,7 @@ export const updateFollowup = async (req, res) => {
     const [result] = await db.execute(updateQuery, params);
 
     if (!result || result.affectedRows === 0) {
-      // Auto-insert fallback if editing an unpersisted or sample record
-      const insertQuery = `
-        INSERT INTO tds_followups 
-        (tan_no, company_name, contact_person, department, contact_number, method, status, notes, followup_date, next_followup_date, created_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `;
-      const [insertRes] = await db.execute(insertQuery, [
-        String(tanNo || 'N/A').toUpperCase().trim(),
-        companyName ? companyName.trim() : 'Company Name',
-        contactPerson ? contactPerson.trim() : null,
-        department ? department.trim() : null,
-        contactNumber ? contactNumber.trim() : null,
-        method || 'Call',
-        status || 'Call Tomorrow',
-        notes ? notes.trim() : null,
-        followupDate || new Date().toISOString().split('T')[0],
-        nextFollowupDate || null,
-        createdBy
-      ]);
-
-      return res.json({
-        success: true,
-        message: 'Follow-up created successfully',
-        id: insertRes.insertId
-      });
+      return res.status(404).json({ success: false, error: 'Follow-up log record not found' });
     }
 
     res.json({
