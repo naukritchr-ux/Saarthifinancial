@@ -1414,7 +1414,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
     clearPurgedFlag();
     console.log('🔄 Syncing live Saarthi 360 client & legal master data...');
 
-    const fetchEndpointWithFallback = async (pathStr, ms = 2000) => {
+    const fetchEndpointWithFallback = async (pathStr, ms = 8000) => {
       const candidates = [
         `https://api.sarthi360.in/${pathStr}`,
         `https://api.saarthi360.in/${pathStr}`

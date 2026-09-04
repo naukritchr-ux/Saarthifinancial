@@ -261,28 +261,28 @@ export default function ReconciliationTable({
                                   <span className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider mb-0.5">HR / Contact Person</span>
                                   <span className="font-black text-[#1F1B2E] text-xs flex items-center gap-1">
                                     <User className="w-3 h-3 text-[#9B87F5]" />
-                                    {row.contactPersonName || 'HR & Accounts Lead'}
+                                    {row.contactPersonName || 'Not Available'}
                                   </span>
                                 </div>
                                 <div>
                                   <span className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider mb-0.5">Designation</span>
                                   <span className="font-bold text-[#1F1B2E] text-xs flex items-center gap-1">
                                     <Briefcase className="w-3 h-3 text-[#9B87F5]" />
-                                    {row.designation || 'Finance Lead'}
+                                    {row.designation || 'N/A'}
                                   </span>
                                 </div>
                                 <div>
                                   <span className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider mb-0.5">Direct Phone / Mobile</span>
                                   <span className="font-mono font-black text-[#1F1B2E] text-xs flex items-center gap-1">
                                     <Phone className="w-3 h-3 text-[#4ADE80]" />
-                                    {row.contactNumber || '+91 98201 54321'}
+                                    {row.contactNumber || 'N/A'}
                                   </span>
                                 </div>
                                 <div>
                                   <span className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider mb-0.5">Email / Manager</span>
                                   <span className="font-semibold text-[#1F1B2E] text-xs flex items-center gap-1 truncate">
                                     <Mail className="w-3 h-3 text-[#9B87F5]" />
-                                    {row.emailId || (row.teamleader || 'accounts@saarthi360.in')}
+                                    {row.emailId || (row.teamleader || 'N/A')}
                                   </span>
                                 </div>
                               </div>
