@@ -912,8 +912,8 @@ export const getReconciliationReport = async (req, res) => {
 
     // 3-Way Source Coverage Filter
     const hasSaarthiSQL = '(COALESCE(tr.books_tds, 0) > 0)';
-    const hasTallySQL = '(COALESCE(tr.tally_tds, 0) > 0 OR tr.tally_batch_id IS NOT NULL)';
-    const has26asSQL = '(COALESCE(tr.as26_tds, 0) > 0 OR tr.as26_batch_id IS NOT NULL)';
+    const hasTallySQL = '(COALESCE(tr.tally_tds, 0) > 0)';
+    const has26asSQL = '(COALESCE(tr.as26_tds, 0) > 0)';
 
     if (coverageFilter === '3/3' || coverageFilter === '3 of 3' || coverageFilter === 'all_3' || coverageFilter === 'all3' || coverageFilter === 'All 3 (Saarthi + Tally + 26AS)') {
       whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL} AND ${has26asSQL})`);
@@ -996,8 +996,8 @@ export const getReconciliationReport = async (req, res) => {
       const as26 = parseFloat(r.as26Tds || 0);
       const saarthi = parseFloat(r.booksTds || 0);
 
-      const has26as = Boolean(r.as26BatchId || as26 > 0);
-      const hasTally = Boolean(r.tallyBatchId || tally > 0);
+      const has26as = Boolean(as26 > 0);
+      const hasTally = Boolean(tally > 0);
       const hasSaarthi = Boolean(saarthi > 0);
 
       const sources = [];
