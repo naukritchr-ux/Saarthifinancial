@@ -861,65 +861,7 @@ export const getReconciliationReport = async (req, res) => {
     const limitNum = Math.max(1, Math.min(1000, parseInt(limit) || 20));
     const offset = (pageNum - 1) * limitNum;
 
-    if (process.env.DB_TYPE === 'mysql') {
-      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN contact_person_name VARCHAR(100)'); } catch (e) {}
-      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN contact_number VARCHAR(50)'); } catch (e) {}
-      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN email_id VARCHAR(255)'); } catch (e) {}
-      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN designation VARCHAR(100)'); } catch (e) {}
-      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN teamleader VARCHAR(100)'); } catch (e) {}
 
-      try {
-        await db.execute(`
-          UPDATE tds_dues 
-          SET 
-            contact_person_name = CASE tan_no
-              WHEN 'MUMC07443C' THEN 'Rajesh Sharma'
-              WHEN 'MUMS24133L' THEN 'Vikram Mehta'
-              WHEN 'DELR05056C' THEN 'Amit Verma'
-              WHEN 'MUMS23964D' THEN 'Neha Gupta'
-              WHEN 'AFUFS6079L' THEN 'Siddharth Rao'
-              WHEN 'ABDCS3892F' THEN 'Kavita Shah'
-              WHEN 'AADCN0664M' THEN 'Praveen Nambiar'
-              WHEN 'PNEP11867C' THEN 'Deepak Kulkarni'
-              ELSE contact_person_name
-            END,
-            contact_number = CASE tan_no
-              WHEN 'MUMC07443C' THEN '+91 98201 54321'
-              WHEN 'MUMS24133L' THEN '+91 98210 98765'
-              WHEN 'DELR05056C' THEN '+91 98112 33445'
-              WHEN 'MUMS23964D' THEN '+91 98205 66778'
-              WHEN 'AFUFS6079L' THEN '+91 98450 11223'
-              WHEN 'ABDCS3892F' THEN '+91 98203 44556'
-              WHEN 'AADCN0664M' THEN '+91 98800 77889'
-              WHEN 'PNEP11867C' THEN '+91 98220 33441'
-              ELSE contact_number
-            END,
-            designation = CASE tan_no
-              WHEN 'MUMC07443C' THEN 'VP Finance & Operations'
-              WHEN 'MUMS24133L' THEN 'Director Accounts'
-              WHEN 'DELR05056C' THEN 'Finance Controller'
-              WHEN 'MUMS23964D' THEN 'Head of Taxation'
-              WHEN 'AFUFS6079L' THEN 'Chief Financial Officer'
-              WHEN 'ABDCS3892F' THEN 'HR Lead & Payroll'
-              WHEN 'AADCN0664M' THEN 'VP Finance'
-              WHEN 'PNEP11867C' THEN 'Accounts Manager'
-              ELSE designation
-            END,
-            email_id = CASE tan_no
-              WHEN 'MUMC07443C' THEN 'rajesh.sharma@stulz.in'
-              WHEN 'MUMS24133L' THEN 'vikram.mehta@ashapura.com'
-              WHEN 'DELR05056C' THEN 'amit.verma@rishacontrol.com'
-              WHEN 'MUMS23964D' THEN 'neha.gupta@spectrumscan.in'
-              WHEN 'AFUFS6079L' THEN 'siddharth@smartbeam.ai'
-              WHEN 'ABDCS3892F' THEN 'kavita@simplehomely.com'
-              WHEN 'AADCN0664M' THEN 'praveen@nambiarbuilders.com'
-              WHEN 'PNEP11867C' THEN 'deepak@puneestock.com'
-              ELSE email_id
-            END
-          WHERE contact_number IS NULL OR contact_number = '' OR contact_number = '+91 98200 12345'
-        `);
-      } catch (e) {}
-    }
 
     let whereClauses = [];
     const queryParams = [];
@@ -927,7 +869,7 @@ export const getReconciliationReport = async (req, res) => {
     const activeFy = fy || financialYear;
     if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
       const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push('(COALESCE(NULLIF(TRIM(tr.financial_year), ""), NULLIF(TRIM(d.financial_year), ""), "FY 2024-25") LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)');
+      whereClauses.push("(COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
       const fyWild = `%${cleanFy}%`;
       queryParams.push(fyWild, fyWild, fyWild);
     }
@@ -938,13 +880,15 @@ export const getReconciliationReport = async (req, res) => {
       queryParams.push(wild, wild);
     }
 
+    const primaryTdsSQL = '(CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END)';
+
     if (overallStatus && overallStatus !== 'All') {
       if (overallStatus === 'Match' || overallStatus === 'All Matched') {
-        whereClauses.push("(tr.overall_status = 'All Matched' OR ABS((COALESCE(tr.books_tds, tr.tally_tds, 0)) - COALESCE(tr.as26_tds, 0)) <= 1.0)");
+        whereClauses.push(`(tr.is_manually_edited = 1 OR tr.overall_status = 'All Matched' OR ABS(${primaryTdsSQL} - COALESCE(tr.as26_tds, 0)) <= 1.0)`);
       } else if (overallStatus === 'Less Paid' || overallStatus === 'Less') {
-        whereClauses.push('(COALESCE(tr.books_tds, tr.tally_tds, 0) < COALESCE(tr.as26_tds, 0) - 1.0)');
+        whereClauses.push(`(tr.is_manually_edited = 0 AND ${primaryTdsSQL} < COALESCE(tr.as26_tds, 0) - 1.0)`);
       } else if (overallStatus === 'Excess') {
-        whereClauses.push('(COALESCE(tr.books_tds, tr.tally_tds, 0) > COALESCE(tr.as26_tds, 0) + 1.0)');
+        whereClauses.push(`(tr.is_manually_edited = 0 AND ${primaryTdsSQL} > COALESCE(tr.as26_tds, 0) + 1.0)`);
       } else {
         whereClauses.push('tr.overall_status = ?');
         queryParams.push(overallStatus);
@@ -1560,47 +1504,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
       });
     });
 
-    if (clientMasters.length === 0) {
-      const parseCsvDisk = (filename) => {
-        try {
-          const filePath = path.resolve('data', filename);
-          if (!fs.existsSync(filePath)) return [];
-          const content = fs.readFileSync(filePath, 'utf8');
-          const lines = content.split(/\r?\n/).filter(l => l.trim() !== '');
-          if (lines.length <= 1) return [];
-          const headers = lines[0].split(',').map(h => h.replace(/^["']|["']$/g, '').trim());
-          const results = [];
-          for (let i = 1; i < lines.length; i++) {
-            const vals = lines[i].split(',').map(v => v.replace(/^["']|["']$/g, '').trim());
-            const obj = {};
-            headers.forEach((h, idx) => { obj[h] = vals[idx] || ''; });
-            results.push(obj);
-          }
-          return results;
-        } catch (e) {
-          return [];
-        }
-      };
 
-      const diskClients = [...parseCsvDisk('clients_info.csv'), ...parseCsvDisk('legals_info.csv')];
-      diskClients.forEach(item => {
-        const cName = String(item.companyName || item.partyName || '').trim();
-        if (!cName) return;
-        clientMasters.push({
-          saarthi_client_id: null,
-          company_name: cName,
-          normalized_name: normalizeCompanyName(cName),
-          gst_no: String(item.gstNum || item.gstNo || '').trim() || null,
-          pan_no: String(item.panNo || '').trim() || null,
-          tan_no: String(item.tanNo || '').trim().toUpperCase() || null,
-          contact_person_name: String(item.contactPersonName || '').trim() || null,
-          designation: String(item.designation || '').trim() || null,
-          contact_number: String(item.contactPhoneNumber || '').trim() || null,
-          email_id: String(item.contactEmailId || '').trim() || null,
-          teamleader: String(item.teamLeader || '').trim() || null
-        });
-      });
-    }
 
     let updated = 0;
 

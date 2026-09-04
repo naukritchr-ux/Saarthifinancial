@@ -15,7 +15,7 @@ const DEFAULT_ROWS = [
 ];
 
 export default function TdsReconciliation() {
-  const { fyFilter, refreshKey } = useApp();
+  const { fyFilter, setFyFilter, refreshKey } = useApp();
 
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
