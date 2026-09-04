@@ -182,16 +182,37 @@ export default function FollowUp() {
     }
   };
 
+  const filteredEntries = items.filter(row => {
+    if (selectedStatuses.length > 0 && !selectedStatuses.includes(row.status)) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase().trim();
+      const matchCompany = (row.companyName || '').toLowerCase().includes(q);
+      const matchTan = (row.tanNo || '').toLowerCase().includes(q);
+      const matchPerson = (row.contactPerson || '').toLowerCase().includes(q);
+      const matchDept = (row.department || '').toLowerCase().includes(q);
+      if (!matchCompany && !matchTan && !matchPerson && !matchDept) return false;
+    }
+    if (responseFilter === 'responded') {
+      if (!['TDS Paid', 'Form Received', 'Check & Revert', 'Mail Reply'].includes(row.status)) return false;
+    } else if (responseFilter === 'no_response') {
+      if (!['Call Not Picked Up', 'Call Tomorrow', 'HR Left', 'Mailed'].includes(row.status)) return false;
+    }
+    if (dueOnly) {
+      if (['TDS Paid', 'Form Received'].includes(row.status)) return false;
+    }
+    return true;
+  });
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#F6F8FA] p-6 rounded-2xl border border-[#DCE2E8] shadow-2xs">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <PhoneCall className="w-7 h-7 text-amber-500" />
+          <h1 className="text-2xl font-black text-[#3A4048] tracking-tight flex items-center gap-2">
+            <PhoneCall className="w-7 h-7 text-[#6E8CA0]" />
             Client TDS Follow-up Tracker
           </h1>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-[#7A8794] mt-1">
             Log client outreach, track missing Form 26AS certificate statuses, and manage follow-up schedules.
           </p>
         </div>
@@ -201,16 +222,16 @@ export default function FollowUp() {
             onClick={() => {
               loadData();
             }}
-            className="inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3.5 py-2.5 rounded-xl transition text-xs border border-slate-300 cursor-pointer shadow-sm"
+            className="inline-flex items-center gap-2 bg-[#EEF1F4] hover:bg-[#DCE2E8] text-[#3A4048] font-bold px-3.5 py-2.5 rounded-xl transition text-xs border border-[#DCE2E8] cursor-pointer shadow-2xs"
             title="Refresh follow-up entries from database"
           >
-            <RefreshCw className="w-3.5 h-3.5 text-slate-600" />
+            <RefreshCw className="w-3.5 h-3.5 text-[#7A8794]" />
             Refresh Data
           </button>
 
           <button
             onClick={() => { setItemToEdit(null); setShowAddModal(true); }}
-            className="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-4 py-2.5 rounded-xl transition text-xs shadow cursor-pointer"
+            className="inline-flex items-center gap-2 bg-[#6E8CA0] hover:bg-[#5B788C] text-white font-bold px-4 py-2.5 rounded-xl transition text-xs shadow-2xs cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             + Log New Follow-up
@@ -218,54 +239,52 @@ export default function FollowUp() {
         </div>
       </div>
 
-      {/* Row 1: Stat Cards (7 Cards) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 text-xs">
-        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-sm text-center">
-          <div className="font-bold text-gray-400 text-[10px] uppercase">Total Followed Up</div>
-          <div className="text-2xl font-black text-slate-900 mt-1">{summary.totalFollowedUp}</div>
+      {/* Row 1: Summary Statistics Cards (6 Columns) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="bg-[#F6F8FA] p-3.5 rounded-2xl border border-[#DCE2E8] shadow-2xs text-center">
+          <div className="font-bold text-[#3A4048] text-[10px] uppercase">Total Logs</div>
+          <div className="text-2xl font-black text-[#3A4048] mt-1">{summary.totalFollowedUp}</div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-sm text-center">
-          <div className="font-bold text-amber-600 text-[10px] uppercase">Pending Response</div>
-          <div className="text-2xl font-black text-amber-600 mt-1">{summary.pendingResponse}</div>
+        <div className="bg-[#F6F8FA] p-3.5 rounded-2xl border border-[#DCE2E8] shadow-2xs text-center">
+          <div className="font-bold text-[#C9A778] text-[10px] uppercase">Pending Call</div>
+          <div className="text-2xl font-black text-[#735427] mt-1">{summary.pendingResponse}</div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-sm text-center">
-          <div className="font-bold text-red-600 text-[10px] uppercase">Call Not Picked Up</div>
-          <div className="text-2xl font-black text-red-600 mt-1">{summary.callNotPickedUp}</div>
+        <div className="bg-[#F6F8FA] p-3.5 rounded-2xl border border-[#DCE2E8] shadow-2xs text-center">
+          <div className="font-bold text-[#C08585] text-[10px] uppercase">Call Not Picked Up</div>
+          <div className="text-2xl font-black text-[#703535] mt-1">{summary.callNotPickedUp}</div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-sm text-center">
-          <div className="font-bold text-blue-600 text-[10px] uppercase">Check & Revert</div>
-          <div className="text-2xl font-black text-blue-600 mt-1">{summary.checkAndRevert}</div>
+        <div className="bg-[#F6F8FA] p-3.5 rounded-2xl border border-[#DCE2E8] shadow-2xs text-center">
+          <div className="font-bold text-[#6E8CA0] text-[10px] uppercase">Check & Revert</div>
+          <div className="text-2xl font-black text-[#6E8CA0] mt-1">{summary.checkAndRevert}</div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-sm text-center">
-          <div className="font-bold text-emerald-600 text-[10px] uppercase">TDS Paid</div>
-          <div className="text-2xl font-black text-emerald-600 mt-1">{summary.tdsPaid}</div>
+        <div className="bg-[#F6F8FA] p-3.5 rounded-2xl border border-[#DCE2E8] shadow-2xs text-center">
+          <div className="font-bold text-[#7FA88A] text-[10px] uppercase">TDS Paid</div>
+          <div className="text-2xl font-black text-[#3D6348] mt-1">{summary.tdsPaid}</div>
         </div>
 
-        <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-sm text-center">
-          <div className="font-bold text-indigo-600 text-[10px] uppercase">Form Received</div>
-          <div className="text-2xl font-black text-indigo-600 mt-1">{summary.formReceived}</div>
-        </div>
-
-        <div className="bg-white p-3.5 rounded-2xl border border-amber-200 bg-amber-50/20 shadow-sm text-center">
-          <div className="font-bold text-amber-700 text-[10px] uppercase">Due for Follow-up</div>
-          <div className="text-2xl font-black text-amber-700 mt-1 flex items-center justify-center gap-1">
-            <span>{summary.dueForFollowup}</span>
-            {summary.dueForFollowup > 0 && <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>}
-          </div>
+        <div className="bg-[#F6F8FA] p-3.5 rounded-2xl border border-[#DCE2E8] shadow-2xs text-center">
+          <div className="font-bold text-[#8FA3BF] text-[10px] uppercase">Form Received</div>
+          <div className="text-2xl font-black text-[#3E4A5C] mt-1">{summary.formReceived}</div>
         </div>
       </div>
 
-      {/* Row 2: Status Filter Checkboxes */}
-      <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm space-y-3">
-        <div className="flex items-center gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider">
-          <Filter className="w-3.5 h-3.5 text-amber-500" />
-          Filter by Status:
+      {/* Filter Row: Status Badges Toggle */}
+      <div className="bg-[#F6F8FA] p-4 rounded-2xl border border-[#DCE2E8] shadow-2xs space-y-3">
+        <div className="flex justify-between items-center">
+          <span className="text-xs font-extrabold text-[#7A8794] uppercase tracking-wider flex items-center gap-1.5">
+            <Filter className="w-3.5 h-3.5 text-[#6E8CA0]" />
+            Filter Log Entries by Status
+          </span>
+          <span className="text-xs text-[#7A8794] font-semibold">
+            Showing <strong className="text-[#3A4048]">{filteredEntries.length}</strong> of {items.length} logs
+          </span>
         </div>
-        <div className="flex flex-wrap gap-2 text-xs">
+
+        <div className="flex flex-wrap gap-2 items-center">
           {statusOptions.map((st) => {
             const isChecked = selectedStatuses.includes(st);
             return (
@@ -274,8 +293,8 @@ export default function FollowUp() {
                 onClick={() => handleStatusToggle(st)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold cursor-pointer transition select-none ${
                   isChecked
-                    ? 'bg-slate-900 text-amber-400 border-slate-900 shadow-sm'
-                    : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                    ? 'bg-[#6E8CA0] text-white border-[#6E8CA0] shadow-xs'
+                    : 'bg-white text-[#3A4048] border-[#DCE2E8] hover:bg-[#EEF1F4]'
                 }`}
               >
                 <input

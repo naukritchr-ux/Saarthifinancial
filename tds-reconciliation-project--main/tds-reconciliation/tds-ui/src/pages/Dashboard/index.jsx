@@ -81,19 +81,19 @@ export default function Dashboard() {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 p-6 rounded-2xl text-white shadow-md border border-slate-800">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#3E4A5C] p-6 rounded-2xl text-white shadow-sm border border-[#323D4D]">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-2">
-            <BarChart3 className="w-7 h-7 text-amber-500" />
+            <BarChart3 className="w-7 h-7 text-[#8FA3BF]" />
             Executive TDS Reconciliation Dashboard
           </h1>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-[#DCE2E8] mt-1">
             Real-time aggregate snapshot of Form 26AS, Tally Ledgers, and Saarthi 360 Books ({fyFilter})
           </p>
         </div>
         <button
           onClick={fetchSummary}
-          className="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-amber-400 font-semibold px-4 py-2 rounded-xl transition text-xs border border-slate-700 cursor-pointer"
+          className="inline-flex items-center gap-2 bg-[#6E8CA0] hover:bg-[#5B788C] text-white font-semibold px-4 py-2 rounded-xl transition text-xs border border-[#8FA3BF]/30 cursor-pointer shadow-2xs"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh Data
@@ -103,59 +103,59 @@ export default function Dashboard() {
       {/* Row 1: Totals Stat Cards (4 Columns) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Tally TDS */}
-        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between">
+        <div className="bg-[#F6F8FA] p-5 rounded-2xl border border-[#DCE2E8] shadow-2xs flex items-center justify-between">
           <div>
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Total TDS — Tally</div>
-            <div className="text-2xl font-black text-gray-900 mt-1">{formatCurrency(data.totals.tally)}</div>
-            <div className="text-[11px] text-teal-600 font-medium mt-1">Accountant Ledger Export</div>
+            <div className="text-xs font-bold text-[#7A8794] uppercase tracking-wider">Total TDS — Tally</div>
+            <div className="text-2xl font-black text-[#3A4048] mt-1">{formatCurrency(data.totals.tally)}</div>
+            <div className="text-[11px] text-[#6E8CA0] font-medium mt-1">Accountant Ledger Export</div>
           </div>
-          <div className="p-3 bg-teal-50 text-teal-600 rounded-xl">
+          <div className="p-3 bg-[#6E8CA0]/15 text-[#6E8CA0] rounded-xl">
             <DollarSign className="w-6 h-6" />
           </div>
         </div>
 
         {/* 26AS TDS */}
-        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between">
+        <div className="bg-[#F6F8FA] p-5 rounded-2xl border border-[#DCE2E8] shadow-2xs flex items-center justify-between">
           <div>
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Total TDS — 26AS</div>
-            <div className="text-2xl font-black text-indigo-900 mt-1">{formatCurrency(data.totals.as26)}</div>
-            <div className="text-[11px] text-indigo-600 font-medium mt-1">Government Portal Traces</div>
+            <div className="text-xs font-bold text-[#7A8794] uppercase tracking-wider">Total TDS — 26AS</div>
+            <div className="text-2xl font-black text-[#3A4048] mt-1">{formatCurrency(data.totals.as26)}</div>
+            <div className="text-[11px] text-[#8FA3BF] font-medium mt-1">Government Portal Traces</div>
           </div>
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+          <div className="p-3 bg-[#8FA3BF]/20 text-[#3E4A5C] rounded-xl">
             <DollarSign className="w-6 h-6" />
           </div>
         </div>
 
         {/* Saarthi 360 TDS */}
-        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between">
+        <div className="bg-[#F6F8FA] p-5 rounded-2xl border border-[#DCE2E8] shadow-2xs flex items-center justify-between">
           <div>
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Total TDS — Saarthi 360</div>
-            <div className="text-2xl font-black text-purple-900 mt-1">{formatCurrency(data.totals.saarthi)}</div>
-            <div className="text-[11px] text-purple-600 font-medium mt-1">CRM Platform Invoices</div>
+            <div className="text-xs font-bold text-[#7A8794] uppercase tracking-wider">Total TDS — Saarthi 360</div>
+            <div className="text-2xl font-black text-[#3A4048] mt-1">{formatCurrency(data.totals.saarthi)}</div>
+            <div className="text-[11px] text-[#6E8CA0] font-medium mt-1">CRM Platform Invoices</div>
           </div>
-          <div className="p-3 bg-purple-50 text-purple-600 rounded-xl">
+          <div className="p-3 bg-[#6E8CA0]/15 text-[#6E8CA0] rounded-xl">
             <DollarSign className="w-6 h-6" />
           </div>
         </div>
 
         {/* Net Gap */}
-        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between">
+        <div className="bg-[#F6F8FA] p-5 rounded-2xl border border-[#DCE2E8] shadow-2xs flex items-center justify-between">
           <div>
-            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Net Tally − 26AS</div>
-            <div className={`text-2xl font-black mt-1 ${data.totals.netGap < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+            <div className="text-xs font-bold text-[#7A8794] uppercase tracking-wider">Net Tally − 26AS</div>
+            <div className={`text-2xl font-black mt-1 ${data.totals.netGap < 0 ? 'text-[#C08585]' : 'text-[#7FA88A]'}`}>
               {formatCurrency(data.totals.netGap)}
             </div>
-            <div className="text-[11px] text-gray-500 font-medium mt-1 flex items-center gap-1">
+            <div className="text-[11px] text-[#7A8794] font-medium mt-1 flex items-center gap-1">
               {data.totals.netGap < 0 ? (
-                <span className="text-red-500 font-bold flex items-center gap-0.5">
+                <span className="text-[#C08585] font-bold flex items-center gap-0.5">
                   <AlertTriangle className="w-3 h-3" /> 26AS Exceeds Tally
                 </span>
               ) : (
-                <span className="text-emerald-600 font-bold">Matched / Surplus</span>
+                <span className="text-[#7FA88A] font-bold">Matched / Surplus</span>
               )}
             </div>
           </div>
-          <div className={`p-3 rounded-xl ${data.totals.netGap < 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+          <div className={`p-3 rounded-xl ${data.totals.netGap < 0 ? 'bg-[#C08585]/15 text-[#C08585]' : 'bg-[#7FA88A]/15 text-[#7FA88A]'}`}>
             <TrendingDown className="w-6 h-6" />
           </div>
         </div>
@@ -163,90 +163,90 @@ export default function Dashboard() {
 
       {/* Row 2: Source Coverage (4 Cards) */}
       <div>
-        <h2 className="text-xs font-extrabold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-          <Layers className="w-4 h-4 text-amber-500" />
+        <h2 className="text-xs font-extrabold text-[#7A8794] uppercase tracking-wider mb-3 flex items-center gap-2">
+          <Layers className="w-4 h-4 text-[#6E8CA0]" />
           Source Coverage Distribution
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="bg-white p-4 rounded-2xl border border-emerald-100 bg-emerald-50/20 shadow-sm text-center">
-            <div className="text-3xl font-black text-emerald-600">{data.sourceCoverage.threeOfThree}</div>
-            <div className="text-xs font-bold text-gray-700 mt-1">3 of 3 Match</div>
-            <div className="text-[10px] text-gray-400 mt-0.5">Tally + 26AS + Saarthi</div>
+          <div className="bg-[#F6F8FA] p-4 rounded-2xl border border-[#7FA88A]/40 bg-[#7FA88A]/10 shadow-2xs text-center">
+            <div className="text-3xl font-black text-[#3D6348]">{data.sourceCoverage.threeOfThree}</div>
+            <div className="text-xs font-bold text-[#3A4048] mt-1">3 of 3 Match</div>
+            <div className="text-[10px] text-[#7A8794] mt-0.5">Tally + 26AS + Saarthi</div>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-blue-100 bg-blue-50/20 shadow-sm text-center">
-            <div className="text-3xl font-black text-blue-600">{data.sourceCoverage.twoOfThree}</div>
-            <div className="text-xs font-bold text-gray-700 mt-1">2 of 3 Match</div>
-            <div className="text-[10px] text-gray-400 mt-0.5">Any 2 sources present</div>
+          <div className="bg-[#F6F8FA] p-4 rounded-2xl border border-[#6E8CA0]/40 bg-[#6E8CA0]/10 shadow-2xs text-center">
+            <div className="text-3xl font-black text-[#6E8CA0]">{data.sourceCoverage.twoOfThree}</div>
+            <div className="text-xs font-bold text-[#3A4048] mt-1">2 of 3 Match</div>
+            <div className="text-[10px] text-[#7A8794] mt-0.5">Any 2 sources present</div>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-orange-100 bg-orange-50/20 shadow-sm text-center">
-            <div className="text-3xl font-black text-orange-600">{data.sourceCoverage.oneOfThree}</div>
-            <div className="text-xs font-bold text-gray-700 mt-1">1 of 3 Match</div>
-            <div className="text-[10px] text-gray-400 mt-0.5">Single source record</div>
+          <div className="bg-[#F6F8FA] p-4 rounded-2xl border border-[#C9A778]/40 bg-[#C9A778]/10 shadow-2xs text-center">
+            <div className="text-3xl font-black text-[#735427]">{data.sourceCoverage.oneOfThree}</div>
+            <div className="text-xs font-bold text-[#3A4048] mt-1">1 of 3 Match</div>
+            <div className="text-[10px] text-[#7A8794] mt-0.5">Single source record</div>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-red-100 bg-red-50/20 shadow-sm text-center">
-            <div className="text-3xl font-black text-red-600">{data.sourceCoverage.noMatch}</div>
-            <div className="text-xs font-bold text-gray-700 mt-1">No Match</div>
-            <div className="text-[10px] text-gray-400 mt-0.5">Unlinked or 0 values</div>
+          <div className="bg-[#F6F8FA] p-4 rounded-2xl border border-[#C08585]/40 bg-[#C08585]/10 shadow-2xs text-center">
+            <div className="text-3xl font-black text-[#703535]">{data.sourceCoverage.noMatch}</div>
+            <div className="text-xs font-bold text-[#3A4048] mt-1">No Match</div>
+            <div className="text-[10px] text-[#7A8794] mt-0.5">Unlinked or 0 values</div>
           </div>
         </div>
       </div>
 
       {/* Row 3: Financial Reconciliation Status (6 Cards) */}
       <div>
-        <h2 className="text-xs font-extrabold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 text-indigo-500" />
+        <h2 className="text-xs font-extrabold text-[#7A8794] uppercase tracking-wider mb-3 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-[#8FA3BF]" />
           Financial Reconciliation Breakdown
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
-            <div className="flex justify-between items-center text-xs font-bold text-gray-500">
+          <div className="bg-[#F6F8FA] p-4 rounded-2xl border border-[#DCE2E8] shadow-2xs">
+            <div className="flex justify-between items-center text-xs font-bold text-[#7A8794]">
               <span>Match</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span className="w-2 h-2 rounded-full bg-[#7FA88A]"></span>
             </div>
-            <div className="text-2xl font-black text-emerald-600 mt-2">{data.financialStatus.match}</div>
+            <div className="text-2xl font-black text-[#3D6348] mt-2">{data.financialStatus.match}</div>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
-            <div className="flex justify-between items-center text-xs font-bold text-gray-500">
+          <div className="bg-[#F6F8FA] p-4 rounded-2xl border border-[#DCE2E8] shadow-2xs">
+            <div className="flex justify-between items-center text-xs font-bold text-[#7A8794]">
               <span>Less</span>
-              <span className="w-2 h-2 rounded-full bg-red-500"></span>
+              <span className="w-2 h-2 rounded-full bg-[#C08585]"></span>
             </div>
-            <div className="text-2xl font-black text-red-600 mt-2">{data.financialStatus.less}</div>
+            <div className="text-2xl font-black text-[#703535] mt-2">{data.financialStatus.less}</div>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
-            <div className="flex justify-between items-center text-xs font-bold text-gray-500">
+          <div className="bg-[#F6F8FA] p-4 rounded-2xl border border-[#DCE2E8] shadow-2xs">
+            <div className="flex justify-between items-center text-xs font-bold text-[#7A8794]">
               <span>Excess</span>
-              <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+              <span className="w-2 h-2 rounded-full bg-[#C9A778]"></span>
             </div>
-            <div className="text-2xl font-black text-orange-600 mt-2">{data.financialStatus.excess}</div>
+            <div className="text-2xl font-black text-[#735427] mt-2">{data.financialStatus.excess}</div>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
-            <div className="flex justify-between items-center text-xs font-bold text-gray-500">
+          <div className="bg-[#F6F8FA] p-4 rounded-2xl border border-[#DCE2E8] shadow-2xs">
+            <div className="flex justify-between items-center text-xs font-bold text-[#7A8794]">
               <span>Missing</span>
-              <span className="w-2 h-2 rounded-full bg-gray-400"></span>
+              <span className="w-2 h-2 rounded-full bg-[#7A8794]"></span>
             </div>
-            <div className="text-2xl font-black text-gray-600 mt-2">{data.financialStatus.missing}</div>
+            <div className="text-2xl font-black text-[#7A8794] mt-2">{data.financialStatus.missing}</div>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
-            <div className="flex justify-between items-center text-xs font-bold text-gray-500">
+          <div className="bg-[#F6F8FA] p-4 rounded-2xl border border-[#DCE2E8] shadow-2xs">
+            <div className="flex justify-between items-center text-xs font-bold text-[#7A8794]">
               <span>Pending Review</span>
-              <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+              <span className="w-2 h-2 rounded-full bg-[#C9A778]"></span>
             </div>
-            <div className="text-2xl font-black text-amber-600 mt-2">{data.financialStatus.pendingReview}</div>
+            <div className="text-2xl font-black text-[#735427] mt-2">{data.financialStatus.pendingReview}</div>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
-            <div className="flex justify-between items-center text-xs font-bold text-gray-500">
+          <div className="bg-[#F6F8FA] p-4 rounded-2xl border border-[#DCE2E8] shadow-2xs">
+            <div className="flex justify-between items-center text-xs font-bold text-[#7A8794]">
               <span>Resolved</span>
-              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+              <span className="w-2 h-2 rounded-full bg-[#6E8CA0]"></span>
             </div>
-            <div className="text-2xl font-black text-blue-600 mt-2">{data.financialStatus.resolved}</div>
+            <div className="text-2xl font-black text-[#6E8CA0] mt-2">{data.financialStatus.resolved}</div>
           </div>
         </div>
       </div>

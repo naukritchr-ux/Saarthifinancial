@@ -1470,10 +1470,10 @@ export const syncSaarthiLiveApi = async (req, res) => {
     clearPurgedFlag();
     console.log('🔄 Syncing live Saarthi 360 client & legal master data...');
 
-    const fetchEndpointWithFallback = async (path, ms = 10000) => {
+    const fetchEndpointWithFallback = async (pathStr, ms = 2000) => {
       const candidates = [
-        `https://api.sarthi360.in/${path}`,
-        `https://api.saarthi360.in/${path}`
+        `https://api.sarthi360.in/${pathStr}`,
+        `https://api.saarthi360.in/${pathStr}`
       ];
 
       for (const url of candidates) {
@@ -1586,15 +1586,16 @@ export const syncSaarthiLiveApi = async (req, res) => {
         }
       };
 
-      const diskClients = parseCsvDisk('clients_info.csv');
+      const diskClients = [...parseCsvDisk('clients_info.csv'), ...parseCsvDisk('legals_info.csv')];
       diskClients.forEach(item => {
-        if (!item || !item.companyName) return;
+        const cName = String(item.companyName || item.partyName || '').trim();
+        if (!cName) return;
         clientMasters.push({
           saarthi_client_id: null,
-          company_name: String(item.companyName || '').trim(),
-          normalized_name: normalizeCompanyName(item.companyName || ''),
-          gst_no: null,
-          pan_no: null,
+          company_name: cName,
+          normalized_name: normalizeCompanyName(cName),
+          gst_no: String(item.gstNum || item.gstNo || '').trim() || null,
+          pan_no: String(item.panNo || '').trim() || null,
           tan_no: String(item.tanNo || '').trim().toUpperCase() || null,
           contact_person_name: String(item.contactPersonName || '').trim() || null,
           designation: String(item.designation || '').trim() || null,
