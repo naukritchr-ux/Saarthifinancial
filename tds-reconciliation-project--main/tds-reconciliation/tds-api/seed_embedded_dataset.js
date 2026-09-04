@@ -35,6 +35,14 @@ export async function ensureTablesExist() {
     try { await db.execute('ALTER TABLE tds_dues ADD COLUMN email_id VARCHAR(255)'); } catch (err) {}
     try { await db.execute('ALTER TABLE tds_dues ADD COLUMN teamleader VARCHAR(100)'); } catch (err) {}
     try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year VARCHAR(50)'); } catch (err) {}
+
+    try {
+      await db.execute("UPDATE tds_dues SET contact_person_name = NULL WHERE contact_person_name IN ('HR & Accounts Lead', 'Unknown', 'HR Manager')");
+      await db.execute("UPDATE tds_dues SET designation = NULL WHERE designation IN ('Finance Lead', 'Finance Manager', 'Accounts Lead')");
+      await db.execute("UPDATE tds_dues SET contact_number = NULL WHERE contact_number LIKE '%98201%54321%'");
+      await db.execute("UPDATE tds_dues SET email_id = NULL WHERE email_id LIKE '%saarthi360.in%' OR email_id LIKE '%example.com%'");
+    } catch (e) {}
+
     return;
   }
   try {
