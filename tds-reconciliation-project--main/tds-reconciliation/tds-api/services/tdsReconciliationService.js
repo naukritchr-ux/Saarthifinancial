@@ -71,6 +71,16 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
 
     let processedCount = 0;
 
+    const [recRows] = await db.query(
+      'SELECT id, tds_dues_id, UPPER(TRIM(tan_no)) as tan_no, is_manually_edited, as26_batch_id, tally_batch_id FROM tds_reconciliation_results'
+    );
+    const existingByDuesId = new Map();
+    const existingByTan = new Map();
+    (recRows || []).forEach(r => {
+      if (r.tds_dues_id) existingByDuesId.set(r.tds_dues_id, r);
+      if (r.tan_no) existingByTan.set(r.tan_no, r);
+    });
+
     for (const due of duesList) {
       try {
         const dueId = due.id ? parseInt(due.id) : 0;
@@ -78,21 +88,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
         const booksTds = due.tds;
 
         // Check existing reconciliation record by tds_dues_id or tan_no
-        let existing = null;
-        if (dueId > 0) {
-          const [existingRows] = await db.execute(
-            'SELECT id, is_manually_edited, as26_batch_id, tally_batch_id FROM tds_reconciliation_results WHERE tds_dues_id = ?',
-            [dueId]
-          );
-          existing = (existingRows && existingRows.length > 0) ? existingRows[0] : null;
-        }
-        if (!existing && tan) {
-          const [existingRows] = await db.execute(
-            'SELECT id, is_manually_edited, as26_batch_id, tally_batch_id FROM tds_reconciliation_results WHERE UPPER(TRIM(tan_no)) = ?',
-            [tan.toUpperCase()]
-          );
-          existing = (existingRows && existingRows.length > 0) ? existingRows[0] : null;
-        }
+        let existing = (dueId > 0 ? existingByDuesId.get(dueId) : null) || (tan ? existingByTan.get(tan.toUpperCase()) : null);
 
         if (existing && existing.is_manually_edited) {
           continue; // Respect manual overrides

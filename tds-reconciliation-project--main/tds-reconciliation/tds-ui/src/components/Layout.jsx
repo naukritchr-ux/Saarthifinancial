@@ -48,25 +48,25 @@ export default function Layout({ children }) {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
-      {/* Top Navbar - Crisp Light Theme */}
-      <header className="bg-white text-slate-900 shadow-xs border-b border-slate-200 sticky top-0 z-40">
+    <div className="min-h-screen bg-[#EEF1F4] flex flex-col font-sans text-[#3A4048]">
+      {/* Top Navbar - Muted Slate Blue Theme */}
+      <header className="bg-[#3E4A5C] text-white shadow-sm border-b border-[#323D4D] sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             
             {/* Left: Brand Logo & Title */}
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-amber-500 text-slate-950 font-black text-xl flex items-center justify-center shadow-sm">
+              <div className="w-9 h-9 rounded-xl bg-[#6E8CA0] text-white font-black text-xl flex items-center justify-center shadow-xs">
                 T
               </div>
               <div>
-                <div className="text-lg font-black tracking-tight text-slate-900 flex items-center gap-2">
+                <div className="text-lg font-black tracking-tight text-white flex items-center gap-2">
                   TDS Reconcile
-                  <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                  <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-[#6E8CA0] text-white border border-[#8FA3BF]/40">
                     Pro
                   </span>
                 </div>
-                <div className="text-[11px] text-slate-500 font-semibold">
+                <div className="text-[11px] text-[#DCE2E8] font-medium">
                   Reconciliation & Follow-up Workbench
                 </div>
               </div>
@@ -78,7 +78,7 @@ export default function Layout({ children }) {
               <button
                 onClick={handleSyncSaarthi}
                 disabled={syncing}
-                className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-extrabold px-3.5 py-1.5 rounded-xl text-xs transition cursor-pointer shadow-xs"
+                className="flex items-center gap-1.5 bg-[#6E8CA0] hover:bg-[#5B788C] disabled:opacity-50 text-white font-extrabold px-3.5 py-1.5 rounded-xl text-xs transition cursor-pointer shadow-xs"
                 title="Fetch & sync live client invoices from Saarthi 360 APIs"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
@@ -86,41 +86,41 @@ export default function Layout({ children }) {
               </button>
 
               {/* FY Selector */}
-              <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
-                <span className="text-amber-600 font-extrabold">FY:</span>
+              <div className="flex items-center gap-1.5 bg-[#2E3745] border border-[#526075] rounded-xl px-3 py-1.5 text-xs font-bold text-white">
+                <span className="text-[#8FA3BF] font-extrabold">FY:</span>
                 <select
                   value={fyFilter}
                   onChange={(e) => setFyFilter(e.target.value)}
-                  className="bg-transparent text-slate-900 font-bold focus:outline-none cursor-pointer"
+                  className="bg-transparent text-white font-bold focus:outline-none cursor-pointer"
                 >
-                  <option value="All Financial Years" className="bg-white text-slate-900">All Financial Years</option>
-                  <option value="FY 2026-27" className="bg-white text-slate-900">FY 2026-27</option>
-                  <option value="FY 2025-26" className="bg-white text-slate-900">FY 2025-26</option>
-                  <option value="FY 2024-25" className="bg-white text-slate-900">FY 2024-25</option>
-                  <option value="FY 2023-24" className="bg-white text-slate-900">FY 2023-24</option>
-                  <option value="FY 2022-23" className="bg-white text-slate-900">FY 2022-23</option>
-                  <option value="FY 2021-22" className="bg-white text-slate-900">FY 2021-22</option>
+                  <option value="All Financial Years" className="bg-[#3E4A5C] text-white">All Financial Years</option>
+                  <option value="FY 2026-27" className="bg-[#3E4A5C] text-white">FY 2026-27</option>
+                  <option value="FY 2025-26" className="bg-[#3E4A5C] text-white">FY 2025-26</option>
+                  <option value="FY 2024-25" className="bg-[#3E4A5C] text-white">FY 2024-25</option>
+                  <option value="FY 2023-24" className="bg-[#3E4A5C] text-white">FY 2023-24</option>
+                  <option value="FY 2022-23" className="bg-[#3E4A5C] text-white">FY 2022-23</option>
+                  <option value="FY 2021-22" className="bg-[#3E4A5C] text-white">FY 2021-22</option>
                 </select>
               </div>
 
               {/* Role Selector */}
-              <div className="hidden sm:flex items-center gap-1.5 bg-slate-100 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
-                <Users className="w-3.5 h-3.5 text-slate-500" />
+              <div className="hidden sm:flex items-center gap-1.5 bg-[#2E3745] border border-[#526075] rounded-xl px-3 py-1.5 text-xs font-bold text-white">
+                <Users className="w-3.5 h-3.5 text-[#8FA3BF]" />
                 <select
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
-                  className="bg-transparent text-slate-900 font-bold focus:outline-none cursor-pointer"
+                  className="bg-transparent text-white font-bold focus:outline-none cursor-pointer"
                 >
-                  <option value="Accounts Lead" className="bg-white text-slate-900">Accounts Lead</option>
-                  <option value="Finance Manager" className="bg-white text-slate-900">Finance Manager</option>
-                  <option value="Auditor" className="bg-white text-slate-900">Auditor</option>
+                  <option value="Accounts Lead" className="bg-[#3E4A5C] text-white">Accounts Lead</option>
+                  <option value="Finance Manager" className="bg-[#3E4A5C] text-white">Finance Manager</option>
+                  <option value="Auditor" className="bg-[#3E4A5C] text-white">Auditor</option>
                 </select>
               </div>
 
               {/* Return to Finance App Link */}
               <button 
                 onClick={() => window.open('https://saarthifinancial-7zni.vercel.app', '_self')} 
-                className="flex items-center gap-1.5 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-xl px-3 py-1.5 text-xs font-bold text-teal-800 transition cursor-pointer shadow-2xs"
+                className="flex items-center gap-1.5 bg-[#4F5D73] hover:bg-[#5C6C85] border border-[#6E8CA0] rounded-xl px-3 py-1.5 text-xs font-bold text-white transition cursor-pointer shadow-2xs"
                 title="Switch to Saarthi Financial App"
               >
                 <span>Finance App ↗</span>
@@ -129,7 +129,7 @@ export default function Layout({ children }) {
               {/* Settings Gear */}
               <button 
                 onClick={() => alert('Settings & Preference Config')} 
-                className="p-2 text-slate-400 hover:text-amber-400 hover:bg-slate-900 rounded-xl transition cursor-pointer"
+                className="p-2 text-[#DCE2E8] hover:text-white hover:bg-[#4F5D73] rounded-xl transition cursor-pointer"
                 title="System Settings"
               >
                 <Settings className="w-5 h-5" />
@@ -139,7 +139,7 @@ export default function Layout({ children }) {
           </div>
 
           {/* Nav Tabs Row */}
-          <nav className="flex space-x-1 overflow-x-auto pt-1 pb-0 border-t border-slate-900 scrollbar-none">
+          <nav className="flex space-x-1 overflow-x-auto pt-1 pb-0 border-t border-[#4F5D73]/60 scrollbar-none">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activePage === item.id;
@@ -149,14 +149,14 @@ export default function Layout({ children }) {
                   onClick={() => navigateTo(item.id)}
                   className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold transition-all border-b-2 whitespace-nowrap cursor-pointer rounded-t-lg ${
                     isActive
-                      ? 'border-amber-500 text-amber-400 bg-slate-900/60 shadow-inner'
-                      : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
+                      ? 'border-[#8FA3BF] text-white bg-[#6E8CA0] shadow-xs'
+                      : 'border-transparent text-[#DCE2E8] hover:text-white hover:bg-[#4F5D73]/40'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-amber-500' : 'text-slate-400'}`} />
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-[#8FA3BF]'}`} />
                   <span>{item.label}</span>
                   {item.badge > 0 && (
-                    <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-black bg-amber-500 text-slate-950 shadow-sm animate-pulse">
+                    <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-black bg-[#8FA3BF] text-[#2E3745] shadow-xs">
                       {item.badge}
                     </span>
                   )}
@@ -173,10 +173,10 @@ export default function Layout({ children }) {
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 py-4 text-center text-xs text-gray-500">
+      <footer className="bg-[#F6F8FA] border-t border-[#DCE2E8] py-4 text-center text-xs text-[#7A8794]">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-2">
           <span>Saarthi360 TDS Reconciliation Workbench &copy; 2026</span>
-          <div className="flex gap-4 text-gray-400">
+          <div className="flex gap-4 text-[#7A8794]">
             <span>Security Compliant</span>
             <span>•</span>
             <span>3-Way Engine Active</span>
@@ -185,71 +185,71 @@ export default function Layout({ children }) {
       </footer>
       {/* Sync Completion Modal Popup */}
       {syncResultModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative text-white animate-in fade-in zoom-in duration-200">
+        <div className="fixed inset-0 bg-[#3E4A5C]/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-[#F6F8FA] border border-[#DCE2E8] rounded-3xl max-w-md w-full p-6 shadow-2xl relative text-[#3A4048] animate-in fade-in zoom-in duration-200">
             <button
               onClick={() => setSyncResultModal(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+              className="absolute top-4 right-4 text-[#7A8794] hover:text-[#3A4048] p-1 rounded-lg hover:bg-[#EEF1F4] transition cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-400 flex items-center justify-center text-2xl shadow-inner">
+              <div className="w-12 h-12 rounded-2xl bg-[#6E8CA0]/20 border border-[#6E8CA0]/30 text-[#6E8CA0] flex items-center justify-center text-2xl shadow-inner">
                 🚀
               </div>
               <div>
-                <h3 className="text-lg font-black tracking-tight text-white">
+                <h3 className="text-lg font-black tracking-tight text-[#3A4048]">
                   Saarthi 360 Sync Completed!
                 </h3>
-                <p className="text-xs text-slate-400 font-medium">
+                <p className="text-xs text-[#7A8794] font-medium">
                   Live client master data & billing invoices updated.
                 </p>
               </div>
             </div>
 
-            <div className="bg-slate-950/60 border border-slate-800/80 rounded-2xl p-4 space-y-3 mb-6">
-              <div className="flex items-center justify-between text-xs border-b border-slate-800/60 pb-2">
-                <span className="text-slate-400 flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-amber-400" />
+            <div className="bg-white border border-[#DCE2E8] rounded-2xl p-4 space-y-3 mb-6 shadow-2xs">
+              <div className="flex items-center justify-between text-xs border-b border-[#DCE2E8] pb-2">
+                <span className="text-[#7A8794] flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-[#6E8CA0]" />
                   Client Masters Found:
                 </span>
-                <span className="font-bold text-amber-400">
+                <span className="font-bold text-[#6E8CA0]">
                   {syncResultModal.stats?.clientsFound?.toLocaleString() || '15,700+'}
                 </span>
               </div>
-              <div className="flex items-center justify-between text-xs border-b border-slate-800/60 pb-2">
-                <span className="text-slate-400 flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-teal-400" />
+              <div className="flex items-center justify-between text-xs border-b border-[#DCE2E8] pb-2">
+                <span className="text-[#7A8794] flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-[#8FA3BF]" />
                   Invoices Processed:
                 </span>
-                <span className="font-bold text-teal-400">
+                <span className="font-bold text-[#8FA3BF]">
                   {syncResultModal.stats?.invoicesProcessed?.toLocaleString() || '4,400+'}
                 </span>
               </div>
-              <div className="flex items-center justify-between text-xs border-b border-slate-800/60 pb-2">
-                <span className="text-slate-400 flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5 text-indigo-400" />
+              <div className="flex items-center justify-between text-xs border-b border-[#DCE2E8] pb-2">
+                <span className="text-[#7A8794] flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-[#6E8CA0]" />
                   New Records Inserted:
                 </span>
-                <span className="font-bold text-indigo-400">
+                <span className="font-bold text-[#6E8CA0]">
                   {syncResultModal.stats?.inserted || 0}
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs pb-1">
-                <span className="text-slate-400 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-[#7A8794] flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#7FA88A]" />
                   Existing Dues Refreshed:
                 </span>
-                <span className="font-bold text-emerald-400">
+                <span className="font-bold text-[#7FA88A]">
                   {syncResultModal.stats?.updated || 0}
                 </span>
               </div>
             </div>
 
-            <div className="bg-emerald-950/30 border border-emerald-500/20 rounded-xl p-3 mb-6 flex items-start gap-2.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-              <p className="text-xs text-emerald-300 font-medium leading-relaxed">
+            <div className="bg-[#7FA88A]/15 border border-[#7FA88A]/30 rounded-xl p-3 mb-6 flex items-start gap-2.5">
+              <CheckCircle2 className="w-4 h-4 text-[#3D6348] shrink-0 mt-0.5" />
+              <p className="text-xs text-[#3D6348] font-medium leading-relaxed">
                 ✓ HR contact person names, designations, mobile numbers, email addresses, and Team Leaders refreshed.
               </p>
             </div>
@@ -260,13 +260,13 @@ export default function Layout({ children }) {
                   setSyncResultModal(null);
                   navigateTo('reconciliation');
                 }}
-                className="flex-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black py-2.5 px-4 rounded-xl text-xs transition cursor-pointer shadow-lg shadow-amber-500/20 text-center"
+                className="flex-1 bg-[#6E8CA0] hover:bg-[#5B788C] text-white font-black py-2.5 px-4 rounded-xl text-xs transition cursor-pointer shadow-md text-center"
               >
                 Go to Reconciliation Table ➔
               </button>
               <button
                 onClick={() => setSyncResultModal(null)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 px-4 rounded-xl text-xs transition cursor-pointer"
+                className="bg-[#EEF1F4] hover:bg-[#DCE2E8] text-[#3A4048] font-bold py-2.5 px-4 rounded-xl text-xs transition cursor-pointer border border-[#DCE2E8]"
               >
                 Close
               </button>

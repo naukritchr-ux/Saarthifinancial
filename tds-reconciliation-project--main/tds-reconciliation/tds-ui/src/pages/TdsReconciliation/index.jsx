@@ -174,7 +174,7 @@ export default function TdsReconciliation() {
             </div>
             <button
               type="submit"
-              className="bg-slate-800 hover:bg-slate-900 text-white font-extrabold py-2 px-4 rounded-xl transition text-xs cursor-pointer shadow-xs"
+              className="bg-[#6E8CA0] hover:bg-[#5B788C] text-white font-extrabold py-2 px-4 rounded-xl transition text-xs cursor-pointer shadow-2xs"
             >
               Search
             </button>
@@ -183,7 +183,7 @@ export default function TdsReconciliation() {
           {/* CSV Export Button */}
           <button
             onClick={handleCsvExport}
-            className="w-full md:w-auto inline-flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2 px-4 rounded-xl transition text-xs cursor-pointer shadow-sm"
+            className="w-full md:w-auto inline-flex items-center justify-center gap-2 bg-[#6E8CA0] hover:bg-[#5B788C] text-white font-bold py-2 px-4 rounded-xl transition text-xs cursor-pointer shadow-2xs"
           >
             <Download className="w-4 h-4" />
             Export Selected to CSV
@@ -191,19 +191,20 @@ export default function TdsReconciliation() {
         </div>
 
         {/* Filter & Sort Controls Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-3 border-t border-gray-100 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-3 border-t border-[#DCE2E8] text-xs">
           {/* Coverage Filter */}
           <div>
-            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+            <label className="block text-[10px] font-bold text-[#7A8794] uppercase tracking-wider mb-1">
               Source Coverage Filter
             </label>
             <select
               value={coverageFilter}
               onChange={(e) => { setPage(1); setCoverageFilter(e.target.value); }}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-amber-500"
+              className="w-full bg-[#F6F8FA] border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#6E8CA0]"
             >
               <option value="All">Coverage: All Coverage</option>
               <option value="3/3">All 3 (Saarthi + Tally + 26AS)</option>
+              <option value="2/3">Any 2 Sources (2/3)</option>
               <option value="saarthi_tally">Saarthi + Tally</option>
               <option value="tally_26as">Tally + 26AS</option>
               <option value="as26_saarthi">26AS + Saarthi</option>
@@ -213,13 +214,13 @@ export default function TdsReconciliation() {
 
           {/* Sort By */}
           <div>
-            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+            <label className="block text-[10px] font-bold text-[#7A8794] uppercase tracking-wider mb-1">
               Sort Order
             </label>
             <select
               value={sortBy}
               onChange={(e) => { setPage(1); setSortBy(e.target.value); }}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-amber-500"
+              className="w-full bg-[#F6F8FA] border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#6E8CA0]"
             >
               <option value="updated_at">Sort: Recently Updated</option>
               <option value="difference_desc">Sort: Difference (High → Low)</option>
@@ -229,15 +230,15 @@ export default function TdsReconciliation() {
       </div>
 
       {/* Status Tabs */}
-      <div className="flex gap-2 border-b border-gray-200 pb-px overflow-x-auto text-xs">
+      <div className="flex gap-2 border-b border-[#DCE2E8] pb-px overflow-x-auto text-xs">
         {['All', 'Match', 'Less Paid', 'Excess'].map((tab) => (
           <button
             key={tab}
             onClick={() => { setPage(1); setOverallStatus(tab); }}
             className={`px-4 py-2 font-bold border-b-2 transition cursor-pointer whitespace-nowrap ${
               overallStatus === tab
-                ? 'border-amber-500 text-slate-900 bg-amber-50/30'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
+                ? 'border-[#6E8CA0] text-[#6E8CA0] bg-[#6E8CA0]/10'
+                : 'border-transparent text-[#7A8794] hover:text-[#3A4048]'
             }`}
           >
             {tab}
@@ -269,71 +270,71 @@ export default function TdsReconciliation() {
       {activeViewRow && (
         <div
           onClick={() => setActiveViewRow(null)}
-          className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 z-50 overflow-y-auto"
+          className="fixed inset-0 bg-[#3E4A5C]/60 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 z-50 overflow-y-auto"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl shadow-2xl border border-slate-200/80 max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden my-auto animate-scale-up"
+            className="bg-[#F6F8FA] rounded-2xl shadow-2xl border border-[#DCE2E8] max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden my-auto animate-scale-up"
           >
-            <div className="flex-none flex justify-between items-center bg-slate-950 text-white px-6 py-4 border-b border-slate-800">
+            <div className="flex-none flex justify-between items-center bg-[#3E4A5C] text-white px-6 py-4 border-b border-[#323D4D]">
               <div>
-                <h3 className="font-bold text-base text-amber-400">Reconciliation Detail Record</h3>
-                <p className="text-xs text-slate-400 mt-0.5">{activeViewRow.companyName} ({activeViewRow.tanNo})</p>
+                <h3 className="font-bold text-base text-white">Reconciliation Detail Record</h3>
+                <p className="text-xs text-[#DCE2E8] mt-0.5">{activeViewRow.companyName} ({activeViewRow.tanNo})</p>
               </div>
               <button
                 type="button"
                 onClick={() => setActiveViewRow(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                className="p-1 rounded-lg text-[#DCE2E8] hover:text-white hover:bg-[#4F5D73] transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs custom-scrollbar">
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <div className="grid grid-cols-2 gap-4 bg-white p-4 rounded-xl border border-[#DCE2E8]">
                 <div>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase">Tally TDS</span>
-                  <div className="font-black text-teal-700 text-base">₹{Number(activeViewRow.tallyTds || 0).toLocaleString('en-IN')}</div>
+                  <span className="text-[10px] font-bold text-[#7A8794] uppercase">Tally TDS</span>
+                  <div className="font-black text-[#6E8CA0] text-base">₹{Number(activeViewRow.tallyTds || 0).toLocaleString('en-IN')}</div>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase">Form 26AS TDS</span>
-                  <div className="font-black text-indigo-700 text-base">₹{Number(activeViewRow.as26Tds || 0).toLocaleString('en-IN')}</div>
+                  <span className="text-[10px] font-bold text-[#7A8794] uppercase">Form 26AS TDS</span>
+                  <div className="font-black text-[#8FA3BF] text-base">₹{Number(activeViewRow.as26Tds || 0).toLocaleString('en-IN')}</div>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase">Saarthi 360 TDS</span>
-                  <div className="font-black text-purple-700 text-base">₹{Number(activeViewRow.saarthiTds || activeViewRow.booksTds || 0).toLocaleString('en-IN')}</div>
+                  <span className="text-[10px] font-bold text-[#7A8794] uppercase">Saarthi 360 TDS</span>
+                  <div className="font-black text-[#6E8CA0] text-base">₹{Number(activeViewRow.saarthiTds || activeViewRow.booksTds || 0).toLocaleString('en-IN')}</div>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase">Financial Status</span>
-                  <div className="font-extrabold text-slate-900 mt-1">{activeViewRow.financialStatus || activeViewRow.overallStatus}</div>
+                  <span className="text-[10px] font-bold text-[#7A8794] uppercase">Financial Status</span>
+                  <div className="font-extrabold text-[#3A4048] mt-1">{activeViewRow.financialStatus || activeViewRow.overallStatus}</div>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <div className="flex justify-between py-1 border-b border-gray-100">
-                  <span className="text-gray-500 font-semibold">Source Coverage:</span>
-                  <span className="font-bold">{activeViewRow.sourceCoverage?.label || '3/3 Match'}</span>
+                <div className="flex justify-between py-1 border-b border-[#DCE2E8]">
+                  <span className="text-[#7A8794] font-semibold">Source Coverage:</span>
+                  <span className="font-bold text-[#3A4048]">{activeViewRow.sourceCoverage?.label || '3/3 Match'}</span>
                 </div>
-                <div className="flex justify-between py-1 border-b border-gray-100">
-                  <span className="text-gray-500 font-semibold">Bill Number:</span>
-                  <span className="font-bold">{activeViewRow.billNumber || 'N/A'}</span>
+                <div className="flex justify-between py-1 border-b border-[#DCE2E8]">
+                  <span className="text-[#7A8794] font-semibold">Bill Number:</span>
+                  <span className="font-bold text-[#3A4048]">{activeViewRow.billNumber || 'N/A'}</span>
                 </div>
-                <div className="flex justify-between py-1 border-b border-gray-100">
-                  <span className="text-gray-500 font-semibold">Financial Year:</span>
-                  <span className="font-bold">{activeViewRow.financialYear || '2024-25'}</span>
+                <div className="flex justify-between py-1 border-b border-[#DCE2E8]">
+                  <span className="text-[#7A8794] font-semibold">Financial Year:</span>
+                  <span className="font-bold text-[#3A4048]">{activeViewRow.financialYear || '2024-25'}</span>
                 </div>
-                <div className="flex justify-between py-1 border-b border-gray-100">
-                  <span className="text-gray-500 font-semibold">Is Manually Overridden:</span>
-                  <span className="font-bold text-blue-600">{activeViewRow.isManuallyEdited ? 'Yes' : 'No'}</span>
+                <div className="flex justify-between py-1 border-b border-[#DCE2E8]">
+                  <span className="text-[#7A8794] font-semibold">Is Manually Overridden:</span>
+                  <span className="font-bold text-[#6E8CA0]">{activeViewRow.isManuallyEdited ? 'Yes' : 'No'}</span>
                 </div>
               </div>
             </div>
 
-            <div className="flex-none px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+            <div className="flex-none px-6 py-4 border-t border-[#DCE2E8] bg-[#F6F8FA] flex justify-end">
               <button
                 type="button"
                 onClick={() => setActiveViewRow(null)}
-                className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+                className="bg-[#6E8CA0] hover:bg-[#5B788C] text-white font-bold px-4 py-2 rounded-xl text-xs transition cursor-pointer"
               >
                 Close
               </button>

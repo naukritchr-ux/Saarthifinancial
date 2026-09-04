@@ -101,31 +101,31 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
         className="bg-white rounded-2xl shadow-2xl border border-slate-200/80 max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden my-auto animate-scale-up"
       >
         {/* Header - Crisp Light Theme */}
-        <div className="flex-none flex justify-between items-center bg-slate-100 text-slate-900 px-6 py-4 border-b border-slate-200">
+        <div className="flex-none flex justify-between items-center bg-[#3E4A5C] text-white px-6 py-4 border-b border-[#DCE2E8]">
           <div>
-            <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
-              <PhoneCall className="w-4 h-4 text-amber-600" />
+            <h3 className="font-bold text-base text-white flex items-center gap-2">
+              <PhoneCall className="w-4 h-4 text-[#8FA3BF]" />
               {isEditing ? 'Edit Client Follow-up Log' : 'Log New Client Follow-up'}
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-[#8FA3BF] mt-0.5">
               {isEditing ? `Entry #${itemToEdit.id}` : 'Record communication attempt and next action date'}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-200 transition cursor-pointer"
+            className="p-1 rounded-lg text-[#8FA3BF] hover:text-white hover:bg-slate-700 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Form Container */}
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden">
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col overflow-hidden bg-white">
           {/* Scrollable Form Body */}
           <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs custom-scrollbar">
             {error && (
-              <div className="bg-red-50 text-red-700 p-3 rounded-xl flex items-start gap-2 text-xs border border-red-200 font-semibold">
+              <div className="bg-[#C08585]/15 text-[#C08585] p-3 rounded-xl flex items-start gap-2 text-xs border border-[#C08585]/30 font-semibold">
                 <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                 <span>{error}</span>
               </div>
@@ -133,35 +133,35 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block font-bold text-slate-600 uppercase tracking-wider mb-1 text-[10px]">
-                  TAN Number <span className="text-red-500">*</span>
+                <label className="block font-bold text-[#7A8794] uppercase tracking-wider mb-1 text-[10px]">
+                  TAN Number <span className="text-[#C08585]">*</span>
                 </label>
                 <input
                   type="text"
                   value={tanNo}
                   onChange={(e) => setTanNo(e.target.value.toUpperCase())}
                   placeholder="e.g. MUMK12345F"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                  className="w-full bg-[#F6F8FA] border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:border-[#6E8CA0] transition-all"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-slate-600 uppercase tracking-wider mb-1 text-[10px]">
-                  Company Name <span className="text-red-500">*</span>
+                <label className="block font-bold text-[#7A8794] uppercase tracking-wider mb-1 text-[10px]">
+                  Company Name <span className="text-[#C08585]">*</span>
                 </label>
                 <input
                   type="text"
                   value={companyName}
                   onChange={(e) => setCompanyName(e.target.value)}
                   placeholder="e.g. Acme Tech Solutions"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all font-medium"
+                  className="w-full bg-[#F6F8FA] border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#6E8CA0] transition-all font-medium"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="block font-bold text-slate-600 uppercase tracking-wider mb-1 text-[10px]">
+                <label className="block font-bold text-[#7A8794] uppercase tracking-wider mb-1 text-[10px]">
                   HR / Contact Person
                 </label>
                 <input
@@ -169,12 +169,12 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
                   value={contactPerson}
                   onChange={(e) => setContactPerson(e.target.value)}
                   placeholder="HR Name"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all font-medium"
+                  className="w-full bg-[#F6F8FA] border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#6E8CA0] transition-all font-medium"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-slate-600 uppercase tracking-wider mb-1 text-[10px]">
+                <label className="block font-bold text-[#7A8794] uppercase tracking-wider mb-1 text-[10px]">
                   Department
                 </label>
                 <input
@@ -182,12 +182,12 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
                   placeholder="Accounts/HR"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all font-medium"
+                  className="w-full bg-[#F6F8FA] border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#6E8CA0] transition-all font-medium"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-slate-600 uppercase tracking-wider mb-1 text-[10px]">
+                <label className="block font-bold text-[#7A8794] uppercase tracking-wider mb-1 text-[10px]">
                   HR Contact Number
                 </label>
                 <input
@@ -195,20 +195,20 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
                   value={contactNumber}
                   onChange={(e) => setContactNumber(e.target.value)}
                   placeholder="+91 98..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all font-medium"
+                  className="w-full bg-[#F6F8FA] border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#6E8CA0] transition-all font-medium"
                 />
               </div>
             </div>
 
             {/* Accountant Contact Details Given by HR */}
-            <div className="p-3 bg-blue-50/70 rounded-xl border border-blue-200/80 space-y-2">
-              <div className="text-[10px] font-black text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+            <div className="p-3 bg-[#EEF1F4] rounded-xl border border-[#DCE2E8] space-y-2">
+              <div className="text-[10px] font-black text-[#3E4A5C] uppercase tracking-wider flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#6E8CA0]"></span>
                 Accountant / Accounts Lead Contact (Given by HR)
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-600 text-[10px] mb-1">
+                  <label className="block font-bold text-[#7A8794] text-[10px] mb-1">
                     Accountant Person Name
                   </label>
                   <input
@@ -216,49 +216,50 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
                     value={accountantPerson}
                     onChange={(e) => setAccountantPerson(e.target.value)}
                     placeholder="e.g. Ramesh Accounts Lead"
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-medium"
+                    className="w-full bg-white border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-[#6E8CA0] font-medium"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-600 text-[10px] mb-1">
+                  <label className="block font-bold text-[#7A8794] text-[10px] mb-1">
                     Accountant Phone / Mobile
                   </label>
                   <input
                     type="text"
                     value={accountantNumber}
                     onChange={(e) => setAccountantNumber(e.target.value)}
-                    placeholder="+91 98..."
-                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500 font-medium"
+                    placeholder="e.g. +91 98190 12345"
+                    className="w-full bg-white border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-1.5 text-xs font-medium focus:outline-none focus:border-[#6E8CA0]"
                   />
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {/* Row 4: Method & Status */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block font-bold text-slate-600 uppercase tracking-wider mb-1 text-[10px]">
+                <label className="block text-[10px] font-bold text-[#7A8794] uppercase tracking-wider mb-1.5">
                   Communication Method
                 </label>
                 <select
                   value={method}
                   onChange={(e) => setMethod(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all cursor-pointer"
+                  className="w-full bg-white border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-[#6E8CA0] transition-all cursor-pointer"
                 >
                   <option value="Call">Call</option>
                   <option value="Mail">Mail</option>
+                  <option value="Meeting">Meeting</option>
                   <option value="WhatsApp">WhatsApp</option>
-                  <option value="In Person">In Person</option>
                 </select>
               </div>
 
               <div>
-                <label className="block font-bold text-slate-600 uppercase tracking-wider mb-1 text-[10px]">
-                  Follow-up Status <span className="text-red-500">*</span>
+                <label className="block text-[10px] font-bold text-[#7A8794] uppercase tracking-wider mb-1.5">
+                  Follow-up Action Status
                 </label>
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all cursor-pointer"
+                  className="w-full bg-white border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-[#6E8CA0] transition-all cursor-pointer"
                 >
                   {statusOptions.map((opt) => (
                     <option key={opt} value={opt}>{opt}</option>
@@ -267,59 +268,61 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            {/* Row 5: Log Date & Next Followup Date */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block font-bold text-slate-600 uppercase tracking-wider mb-1 text-[10px]">
-                  Follow-up Date
+                <label className="block text-[10px] font-bold text-[#7A8794] uppercase tracking-wider mb-1.5">
+                  Log Record Date
                 </label>
                 <input
                   type="date"
                   value={followupDate}
                   onChange={(e) => setFollowupDate(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all cursor-pointer"
+                  className="w-full bg-white border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-[#6E8CA0] cursor-pointer"
                 />
               </div>
 
               <div>
-                <label className="block font-bold text-slate-600 uppercase tracking-wider mb-1 text-[10px]">
-                  Next Follow-up Date (Optional)
+                <label className="block text-[10px] font-bold text-[#7A8794] uppercase tracking-wider mb-1.5">
+                  Next Follow-up Action Date
                 </label>
                 <input
                   type="date"
                   value={nextFollowupDate}
                   onChange={(e) => setNextFollowupDate(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all cursor-pointer"
+                  className="w-full bg-white border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-[#6E8CA0] cursor-pointer"
                 />
               </div>
             </div>
 
+            {/* Row 6: Detailed Conversation Notes */}
             <div>
-              <label className="block font-bold text-slate-600 uppercase tracking-wider mb-1 text-[10px]">
-                Notes / Conversation Response
+              <label className="block text-[10px] font-bold text-[#7A8794] uppercase tracking-wider mb-1.5">
+                Conversation Notes & Remarks
               </label>
               <textarea
                 rows={3}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Record details of conversation, email response, or promised payment date..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all font-medium resize-none"
+                className="w-full bg-white border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#6E8CA0] transition-all font-medium resize-none"
               />
             </div>
           </div>
 
           {/* Fixed Footer Actions */}
-          <div className="flex-none px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex gap-3 justify-end items-center">
+          <div className="flex-none px-6 py-4 border-t border-[#DCE2E8] bg-[#F6F8FA] flex gap-3 justify-end items-center">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-slate-700 border border-slate-200 hover:bg-slate-100 text-xs font-bold transition cursor-pointer"
+              className="px-4 py-2 rounded-xl text-[#3A4048] border border-[#DCE2E8] hover:bg-[#EEF1F4] text-xs font-bold transition cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-5 py-2 rounded-xl transition text-xs flex items-center gap-2 disabled:opacity-50 cursor-pointer shadow-sm"
+              className="bg-[#6E8CA0] hover:bg-[#5B788C] text-white font-bold px-5 py-2 rounded-xl transition text-xs flex items-center gap-2 disabled:opacity-50 cursor-pointer shadow-2xs"
             >
               {loading ? (
                 <>

@@ -452,13 +452,13 @@ export default function UploadPanel({ onUploadSuccess }) {
       </div>
 
       {/* SECTION 3: Dedicated Data Cleanup & Purge Tools Bar */}
-      <div className="bg-slate-900 rounded-2xl p-5 text-white border border-slate-800 shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
+      <div className="bg-[#3E4A5C] rounded-2xl p-5 text-white border border-[#323D4D] shadow-sm flex flex-col sm:flex-row justify-between items-center gap-4">
         <div>
-          <h4 className="text-sm font-black text-amber-400 flex items-center gap-2">
-            <Trash2 className="w-4 h-4 text-amber-400" />
+          <h4 className="text-sm font-black text-white flex items-center gap-2">
+            <Trash2 className="w-4 h-4 text-[#8FA3BF]" />
             Data Cleanup & Dataset Management Tools
           </h4>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-[#DCE2E8] mt-0.5">
             Manually purge previous upload batches or clear existing entries to start a clean reconciliation cycle.
           </p>
         </div>
@@ -467,28 +467,28 @@ export default function UploadPanel({ onUploadSuccess }) {
           <button
             onClick={() => handlePurge('26as')}
             disabled={purgeStatus.loading}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer border border-slate-700"
+            className="bg-[#4F5D73] hover:bg-[#5C6C85] text-white text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer border border-[#6E8CA0]"
           >
             Clear 26AS Data
           </button>
           <button
             onClick={() => handlePurge('tally')}
             disabled={purgeStatus.loading}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer border border-slate-700"
+            className="bg-[#4F5D73] hover:bg-[#5C6C85] text-white text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer border border-[#6E8CA0]"
           >
             Clear Tally Data
           </button>
           <button
             onClick={() => handlePurge('followups')}
             disabled={purgeStatus.loading}
-            className="bg-slate-800 hover:bg-amber-600/20 text-amber-300 hover:text-amber-200 text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer border border-amber-500/30"
+            className="bg-[#4F5D73] hover:bg-[#5C6C85] text-white text-xs font-bold px-3 py-2 rounded-xl transition cursor-pointer border border-[#8FA3BF]"
           >
             Clear Follow-up Logs Only
           </button>
           <button
             onClick={() => handlePurge('all')}
             disabled={purgeStatus.loading}
-            className="bg-red-600 hover:bg-red-500 text-white text-xs font-black px-3 py-2 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1.5"
+            className="bg-[#C08585] hover:bg-[#B07474] text-white text-xs font-black px-3 py-2 rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1.5"
           >
             <Trash2 className="w-3.5 h-3.5" />
             Purge All Uploaded Datasets
@@ -497,36 +497,36 @@ export default function UploadPanel({ onUploadSuccess }) {
       </div>
 
       {purgeStatus.message && (
-        <div className="bg-emerald-50 text-emerald-800 p-3.5 rounded-xl border border-emerald-200 text-xs font-bold flex items-center justify-between">
+        <div className="bg-[#7FA88A]/15 text-[#3D6348] p-3.5 rounded-xl border border-[#7FA88A]/30 text-xs font-bold flex items-center justify-between">
           <span>{purgeStatus.message}</span>
-          <button onClick={() => setPurgeStatus({ loading: false, message: null, error: null })} className="text-emerald-600 hover:text-emerald-900 font-extrabold cursor-pointer">✕</button>
+          <button onClick={() => setPurgeStatus({ loading: false, message: null, error: null })} className="text-[#3D6348] hover:text-[#2A4732] font-extrabold cursor-pointer">✕</button>
         </div>
       )}
 
       {purgeStatus.error && (
-        <div className="bg-red-50 text-red-700 p-3.5 rounded-xl border border-red-200 text-xs font-bold flex items-center justify-between">
+        <div className="bg-[#C08585]/15 text-[#703535] p-3.5 rounded-xl border border-[#C08585]/30 text-xs font-bold flex items-center justify-between">
           <span>{purgeStatus.error}</span>
-          <button onClick={() => setPurgeStatus({ loading: false, message: null, error: null })} className="text-red-600 hover:text-red-900 font-extrabold cursor-pointer">✕</button>
+          <button onClick={() => setPurgeStatus({ loading: false, message: null, error: null })} className="text-[#703535] hover:text-[#4A2020] font-extrabold cursor-pointer">✕</button>
         </div>
       )}
 
       {/* Confirmation Modal overlay to guarantee pop-up works across all browsers */}
       {purgeConfirmTarget && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 text-white rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-scale-up">
-            <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
-              <div className="p-2.5 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400">
+        <div className="fixed inset-0 bg-[#3E4A5C]/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#F6F8FA] border border-[#DCE2E8] text-[#3A4048] rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-scale-up">
+            <div className="flex items-center gap-3 border-b border-[#DCE2E8] pb-3">
+              <div className="p-2.5 rounded-xl bg-[#C08585]/20 border border-[#C08585]/30 text-[#C08585]">
                 <Trash2 className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-lg font-black text-white">Confirm Purge Action</h3>
-                <p className="text-xs text-slate-400 font-medium">This operation cannot be undone.</p>
+                <h3 className="text-lg font-black text-[#3A4048]">Confirm Purge Action</h3>
+                <p className="text-xs text-[#7A8794] font-medium">This operation cannot be undone.</p>
               </div>
             </div>
 
-            <p className="text-xs text-slate-300 leading-relaxed font-semibold">
+            <p className="text-xs text-[#3A4048] leading-relaxed font-semibold">
               Are you sure you want to clear/remove{' '}
-              <span className="text-amber-400 font-black underline">
+              <span className="text-[#6E8CA0] font-black underline">
                 {purgeConfirmTarget === '26as' 
                   ? 'Form 26AS data' 
                   : purgeConfirmTarget === 'tally' 

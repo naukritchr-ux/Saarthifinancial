@@ -143,20 +143,20 @@ export default function DataImport() {
   return (
     <div className="space-y-8 animate-fade-in pb-12">
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 rounded-2xl border border-slate-700/60 shadow-md text-white">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#3E4A5C] p-6 rounded-2xl border border-[#323D4D] shadow-sm text-white">
         <div>
-          <h1 className="text-2xl font-black text-amber-400 tracking-tight flex items-center gap-2">
-            <Upload className="w-7 h-7 text-amber-400" />
+          <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
+            <Upload className="w-7 h-7 text-[#8FA3BF]" />
             Data Import & Cleaning Workbench
           </h1>
-          <p className="text-xs text-slate-300 font-medium mt-1">
+          <p className="text-xs text-[#DCE2E8] font-medium mt-1">
             Upload Form 26AS portal reports, Tally ledger CSVs, resolve conflicting TAN format flags, and standardize deductor records.
           </p>
         </div>
 
         <button
           onClick={fetchQueue}
-          className="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 font-bold px-4 py-2.5 rounded-xl transition text-xs shadow-sm cursor-pointer"
+          className="inline-flex items-center gap-2 bg-[#6E8CA0] hover:bg-[#5B788C] text-white border border-[#8FA3BF]/30 font-bold px-4 py-2.5 rounded-xl transition text-xs shadow-2xs cursor-pointer"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh Queue
