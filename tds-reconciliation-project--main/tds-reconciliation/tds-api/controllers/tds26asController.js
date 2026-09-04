@@ -894,10 +894,10 @@ export const getReconciliationReport = async (req, res) => {
 
     if (overallStatus && overallStatus !== 'All') {
       if (overallStatus === 'Match' || overallStatus === 'All Matched') {
-        whereClauses.push(`(tr.is_manually_edited = 1 OR tr.overall_status = 'All Matched' OR ((${primaryTdsSQL} > 0 OR COALESCE(tr.as26_tds, 0) > 0) AND ABS(${primaryTdsSQL} - COALESCE(tr.as26_tds, 0)) <= 1.0))`);
+        whereClauses.push(`(tr.is_manually_edited = 1 OR ((${primaryTdsSQL} > 0 OR COALESCE(tr.as26_tds, 0) > 0) AND ABS(${primaryTdsSQL} - COALESCE(tr.as26_tds, 0)) <= 1.0))`);
       } else if (overallStatus === 'Less Paid' || overallStatus === 'Less') {
         whereClauses.push(`(tr.is_manually_edited = 0 AND (${primaryTdsSQL} > 0 OR COALESCE(tr.as26_tds, 0) > 0) AND ${primaryTdsSQL} > COALESCE(tr.as26_tds, 0) + 1.0)`);
-      } else if (overallStatus === 'Excess') {
+      } else if (overallStatus === 'Excess' || overallStatus === 'Excess Paid') {
         whereClauses.push(`(tr.is_manually_edited = 0 AND (${primaryTdsSQL} > 0 OR COALESCE(tr.as26_tds, 0) > 0) AND ${primaryTdsSQL} < COALESCE(tr.as26_tds, 0) - 1.0)`);
       } else {
         whereClauses.push('tr.overall_status = ?');
@@ -912,8 +912,8 @@ export const getReconciliationReport = async (req, res) => {
 
     // 3-Way Source Coverage Filter
     const hasSaarthiSQL = '(COALESCE(tr.books_tds, 0) > 0)';
-    const hasTallySQL = '(COALESCE(tr.tally_tds, 0) > 0)';
-    const has26asSQL = '(COALESCE(tr.as26_tds, 0) > 0)';
+    const hasTallySQL = '(COALESCE(tr.tally_tds, 0) > 0 OR tr.tally_batch_id IS NOT NULL)';
+    const has26asSQL = '(COALESCE(tr.as26_tds, 0) > 0 OR tr.as26_batch_id IS NOT NULL)';
 
     if (coverageFilter === '3/3' || coverageFilter === '3 of 3' || coverageFilter === 'all_3' || coverageFilter === 'all3' || coverageFilter === 'All 3 (Saarthi + Tally + 26AS)') {
       whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL} AND ${has26asSQL})`);
@@ -996,10 +996,14 @@ export const getReconciliationReport = async (req, res) => {
       const as26 = parseFloat(r.as26Tds || 0);
       const saarthi = parseFloat(r.booksTds || 0);
 
+      const has26as = Boolean(r.as26BatchId || as26 > 0);
+      const hasTally = Boolean(r.tallyBatchId || tally > 0);
+      const hasSaarthi = Boolean(saarthi > 0);
+
       const sources = [];
-      if (tally > 0) sources.push('Tally');
-      if (as26 > 0) sources.push('26AS');
-      if (saarthi > 0) sources.push('Saarthi');
+      if (hasTally) sources.push('Tally');
+      if (has26as) sources.push('26AS');
+      if (hasSaarthi) sources.push('Saarthi');
 
       const countStr = `${sources.length}/3`;
       let coverageLabel = `${countStr} · ${sources.join(' + ') || 'No match'}`;
