@@ -191,7 +191,25 @@ export default function TdsReconciliation() {
         </div>
 
         {/* Filter & Sort Controls Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-3 border-t border-[#E9E4FA] text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-[#E9E4FA] text-xs">
+          {/* Financial Year Filter */}
+          <div>
+            <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1">
+              Financial Year Filter
+            </label>
+            <select
+              value={fyFilter}
+              onChange={(e) => { setPage(1); setFyFilter(e.target.value); }}
+              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
+            >
+              <option value="All Financial Years">FY: All Financial Years</option>
+              <option value="FY 2024-25">FY 2024-25</option>
+              <option value="FY 2023-24">FY 2023-24</option>
+              <option value="FY 2022-23">FY 2022-23</option>
+              <option value="FY 2021-22">FY 2021-22</option>
+            </select>
+          </div>
+
           {/* Coverage Filter */}
           <div>
             <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1">
@@ -200,7 +218,7 @@ export default function TdsReconciliation() {
             <select
               value={coverageFilter}
               onChange={(e) => { setPage(1); setCoverageFilter(e.target.value); }}
-              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5]"
+              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
             >
               <option value="All">Coverage: All Coverage</option>
               <option value="3/3">All 3 (Saarthi + Tally + 26AS)</option>
@@ -220,7 +238,7 @@ export default function TdsReconciliation() {
             <select
               value={sortBy}
               onChange={(e) => { setPage(1); setSortBy(e.target.value); }}
-              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5]"
+              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
             >
               <option value="updated_at">Sort: Recently Updated</option>
               <option value="difference_desc">Sort: Difference (High → Low)</option>
