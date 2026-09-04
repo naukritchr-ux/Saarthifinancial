@@ -52,8 +52,30 @@ export default function ImportHistory() {
     }
   };
 
-  const handleDeleteBatch = (batchItem) => {
-    setDeleteConfirmItem(batchItem);
+  const getStatusBadge = (status) => {
+    const s = (status || 'Completed').toLowerCase();
+    if (s === 'completed' || s === 'success') {
+      return (
+        <span className="inline-flex items-center gap-1 bg-[#4ADE80]/15 text-[#2E8B57] px-2.5 py-0.5 rounded-full text-[11px] font-bold border border-[#4ADE80]/30">
+          <CheckCircle2 className="w-3 h-3 text-[#4ADE80]" />
+          Completed
+        </span>
+      );
+    }
+    if (s === 'failed' || s === 'error') {
+      return (
+        <span className="inline-flex items-center gap-1 bg-[#F87A9E]/15 text-[#F87A9E] px-2.5 py-0.5 rounded-full text-[11px] font-bold border border-[#F87A9E]/30">
+          <AlertCircle className="w-3 h-3 text-[#F87A9E]" />
+          Failed
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 bg-[#FBBF77]/15 text-[#D97706] px-2.5 py-0.5 rounded-full text-[11px] font-bold border border-[#FBBF77]/30">
+        <RefreshCw className="w-3 h-3 animate-spin text-[#FBBF77]" />
+        Processing
+      </span>
+    );
   };
 
   const filteredBatches = batches.filter((b) => {
@@ -65,22 +87,22 @@ export default function ImportHistory() {
   });
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in pb-12">
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-[#F6F8FA] p-6 rounded-2xl border border-[#DCE2E8] shadow-2xs">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-[#E9E4FA] shadow-sm text-[#1F1B2E]">
         <div>
-          <h1 className="text-2xl font-black text-[#3A4048] tracking-tight flex items-center gap-2">
-            <Clock className="w-7 h-7 text-[#6E8CA0]" />
+          <h1 className="text-2xl font-black text-[#1F1B2E] tracking-tight flex items-center gap-2">
+            <Clock className="w-7 h-7 text-[#9B87F5]" />
             File Import History & Audit Trail
           </h1>
-          <p className="text-xs text-[#7A8794] mt-1">
+          <p className="text-xs text-[#6B6580] mt-1 font-medium">
             Complete historical log of all Form 26AS reports, Tally ledger CSVs, and bulk excel uploads processed.
           </p>
         </div>
 
         <button
           onClick={fetchHistory}
-          className="inline-flex items-center gap-2 bg-[#6E8CA0] hover:bg-[#5B788C] text-white font-bold px-4 py-2 rounded-xl transition text-xs shadow-2xs cursor-pointer"
+          className="inline-flex items-center gap-2 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-bold px-4 py-2.5 rounded-xl transition text-xs shadow-2xs cursor-pointer"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh Log
@@ -88,25 +110,25 @@ export default function ImportHistory() {
       </div>
 
       {/* Query Bar */}
-      <div className="bg-[#F6F8FA] p-5 rounded-2xl border border-[#DCE2E8] shadow-2xs flex flex-col sm:flex-row justify-between items-center gap-4 text-xs">
+      <div className="bg-white p-5 rounded-2xl border border-[#E9E4FA] shadow-xs flex flex-col sm:flex-row justify-between items-center gap-4 text-xs text-[#1F1B2E]">
         <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 text-[#7A8794] absolute left-3 top-2.5" />
+          <Search className="w-4 h-4 text-[#6B6580] absolute left-3 top-2.5" />
           <input
             type="text"
             placeholder="Search by file name or uploader..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-white border border-[#DCE2E8] text-[#3A4048] rounded-xl pl-9 pr-3 py-2 text-xs font-medium focus:outline-none focus:border-[#6E8CA0]"
+            className="w-full bg-[#E8E4FF]/30 border border-[#E9E4FA] text-[#1F1B2E] rounded-xl pl-9 pr-3 py-2 text-xs font-medium focus:outline-none focus:border-[#9B87F5]"
           />
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Filter className="w-3.5 h-3.5 text-[#7A8794]" />
-          <span className="font-bold text-[#7A8794] uppercase text-[10px]">Status:</span>
+          <Filter className="w-3.5 h-3.5 text-[#6B6580]" />
+          <span className="font-bold text-[#6B6580] uppercase text-[10px]">Status:</span>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="bg-white border border-[#DCE2E8] text-[#3A4048] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#6E8CA0] cursor-pointer"
+            className="bg-[#E8E4FF]/30 border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
           >
             <option value="All">All Statuses</option>
             <option value="Completed">Completed</option>
@@ -117,11 +139,11 @@ export default function ImportHistory() {
       </div>
 
       {/* History Table */}
-      <div className="bg-[#F6F8FA] rounded-2xl border border-[#DCE2E8] shadow-2xs overflow-hidden">
+      <div className="bg-white rounded-2xl border border-[#E9E4FA] shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-[#EEF1F4] border-b border-[#DCE2E8] text-[#7A8794] font-bold uppercase text-[10px] tracking-wider">
+              <tr className="bg-[#E8E4FF]/50 border-b border-[#E9E4FA] text-[#6B6580] font-black uppercase text-[10px] tracking-wider">
                 <th className="py-3 px-4">File Name & Source</th>
                 <th className="py-3 px-4">Uploaded By</th>
                 <th className="py-3 px-4">Date & Time</th>
@@ -129,36 +151,36 @@ export default function ImportHistory() {
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#DCE2E8] bg-white">
+            <tbody className="divide-y divide-[#E9E4FA] bg-white">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-[#7A8794]">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-[#6E8CA0]" />
+                  <td colSpan={5} className="py-12 text-center text-[#6B6580]">
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-[#9B87F5]" />
                     <span>Loading import history log...</span>
                   </td>
                 </tr>
-              ) : filteredItems.length === 0 ? (
+              ) : filteredBatches.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-[#7A8794]">
-                    <Clock className="w-8 h-8 mx-auto mb-2 text-[#8FA3BF]" />
-                    <span className="font-bold text-[#3A4048] block text-sm">No Import Log Records Found</span>
-                    <p className="text-xs text-[#7A8794] mt-1">Upload a Form 26AS or Tally ledger file to see it logged here.</p>
+                  <td colSpan={5} className="py-12 text-center text-[#6B6580]">
+                    <Clock className="w-8 h-8 mx-auto mb-2 text-[#B4A7F5]" />
+                    <span className="font-bold text-[#1F1B2E] block text-sm">No Import Log Records Found</span>
+                    <p className="text-xs text-[#6B6580] mt-1">Upload a Form 26AS or Tally ledger file to see it logged here.</p>
                   </td>
                 </tr>
               ) : (
-                filteredItems.map((row) => (
-                  <tr key={row.id || row.upload_time} className="hover:bg-[#EEF1F4]/50 transition">
-                    <td className="py-3.5 px-4 font-bold text-[#3A4048] flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-[#6E8CA0]" />
+                filteredBatches.map((row) => (
+                  <tr key={row.id || row.upload_time} className="hover:bg-[#E8E4FF]/20 transition">
+                    <td className="py-3.5 px-4 font-bold text-[#1F1B2E] flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-[#9B87F5]" />
                       <span>{row.fileName || row.file_name || 'Dataset Upload'}</span>
                     </td>
-                    <td className="py-3.5 px-4 text-[#3A4048] font-medium">{row.uploadedBy || row.uploaded_by || 'System'}</td>
-                    <td className="py-3.5 px-4 text-[#7A8794] font-semibold">{row.uploadTime ? new Date(row.uploadTime).toLocaleString('en-IN') : 'Recently'}</td>
+                    <td className="py-3.5 px-4 text-[#1F1B2E] font-medium">{row.uploadedBy || row.uploaded_by || 'System'}</td>
+                    <td className="py-3.5 px-4 text-[#6B6580] font-semibold">{row.uploadTime ? new Date(row.uploadTime).toLocaleString('en-IN') : 'Recently'}</td>
                     <td className="py-3.5 px-4">{getStatusBadge(row.status)}</td>
                     <td className="py-3.5 px-4 text-right">
                       <button
                         onClick={() => setDeleteConfirmItem(row)}
-                        className="inline-flex items-center gap-1 bg-[#C08585]/15 hover:bg-[#C08585]/30 text-[#703535] font-bold px-2.5 py-1 rounded-lg transition text-[11px] cursor-pointer"
+                        className="inline-flex items-center gap-1 bg-[#F87A9E]/15 hover:bg-[#F87A9E]/30 text-[#F87A9E] font-bold px-2.5 py-1 rounded-lg transition text-[11px] cursor-pointer"
                         title="Delete batch upload record"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -173,23 +195,23 @@ export default function ImportHistory() {
         </div>
       </div>
 
-      {/* Custom Confirmation Modal overlay */}
+      {/* Confirmation Modal */}
       {deleteConfirmItem && (
-        <div className="fixed inset-0 bg-[#3E4A5C]/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#F6F8FA] border border-[#DCE2E8] text-[#3A4048] rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 border-b border-[#DCE2E8] pb-3">
-              <div className="p-2.5 rounded-xl bg-[#C08585]/20 border border-[#C08585]/30 text-[#C08585]">
+        <div className="fixed inset-0 bg-[#1F1B2E]/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E9E4FA] text-[#1F1B2E] rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-scale-up">
+            <div className="flex items-center gap-3 border-b border-[#E9E4FA] pb-3">
+              <div className="p-2.5 rounded-xl bg-[#F87A9E]/15 text-[#F87A9E]">
                 <Trash2 className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-lg font-black text-[#3A4048]">Delete File Batch</h3>
-                <p className="text-xs text-[#7A8794] font-medium">This action will delete dataset entries.</p>
+                <h3 className="text-lg font-black text-[#1F1B2E]">Delete File Batch</h3>
+                <p className="text-xs text-[#6B6580] font-medium">This action will delete dataset entries.</p>
               </div>
             </div>
 
-            <p className="text-xs text-[#3A4048] leading-relaxed font-semibold">
+            <p className="text-xs text-[#1F1B2E] leading-relaxed font-semibold">
               Are you sure you want to delete{' '}
-              <span className="text-[#6E8CA0] font-black underline">
+              <span className="text-[#9B87F5] font-black underline">
                 "{deleteConfirmItem.fileName || deleteConfirmItem.file_name || 'this file'}"
               </span>
               {' '}and its associated dataset records from the database?
@@ -198,13 +220,13 @@ export default function ImportHistory() {
             <div className="flex justify-end gap-3 pt-2">
               <button
                 onClick={() => setDeleteConfirmItem(null)}
-                className="px-4 py-2 text-xs font-bold text-[#3A4048] bg-[#EEF1F4] hover:bg-[#DCE2E8] rounded-xl border border-[#DCE2E8] transition cursor-pointer"
+                className="px-4 py-2 text-xs font-bold text-[#6B6580] bg-[#E8E4FF]/50 hover:bg-[#E8E4FF] rounded-xl border border-[#E9E4FA] transition cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={() => executeDeleteBatch(deleteConfirmItem)}
-                className="px-4 py-2 text-xs font-black text-white bg-[#C08585] hover:bg-[#B07474] rounded-xl transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                className="px-4 py-2 text-xs font-black text-white bg-[#F87A9E] hover:bg-[#E11D48] rounded-xl transition shadow-2xs cursor-pointer flex items-center gap-1.5"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 Yes, Delete Batch
