@@ -51,7 +51,9 @@ export default function ReconciliationTable({
       case 'Excess Paid':
         return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-[#F87A9E]/15 text-[#E11D48] border border-[#F87A9E]/30">Excess</span>;
       case 'Missing':
-        return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200">Missing</span>;
+      case 'Not Received':
+      case 'No Match':
+        return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-gray-100 text-gray-700 border border-gray-300">Not Received</span>;
       case 'Pending Review':
       case 'Partial Mismatch':
         return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-[#FBBF77]/20 text-[#D97706] border border-[#FBBF77]/40">Partial Mismatch</span>;

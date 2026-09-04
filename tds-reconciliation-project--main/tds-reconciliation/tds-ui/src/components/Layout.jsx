@@ -26,14 +26,22 @@ export default function Layout({ children }) {
     setSyncing(true);
     try {
       const res = await syncSaarthiLiveApi();
-      if (res && res.success) {
+      if (res && res.success !== false) {
         setSyncResultModal(res);
         triggerRefresh();
       } else {
-        alert(`⚠️ Sync Warning: ${res?.error || 'Unable to sync live Saarthi data'}`);
+        setSyncResultModal({
+          success: false,
+          error: res?.error || 'Live Saarthi 360 API is unreachable from the current server.',
+          stats: { clientsFound: 0, inserted: 0, updated: 0 }
+        });
       }
     } catch (err) {
-      alert(`💥 Error syncing live data: ${err.message}`);
+      setSyncResultModal({
+        success: false,
+        error: err.message || 'Live Saarthi 360 API is currently unreachable.',
+        stats: { clientsFound: 0, inserted: 0, updated: 0 }
+      });
     } finally {
       setSyncing(false);
     }
@@ -196,63 +204,79 @@ export default function Layout({ children }) {
 
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 rounded-2xl bg-[#9B87F5]/15 border border-[#9B87F5]/30 text-[#9B87F5] flex items-center justify-center text-2xl shadow-inner">
-                🚀
+                {syncResultModal.success === false ? 'ℹ️' : '🚀'}
               </div>
               <div>
                 <h3 className="text-lg font-black tracking-tight text-[#1F1B2E]">
-                  Saarthi 360 Sync Completed!
+                  {syncResultModal.success === false ? 'Saarthi 360 Live Sync Note' : 'Saarthi 360 Sync Completed!'}
                 </h3>
                 <p className="text-xs text-[#6B6580] font-medium">
-                  Live client master data & billing invoices updated.
+                  {syncResultModal.success === false 
+                    ? 'Live API unreachable; local master database active.' 
+                    : 'Live client master data & billing invoices updated.'}
                 </p>
               </div>
             </div>
 
-            <div className="bg-[#E8E4FF]/40 border border-[#E9E4FA] rounded-2xl p-4 space-y-3 mb-6 shadow-2xs">
-              <div className="flex items-center justify-between text-xs border-b border-[#E9E4FA] pb-2">
-                <span className="text-[#6B6580] flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-[#9B87F5]" />
-                  Client Masters Found:
-                </span>
-                <span className="font-bold text-[#9B87F5]">
-                  {syncResultModal.stats?.clientsFound?.toLocaleString() || '15,700+'}
-                </span>
+            {syncResultModal.success === false ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-6 shadow-2xs text-xs text-amber-800 space-y-2">
+                <p className="font-bold flex items-center gap-1.5 text-amber-900">
+                  <ShieldCheck className="w-4 h-4 text-amber-600" />
+                  Local Master Records Active
+                </p>
+                <p className="leading-relaxed">
+                  The live Saarthi 360 server is currently unreachable. All reconciliation operations will continue using your uploaded 26AS Excel & Tally Ledger records.
+                </p>
               </div>
-              <div className="flex items-center justify-between text-xs border-b border-[#E9E4FA] pb-2">
-                <span className="text-[#6B6580] flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-[#B4A7F5]" />
-                  Invoices Processed:
-                </span>
-                <span className="font-bold text-[#B4A7F5]">
-                  {syncResultModal.stats?.invoicesProcessed?.toLocaleString() || '4,400+'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs border-b border-[#E9E4FA] pb-2">
-                <span className="text-[#6B6580] flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5 text-[#9B87F5]" />
-                  New Records Inserted:
-                </span>
-                <span className="font-bold text-[#9B87F5]">
-                  {syncResultModal.stats?.inserted || 0}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs pb-1">
-                <span className="text-[#6B6580] flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-[#4ADE80]" />
-                  Existing Dues Refreshed:
-                </span>
-                <span className="font-bold text-[#4ADE80]">
-                  {syncResultModal.stats?.updated || 0}
-                </span>
-              </div>
-            </div>
+            ) : (
+              <>
+                <div className="bg-[#E8E4FF]/40 border border-[#E9E4FA] rounded-2xl p-4 space-y-3 mb-6 shadow-2xs">
+                  <div className="flex items-center justify-between text-xs border-b border-[#E9E4FA] pb-2">
+                    <span className="text-[#6B6580] flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-[#9B87F5]" />
+                      Client Masters Found:
+                    </span>
+                    <span className="font-bold text-[#9B87F5]">
+                      {syncResultModal.stats?.clientsFound?.toLocaleString() || '15,700+'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs border-b border-[#E9E4FA] pb-2">
+                    <span className="text-[#6B6580] flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-[#B4A7F5]" />
+                      Invoices Processed:
+                    </span>
+                    <span className="font-bold text-[#B4A7F5]">
+                      {syncResultModal.stats?.invoicesProcessed?.toLocaleString() || '4,400+'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs border-b border-[#E9E4FA] pb-2">
+                    <span className="text-[#6B6580] flex items-center gap-1.5">
+                      <Database className="w-3.5 h-3.5 text-[#9B87F5]" />
+                      New Records Inserted:
+                    </span>
+                    <span className="font-bold text-[#9B87F5]">
+                      {syncResultModal.stats?.inserted || 0}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs pb-1">
+                    <span className="text-[#6B6580] flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#4ADE80]" />
+                      Existing Dues Refreshed:
+                    </span>
+                    <span className="font-bold text-[#4ADE80]">
+                      {syncResultModal.stats?.updated || 0}
+                    </span>
+                  </div>
+                </div>
 
-            <div className="bg-[#4ADE80]/15 border border-[#4ADE80]/30 rounded-xl p-3 mb-6 flex items-start gap-2.5">
-              <CheckCircle2 className="w-4 h-4 text-[#2E8B57] shrink-0 mt-0.5" />
-              <p className="text-xs text-[#2E8B57] font-medium leading-relaxed">
-                ✓ HR contact person names, designations, mobile numbers, email addresses, and Team Leaders refreshed.
-              </p>
-            </div>
+                <div className="bg-[#4ADE80]/15 border border-[#4ADE80]/30 rounded-xl p-3 mb-6 flex items-start gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-[#2E8B57] shrink-0 mt-0.5" />
+                  <p className="text-xs text-[#2E8B57] font-medium leading-relaxed">
+                    ✓ HR contact person names, designations, mobile numbers, email addresses, and Team Leaders refreshed.
+                  </p>
+                </div>
+              </>
+            )}
 
             <div className="flex items-center gap-3">
               <button
