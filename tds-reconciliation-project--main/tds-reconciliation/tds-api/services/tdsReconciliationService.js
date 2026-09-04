@@ -9,13 +9,28 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
   try {
     console.log(`🔄 Running 3-way reconciliation. 26AS Batch: ${as26BatchId || 'all'} | Tally Batch: ${tallyBatchId || 'all'}`);
 
-    // 1. Fetch all rows from tds_dues (including ones without TAN yet)
-    const [duesRows] = await db.query(
-      "SELECT id, tan_no, tds, company_name FROM tds_dues"
+    // 1. Fetch rows from tds_dues grouped by TAN to prevent duplicate TAN records
+    const [groupedDuesRows] = await db.query(
+      `SELECT 
+         MAX(id) as id, 
+         UPPER(TRIM(tan_no)) as tan, 
+         SUM(COALESCE(tds, 0)) as tds, 
+         MAX(company_name) as company_name 
+       FROM tds_dues 
+       WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''
+       GROUP BY UPPER(TRIM(tan_no))`
     );
+
+    const [unnamedDuesRows] = await db.query(
+      `SELECT id, '' as tan, COALESCE(tds, 0) as tds, company_name 
+       FROM tds_dues 
+       WHERE tan_no IS NULL OR TRIM(tan_no) = ''`
+    );
+
+    const duesRows = [...groupedDuesRows, ...unnamedDuesRows];
     const duesList = duesRows.map(r => ({
       id: r.id,
-      tan: (r.tan_no || '').trim().toUpperCase(),
+      tan: (r.tan || '').trim().toUpperCase(),
       tds: parseFloat(r.tds || 0),
       company_name: r.company_name || 'Client Entity'
     }));
