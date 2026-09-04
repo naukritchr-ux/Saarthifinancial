@@ -894,13 +894,13 @@ export const getReconciliationReport = async (req, res) => {
 
     if (overallStatus && overallStatus !== 'All') {
       if (overallStatus === 'Match' || overallStatus === 'All Matched') {
-        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 1 OR ((${primaryTdsSQL} > 0 AND COALESCE(tr.as26_tds, 0) > 0) AND ABS(${primaryTdsSQL} - COALESCE(tr.as26_tds, 0)) <= 1.0))`);
+        whereClauses.push(`(${primaryTdsSQL} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND (COALESCE(tr.is_manually_edited, 0) = 1 OR ABS(${primaryTdsSQL} - COALESCE(tr.as26_tds, 0)) <= 1.0))`);
       } else if (overallStatus === 'Less Paid' || overallStatus === 'Less') {
         whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND ${primaryTdsSQL} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND ${primaryTdsSQL} > COALESCE(tr.as26_tds, 0) + 1.0)`);
       } else if (overallStatus === 'Excess' || overallStatus === 'Excess Paid') {
         whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND ${primaryTdsSQL} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND ${primaryTdsSQL} < COALESCE(tr.as26_tds, 0) - 1.0)`);
       } else if (overallStatus === 'Not Received' || overallStatus === 'No Match' || overallStatus === 'Missing') {
-        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND (COALESCE(tr.as26_tds, 0) = 0 OR ${primaryTdsSQL} = 0))`);
+        whereClauses.push(`(COALESCE(tr.as26_tds, 0) = 0 OR ${primaryTdsSQL} = 0)`);
       } else {
         whereClauses.push('tr.overall_status = ?');
         queryParams.push(overallStatus);
@@ -1040,10 +1040,10 @@ export const getReconciliationReport = async (req, res) => {
 
       const primaryVal = tally > 0 ? tally : saarthi;
       let financialStatus = 'Not Received';
-      if (r.isManuallyEdited) {
-        financialStatus = 'Match';
-      } else if (as26 <= 0 || primaryVal <= 0) {
+      if (as26 <= 0 || primaryVal <= 0) {
         financialStatus = 'Not Received';
+      } else if (r.isManuallyEdited) {
+        financialStatus = 'Match';
       } else {
         const diffVal = primaryVal - as26;
         if (Math.abs(diffVal) <= 1.0) financialStatus = 'Match';

@@ -45,11 +45,18 @@ export default function TdsReconciliation() {
         
         const tempStats = { total: res.total ?? res.data.length, matched: 0, less: 0, excess: 0, notReceived: 0 };
         res.data.forEach(r => {
-          if (r.financialStatus === 'Match' || r.overallStatus === 'All Matched') tempStats.matched++;
-          else if (r.financialStatus === 'Less Paid') tempStats.less++;
-          else if (r.financialStatus === 'Excess') tempStats.excess++;
-          else if (r.financialStatus === 'Not Received') tempStats.notReceived++;
-          else tempStats.matched++;
+          const as26 = parseFloat(r.as26Tds || 0);
+          if (as26 === 0 || r.financialStatus === 'Not Received') {
+            tempStats.notReceived++;
+          } else if (r.financialStatus === 'Match') {
+            tempStats.matched++;
+          } else if (r.financialStatus === 'Less Paid') {
+            tempStats.less++;
+          } else if (r.financialStatus === 'Excess') {
+            tempStats.excess++;
+          } else {
+            tempStats.notReceived++;
+          }
         });
         setStats(tempStats);
       }
