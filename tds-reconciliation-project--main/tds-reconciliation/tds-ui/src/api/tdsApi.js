@@ -36,7 +36,9 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 45000) => {
 
 export const triggerSeed = async () => {
   try {
-    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/seed`);
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/seed`, {
+      method: 'POST'
+    });
     return await response.json();
   } catch (err) {
     return { success: false, error: err.message || 'Failed to trigger seed' };

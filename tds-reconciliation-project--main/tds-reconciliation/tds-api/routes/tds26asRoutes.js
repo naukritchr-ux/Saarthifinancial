@@ -45,13 +45,10 @@ const upload = multer({
 });
 
 // Mount endpoints
-router.get('/seed', seedDatabaseEndpoint);
 router.post('/seed', seedDatabaseEndpoint);
-router.get('/sync-saarthi', syncSaarthiLiveApi);
 router.post('/sync-saarthi', syncSaarthiLiveApi);
 router.post('/upload-26as', upload.single('file'), upload26as);
 router.post('/upload-tally', upload.single('file'), uploadTally);
-router.get('/purge', purgeUploadData);
 router.post('/purge', purgeUploadData);
 router.delete('/purge', purgeUploadData);
 router.get('/dashboard-summary', getDashboardSummary);

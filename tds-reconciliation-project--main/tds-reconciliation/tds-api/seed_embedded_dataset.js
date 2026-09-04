@@ -197,11 +197,16 @@ export function isPurgedFlag() {
 export async function seedEmbeddedDataset(force = false) {
   try {
     await ensureTablesExist();
+    if (isPurgedFlag() && !force) {
+      console.log('🛑 Database has been purged by user. Automatic seeding blocked.');
+      return;
+    }
     if (!force) {
       console.log('ℹ️ Automatic database seeding on startup disabled. Ready for user file uploads.');
       return;
     }
     console.log('🌱 Explicitly seeding database...');
+    clearPurgedFlag();
     await seedEmbeddedDatasetFallback();
   } catch (err) {
     console.error('💥 Error seeding database:', err);

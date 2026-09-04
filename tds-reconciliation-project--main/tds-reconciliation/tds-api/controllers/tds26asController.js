@@ -490,7 +490,7 @@ export const getDashboardSummary = async (req, res) => {
     const params = [];
     if (fy && fy !== 'All' && fy !== 'All Financial Years') {
       const cleanFy = String(fy).replace(/^FY\s*/i, '').trim();
-      whereClause = 'WHERE COALESCE(NULLIF(TRIM(d.financial_year), ""), "FY 2025-26") LIKE ?';
+      whereClause = "WHERE COALESCE(NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') LIKE ?";
       params.push(`%${cleanFy}%`);
     }
 
@@ -748,8 +748,10 @@ export const getCleaningQueue = async (req, res) => {
 
     const flaggedItems = cleaningItems.filter(item => {
       const isZeroData = (item.booksTds || 0) === 0 && (item.as26Tds || 0) === 0 && (item.tallyTds || 0) === 0;
+      const isNoTan = item.tanNo && item.tanNo.toUpperCase().startsWith('NO_TAN_');
       const isUnknownDummy = (item.companyName || item.saarthiName || '').toUpperCase().includes('UNKNOWN');
 
+      if (isNoTan && (isZeroData || isUnknownDummy)) return false;
       if (isZeroData && isUnknownDummy) return false;
 
       const invalidTan = !item.tanNo || item.tanNo.length < 10 || item.tanNo.includes('UNKNOWN');
@@ -866,6 +868,9 @@ export const getReconciliationReport = async (req, res) => {
     let whereClauses = [];
     const queryParams = [];
 
+    // Always exclude zero-data ghost rows where all 3 TDS amounts are zero/null
+    whereClauses.push("NOT (COALESCE(tr.books_tds, 0) = 0 AND COALESCE(tr.as26_tds, 0) = 0 AND COALESCE(tr.tally_tds, 0) = 0)");
+
     const activeFy = fy || financialYear;
     if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
       const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
@@ -884,11 +889,11 @@ export const getReconciliationReport = async (req, res) => {
 
     if (overallStatus && overallStatus !== 'All') {
       if (overallStatus === 'Match' || overallStatus === 'All Matched') {
-        whereClauses.push(`(tr.is_manually_edited = 1 OR tr.overall_status = 'All Matched' OR ABS(${primaryTdsSQL} - COALESCE(tr.as26_tds, 0)) <= 1.0)`);
+        whereClauses.push(`(tr.is_manually_edited = 1 OR tr.overall_status = 'All Matched' OR ((${primaryTdsSQL} > 0 OR COALESCE(tr.as26_tds, 0) > 0) AND ABS(${primaryTdsSQL} - COALESCE(tr.as26_tds, 0)) <= 1.0))`);
       } else if (overallStatus === 'Less Paid' || overallStatus === 'Less') {
-        whereClauses.push(`(tr.is_manually_edited = 0 AND ${primaryTdsSQL} < COALESCE(tr.as26_tds, 0) - 1.0)`);
+        whereClauses.push(`(tr.is_manually_edited = 0 AND (${primaryTdsSQL} > 0 OR COALESCE(tr.as26_tds, 0) > 0) AND ${primaryTdsSQL} > COALESCE(tr.as26_tds, 0) + 1.0)`);
       } else if (overallStatus === 'Excess') {
-        whereClauses.push(`(tr.is_manually_edited = 0 AND ${primaryTdsSQL} > COALESCE(tr.as26_tds, 0) + 1.0)`);
+        whereClauses.push(`(tr.is_manually_edited = 0 AND (${primaryTdsSQL} > 0 OR COALESCE(tr.as26_tds, 0) > 0) AND ${primaryTdsSQL} < COALESCE(tr.as26_tds, 0) - 1.0)`);
       } else {
         whereClauses.push('tr.overall_status = ?');
         queryParams.push(overallStatus);
@@ -940,11 +945,11 @@ export const getReconciliationReport = async (req, res) => {
         tr.id,
         tr.tds_dues_id as tdsDuesId,
         tr.tan_no as tanNo,
-        COALESCE(NULLIF(TRIM(d.company_name), ''), tr.tan_no, 'Client Entity') as companyName,
+        COALESCE(NULLIF(TRIM(d.company_name), ''), tr.tan_no, 'Unassigned Entity') as companyName,
         'N/A' as billNumber,
         'N/A' as billDate,
         0 as totalBillAmount,
-        COALESCE(NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') as financialYear,
+        COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') as financialYear,
 
         COALESCE(tr.books_tds, 0) as booksTds,
         COALESCE(tr.as26_tds, 0) as as26Tds,
@@ -994,22 +999,14 @@ export const getReconciliationReport = async (req, res) => {
       const countStr = `${sources.length}/3`;
       let coverageLabel = `${countStr} · ${sources.join(' + ') || 'No match'}`;
 
+      const primaryVal = tally > 0 ? tally : saarthi;
       let financialStatus = 'Not Received';
       if (r.isManuallyEdited) {
         financialStatus = 'Match';
-      } else if (as26 > 0 && tally > 0) {
-        const diffVal = tally - as26;
+      } else if (as26 > 0 || primaryVal > 0) {
+        const diffVal = primaryVal - as26;
         if (Math.abs(diffVal) <= 1.0) financialStatus = 'Match';
-        else if (diffVal < -1.0) financialStatus = 'Less Paid';
-        else financialStatus = 'Excess';
-      } else if (tally > 0 && as26 === 0) {
-        financialStatus = 'Excess';
-      } else if (as26 > 0 && tally === 0) {
-        financialStatus = 'Less Paid';
-      } else if (saarthi > 0 && as26 > 0) {
-        const diffVal = saarthi - as26;
-        if (Math.abs(diffVal) <= 1.0) financialStatus = 'Match';
-        else if (diffVal < -1.0) financialStatus = 'Less Paid';
+        else if (diffVal > 1.0) financialStatus = 'Less Paid';
         else financialStatus = 'Excess';
       } else {
         financialStatus = 'Not Received';
@@ -1018,10 +1015,10 @@ export const getReconciliationReport = async (req, res) => {
       const diffCalc = (tally || saarthi) - as26;
       const displayFy = (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') ? activeFy : (r.financialYear || 'FY 2024-25');
 
-      const personName = (r.contactPersonName && r.contactPersonName.trim() !== '') ? r.contactPersonName.trim() : 'HR & Accounts Lead';
-      const desig = (r.designation && r.designation.trim() !== '') ? r.designation.trim() : 'Finance Manager';
-      const phone = (r.contactNumber && r.contactNumber.trim() !== '') ? r.contactNumber.trim() : '+91 98201 54321';
-      const email = (r.emailId && r.emailId.trim() !== '') ? r.emailId.trim() : 'accounts@saarthi360.in';
+      const personName = (r.contactPersonName && r.contactPersonName.trim() !== '') ? r.contactPersonName.trim() : '';
+      const desig = (r.designation && r.designation.trim() !== '') ? r.designation.trim() : '';
+      const phone = (r.contactNumber && r.contactNumber.trim() !== '') ? r.contactNumber.trim() : '';
+      const email = (r.emailId && r.emailId.trim() !== '') ? r.emailId.trim() : '';
 
       return {
         ...r,
@@ -1389,11 +1386,9 @@ export const deleteUploadBatch = async (req, res) => {
       );
     } catch (e) {}
 
-    try {
-      await reconcile(null, null);
-    } catch (recErr) {
+    reconcile(null, null).catch(recErr => {
       console.warn('Background reconcile after delete warning:', recErr.message);
-    }
+    });
 
     res.json({ success: true, message: 'Upload file batch deleted successfully', id });
   } catch (error) {
@@ -1573,11 +1568,9 @@ export const syncSaarthiLiveApi = async (req, res) => {
       }
     }
 
-    try {
-      await reconcile(null, null);
-    } catch (rErr) {
+    reconcile(null, null).catch(rErr => {
       console.warn('Background reconcile warning:', rErr.message);
-    }
+    });
 
     res.json({
       success: true,

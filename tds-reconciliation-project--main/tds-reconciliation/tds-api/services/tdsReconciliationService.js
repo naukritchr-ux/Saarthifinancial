@@ -102,8 +102,18 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
         const tallyTds = tallyData ? tallyData.total : 0;
         const finalTallyBatchId = tallyData ? tallyData.batchId : (existing ? existing.tally_batch_id : null);
 
+        // Skip inserting or updating ghost rows if ALL 3 sources have zero TDS
+        const totalTdsSum = booksTds + as26Tds + tallyTds;
+        if (totalTdsSum === 0 && (!due.tan || due.tan.startsWith('NO_TAN_'))) {
+          if (existing && existing.id && !existing.is_manually_edited) {
+            await db.execute('DELETE FROM tds_reconciliation_results WHERE id = ?', [existing.id]);
+          }
+          continue;
+        }
+
         const has26as = finalAs26BatchId !== null || as26Tds > 0;
         const hasTally = finalTallyBatchId !== null || tallyTds > 0;
+        const hasSaarthi = booksTds > 0;
 
         // Pairwise evaluate helper
         const evaluatePair = (valA, valB, hasA, hasB) => {
@@ -117,15 +127,35 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
         const booksVsTally = evaluatePair(tallyTds, booksTds, hasTally, true);
         const as26VsTally = evaluatePair(tallyTds, as26Tds, hasTally, has26as);
 
-        let overallStatus = 'Major Mismatch';
-        if (as26Tds > 0 && tallyTds > 0) {
-          if (Math.abs(as26Tds - tallyTds) <= 1.0) {
+        // 3-way status classification
+        const activeSourcesCount = [hasSaarthi, hasTally, has26as].filter(Boolean).length;
+        let overallStatus = 'Not Received';
+
+        if (activeSourcesCount >= 2) {
+          const vals = [];
+          if (hasSaarthi) vals.push(booksTds);
+          if (hasTally) vals.push(tallyTds);
+          if (has26as) vals.push(as26Tds);
+
+          let allAgree = true;
+          for (let i = 0; i < vals.length; i++) {
+            for (let j = i + 1; j < vals.length; j++) {
+              if (Math.abs(vals[i] - vals[j]) > 1.0) {
+                allAgree = false;
+                break;
+              }
+            }
+          }
+
+          if (allAgree && activeSourcesCount === 3) {
             overallStatus = 'All Matched';
+          } else if (allAgree) {
+            overallStatus = 'Partial Mismatch';
           } else {
             overallStatus = 'Major Mismatch';
           }
         } else {
-          overallStatus = 'Major Mismatch';
+          overallStatus = 'Not Received';
         }
 
         if (existing && existing.id) {
