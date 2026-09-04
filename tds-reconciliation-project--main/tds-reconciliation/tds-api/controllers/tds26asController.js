@@ -1042,13 +1042,13 @@ export const getReconciliationReport = async (req, res) => {
       let financialStatus = 'Not Received';
       if (r.isManuallyEdited) {
         financialStatus = 'Match';
-      } else if (as26 > 0 || primaryVal > 0) {
+      } else if (as26 <= 0 || primaryVal <= 0) {
+        financialStatus = 'Not Received';
+      } else {
         const diffVal = primaryVal - as26;
         if (Math.abs(diffVal) <= 1.0) financialStatus = 'Match';
         else if (diffVal > 1.0) financialStatus = 'Less Paid';
         else financialStatus = 'Excess';
-      } else {
-        financialStatus = 'Not Received';
       }
 
       const diffCalc = (tally || saarthi) - as26;
