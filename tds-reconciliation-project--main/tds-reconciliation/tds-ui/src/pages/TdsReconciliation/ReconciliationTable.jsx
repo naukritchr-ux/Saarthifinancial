@@ -72,13 +72,13 @@ export default function ReconciliationTable({
     if (tally && as26 && saarthi) {
       return (
         <span className="px-2.5 py-1 rounded-full text-[11px] font-black border bg-[#4ADE80]/15 text-[#2E8B57] border-[#4ADE80]/30">
-          3/3 · All 3 (Saarthi + Tally + 26AS)
+          3/3 · All 3 (Sarthi + Tally + 26AS)
         </span>
       );
     } else if (saarthi && tally) {
       return (
         <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold border bg-[#9B87F5]/15 text-[#9B87F5] border-[#9B87F5]/30">
-          2/3 · Saarthi + Tally
+          2/3 · Sarthi + Tally
         </span>
       );
     } else if (tally && as26) {
@@ -90,11 +90,11 @@ export default function ReconciliationTable({
     } else if (as26 && saarthi) {
       return (
         <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold border bg-indigo-50 text-indigo-700 border-indigo-200">
-          2/3 · 26AS + Saarthi
+          2/3 · 26AS + Sarthi
         </span>
       );
     } else {
-      const activeName = saarthi ? 'Saarthi' : tally ? 'Tally' : as26 ? '26AS' : 'Single';
+      const activeName = saarthi ? 'Sarthi' : tally ? 'Tally' : as26 ? '26AS' : 'Single';
       return (
         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold border bg-[#FBBF77]/20 text-[#D97706] border-[#FBBF77]/40">
           1/3 · {activeName} Only
@@ -121,7 +121,7 @@ export default function ReconciliationTable({
               <th className="px-4 py-3">FY</th>
               <th className="px-4 py-3 text-right">Tally TDS</th>
               <th className="px-4 py-3 text-right">26AS TDS</th>
-              <th className="px-4 py-3 text-right">Saarthi TDS</th>
+              <th className="px-4 py-3 text-right">Sarthi TDS</th>
               <th className="px-4 py-3 text-right">Difference (Tally - 26AS)</th>
               <th className="px-4 py-3 text-center">Financial Status</th>
               <th className="px-4 py-3 text-center">Source Coverage</th>
@@ -334,14 +334,14 @@ export default function ReconciliationTable({
                               {/* 3-Way Sub Status Cards */}
                               <div className="md:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div className="p-3 rounded-xl border border-[#E9E4FA] bg-white flex flex-col justify-between">
-                                  <span className="text-[10px] font-bold text-[#6B6580] uppercase">Saarthi 360 vs 26AS</span>
+                                  <span className="text-[10px] font-bold text-[#6B6580] uppercase">Sarthi 360 vs 26AS</span>
                                   <div className="font-extrabold text-[#9B87F5] text-xs mt-1">
                                     {row.booksVs26asStatus || 'Matched'}
                                   </div>
                                 </div>
 
                                 <div className="p-3 rounded-xl border border-[#E9E4FA] bg-white flex flex-col justify-between">
-                                  <span className="text-[10px] font-bold text-[#6B6580] uppercase">Saarthi 360 vs Tally</span>
+                                  <span className="text-[10px] font-bold text-[#6B6580] uppercase">Sarthi 360 vs Tally</span>
                                   <div className="font-extrabold text-[#9B87F5] text-xs mt-1">
                                     {row.booksVsTallyStatus || 'Matched'}
                                   </div>
