@@ -35,7 +35,12 @@ export default function ImportHistory() {
   const executeDeleteBatch = async (batchItem) => {
     setDeleteConfirmItem(null);
     const targetId = String(batchItem.id);
-    const meta = typeof batchItem.metadata === 'string' ? JSON.parse(batchItem.metadata || '{}') : (batchItem.metadata || {});
+    let meta = {};
+    try {
+      meta = typeof batchItem.metadata === 'string' ? JSON.parse(batchItem.metadata || '{}') : (batchItem.metadata || {});
+    } catch (e) {
+      meta = {};
+    }
     const batchId = meta.upload_batch_id || batchItem.upload_batch_id || batchItem.batchId;
 
     try {

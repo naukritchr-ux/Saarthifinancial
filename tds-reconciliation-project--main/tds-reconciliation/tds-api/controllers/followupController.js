@@ -184,13 +184,6 @@ export const createFollowup = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Required fields missing: tanNo, companyName, status' });
     }
 
-    if (process.env.DB_TYPE === 'mysql') {
-      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person VARCHAR(100)'); } catch (e) {}
-      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number VARCHAR(50)'); } catch (e) {}
-    } else {
-      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person TEXT'); } catch (e) {}
-      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number TEXT'); } catch (e) {}
-    }
 
     const insertQuery = `
       INSERT INTO tds_followups 
@@ -252,13 +245,6 @@ export const updateFollowup = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Follow-up ID required' });
     }
 
-    if (process.env.DB_TYPE === 'mysql') {
-      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person VARCHAR(100)'); } catch (e) {}
-      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number VARCHAR(50)'); } catch (e) {}
-    } else {
-      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person TEXT'); } catch (e) {}
-      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number TEXT'); } catch (e) {}
-    }
 
     const targetId = isNaN(parseInt(id)) ? id : parseInt(id);
     const updates = [];

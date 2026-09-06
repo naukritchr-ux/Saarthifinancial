@@ -88,7 +88,7 @@ export default function Dashboard() {
             Executive TDS Reconciliation Dashboard
           </h1>
           <p className="text-xs text-[#6B6580] mt-1">
-            Real-time aggregate snapshot of Form 26AS, Tally Ledgers, and Saarthi 360 Books ({fyFilter})
+            Real-time aggregate snapshot of Form 26AS, Tally Ledgers, and Sarthi 360 Books ({fyFilter})
           </p>
         </div>
         <button
@@ -129,7 +129,7 @@ export default function Dashboard() {
         {/* Saarthi 360 TDS */}
         <div className="bg-white p-5 rounded-2xl border border-[#E9E4FA] shadow-2xs flex items-center justify-between">
           <div>
-            <div className="text-xs font-bold text-[#6B6580] uppercase tracking-wider">Total TDS — Saarthi 360</div>
+            <div className="text-xs font-bold text-[#6B6580] uppercase tracking-wider">Total TDS — Sarthi 360</div>
             <div className="text-2xl font-black text-[#1F1B2E] mt-1">{formatCurrency(data.totals.saarthi)}</div>
             <div className="text-[11px] text-[#9B87F5] font-medium mt-1">CRM Platform Invoices</div>
           </div>
@@ -303,7 +303,7 @@ export default function Dashboard() {
                 <div className="flex justify-between text-xs font-bold mb-1">
                   <span className="text-[#C084FC] flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-[#C084FC]"></span>
-                    Saarthi 360 Books (A)
+                    Sarthi 360 Books (A)
                   </span>
                   <span className="text-[#1F1B2E]">{formatCurrency(data.totals.saarthi)}</span>
                 </div>

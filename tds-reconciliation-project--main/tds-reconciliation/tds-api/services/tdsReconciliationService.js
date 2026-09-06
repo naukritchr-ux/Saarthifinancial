@@ -138,8 +138,8 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
           return 'Less Paid';
         };
 
-        const booksVs26as = evaluatePair(as26Tds, booksTds, has26as, true);
-        const booksVsTally = evaluatePair(tallyTds, booksTds, hasTally, true);
+        const booksVs26as = evaluatePair(as26Tds, booksTds, has26as, hasSaarthi);
+        const booksVsTally = evaluatePair(tallyTds, booksTds, hasTally, hasSaarthi);
         const as26VsTally = evaluatePair(tallyTds, as26Tds, hasTally, has26as);
 
         // 3-way status classification
