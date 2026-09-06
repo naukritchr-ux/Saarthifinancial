@@ -67,7 +67,8 @@ export default function ReconciliationTable({
   const getCoveragePill = (coverage, row) => {
     const tally = parseFloat(row?.tallyTds || 0) > 0;
     const as26 = parseFloat(row?.as26Tds || 0) > 0;
-    const saarthi = parseFloat(row?.saarthiTds || row?.booksTds || 0) > 0;
+    const hasCrm = Boolean(row?.tdsDuesId || row?.contactPersonName || (row?.companyName && !['Client Entity', 'Unknown Client', 'Unknown Company'].includes(String(row?.companyName).trim())));
+    const saarthi = parseFloat(row?.saarthiTds || row?.booksTds || 0) > 0 || hasCrm;
 
     if (tally && as26 && saarthi) {
       return (
@@ -75,16 +76,16 @@ export default function ReconciliationTable({
           3/3 · All 3 (Sarthi + Tally + 26AS)
         </span>
       );
-    } else if (saarthi && tally) {
-      return (
-        <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold border bg-[#9B87F5]/15 text-[#9B87F5] border-[#9B87F5]/30">
-          2/3 · Sarthi + Tally
-        </span>
-      );
     } else if (tally && as26) {
       return (
         <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold border bg-[#B4A7F5]/20 text-[#8572E0] border-[#B4A7F5]/40">
           2/3 · Tally + 26AS
+        </span>
+      );
+    } else if (saarthi && tally) {
+      return (
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold border bg-[#9B87F5]/15 text-[#9B87F5] border-[#9B87F5]/30">
+          2/3 · Sarthi + Tally
         </span>
       );
     } else if (as26 && saarthi) {
@@ -94,7 +95,7 @@ export default function ReconciliationTable({
         </span>
       );
     } else {
-      const activeName = saarthi ? 'Sarthi' : tally ? 'Tally' : as26 ? '26AS' : 'Single';
+      const activeName = tally ? 'Tally' : as26 ? '26AS' : saarthi ? 'Sarthi' : 'Single';
       return (
         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold border bg-[#FBBF77]/20 text-[#D97706] border-[#FBBF77]/40">
           1/3 · {activeName} Only
