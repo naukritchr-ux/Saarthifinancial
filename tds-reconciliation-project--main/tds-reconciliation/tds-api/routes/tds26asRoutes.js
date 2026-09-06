@@ -16,7 +16,8 @@ import {
   seedDatabaseEndpoint,
   purgeUploadData,
   deleteUploadBatch,
-  syncSaarthiLiveApi
+  syncSaarthiLiveApi,
+  syncSarthiLiveApi
 } from '../controllers/tds26asController.js';
 
 const router = express.Router();
@@ -47,6 +48,7 @@ const upload = multer({
 // Mount endpoints
 router.post('/seed', seedDatabaseEndpoint);
 router.post('/sync-saarthi', syncSaarthiLiveApi);
+router.post('/sync-sarthi', syncSarthiLiveApi);
 router.post('/upload-26as', upload.single('file'), upload26as);
 router.post('/upload-tally', upload.single('file'), uploadTally);
 router.post('/purge', purgeUploadData);

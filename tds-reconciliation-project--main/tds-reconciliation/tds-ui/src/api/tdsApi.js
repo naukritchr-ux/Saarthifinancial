@@ -120,18 +120,32 @@ export const getCsvExportUrl = (filters = {}) => {
   return `${API_URL}/api/tds-26as/export?${q}`;
 };
 
-export const syncSaarthiLiveApi = async () => {
+export const syncSarthiLiveApi = async () => {
   try {
-    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/sync-saarthi`, {
-      method: 'POST'
-    }, 120000);
+    let response;
+    try {
+      response = await fetchWithTimeout(`${API_URL}/api/tds-26as/sync-sarthi`, {
+        method: 'POST'
+      }, 120000);
+      if (!response.ok && response.status === 404) {
+        response = await fetchWithTimeout(`${API_URL}/api/tds-26as/sync-saarthi`, {
+          method: 'POST'
+        }, 120000);
+      }
+    } catch {
+      response = await fetchWithTimeout(`${API_URL}/api/tds-26as/sync-saarthi`, {
+        method: 'POST'
+      }, 120000);
+    }
     const data = await response.json();
     if (response.ok && data && data.success !== false) return data;
-    return { success: false, error: data?.error || 'Failed to sync live Saarthi data' };
+    return { success: false, error: data?.error || 'Failed to sync live Sarthi data' };
   } catch (err) {
-    return { success: false, error: err.message || 'Network error syncing live Saarthi data' };
+    return { success: false, error: err.message || 'Network error syncing live Sarthi data' };
   }
 };
+
+export const syncSaarthiLiveApi = syncSarthiLiveApi;
 
 /** File Upload API */
 export const upload26as = async (file, modeOrFy = 'update', modeParam = 'update') => {

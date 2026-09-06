@@ -79,10 +79,10 @@ export default function Layout({ children }) {
                 onClick={handleSyncSaarthi}
                 disabled={syncing}
                 className="flex items-center gap-1.5 bg-[#9B87F5] hover:bg-[#8572E0] disabled:opacity-50 text-white font-extrabold px-3.5 py-1.5 rounded-xl text-xs transition cursor-pointer shadow-xs"
-                title="Fetch & sync live client master data from Saarthi 360"
+                title="Fetch & sync live client master data from Sarthi 360"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-                <span>{syncing ? 'Syncing...' : 'Sync Saarthi 360'}</span>
+                <span>{syncing ? 'Syncing...' : 'Sync Sarthi 360'}</span>
               </button>
 
               {/* FY Selector */}
@@ -217,7 +217,7 @@ export default function Layout({ children }) {
                   </div>
                   <div>
                     <h3 className="text-lg font-black tracking-tight text-[#1F1B2E]">
-                      Saarthi 360 Sync Completed!
+                      Sarthi 360 Sync Completed!
                     </h3>
                     <p className="text-xs text-[#6B6580] font-medium">
                       Live client master data refreshed.
