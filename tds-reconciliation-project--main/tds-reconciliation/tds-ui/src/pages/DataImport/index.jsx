@@ -123,6 +123,8 @@ export default function DataImport() {
       const res = await resolveCleaningItem(activeEditItem.id, {
         tanNo: finalTan.toUpperCase(),
         companyName: finalCompany,
+        panNo: saarthiPan.trim(),
+        gstNum: saarthiGstin.trim(),
         status: markClean ? 'Cleaned' : 'Updated'
       });
 

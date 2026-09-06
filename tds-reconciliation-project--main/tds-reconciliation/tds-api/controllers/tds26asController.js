@@ -784,7 +784,7 @@ export const getCleaningQueue = async (req, res) => {
 export const resolveCleaningItem = async (req, res) => {
   try {
     const { id } = req.params;
-    const { tanNo, companyName, status } = req.body;
+    const { tanNo, companyName, status, panNo, gstNum } = req.body;
 
     if (!id) {
       return res.status(400).json({ success: false, error: 'Cleaning Item ID is required' });
@@ -814,20 +814,90 @@ export const resolveCleaningItem = async (req, res) => {
 
     const cleanTan = String(tanNo || 'N/A').toUpperCase().trim();
     const cleanCompany = String(companyName || 'Cleaned Entity').trim();
+    const cleanPan = panNo ? String(panNo).toUpperCase().trim() : null;
+    const cleanGst = gstNum ? String(gstNum).toUpperCase().trim() : null;
+
+    const [recRows] = await db.execute('SELECT * FROM tds_reconciliation_results WHERE id = ?', [id]);
+
+    let booksVs26as = 'Not Received';
+    let booksVsTally = 'Not Received';
+    let as26VsTally = 'Not Received';
+    let overallStatus = 'Not Received';
+
+    if (recRows.length > 0) {
+      const rec = recRows[0];
+      const booksTds = parseFloat(rec.books_tds || 0);
+      const as26Tds = parseFloat(rec.as26_tds || 0);
+      const tallyTds = parseFloat(rec.tally_tds || 0);
+
+      const has26as = rec.as26_batch_id !== null || as26Tds > 0;
+      const hasTally = rec.tally_batch_id !== null || tallyTds > 0;
+      const hasSaarthi = booksTds > 0;
+
+      const evaluatePair = (valA, valB, hasA, hasB) => {
+        if (!hasA || !hasB || valA <= 0 || valB <= 0) return 'Not Received';
+        if (Math.abs(valA - valB) <= 1.0) return 'Matched';
+        if (valA > valB) return 'Excess';
+        return 'Less Paid';
+      };
+
+      booksVs26as = evaluatePair(as26Tds, booksTds, has26as, true);
+      booksVsTally = evaluatePair(tallyTds, booksTds, hasTally, true);
+      as26VsTally = evaluatePair(tallyTds, as26Tds, hasTally, has26as);
+
+      const activeSourcesCount = [hasSaarthi, hasTally, has26as].filter(Boolean).length;
+
+      if (activeSourcesCount >= 2) {
+        const vals = [];
+        if (hasSaarthi) vals.push(booksTds);
+        if (hasTally) vals.push(tallyTds);
+        if (has26as) vals.push(as26Tds);
+
+        let allAgree = true;
+        for (let i = 0; i < vals.length; i++) {
+          for (let j = i + 1; j < vals.length; j++) {
+            if (Math.abs(vals[i] - vals[j]) > 1.0) {
+              allAgree = false;
+              break;
+            }
+          }
+        }
+
+        if (allAgree && activeSourcesCount === 3) {
+          overallStatus = 'All Matched';
+        } else if (allAgree) {
+          overallStatus = 'Partial Mismatch';
+        } else {
+          overallStatus = 'Major Mismatch';
+        }
+      }
+    }
 
     await db.execute(
       `UPDATE tds_reconciliation_results 
-       SET tan_no = ?, is_manually_edited = 1, overall_status = 'All Matched', updated_at = CURRENT_TIMESTAMP 
+       SET tan_no = ?, is_manually_edited = 1, 
+           books_vs_26as_status = ?, books_vs_tally_status = ?, as26_vs_tally_status = ?,
+           overall_status = ?, updated_at = CURRENT_TIMESTAMP 
        WHERE id = ?`,
-      [cleanTan, id]
+      [cleanTan, booksVs26as, booksVsTally, as26VsTally, overallStatus, id]
     );
 
-    const [recRows] = await db.execute('SELECT tds_dues_id FROM tds_reconciliation_results WHERE id = ?', [id]);
     if (recRows.length > 0 && recRows[0].tds_dues_id) {
-      await db.execute(
-        'UPDATE tds_dues SET tan_no = ?, company_name = ? WHERE id = ?',
-        [cleanTan, cleanCompany, recRows[0].tds_dues_id]
-      );
+      try {
+        await db.execute(
+          `UPDATE tds_dues 
+           SET tan_no = ?, company_name = ?, 
+               pan_no = COALESCE(?, pan_no), 
+               gst_num = COALESCE(?, gst_num) 
+           WHERE id = ?`,
+          [cleanTan, cleanCompany, cleanPan, cleanGst, recRows[0].tds_dues_id]
+        );
+      } catch (e) {
+        await db.execute(
+          'UPDATE tds_dues SET tan_no = ?, company_name = ? WHERE id = ?',
+          [cleanTan, cleanCompany, recRows[0].tds_dues_id]
+        );
+      }
     }
 
     res.json({
@@ -1404,9 +1474,21 @@ export const deleteUploadBatch = async (req, res) => {
     if (batchId) {
       await db.execute('DELETE FROM tds_26as_entries WHERE upload_batch_id = ?', [batchId]);
       await db.execute('DELETE FROM tds_tally_entries WHERE upload_batch_id = ?', [batchId]);
+      
+      // Zero out matching 26AS side
       await db.execute(
-        'DELETE FROM tds_reconciliation_results WHERE as26_batch_id = ? OR tally_batch_id = ?',
-        [batchId, batchId]
+        `UPDATE tds_reconciliation_results 
+         SET as26_tds = 0, as26_batch_id = NULL, books_vs_26as_status = 'Not Received', as26_vs_tally_status = 'Not Received' 
+         WHERE as26_batch_id = ? AND (is_manually_edited IS NULL OR is_manually_edited = 0)`,
+        [batchId]
+      );
+
+      // Zero out matching Tally side
+      await db.execute(
+        `UPDATE tds_reconciliation_results 
+         SET tally_tds = 0, tally_batch_id = NULL, books_vs_tally_status = 'Not Received', as26_vs_tally_status = 'Not Received' 
+         WHERE tally_batch_id = ? AND (is_manually_edited IS NULL OR is_manually_edited = 0)`,
+        [batchId]
       );
     }
 
@@ -1421,6 +1503,7 @@ export const deleteUploadBatch = async (req, res) => {
         `DELETE FROM tds_reconciliation_results 
          WHERE (as26_tds IS NULL OR as26_tds = 0) 
            AND (tally_tds IS NULL OR tally_tds = 0) 
+           AND (books_tds IS NULL OR books_tds = 0)
            AND (is_manually_edited IS NULL OR is_manually_edited = 0)`
       );
     } catch (e) {}

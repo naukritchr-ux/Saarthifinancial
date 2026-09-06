@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS tds_dues (
   teamleader VARCHAR(100),
   payment_date VARCHAR(30),
   tan_no VARCHAR(20),
+  pan_no VARCHAR(20),
+  gst_num VARCHAR(30),
   amount_received DECIMAL(15,2),
   status VARCHAR(50),
   contact_person_name VARCHAR(100),
@@ -72,6 +74,16 @@ CREATE TABLE IF NOT EXISTS tds_reconciliation_results (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_overall (overall_status),
   INDEX idx_tan (tan_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS tds_reconciliation_audit_logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  reconciliation_id INT NOT NULL,
+  action VARCHAR(50) NOT NULL,
+  details TEXT,
+  changed_by VARCHAR(100),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_reconciliation (reconciliation_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS upload_history (

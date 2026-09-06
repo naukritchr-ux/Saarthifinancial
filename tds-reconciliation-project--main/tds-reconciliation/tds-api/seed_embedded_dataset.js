@@ -34,6 +34,8 @@ export async function ensureTablesExist() {
     try { await db.execute('ALTER TABLE tds_dues ADD COLUMN contact_number VARCHAR(50)'); } catch (err) {}
     try { await db.execute('ALTER TABLE tds_dues ADD COLUMN email_id VARCHAR(255)'); } catch (err) {}
     try { await db.execute('ALTER TABLE tds_dues ADD COLUMN teamleader VARCHAR(100)'); } catch (err) {}
+    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN pan_no VARCHAR(20)'); } catch (err) {}
+    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN gst_num VARCHAR(30)'); } catch (err) {}
     try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year VARCHAR(50)'); } catch (err) {}
 
     try {
@@ -60,6 +62,8 @@ export async function ensureTablesExist() {
         teamleader TEXT,
         payment_date TEXT,
         tan_no TEXT,
+        pan_no TEXT,
+        gst_num TEXT,
         amount_received DECIMAL(15,2),
         status TEXT,
         contact_person_name TEXT,
@@ -76,10 +80,13 @@ export async function ensureTablesExist() {
       if (!duesCols.includes('saarthi_client_id')) await db.execute(`ALTER TABLE tds_dues ADD COLUMN saarthi_client_id INTEGER;`);
       if (!duesCols.includes('email_id')) await db.execute(`ALTER TABLE tds_dues ADD COLUMN email_id TEXT;`);
       if (!duesCols.includes('designation')) await db.execute(`ALTER TABLE tds_dues ADD COLUMN designation TEXT;`);
+      if (!duesCols.includes('pan_no')) await db.execute(`ALTER TABLE tds_dues ADD COLUMN pan_no TEXT;`);
+      if (!duesCols.includes('gst_num')) await db.execute(`ALTER TABLE tds_dues ADD COLUMN gst_num TEXT;`);
     } catch (e) {
       try { await db.execute('ALTER TABLE tds_dues ADD COLUMN designation VARCHAR(100)'); } catch (err) {}
       try { await db.execute('ALTER TABLE tds_dues ADD COLUMN gst_no VARCHAR(50)'); } catch (err) {}
       try { await db.execute('ALTER TABLE tds_dues ADD COLUMN pan_no VARCHAR(50)'); } catch (err) {}
+      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN gst_num VARCHAR(50)'); } catch (err) {}
     }
 
     await db.execute(`

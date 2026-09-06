@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS tds_dues (
   teamleader TEXT,
   payment_date TEXT,
   tan_no TEXT,
+  pan_no TEXT,
+  gst_num TEXT,
   amount_received DECIMAL(15,2),
   status TEXT,
   contact_person_name TEXT,
