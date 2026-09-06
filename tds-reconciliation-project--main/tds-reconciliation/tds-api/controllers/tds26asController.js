@@ -657,8 +657,8 @@ export const getCleaningQueue = async (req, res) => {
 
     const [rows] = await db.execute(query);
 
-    const [all26as] = await db.execute('SELECT deductor_name, tan_no FROM tds_26as_entries');
-    const [allTally] = await db.execute('SELECT party_name, tan_no FROM tds_tally_entries');
+    const [all26as] = await db.execute('SELECT DISTINCT deductor_name, UPPER(TRIM(tan_no)) as tan_no FROM tds_26as_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ""');
+    const [allTally] = await db.execute('SELECT DISTINCT party_name, UPPER(TRIM(tan_no)) as tan_no FROM tds_tally_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ""');
 
     const as26ByTan = new Map();
     for (const e of all26as) {
@@ -1024,13 +1024,13 @@ export const getReconciliationReport = async (req, res) => {
     const hasTallySQL = '(COALESCE(tr.tally_tds, 0) > 0)';
     const has26asSQL = '(COALESCE(tr.as26_tds, 0) > 0)';
 
-    if (coverageFilter === '3/3' || coverageFilter === '3 of 3' || coverageFilter === 'all_3' || coverageFilter === 'all3' || coverageFilter === 'All 3 (Saarthi + Tally + 26AS)') {
+    if (coverageFilter === '3/3' || coverageFilter === '3 of 3' || coverageFilter === 'all_3' || coverageFilter === 'all3' || coverageFilter === 'All 3 (Saarthi + Tally + 26AS)' || coverageFilter === 'All 3 (Sarthi + Tally + 26AS)') {
       whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL} AND ${has26asSQL})`);
-    } else if (coverageFilter === 'saarthi_tally' || coverageFilter === 'tally_saarthi' || coverageFilter === 'Saarthi + Tally') {
+    } else if (coverageFilter === 'saarthi_tally' || coverageFilter === 'sarthi_tally' || coverageFilter === 'tally_saarthi' || coverageFilter === 'tally_sarthi' || coverageFilter === 'Saarthi + Tally' || coverageFilter === 'Sarthi + Tally') {
       whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL} AND NOT ${has26asSQL})`);
     } else if (coverageFilter === 'tally_26as' || coverageFilter === '26as_tally' || coverageFilter === 'Tally + 26AS') {
       whereClauses.push(`(${hasTallySQL} AND ${has26asSQL} AND NOT ${hasSaarthiSQL})`);
-    } else if (coverageFilter === 'as26_saarthi' || coverageFilter === 'saarthi_26as' || coverageFilter === '26as_saarthi' || coverageFilter === '26AS + Saarthi') {
+    } else if (coverageFilter === 'as26_saarthi' || coverageFilter === 'as26_sarthi' || coverageFilter === 'saarthi_26as' || coverageFilter === 'sarthi_26as' || coverageFilter === '26as_saarthi' || coverageFilter === '26as_sarthi' || coverageFilter === '26AS + Saarthi' || coverageFilter === '26AS + Sarthi') {
       whereClauses.push(`(${has26asSQL} AND ${hasSaarthiSQL} AND NOT ${hasTallySQL})`);
     } else if (coverageFilter === '2/3' || coverageFilter === '2 of 3') {
       whereClauses.push(`(((CASE WHEN ${hasSaarthiSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${has26asSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${hasTallySQL} THEN 1 ELSE 0 END)) = 2)`);
@@ -1383,13 +1383,13 @@ export const exportReconciliationCSV = async (req, res) => {
     const hasTallySQL = '(COALESCE(tr.tally_tds, 0) > 0)';
     const has26asSQL = '(COALESCE(tr.as26_tds, 0) > 0)';
 
-    if (coverageFilter === '3/3' || coverageFilter === '3 of 3' || coverageFilter === 'all_3' || coverageFilter === 'all3' || coverageFilter === 'All 3 (Saarthi + Tally + 26AS)') {
+    if (coverageFilter === '3/3' || coverageFilter === '3 of 3' || coverageFilter === 'all_3' || coverageFilter === 'all3' || coverageFilter === 'All 3 (Saarthi + Tally + 26AS)' || coverageFilter === 'All 3 (Sarthi + Tally + 26AS)') {
       whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL} AND ${has26asSQL})`);
-    } else if (coverageFilter === 'saarthi_tally' || coverageFilter === 'tally_saarthi' || coverageFilter === 'Saarthi + Tally') {
+    } else if (coverageFilter === 'saarthi_tally' || coverageFilter === 'sarthi_tally' || coverageFilter === 'tally_saarthi' || coverageFilter === 'tally_sarthi' || coverageFilter === 'Saarthi + Tally' || coverageFilter === 'Sarthi + Tally') {
       whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL} AND NOT ${has26asSQL})`);
     } else if (coverageFilter === 'tally_26as' || coverageFilter === '26as_tally' || coverageFilter === 'Tally + 26AS') {
       whereClauses.push(`(${hasTallySQL} AND ${has26asSQL} AND NOT ${hasSaarthiSQL})`);
-    } else if (coverageFilter === 'as26_saarthi' || coverageFilter === 'saarthi_26as' || coverageFilter === '26as_saarthi' || coverageFilter === '26AS + Saarthi') {
+    } else if (coverageFilter === 'as26_saarthi' || coverageFilter === 'as26_sarthi' || coverageFilter === 'saarthi_26as' || coverageFilter === 'sarthi_26as' || coverageFilter === '26as_saarthi' || coverageFilter === '26as_sarthi' || coverageFilter === '26AS + Saarthi' || coverageFilter === '26AS + Sarthi') {
       whereClauses.push(`(${has26asSQL} AND ${hasSaarthiSQL} AND NOT ${hasTallySQL})`);
     } else if (coverageFilter === '2/3' || coverageFilter === '2 of 3') {
       whereClauses.push(`(((CASE WHEN ${hasSaarthiSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${has26asSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${hasTallySQL} THEN 1 ELSE 0 END)) = 2)`);

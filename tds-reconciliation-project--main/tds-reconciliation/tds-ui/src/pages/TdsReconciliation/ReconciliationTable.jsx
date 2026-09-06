@@ -145,8 +145,8 @@ export default function ReconciliationTable({
                 const tallyVal = parseFloat(row.tallyTds || 0);
                 const as26Val = parseFloat(row.as26Tds || 0);
                 const diff = tallyVal - as26Val;
-                const isShort = diff < -1.0;
-                const isExcess = diff > 1.0;
+                const isShort = diff > 1.0;
+                const isExcess = diff < -1.0;
 
                 const validCompany = row.companyName && !['Client Entity', 'Unknown Client', 'Unknown Company'].includes(row.companyName.trim());
                 const displayName = validCompany 
@@ -312,7 +312,7 @@ export default function ReconciliationTable({
                                   <div className="space-y-1">
                                     <span className="inline-flex items-center gap-1 text-[#D97706] font-black text-xs">
                                       <AlertTriangle className="w-4 h-4 text-[#FBBF77]" />
-                                      Excess Deducted: {formatCurrency(diff)}
+                                      Excess Deducted: {formatCurrency(Math.abs(diff))}
                                     </span>
                                     <p className="text-[11px] text-[#6B6580] font-medium leading-tight">
                                       26AS portal reflects higher deduction than recorded in Tally ledger.

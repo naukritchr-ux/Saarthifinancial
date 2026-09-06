@@ -264,7 +264,7 @@ export default function DataImport() {
                           <th className="px-4 py-2.5 w-24">FIELD</th>
                           <th className="px-4 py-2.5">TALLY</th>
                           <th className="px-4 py-2.5">FORM 26AS</th>
-                          <th className="px-4 py-2.5">SAARTHI 360</th>
+                          <th className="px-4 py-2.5">SARTHI 360</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200/60 bg-white">
@@ -420,7 +420,7 @@ export default function DataImport() {
 
                   <div>
                     <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                      Saarthi 360 company name
+                      Sarthi 360 company name
                     </label>
                     <input
                       type="text"
@@ -451,7 +451,7 @@ export default function DataImport() {
                     TAX IDENTIFIERS
                   </h4>
                   <p className="text-[11px] text-slate-500 font-medium">
-                    TAN is the primary match key. Tally and 26AS share one entity TAN; Saarthi has its own.
+                    TAN is the primary match key. Tally and 26AS share one entity TAN; Sarthi has its own.
                   </p>
                 </div>
 
@@ -471,7 +471,7 @@ export default function DataImport() {
 
                   <div>
                     <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                      Saarthi 360 TAN
+                      Sarthi 360 TAN
                     </label>
                     <input
                       type="text"
