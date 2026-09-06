@@ -136,11 +136,11 @@ export default function FollowUp() {
   };
 
   const handleExportCSV = () => {
-    if (items.length === 0) return alert('No follow-up items to export');
+    if (filteredEntries.length === 0) return alert('No follow-up items to export (check your active filters)');
     const headers = ['Company', 'TAN', 'Contact Person', 'Department', 'Contact Number', 'Method', 'Status', 'Notes', 'Last Followup', 'Next Followup'];
     const csvLines = [headers.join(',')];
 
-    items.forEach(row => {
+    filteredEntries.forEach(row => {
       csvLines.push([
         `"${(row.companyName || '').replace(/"/g, '""')}"`,
         `"${row.tanNo || ''}"`,

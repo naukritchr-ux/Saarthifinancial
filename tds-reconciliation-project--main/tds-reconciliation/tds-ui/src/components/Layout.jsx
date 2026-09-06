@@ -79,7 +79,7 @@ export default function Layout({ children }) {
                 onClick={handleSyncSaarthi}
                 disabled={syncing}
                 className="flex items-center gap-1.5 bg-[#9B87F5] hover:bg-[#8572E0] disabled:opacity-50 text-white font-extrabold px-3.5 py-1.5 rounded-xl text-xs transition cursor-pointer shadow-xs"
-                title="Fetch & sync live client invoices from Saarthi 360 APIs"
+                title="Fetch & sync live client master data from Saarthi 360"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
                 <span>{syncing ? 'Syncing...' : 'Sync Saarthi 360'}</span>
@@ -220,7 +220,7 @@ export default function Layout({ children }) {
                       Saarthi 360 Sync Completed!
                     </h3>
                     <p className="text-xs text-[#6B6580] font-medium">
-                      Live client master data & billing invoices updated.
+                      Live client master data refreshed.
                     </p>
                   </div>
                 </div>
@@ -232,18 +232,10 @@ export default function Layout({ children }) {
                       Client Masters Found:
                     </span>
                     <span className="font-bold text-[#9B87F5]">
-                      {syncResultModal.stats?.clientsFound?.toLocaleString() || '15,700+'}
+                      {syncResultModal.stats?.clientsProcessed?.toLocaleString() ?? syncResultModal.stats?.clientsFound?.toLocaleString() ?? '—'}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between text-xs border-b border-[#E9E4FA] pb-2">
-                    <span className="text-[#6B6580] flex items-center gap-1.5">
-                      <FileText className="w-3.5 h-3.5 text-[#B4A7F5]" />
-                      Invoices Processed:
-                    </span>
-                    <span className="font-bold text-[#B4A7F5]">
-                      {syncResultModal.stats?.invoicesProcessed?.toLocaleString() || '4,400+'}
-                    </span>
-                  </div>
+
                   <div className="flex items-center justify-between text-xs border-b border-[#E9E4FA] pb-2">
                     <span className="text-[#6B6580] flex items-center gap-1.5">
                       <Database className="w-3.5 h-3.5 text-[#9B87F5]" />

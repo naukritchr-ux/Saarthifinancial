@@ -1,4 +1,5 @@
 import xlsx from 'xlsx';
+import fs from 'fs';
 import db from '../config/db.js';
 import { reconcile } from '../services/tdsReconciliationService.js';
 import { seedEmbeddedDataset, markPurgedFlag, clearPurgedFlag } from '../seed_embedded_dataset.js';
@@ -184,6 +185,7 @@ export const upload26as = async (req, res) => {
     }
 
     const importMode = req.body?.importMode || req.query?.importMode || 'update';
+    const uploadFy = String(req.body?.financialYear || req.query?.financialYear || '').trim();
     if (importMode === 'clean') {
       console.log('🧹 Cleaning past Form 26AS data before import...');
       await db.execute('DELETE FROM tds_26as_entries');
@@ -224,6 +226,19 @@ export const upload26as = async (req, res) => {
         'INSERT INTO tds_26as_entries (tan_no, deductor_name, amount_paid, tds_deducted, section, quarter, upload_batch_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
         [e.tan, e.deductorName, e.amountPaid, e.tdsDeducted, e.section, e.quarter, e.uploadBatchId]
       );
+    }
+
+    // Persist financial year onto matching tds_dues rows so the report shows the real FY
+    if (uploadFy) {
+      const uniqueTans = [...new Set(entries.map(e => e.tan))];
+      for (const t of uniqueTans) {
+        try {
+          await db.execute(
+            'UPDATE tds_dues SET financial_year = COALESCE(NULLIF(financial_year, \'\'), ?) WHERE UPPER(TRIM(tan_no)) = ?',
+            [uploadFy, t]
+          );
+        } catch (fyErr) {}
+      }
     }
 
     try {
@@ -375,6 +390,7 @@ export const uploadTally = async (req, res) => {
     }
 
     const importMode = req.body?.importMode || req.query?.importMode || 'update';
+    const uploadFy = String(req.body?.financialYear || req.query?.financialYear || '').trim();
     if (importMode === 'clean') {
       console.log('🧹 Cleaning past Tally data before import...');
       await db.execute('DELETE FROM tds_tally_entries');
@@ -446,6 +462,19 @@ export const uploadTally = async (req, res) => {
             WHERE UPPER(TRIM(tan_no)) = ?
           `, [e.contactPerson, e.designation, e.contactNumber, e.emailId, e.teamleader, e.tan.toUpperCase()]);
         } catch (err) {}
+      }
+    }
+
+    // Persist financial year onto matching tds_dues rows so the report shows the real FY
+    if (uploadFy) {
+      const uniqueTans = [...new Set(entries.map(e => e.tan))];
+      for (const t of uniqueTans) {
+        try {
+          await db.execute(
+            'UPDATE tds_dues SET financial_year = COALESCE(NULLIF(financial_year, \'\'), ?) WHERE UPPER(TRIM(tan_no)) = ?',
+            [uploadFy, t]
+          );
+        } catch (fyErr) {}
       }
     }
 
@@ -902,6 +931,11 @@ export const resolveCleaningItem = async (req, res) => {
       }
     }
 
+    // Fire-and-forget reconcile so corrected TAN gets its 26AS/Tally amounts recalculated immediately
+    reconcile(null, null).catch(rErr => {
+      console.warn('Background reconcile warning after cleaning item resolve:', rErr.message);
+    });
+
     res.json({
       success: true,
       message: 'Cleaning item resolved successfully',
@@ -1124,7 +1158,8 @@ export const getReconciliationReport = async (req, res) => {
       }
 
       const diffCalc = (tally || saarthi) - as26;
-      const displayFy = (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') ? activeFy : (r.financialYear || 'FY 2024-25');
+      // Use the row's actual stored FY; only fall back to the active filter when it is genuinely empty
+      const displayFy = (r.financialYear && r.financialYear.trim()) ? r.financialYear.trim() : (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years' ? activeFy : 'FY 2024-25');
 
       const personName = (r.contactPersonName && r.contactPersonName.trim() !== '') ? r.contactPersonName.trim() : '';
       const desig = (r.designation && r.designation.trim() !== '') ? r.designation.trim() : '';
@@ -1200,9 +1235,9 @@ export const overrideReconciliationStatus = async (req, res) => {
     const updateQuery = `
       UPDATE tds_reconciliation_results 
       SET ${overrideField} = ?, is_manually_edited = 1, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? OR tds_dues_id = ?
+      WHERE id = ?
     `;
-    const [result] = await db.execute(updateQuery, [newValue, targetId, targetId]);
+    const [result] = await db.execute(updateQuery, [newValue, targetId]);
 
     if (!result || result.affectedRows === 0) {
       const [duesCheck] = await db.execute('SELECT id, tan_no, tds FROM tds_dues WHERE id = ?', [targetId]);
@@ -1598,8 +1633,6 @@ export const syncSaarthiLiveApi = async (req, res) => {
     const fetchEndpointWithFallback = async (endpointName, ms = 8000) => {
       const cleanName = String(endpointName || '').replace(/^api\//, '').trim();
       const candidates = [
-        `https://api.sarthi360.in/api/${cleanName}`,
-        `https://api.sarthi360.in/${cleanName}`,
         `https://api.saarthi360.in/api/${cleanName}`,
         `https://api.saarthi360.in/${cleanName}`
       ];
@@ -1694,72 +1727,117 @@ export const syncSaarthiLiveApi = async (req, res) => {
 
 
 
+    // Filter out records that have neither a TAN nor a Saarthi client ID —
+    // they can't be matched to reconciliation rows and just accumulate as dead junk on every sync.
+    const usableMasters = clientMasters.filter(m => m.tan_no || m.saarthi_client_id);
+    const skippedCount = clientMasters.length - usableMasters.length;
+    if (skippedCount > 0) {
+      console.log(`⚠️  Skipped ${skippedCount} records with no TAN and no client ID (unreconcilable).`);
+    }
+
+    // 1. Fetch all existing records in ONE query for fast in-memory matching
+    const [existingAll] = await db.execute(
+      'SELECT id, saarthi_client_id, UPPER(TRIM(tan_no)) as tan_no, UPPER(TRIM(company_name)) as company_name FROM tds_dues'
+    );
+
+    const clientIdMap = new Map();
+    const tanMap = new Map();
+    const nameMap = new Map();
+
+    (existingAll || []).forEach(row => {
+      if (row.saarthi_client_id) clientIdMap.set(row.saarthi_client_id, row.id);
+      if (row.tan_no) tanMap.set(row.tan_no.toUpperCase(), row.id);
+      if (row.company_name) nameMap.set(row.company_name.toUpperCase(), row.id);
+    });
+
+    const toUpdate = [];
+    const toInsert = [];
+    const seenNewKeys = new Set();
+
+    for (const master of usableMasters) {
+      let matchedId = null;
+      if (master.saarthi_client_id && clientIdMap.has(master.saarthi_client_id)) {
+        matchedId = clientIdMap.get(master.saarthi_client_id);
+      } else if (master.tan_no && tanMap.has(master.tan_no.toUpperCase())) {
+        matchedId = tanMap.get(master.tan_no.toUpperCase());
+      } else if (master.company_name && nameMap.has(master.company_name.toUpperCase())) {
+        matchedId = nameMap.get(master.company_name.toUpperCase());
+      }
+
+      if (matchedId) {
+        toUpdate.push({ id: matchedId, master });
+      } else {
+        // Prevent duplicate inserts within the same sync payload
+        const dedupeKey = master.saarthi_client_id ? `id_${master.saarthi_client_id}` :
+                          master.tan_no ? `tan_${master.tan_no.toUpperCase()}` :
+                          master.company_name ? `name_${master.company_name.toUpperCase()}` : null;
+        if (!dedupeKey || !seenNewKeys.has(dedupeKey)) {
+          if (dedupeKey) seenNewKeys.add(dedupeKey);
+          toInsert.push(master);
+        }
+      }
+    }
+
     let inserted = 0;
     let updated = 0;
 
-    for (const master of clientMasters) {
-      let existingRows = [];
-      if (master.saarthi_client_id) {
-        [existingRows] = await db.execute(
-          'SELECT id FROM tds_dues WHERE saarthi_client_id = ?',
-          [master.saarthi_client_id]
-        );
-      }
-      if (existingRows.length === 0 && master.tan_no) {
-        [existingRows] = await db.execute(
-          'SELECT id FROM tds_dues WHERE UPPER(TRIM(tan_no)) = ?',
-          [master.tan_no.toUpperCase()]
-        );
-      }
-      if (existingRows.length === 0 && master.company_name) {
-        [existingRows] = await db.execute(
-          'SELECT id FROM tds_dues WHERE UPPER(TRIM(company_name)) = ?',
-          [master.company_name.toUpperCase()]
-        );
-      }
-
-      if (existingRows.length > 0) {
-        for (const row of existingRows) {
-          await db.execute(`
-            UPDATE tds_dues 
-            SET 
-              saarthi_client_id = COALESCE(?, saarthi_client_id),
-              tan_no = COALESCE(?, tan_no),
-              contact_person_name = ?,
-              designation = ?,
-              contact_number = ?,
-              email_id = ?,
-              teamleader = ?
-            WHERE id = ?
-          `, [
-            master.saarthi_client_id,
-            master.tan_no,
-            master.contact_person_name,
-            master.designation,
-            master.contact_number,
-            master.email_id,
-            master.teamleader,
-            row.id
-          ]);
-          updated++;
-        }
-      } else {
-        await db.execute(`
-          INSERT INTO tds_dues 
-          (saarthi_client_id, company_name, tan_no, contact_person_name, designation, contact_number, email_id, teamleader, financial_year)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'FY 2025-26')
+    // 2. Perform updates in parallel chunks of 50
+    const UPDATE_CHUNK_SIZE = 50;
+    for (let i = 0; i < toUpdate.length; i += UPDATE_CHUNK_SIZE) {
+      const chunk = toUpdate.slice(i, i + UPDATE_CHUNK_SIZE);
+      await Promise.all(chunk.map(item => 
+        db.execute(`
+          UPDATE tds_dues 
+          SET 
+            saarthi_client_id = COALESCE(?, saarthi_client_id),
+            tan_no = COALESCE(?, tan_no),
+            contact_person_name = COALESCE(NULLIF(?, ''), contact_person_name),
+            designation = COALESCE(NULLIF(?, ''), designation),
+            contact_number = COALESCE(NULLIF(?, ''), contact_number),
+            email_id = COALESCE(NULLIF(?, ''), email_id),
+            teamleader = COALESCE(NULLIF(?, ''), teamleader)
+          WHERE id = ?
         `, [
-          master.saarthi_client_id,
-          master.company_name,
-          master.tan_no,
-          master.contact_person_name,
-          master.designation,
-          master.contact_number,
-          master.email_id,
-          master.teamleader
-        ]);
-        inserted++;
+          item.master.saarthi_client_id,
+          item.master.tan_no,
+          item.master.contact_person_name,
+          item.master.designation,
+          item.master.contact_number,
+          item.master.email_id,
+          item.master.teamleader,
+          item.id
+        ])
+      ));
+      updated += chunk.length;
+    }
+
+    // 3. Perform inserts in multi-row bulk chunks of 200
+    const INSERT_CHUNK_SIZE = 200;
+    for (let i = 0; i < toInsert.length; i += INSERT_CHUNK_SIZE) {
+      const chunk = toInsert.slice(i, i + INSERT_CHUNK_SIZE);
+      const valueRows = [];
+      const params = [];
+      for (const m of chunk) {
+        valueRows.push('(?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        params.push(
+          m.saarthi_client_id || null,
+          m.company_name || '',
+          m.tan_no || null,
+          m.contact_person_name || null,
+          m.designation || null,
+          m.contact_number || null,
+          m.email_id || null,
+          m.teamleader || null,
+          'FY 2025-26'
+        );
       }
+      const sql = `
+        INSERT INTO tds_dues 
+        (saarthi_client_id, company_name, tan_no, contact_person_name, designation, contact_number, email_id, teamleader, financial_year)
+        VALUES ${valueRows.join(', ')}
+      `;
+      await db.execute(sql, params);
+      inserted += chunk.length;
     }
 
     reconcile(null, null).catch(rErr => {
@@ -1771,7 +1849,9 @@ export const syncSaarthiLiveApi = async (req, res) => {
       message: `Saarthi 360 sync complete. ${inserted} inserted, ${updated} updated.`,
       liveApiStatus,
       stats: {
-        clientsFound: clientMasters.length,
+        clientsFetched: clientMasters.length,
+        clientsProcessed: usableMasters.length,
+        skipped: skippedCount,
         inserted,
         updated
       }

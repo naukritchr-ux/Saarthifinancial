@@ -17,7 +17,7 @@ import { upload26as, uploadTally, purgeData, purgeFollowups } from '../../api/td
 import { useApp } from '../../context/AppContext';
 
 export default function UploadPanel({ onUploadSuccess }) {
-  const { triggerRefresh } = useApp();
+  const { triggerRefresh, fyFilter } = useApp();
   const [as26File, setAs26File] = useState(null);
   const [tallyFile, setTallyFile] = useState(null);
   
@@ -71,7 +71,7 @@ export default function UploadPanel({ onUploadSuccess }) {
     setAs26Status({ loading: true, error: null, success: null });
     
     try {
-      const res = await upload26as(as26File, as26ImportMode);
+      const res = await upload26as(as26File, fyFilter || '', as26ImportMode);
       if (res && res.success) {
         const rowCount = (typeof res.records === 'number') ? res.records : 1;
         setAs26Status({
@@ -103,7 +103,7 @@ export default function UploadPanel({ onUploadSuccess }) {
     setTallyStatus({ loading: true, error: null, success: null });
 
     try {
-      const res = await uploadTally(tallyFile, tallyImportMode);
+      const res = await uploadTally(tallyFile, fyFilter || '', tallyImportMode);
       if (res && res.success) {
         const rowCount = (typeof res.records === 'number') ? res.records : 1;
         setTallyStatus({
