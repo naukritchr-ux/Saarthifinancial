@@ -142,6 +142,8 @@ export const getFollowups = async (req, res) => {
         contact_person as contactPerson,
         department,
         contact_number as contactNumber,
+        accountant_person as accountantPerson,
+        accountant_number as accountantNumber,
         method,
         status,
         notes,
@@ -197,17 +199,15 @@ export const createFollowup = async (req, res) => {
     if (process.env.DB_TYPE === 'mysql') {
       try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person VARCHAR(100)'); } catch (e) {}
       try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number VARCHAR(50)'); } catch (e) {}
+    } else {
+      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person TEXT'); } catch (e) {}
+      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number TEXT'); } catch (e) {}
     }
-
-    const fullNotes = [
-      notes ? notes.trim() : null,
-      accountantPerson ? `Accountant Contact: ${accountantPerson.trim()}${accountantNumber ? ' (' + accountantNumber.trim() + ')' : ''}` : null
-    ].filter(Boolean).join(' | ');
 
     const insertQuery = `
       INSERT INTO tds_followups 
-      (tan_no, company_name, contact_person, department, contact_number, method, status, notes, followup_date, next_followup_date, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (tan_no, company_name, contact_person, department, contact_number, accountant_person, accountant_number, method, status, notes, followup_date, next_followup_date, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const [result] = await db.execute(insertQuery, [
@@ -216,9 +216,11 @@ export const createFollowup = async (req, res) => {
       contactPerson ? contactPerson.trim() : null,
       department ? department.trim() : null,
       contactNumber ? contactNumber.trim() : null,
+      accountantPerson ? accountantPerson.trim() : null,
+      accountantNumber ? accountantNumber.trim() : null,
       method,
       status,
-      fullNotes || null,
+      notes ? notes.trim() : null,
       followupDate,
       nextFollowupDate || null,
       createdBy
@@ -248,6 +250,8 @@ export const updateFollowup = async (req, res) => {
       contactPerson,
       department,
       contactNumber,
+      accountantPerson,
+      accountantNumber,
       method,
       status,
       notes,
@@ -260,6 +264,14 @@ export const updateFollowup = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Follow-up ID required' });
     }
 
+    if (process.env.DB_TYPE === 'mysql') {
+      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person VARCHAR(100)'); } catch (e) {}
+      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number VARCHAR(50)'); } catch (e) {}
+    } else {
+      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person TEXT'); } catch (e) {}
+      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number TEXT'); } catch (e) {}
+    }
+
     const targetId = isNaN(parseInt(id)) ? id : parseInt(id);
     const updates = [];
     const params = [];
@@ -267,6 +279,8 @@ export const updateFollowup = async (req, res) => {
     if (contactPerson !== undefined) { updates.push('contact_person = ?'); params.push(contactPerson); }
     if (department !== undefined) { updates.push('department = ?'); params.push(department); }
     if (contactNumber !== undefined) { updates.push('contact_number = ?'); params.push(contactNumber); }
+    if (accountantPerson !== undefined) { updates.push('accountant_person = ?'); params.push(accountantPerson); }
+    if (accountantNumber !== undefined) { updates.push('accountant_number = ?'); params.push(accountantNumber); }
     if (method !== undefined) { updates.push('method = ?'); params.push(method); }
     if (status !== undefined) { updates.push('status = ?'); params.push(status); }
     if (notes !== undefined) { updates.push('notes = ?'); params.push(notes); }

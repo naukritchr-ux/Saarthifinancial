@@ -353,7 +353,7 @@ export default function DataImport() {
                   Clean & Correct Data
                 </h3>
                 <p className="text-xs text-slate-500 font-medium">
-                  {activeEditItem.companyName} · FY FY 2021-22
+                  {activeEditItem.companyName}{activeEditItem.financialYear ? ` · ${activeEditItem.financialYear}` : ''}
                 </p>
               </div>
               <button

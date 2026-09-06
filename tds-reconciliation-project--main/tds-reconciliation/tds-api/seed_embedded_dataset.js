@@ -37,6 +37,8 @@ export async function ensureTablesExist() {
     try { await db.execute('ALTER TABLE tds_dues ADD COLUMN pan_no VARCHAR(20)'); } catch (err) {}
     try { await db.execute('ALTER TABLE tds_dues ADD COLUMN gst_num VARCHAR(30)'); } catch (err) {}
     try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year VARCHAR(50)'); } catch (err) {}
+    try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person VARCHAR(100)'); } catch (err) {}
+    try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number VARCHAR(50)'); } catch (err) {}
 
     try {
       await db.execute("UPDATE tds_dues SET contact_person_name = NULL WHERE contact_person_name IN ('HR & Accounts Lead', 'Unknown', 'HR Manager')");
@@ -171,6 +173,8 @@ export async function ensureTablesExist() {
         contact_person TEXT,
         department TEXT,
         contact_number TEXT,
+        accountant_person TEXT,
+        accountant_number TEXT,
         method TEXT,
         status TEXT NOT NULL,
         notes TEXT,
@@ -181,6 +185,16 @@ export async function ensureTablesExist() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    try {
+      const [follInfo] = await db.execute(`PRAGMA table_info(tds_followups);`);
+      const follCols = Array.isArray(follInfo) ? follInfo.map(c => c.name) : [];
+      if (!follCols.includes('accountant_person')) await db.execute(`ALTER TABLE tds_followups ADD COLUMN accountant_person TEXT;`);
+      if (!follCols.includes('accountant_number')) await db.execute(`ALTER TABLE tds_followups ADD COLUMN accountant_number TEXT;`);
+    } catch (e) {
+      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person VARCHAR(100)'); } catch (err) {}
+      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number VARCHAR(50)'); } catch (err) {}
+    }
 
     console.log('✅ SQLite table schemas verified.');
   } catch (err) {
