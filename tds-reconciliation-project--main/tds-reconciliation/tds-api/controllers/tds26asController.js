@@ -537,7 +537,9 @@ export const getDashboardSummary = async (req, res) => {
         tr.books_vs_26as_status,
         tr.books_vs_tally_status,
         tr.as26_vs_tally_status,
-        tr.is_manually_edited
+        tr.is_manually_edited,
+        tr.tds_dues_id,
+        d.id as crm_id
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
       ${whereSQL}
@@ -570,7 +572,11 @@ export const getDashboardSummary = async (req, res) => {
       as26Total += as26;
       saarthiTotal += saarthi;
 
-      const sourcesPresent = (tally > 0 ? 1 : 0) + (as26 > 0 ? 1 : 0) + (saarthi > 0 ? 1 : 0);
+      const hasTally = tally > 0;
+      const has26as = as26 > 0;
+      const hasSarthi = saarthi > 0 || Boolean(r.tds_dues_id || r.crm_id);
+
+      const sourcesPresent = (hasTally ? 1 : 0) + (has26as ? 1 : 0) + (hasSarthi ? 1 : 0);
       if (sourcesPresent === 3) threeOfThree++;
       else if (sourcesPresent === 2) twoOfThree++;
       else if (sourcesPresent === 1) oneOfThree++;
@@ -1020,7 +1026,7 @@ export const getReconciliationReport = async (req, res) => {
     }
 
     // 3-Way Source Coverage Filter
-    const hasSaarthiSQL = '(COALESCE(tr.books_tds, 0) > 0)';
+    const hasSaarthiSQL = '(COALESCE(tr.books_tds, 0) > 0 OR tr.tds_dues_id IS NOT NULL)';
     const hasTallySQL = '(COALESCE(tr.tally_tds, 0) > 0)';
     const has26asSQL = '(COALESCE(tr.as26_tds, 0) > 0)';
 
@@ -1135,12 +1141,12 @@ export const getReconciliationReport = async (req, res) => {
 
       const has26as = Boolean(as26 > 0);
       const hasTally = Boolean(tally > 0);
-      const hasSaarthi = Boolean(saarthi > 0);
+      const hasSaarthi = Boolean(saarthi > 0 || r.tdsDuesId || r.contactPersonName || (r.companyName && !['Client Entity', 'Unknown Client', 'Unknown Company', 'Unassigned Entity'].includes(String(r.companyName).trim())));
 
       const sources = [];
       if (hasTally) sources.push('Tally');
       if (has26as) sources.push('26AS');
-      if (hasSaarthi) sources.push('Saarthi');
+      if (hasSaarthi) sources.push('Sarthi');
 
       const countStr = `${sources.length}/3`;
       let coverageLabel = `${countStr} · ${sources.join(' + ') || 'No match'}`;
