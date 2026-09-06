@@ -126,14 +126,7 @@ export default function Layout({ children }) {
                 </select>
               </div>
 
-              {/* Return to Finance App Link */}
-              <button 
-                onClick={() => window.open('https://saarthifinancial-7zni.vercel.app', '_self')} 
-                className="flex items-center gap-1.5 bg-[#F6F8FA] hover:bg-[#E8E4FF] border border-[#E9E4FA] rounded-xl px-3 py-1.5 text-xs font-bold text-[#9B87F5] transition cursor-pointer shadow-2xs"
-                title="Switch to Saarthi Financial App"
-              >
-                <span>Finance App ↗</span>
-              </button>
+
 
               {/* Settings Gear */}
               <button 
