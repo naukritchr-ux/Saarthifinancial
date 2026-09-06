@@ -124,20 +124,13 @@ const Topbar = ({ activePage, setActivePage }) => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <h1 style={{ margin: 0 }}>{getPageTitle()}</h1>
           
-          {/* Sarthi Financial Data - Top App Switcher Tabs */}
-          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', padding: '2px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
-            <button 
-              style={{ padding: '4px 12px', borderRadius: '8px', background: activeModule === 'job_portal' ? '#ea580c' : 'var(--accent-teal)', color: '#fff', fontSize: '11px', fontWeight: 'bold', border: 'none', cursor: 'default' }}
+          {/* Sarthi Financial Data - Top Header Badge */}
+          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', padding: '2px 10px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <span 
+              style={{ color: activeModule === 'job_portal' ? '#ff7849' : 'var(--accent-teal)', fontSize: '11px', fontWeight: 'bold' }}
             >
-              Finance App ✓
-            </button>
-            <button 
-              onClick={() => window.open('https://saarthifinancial-l7f7.vercel.app', '_self')}
-              title="Open TDS Reconciliation App"
-              style={{ padding: '4px 12px', borderRadius: '8px', background: 'transparent', color: 'rgba(255,255,255,0.7)', fontSize: '11px', fontWeight: 'bold', border: 'none', cursor: 'pointer', transition: 'var(--transition-smooth)' }}
-            >
-              TDS Reconciliation ↗
-            </button>
+              Finance App
+            </span>
           </div>
         </div>
         <p className="subtitle">{getPageSubtitle()}</p>

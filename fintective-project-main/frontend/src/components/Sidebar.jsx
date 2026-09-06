@@ -121,35 +121,7 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
           </button>
         </div>
 
-        {/* Dedicated Standalone TDS Reconciliation App Button */}
-        <div style={{ marginTop: '10px' }}>
-          <button 
-            onClick={() => window.open('https://saarthifinancial-l7f7.vercel.app', '_self')}
-            title="Open TDS Reconciliation App"
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justify: 'space-between',
-              background: 'linear-gradient(135deg, rgba(147, 51, 234, 0.25), rgba(168, 85, 247, 0.15))',
-              color: '#d8b4fe',
-              border: '1px solid rgba(168, 85, 247, 0.4)',
-              padding: '8px 12px',
-              borderRadius: '8px',
-              fontSize: '11px',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              boxShadow: '0 2px 10px rgba(147, 51, 234, 0.2)'
-            }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ background: '#9333ea', color: '#fff', padding: '2px 5px', borderRadius: '4px', fontSize: '9px', fontWeight: '900' }}>TDS</span>
-              Reconciliation App
-            </span>
-            <span style={{ fontSize: '13px', fontWeight: 'bold' }}>↗</span>
-          </button>
-        </div>
+
       </div>
 
       <div className="sidebar-menu-wrapper">
