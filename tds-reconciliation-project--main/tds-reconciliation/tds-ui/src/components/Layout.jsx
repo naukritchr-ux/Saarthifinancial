@@ -29,20 +29,11 @@ export default function Layout({ children }) {
       if (res && res.success !== false) {
         setSyncResultModal(res);
       } else {
-        setSyncResultModal({
-          success: true,
-          message: 'Saarthi 360 database sync complete.',
-          stats: { clientsFound: 15700, inserted: 0, updated: 0, invoicesProcessed: 4400 }
-        });
+        setSyncResultModal({ success: false, error: res?.error || 'Sync failed. Please try again.' });
       }
       triggerRefresh();
     } catch (err) {
-      setSyncResultModal({
-        success: true,
-        message: 'Saarthi 360 master database synced.',
-        stats: { clientsFound: 15700, inserted: 0, updated: 0, invoicesProcessed: 4400 }
-      });
-      triggerRefresh();
+      setSyncResultModal({ success: false, error: err.message || 'Network error contacting Saarthi 360.' });
     } finally {
       setSyncing(false);
     }
@@ -197,83 +188,108 @@ export default function Layout({ children }) {
               <X className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-2xl bg-[#9B87F5]/15 border border-[#9B87F5]/30 text-[#9B87F5] flex items-center justify-center text-2xl shadow-inner">
-                🚀
-              </div>
-              <div>
-                <h3 className="text-lg font-black tracking-tight text-[#1F1B2E]">
-                  Saarthi 360 Sync Completed!
-                </h3>
-                <p className="text-xs text-[#6B6580] font-medium">
-                  Live client master data & billing invoices updated.
-                </p>
-              </div>
-            </div>
+            {syncResultModal.success === false ? (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 rounded-2xl bg-[#F87A9E]/15 border border-[#F87A9E]/30 text-[#F87A9E] flex items-center justify-center text-2xl shadow-inner">
+                    ⚠️
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black tracking-tight text-[#1F1B2E]">Sync Failed</h3>
+                    <p className="text-xs text-[#6B6580] font-medium">No data was updated.</p>
+                  </div>
+                </div>
+                <div className="bg-[#F87A9E]/15 border border-[#F87A9E]/30 rounded-xl p-3 mb-6 text-xs text-[#E11D48] font-medium">
+                  {syncResultModal.error || 'Unknown error occurred during sync.'}
+                </div>
+                <button
+                  onClick={() => setSyncResultModal(null)}
+                  className="w-full bg-[#E8E4FF] hover:bg-[#E9E4FA] text-[#1F1B2E] font-bold py-2.5 px-4 rounded-xl text-xs transition cursor-pointer border border-[#E9E4FA]"
+                >
+                  Close
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-12 h-12 rounded-2xl bg-[#9B87F5]/15 border border-[#9B87F5]/30 text-[#9B87F5] flex items-center justify-center text-2xl shadow-inner">
+                    🚀
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black tracking-tight text-[#1F1B2E]">
+                      Saarthi 360 Sync Completed!
+                    </h3>
+                    <p className="text-xs text-[#6B6580] font-medium">
+                      Live client master data & billing invoices updated.
+                    </p>
+                  </div>
+                </div>
 
-            <div className="bg-[#E8E4FF]/40 border border-[#E9E4FA] rounded-2xl p-4 space-y-3 mb-6 shadow-2xs">
-              <div className="flex items-center justify-between text-xs border-b border-[#E9E4FA] pb-2">
-                <span className="text-[#6B6580] flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-[#9B87F5]" />
-                  Client Masters Found:
-                </span>
-                <span className="font-bold text-[#9B87F5]">
-                  {syncResultModal.stats?.clientsFound?.toLocaleString() || '15,700+'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs border-b border-[#E9E4FA] pb-2">
-                <span className="text-[#6B6580] flex items-center gap-1.5">
-                  <FileText className="w-3.5 h-3.5 text-[#B4A7F5]" />
-                  Invoices Processed:
-                </span>
-                <span className="font-bold text-[#B4A7F5]">
-                  {syncResultModal.stats?.invoicesProcessed?.toLocaleString() || '4,400+'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs border-b border-[#E9E4FA] pb-2">
-                <span className="text-[#6B6580] flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5 text-[#9B87F5]" />
-                  New Records Inserted:
-                </span>
-                <span className="font-bold text-[#9B87F5]">
-                  {syncResultModal.stats?.inserted || 0}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs pb-1">
-                <span className="text-[#6B6580] flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-[#4ADE80]" />
-                  Existing Dues Refreshed:
-                </span>
-                <span className="font-bold text-[#4ADE80]">
-                  {syncResultModal.stats?.updated || 0}
-                </span>
-              </div>
-            </div>
+                <div className="bg-[#E8E4FF]/40 border border-[#E9E4FA] rounded-2xl p-4 space-y-3 mb-6 shadow-2xs">
+                  <div className="flex items-center justify-between text-xs border-b border-[#E9E4FA] pb-2">
+                    <span className="text-[#6B6580] flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-[#9B87F5]" />
+                      Client Masters Found:
+                    </span>
+                    <span className="font-bold text-[#9B87F5]">
+                      {syncResultModal.stats?.clientsFound?.toLocaleString() || '15,700+'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs border-b border-[#E9E4FA] pb-2">
+                    <span className="text-[#6B6580] flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-[#B4A7F5]" />
+                      Invoices Processed:
+                    </span>
+                    <span className="font-bold text-[#B4A7F5]">
+                      {syncResultModal.stats?.invoicesProcessed?.toLocaleString() || '4,400+'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs border-b border-[#E9E4FA] pb-2">
+                    <span className="text-[#6B6580] flex items-center gap-1.5">
+                      <Database className="w-3.5 h-3.5 text-[#9B87F5]" />
+                      New Records Inserted:
+                    </span>
+                    <span className="font-bold text-[#9B87F5]">
+                      {syncResultModal.stats?.inserted || 0}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs pb-1">
+                    <span className="text-[#6B6580] flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[#4ADE80]" />
+                      Existing Dues Refreshed:
+                    </span>
+                    <span className="font-bold text-[#4ADE80]">
+                      {syncResultModal.stats?.updated || 0}
+                    </span>
+                  </div>
+                </div>
 
-            <div className="bg-[#4ADE80]/15 border border-[#4ADE80]/30 rounded-xl p-3 mb-6 flex items-start gap-2.5">
-              <CheckCircle2 className="w-4 h-4 text-[#2E8B57] shrink-0 mt-0.5" />
-              <p className="text-xs text-[#2E8B57] font-medium leading-relaxed">
-                ✓ HR contact person names, designations, mobile numbers, email addresses, and Team Leaders refreshed.
-              </p>
-            </div>
+                <div className="bg-[#4ADE80]/15 border border-[#4ADE80]/30 rounded-xl p-3 mb-6 flex items-start gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-[#2E8B57] shrink-0 mt-0.5" />
+                  <p className="text-xs text-[#2E8B57] font-medium leading-relaxed">
+                    ✓ HR contact person names, designations, mobile numbers, email addresses, and Team Leaders refreshed.
+                  </p>
+                </div>
 
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => {
-                  setSyncResultModal(null);
-                  navigateTo('reconciliation');
-                }}
-                className="flex-1 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-black py-2.5 px-4 rounded-xl text-xs transition cursor-pointer shadow-md text-center"
-              >
-                Go to Reconciliation Table ➔
-              </button>
-              <button
-                onClick={() => setSyncResultModal(null)}
-                className="bg-[#E8E4FF] hover:bg-[#E9E4FA] text-[#1F1B2E] font-bold py-2.5 px-4 rounded-xl text-xs transition cursor-pointer border border-[#E9E4FA]"
-              >
-                Close
-              </button>
-            </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      setSyncResultModal(null);
+                      navigateTo('reconciliation');
+                    }}
+                    className="flex-1 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-black py-2.5 px-4 rounded-xl text-xs transition cursor-pointer shadow-md text-center"
+                  >
+                    Go to Reconciliation Table ➔
+                  </button>
+                  <button
+                    onClick={() => setSyncResultModal(null)}
+                    className="bg-[#E8E4FF] hover:bg-[#E9E4FA] text-[#1F1B2E] font-bold py-2.5 px-4 rounded-xl text-xs transition cursor-pointer border border-[#E9E4FA]"
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

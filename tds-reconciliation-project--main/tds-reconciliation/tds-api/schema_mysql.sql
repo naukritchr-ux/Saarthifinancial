@@ -103,6 +103,8 @@ CREATE TABLE IF NOT EXISTS tds_followups (
   contact_person VARCHAR(100),
   department VARCHAR(100),
   contact_number VARCHAR(30),
+  accountant_person VARCHAR(100),
+  accountant_number VARCHAR(50),
   method VARCHAR(30),
   status VARCHAR(50) NOT NULL,
   notes TEXT,

@@ -606,6 +606,7 @@ export const getCleaningQueue = async (req, res) => {
         tr.id,
         tr.tan_no as tanNo,
         d.company_name as booksCompanyName,
+        COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') as financialYear,
         tr.books_tds as booksTds,
         tr.as26_tds as as26Tds,
         tr.tally_tds as tallyTds,
@@ -735,6 +736,7 @@ export const getCleaningQueue = async (req, res) => {
         as26Tan: as26Tan || null,
         saarthiName: booksName,
         saarthiTan: tan || 'UNKNOWN_TAN',
+        financialYear: r.financialYear || 'FY 2024-25',
         saarthiSuggestion,
         confidence,
         isTanMismatch,
@@ -1287,36 +1289,102 @@ export const getUploadHistory = async (req, res) => {
  */
 export const exportReconciliationCSV = async (req, res) => {
   try {
-    const { overallStatus, search } = req.query;
+    const {
+      search = '',
+      overallStatus = '',
+      coverageFilter = 'All',
+      fy = '',
+      financialYear = '',
+      booksVs26asStatus = '',
+      booksVsTallyStatus = '',
+      as26VsTallyStatus = ''
+    } = req.query;
 
     let whereClauses = [];
     const queryParams = [];
 
-    if (search && search.trim() !== '') {
-      whereClauses.push('(tr.tan_no LIKE ? OR d.company_name LIKE ?)');
-      const wild = `%${search.trim()}%`;
+    // Always exclude zero-data ghost rows where all 3 TDS amounts are zero/null
+    whereClauses.push("NOT (COALESCE(tr.books_tds, 0) = 0 AND COALESCE(tr.as26_tds, 0) = 0 AND COALESCE(tr.tally_tds, 0) = 0)");
+
+    const activeFy = fy || financialYear;
+    if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
+      const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
+      whereClauses.push("(COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
+      const fyWild = `%${cleanFy}%`;
+      queryParams.push(fyWild, fyWild, fyWild);
+    }
+
+    if (search && String(search).trim() !== '') {
+      whereClauses.push("(tr.tan_no LIKE ? OR COALESCE(d.company_name, '') LIKE ?)");
+      const wild = `%${String(search).trim()}%`;
       queryParams.push(wild, wild);
     }
+
+    const primaryTdsSQL = '(CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END)';
+
     if (overallStatus && overallStatus !== 'All') {
-      whereClauses.push('tr.overall_status = ?');
-      queryParams.push(overallStatus);
+      if (overallStatus === 'Match' || overallStatus === 'All Matched') {
+        whereClauses.push(`(${primaryTdsSQL} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND (COALESCE(tr.is_manually_edited, 0) = 1 OR ABS(${primaryTdsSQL} - COALESCE(tr.as26_tds, 0)) <= 1.0))`);
+      } else if (overallStatus === 'Less Paid' || overallStatus === 'Less') {
+        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND ${primaryTdsSQL} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND ${primaryTdsSQL} > COALESCE(tr.as26_tds, 0) + 1.0)`);
+      } else if (overallStatus === 'Excess' || overallStatus === 'Excess Paid') {
+        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND ${primaryTdsSQL} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND ${primaryTdsSQL} < COALESCE(tr.as26_tds, 0) - 1.0)`);
+      } else if (overallStatus === 'Not Received' || overallStatus === 'No Match' || overallStatus === 'Missing') {
+        whereClauses.push(`(COALESCE(tr.as26_tds, 0) = 0 OR ${primaryTdsSQL} = 0)`);
+      } else {
+        whereClauses.push('tr.overall_status = ?');
+        queryParams.push(overallStatus);
+      }
+    }
+
+    if (booksVs26asStatus && booksVs26asStatus !== 'All') {
+      whereClauses.push('tr.books_vs_26as_status = ?');
+      queryParams.push(booksVs26asStatus);
+    }
+
+    // 3-Way Source Coverage Filter
+    const hasSaarthiSQL = '(COALESCE(tr.books_tds, 0) > 0)';
+    const hasTallySQL = '(COALESCE(tr.tally_tds, 0) > 0)';
+    const has26asSQL = '(COALESCE(tr.as26_tds, 0) > 0)';
+
+    if (coverageFilter === '3/3' || coverageFilter === '3 of 3' || coverageFilter === 'all_3' || coverageFilter === 'all3' || coverageFilter === 'All 3 (Saarthi + Tally + 26AS)') {
+      whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL} AND ${has26asSQL})`);
+    } else if (coverageFilter === 'saarthi_tally' || coverageFilter === 'tally_saarthi' || coverageFilter === 'Saarthi + Tally') {
+      whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL} AND NOT ${has26asSQL})`);
+    } else if (coverageFilter === 'tally_26as' || coverageFilter === '26as_tally' || coverageFilter === 'Tally + 26AS') {
+      whereClauses.push(`(${hasTallySQL} AND ${has26asSQL} AND NOT ${hasSaarthiSQL})`);
+    } else if (coverageFilter === 'as26_saarthi' || coverageFilter === 'saarthi_26as' || coverageFilter === '26as_saarthi' || coverageFilter === '26AS + Saarthi') {
+      whereClauses.push(`(${has26asSQL} AND ${hasSaarthiSQL} AND NOT ${hasTallySQL})`);
+    } else if (coverageFilter === '2/3' || coverageFilter === '2 of 3') {
+      whereClauses.push(`(((CASE WHEN ${hasSaarthiSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${has26asSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${hasTallySQL} THEN 1 ELSE 0 END)) = 2)`);
+    } else if (coverageFilter === '1/3' || coverageFilter === '1 of 3' || coverageFilter === 'Single Source Only') {
+      whereClauses.push(`(((CASE WHEN ${hasSaarthiSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${has26asSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${hasTallySQL} THEN 1 ELSE 0 END)) = 1)`);
     }
 
     const whereSQL = whereClauses.length ? 'WHERE ' + whereClauses.join(' AND ') : '';
 
     const query = `
       SELECT 
-        d.company_name as companyName,
+        COALESCE(NULLIF(TRIM(d.company_name), ''), tr.tan_no, 'Unassigned Entity') as companyName,
         tr.tan_no as tanNo,
-        tr.books_tds as booksTds,
-        tr.as26_tds as as26Tds,
-        tr.tally_tds as tallyTds,
+        COALESCE(tr.books_tds, 0) as booksTds,
+        COALESCE(tr.as26_tds, 0) as as26Tds,
+        COALESCE(tr.tally_tds, 0) as tallyTds,
         tr.books_vs_26as_status as booksVs26asStatus,
         tr.books_vs_tally_status as booksVsTallyStatus,
         tr.as26_vs_tally_status as as26VsTallyStatus,
         tr.overall_status as overallStatus
       FROM tds_reconciliation_results tr
-      LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+      LEFT JOIN (
+        SELECT 
+          MAX(id) as id,
+          UPPER(TRIM(tan_no)) as tan_key,
+          MAX(company_name) as company_name,
+          MAX(financial_year) as financial_year
+        FROM tds_dues
+        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''
+        GROUP BY UPPER(TRIM(tan_no))
+      ) d ON (tr.tds_dues_id = d.id OR UPPER(TRIM(tr.tan_no)) = d.tan_key)
       ${whereSQL}
       ORDER BY tr.updated_at DESC
     `;
@@ -1623,6 +1691,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
 
 
 
+    let inserted = 0;
     let updated = 0;
 
     for (const master of clientMasters) {
@@ -1686,7 +1755,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
           master.email_id,
           master.teamleader
         ]);
-        updated++;
+        inserted++;
       }
     }
 
@@ -1696,21 +1765,21 @@ export const syncSaarthiLiveApi = async (req, res) => {
 
     res.json({
       success: true,
-      message: `Saarthi 360 sync complete. Enriched ${updated} records.`,
+      message: `Saarthi 360 sync complete. ${inserted} inserted, ${updated} updated.`,
       liveApiStatus,
       stats: {
         clientsFound: clientMasters.length,
+        inserted,
         updated
       }
     });
 
   } catch (error) {
     console.error('💥 Error in syncSaarthiLiveApi:', error);
-    res.json({
-      success: true,
-      message: 'Saarthi 360 sync complete with fallback.',
-      liveApiStatus: { status: 'fallback' },
-      stats: { clientsFound: 0, updated: 0 }
+    res.status(500).json({
+      success: false,
+      error: 'Saarthi 360 sync failed',
+      details: error.message
     });
   }
 };
