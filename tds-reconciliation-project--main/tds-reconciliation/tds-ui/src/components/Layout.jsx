@@ -242,7 +242,7 @@ export default function Layout({ children }) {
                       New Records Inserted:
                     </span>
                     <span className="font-bold text-[#9B87F5]">
-                      {syncResultModal.stats?.inserted || 0}
+                      {syncResultModal.stats?.inserted?.toLocaleString() ?? 0}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-xs pb-1">
@@ -251,7 +251,7 @@ export default function Layout({ children }) {
                       Existing Dues Refreshed:
                     </span>
                     <span className="font-bold text-[#4ADE80]">
-                      {syncResultModal.stats?.updated || 0}
+                      {syncResultModal.stats?.updated?.toLocaleString() ?? 0}
                     </span>
                   </div>
                 </div>
