@@ -1,5 +1,6 @@
 import xlsx from 'xlsx';
 import fs from 'fs';
+import path from 'path';
 import db from '../config/db.js';
 import { reconcile } from '../services/tdsReconciliationService.js';
 import { seedEmbeddedDataset, markPurgedFlag, clearPurgedFlag } from '../seed_embedded_dataset.js';
@@ -1623,16 +1624,20 @@ export const deleteUploadBatch = async (req, res) => {
 };
 
 /**
- * Sync Live Saarthi 360 API Data (api/clients_info + legals_info)
+ * Sync Live Sarthi 360 API Data (api/clients_info + legals_info)
  */
 export const syncSaarthiLiveApi = async (req, res) => {
   try {
     clearPurgedFlag();
-    console.log('🔄 Syncing live Saarthi 360 client & legal master data...');
+    console.log('🔄 Syncing live Sarthi 360 client & legal master data...');
 
-    const fetchEndpointWithFallback = async (endpointName, ms = 8000) => {
+    const fetchEndpointWithFallback = async (endpointName, ms = 10000) => {
       const cleanName = String(endpointName || '').replace(/^api\//, '').trim();
       const candidates = [
+        `https://api.sarthi360.in/api/${cleanName}`,
+        `https://api.sarthi360.in/${cleanName}`,
+        `https://sarthi360.in/api/${cleanName}`,
+        `https://sarthi360.in/${cleanName}`,
         `https://api.saarthi360.in/api/${cleanName}`,
         `https://api.saarthi360.in/${cleanName}`
       ];
@@ -1646,7 +1651,10 @@ export const syncSaarthiLiveApi = async (req, res) => {
           if (r.ok) {
             const data = await r.json();
             const arr = Array.isArray(data) ? data : (data?.data || []);
-            return { ok: true, data: arr, url };
+            if (arr.length > 0) {
+              console.log(`✅ Successfully fetched ${arr.length} records from ${url}`);
+              return { ok: true, data: arr, url };
+            }
           }
         } catch (err) {
           clearTimeout(timer);
@@ -1664,9 +1672,30 @@ export const syncSaarthiLiveApi = async (req, res) => {
     let clientsData = cRes.data || [];
     let legalsData = lRes.data || [];
 
+    // If legals endpoint is unavailable, fall back to embedded legal dataset
+    if (!lRes.ok || legalsData.length === 0) {
+      try {
+        const potentialPaths = [
+          path.resolve('data/legals_info.json'),
+          path.resolve(process.cwd(), 'data/legals_info.json'),
+          path.resolve(process.cwd(), 'tds-api/data/legals_info.json')
+        ];
+        for (const p of potentialPaths) {
+          if (fs.existsSync(p)) {
+            const raw = fs.readFileSync(p, 'utf8');
+            legalsData = JSON.parse(raw);
+            console.log(`ℹ️ Loaded ${legalsData.length} legal records from fallback ${p}`);
+            break;
+          }
+        }
+      } catch (fErr) {
+        console.warn('Local legals fallback notice:', fErr.message);
+      }
+    }
+
     const liveApiStatus = {
-      clients_info: cRes.ok ? 'ok' : 'unreachable',
-      legals_info: lRes.ok ? 'ok' : 'unreachable'
+      clients_info: cRes.ok ? 'ok' : (clientsData.length > 0 ? 'fallback' : 'unreachable'),
+      legals_info: lRes.ok ? 'ok' : (legalsData.length > 0 ? 'local_dataset' : 'unreachable')
     };
 
     const gstRegex = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i;
@@ -1685,8 +1714,8 @@ export const syncSaarthiLiveApi = async (req, res) => {
     
     clientsData.forEach(item => {
       if (!item || (!item.companyName && !item.id)) return;
-      const gst = String(item.gstNumber || item.gstNo || '').trim().toUpperCase();
-      const pan = extractPanFromGst(gst);
+      const gst = String(item.gstNumber || item.gstNo || item.gstNum || '').trim().toUpperCase();
+      const pan = extractPanFromGst(gst) || (panRegex.test(item.panNo || item.panNumber || item.pan || '') ? String(item.panNo || item.panNumber || item.pan).trim().toUpperCase() : null);
       clientMasters.push({
         saarthi_client_id: item.id ? parseInt(item.id) : null,
         company_name: String(item.companyName || '').trim(),
@@ -1704,15 +1733,16 @@ export const syncSaarthiLiveApi = async (req, res) => {
     });
 
     legalsData.forEach(item => {
-      if (!item || (!item.companyName && !item.id)) return;
-      const gst = String(item.gstNo || item.gstNumber || '').trim().toUpperCase();
+      if (!item || (!item.companyName && !item.partyName && !item.id)) return;
+      const gst = String(item.gstNo || item.gstNumber || item.gstNum || '').trim().toUpperCase();
       const tan = String(item.tanNo || item.tanNumber || '').trim().toUpperCase();
       const pan = String(item.panNo || item.panNumber || '').trim().toUpperCase() || extractPanFromGst(gst);
+      const companyName = String(item.companyName || item.partyName || '').trim();
       
       clientMasters.push({
         saarthi_client_id: item.id ? parseInt(item.id) : null,
-        company_name: String(item.companyName || '').trim(),
-        normalized_name: normalizeCompanyName(item.companyName || ''),
+        company_name: companyName,
+        normalized_name: normalizeCompanyName(companyName),
         gst_no: gstRegex.test(gst) ? gst : null,
         pan_no: panRegex.test(pan) ? pan : null,
         tan_no: tanRegex.test(tan) ? tan : null,
@@ -1725,28 +1755,28 @@ export const syncSaarthiLiveApi = async (req, res) => {
       });
     });
 
-
-
-    // Filter out records that have neither a TAN nor a Saarthi client ID —
+    // Filter out records that have neither a TAN nor a client ID nor PAN —
     // they can't be matched to reconciliation rows and just accumulate as dead junk on every sync.
-    const usableMasters = clientMasters.filter(m => m.tan_no || m.saarthi_client_id);
+    const usableMasters = clientMasters.filter(m => m.tan_no || m.saarthi_client_id || m.pan_no);
     const skippedCount = clientMasters.length - usableMasters.length;
     if (skippedCount > 0) {
-      console.log(`⚠️  Skipped ${skippedCount} records with no TAN and no client ID (unreconcilable).`);
+      console.log(`⚠️  Skipped ${skippedCount} records with no TAN, PAN, or client ID (unreconcilable).`);
     }
 
     // 1. Fetch all existing records in ONE query for fast in-memory matching
     const [existingAll] = await db.execute(
-      'SELECT id, saarthi_client_id, UPPER(TRIM(tan_no)) as tan_no, UPPER(TRIM(company_name)) as company_name FROM tds_dues'
+      'SELECT id, saarthi_client_id, UPPER(TRIM(tan_no)) as tan_no, UPPER(TRIM(pan_no)) as pan_no, UPPER(TRIM(company_name)) as company_name FROM tds_dues'
     );
 
     const clientIdMap = new Map();
     const tanMap = new Map();
+    const panMap = new Map();
     const nameMap = new Map();
 
     (existingAll || []).forEach(row => {
       if (row.saarthi_client_id) clientIdMap.set(row.saarthi_client_id, row.id);
       if (row.tan_no) tanMap.set(row.tan_no.toUpperCase(), row.id);
+      if (row.pan_no) panMap.set(row.pan_no.toUpperCase(), row.id);
       if (row.company_name) nameMap.set(row.company_name.toUpperCase(), row.id);
     });
 
@@ -1760,6 +1790,8 @@ export const syncSaarthiLiveApi = async (req, res) => {
         matchedId = clientIdMap.get(master.saarthi_client_id);
       } else if (master.tan_no && tanMap.has(master.tan_no.toUpperCase())) {
         matchedId = tanMap.get(master.tan_no.toUpperCase());
+      } else if (master.pan_no && panMap.has(master.pan_no.toUpperCase())) {
+        matchedId = panMap.get(master.pan_no.toUpperCase());
       } else if (master.company_name && nameMap.has(master.company_name.toUpperCase())) {
         matchedId = nameMap.get(master.company_name.toUpperCase());
       }
@@ -1770,6 +1802,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
         // Prevent duplicate inserts within the same sync payload
         const dedupeKey = master.saarthi_client_id ? `id_${master.saarthi_client_id}` :
                           master.tan_no ? `tan_${master.tan_no.toUpperCase()}` :
+                          master.pan_no ? `pan_${master.pan_no.toUpperCase()}` :
                           master.company_name ? `name_${master.company_name.toUpperCase()}` : null;
         if (!dedupeKey || !seenNewKeys.has(dedupeKey)) {
           if (dedupeKey) seenNewKeys.add(dedupeKey);
@@ -1791,6 +1824,8 @@ export const syncSaarthiLiveApi = async (req, res) => {
           SET 
             saarthi_client_id = COALESCE(?, saarthi_client_id),
             tan_no = COALESCE(?, tan_no),
+            pan_no = COALESCE(?, pan_no),
+            gst_num = COALESCE(?, gst_num),
             contact_person_name = COALESCE(NULLIF(?, ''), contact_person_name),
             designation = COALESCE(NULLIF(?, ''), designation),
             contact_number = COALESCE(NULLIF(?, ''), contact_number),
@@ -1800,6 +1835,8 @@ export const syncSaarthiLiveApi = async (req, res) => {
         `, [
           item.master.saarthi_client_id,
           item.master.tan_no,
+          item.master.pan_no,
+          item.master.gst_no,
           item.master.contact_person_name,
           item.master.designation,
           item.master.contact_number,
@@ -1818,11 +1855,13 @@ export const syncSaarthiLiveApi = async (req, res) => {
       const valueRows = [];
       const params = [];
       for (const m of chunk) {
-        valueRows.push('(?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        valueRows.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         params.push(
           m.saarthi_client_id || null,
           m.company_name || '',
           m.tan_no || null,
+          m.pan_no || null,
+          m.gst_no || null,
           m.contact_person_name || null,
           m.designation || null,
           m.contact_number || null,
@@ -1833,7 +1872,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
       }
       const sql = `
         INSERT INTO tds_dues 
-        (saarthi_client_id, company_name, tan_no, contact_person_name, designation, contact_number, email_id, teamleader, financial_year)
+        (saarthi_client_id, company_name, tan_no, pan_no, gst_num, contact_person_name, designation, contact_number, email_id, teamleader, financial_year)
         VALUES ${valueRows.join(', ')}
       `;
       await db.execute(sql, params);
@@ -1846,7 +1885,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
 
     res.json({
       success: true,
-      message: `Saarthi 360 sync complete. ${inserted} inserted, ${updated} updated.`,
+      message: `Sarthi 360 sync complete. ${inserted} inserted, ${updated} updated.`,
       liveApiStatus,
       stats: {
         clientsFetched: clientMasters.length,
@@ -1861,8 +1900,11 @@ export const syncSaarthiLiveApi = async (req, res) => {
     console.error('💥 Error in syncSaarthiLiveApi:', error);
     res.status(500).json({
       success: false,
-      error: 'Saarthi 360 sync failed',
+      error: 'Sarthi 360 sync failed',
       details: error.message
     });
   }
 };
+
+export const syncSarthiLiveApi = syncSaarthiLiveApi;
+
