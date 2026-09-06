@@ -1595,10 +1595,13 @@ export const syncSaarthiLiveApi = async (req, res) => {
     clearPurgedFlag();
     console.log('🔄 Syncing live Saarthi 360 client & legal master data...');
 
-    const fetchEndpointWithFallback = async (pathStr, ms = 8000) => {
+    const fetchEndpointWithFallback = async (endpointName, ms = 8000) => {
+      const cleanName = String(endpointName || '').replace(/^api\//, '').trim();
       const candidates = [
-        `https://api.sarthi360.in/${pathStr}`,
-        `https://api.saarthi360.in/${pathStr}`
+        `https://api.sarthi360.in/api/${cleanName}`,
+        `https://api.sarthi360.in/${cleanName}`,
+        `https://api.saarthi360.in/api/${cleanName}`,
+        `https://api.saarthi360.in/${cleanName}`
       ];
 
       for (const url of candidates) {
@@ -1621,7 +1624,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
     };
 
     const [cRes, lRes] = await Promise.all([
-      fetchEndpointWithFallback('api/clients_info'),
+      fetchEndpointWithFallback('clients_info'),
       fetchEndpointWithFallback('legals_info')
     ]);
 
