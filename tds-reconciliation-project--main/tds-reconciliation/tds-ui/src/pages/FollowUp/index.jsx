@@ -109,15 +109,23 @@ export default function FollowUp() {
     loadData();
   };
 
-  const handleDeleteSingle = async (id, companyName) => {
+  const handleDeleteSingle = async (id, companyName, e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
     if (window.confirm(`Are you sure you want to delete follow-up log for "${companyName || 'this client'}"?`)) {
       try {
+        // Optimistic UI update
+        setItems(prev => prev.filter(item => item.id !== id));
         const res = await deleteFollowup(id);
-        if (res && res.success) {
+        if (!res || res.success === false) {
+          alert(res?.error || 'Failed to delete follow-up log entry');
+          loadData();
+        } else {
           loadData();
         }
       } catch (err) {
         console.error('Failed to delete follow-up:', err);
+        alert('Network error deleting follow-up entry.');
+        loadData();
       }
     }
   };
@@ -125,12 +133,18 @@ export default function FollowUp() {
   const handlePurgeAllFollowups = async () => {
     if (window.confirm('Are you sure you want to clear/delete ALL Client Follow-up Call Logs? This will remove previous client call updates.')) {
       try {
+        setItems([]);
         const res = await purgeFollowups();
         if (res && res.success) {
+          loadData();
+        } else {
+          alert(res?.error || 'Failed to clear follow-ups');
           loadData();
         }
       } catch (err) {
         console.error('Failed to purge follow-ups:', err);
+        alert('Network error clearing follow-up logs.');
+        loadData();
       }
     }
   };
@@ -396,6 +410,17 @@ export default function FollowUp() {
               <Download className="w-3.5 h-3.5" />
               Export
             </button>
+
+            {items.length > 0 && (
+              <button
+                onClick={handlePurgeAllFollowups}
+                className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-3.5 py-2 rounded-xl transition text-xs cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                title="Clear all follow-up logs"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                Clear All Logs
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -527,7 +552,7 @@ export default function FollowUp() {
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => handleDeleteSingle(row.id, row.companyName)}
+                          onClick={(e) => handleDeleteSingle(row.id, row.companyName, e)}
                           className="p-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition cursor-pointer"
                           title="Delete Follow-up Log Entry"
                         >

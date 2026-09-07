@@ -17,6 +17,7 @@ export default function TdsReconciliation() {
   const [overallStatus, setOverallStatus] = useState('All');
   const [coverageFilter, setCoverageFilter] = useState('All');
   const [sortBy, setSortBy] = useState('updated_at');
+  const [responseFilter, setResponseFilter] = useState('All');  // 'All' | 'done' | 'pending'
 
   const [loading, setLoading] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -204,7 +205,7 @@ export default function TdsReconciliation() {
         </div>
 
         {/* Filter & Sort Controls Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-[#E9E4FA] text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-[#E9E4FA] text-xs">
 
           {/* Coverage Filter */}
           <div>
@@ -240,6 +241,22 @@ export default function TdsReconciliation() {
               <option value="difference_desc">Sort: Difference (High → Low)</option>
             </select>
           </div>
+
+          {/* Custom Response / Follow-up Filter */}
+          <div>
+            <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1">
+              Follow-up Status Filter
+            </label>
+            <select
+              value={responseFilter}
+              onChange={(e) => { setPage(1); setResponseFilter(e.target.value); }}
+              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
+            >
+              <option value="All">All Records</option>
+              <option value="done">✅ Follow-up Done</option>
+              <option value="pending">⏳ Follow-up Pending</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -262,7 +279,9 @@ export default function TdsReconciliation() {
 
       {/* Data Table */}
       <ReconciliationTable
-        rows={rows}
+        rows={responseFilter === 'All' ? rows : rows.filter(r =>
+          responseFilter === 'done' ? Boolean(r.isFollowupDone) : !Boolean(r.isFollowupDone)
+        )}
         total={total}
         page={page}
         limit={limit}
