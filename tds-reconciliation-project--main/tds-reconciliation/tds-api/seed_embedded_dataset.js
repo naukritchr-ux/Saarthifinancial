@@ -45,6 +45,7 @@ export async function ensureTablesExist() {
       await db.execute("UPDATE tds_dues SET contact_person_name = NULL WHERE contact_person_name IN ('HR & Accounts Lead', 'Unknown', 'HR Manager')");
       await db.execute("UPDATE tds_dues SET designation = NULL WHERE designation IN ('Finance Lead', 'Finance Manager', 'Accounts Lead')");
       await db.execute("UPDATE tds_dues SET contact_number = NULL WHERE contact_number LIKE '%98201%54321%'");
+      // Propagate financial_year from dues to reconciliation rows that have none yet
       try {
         await db.execute(`
           UPDATE tds_reconciliation_results tr
@@ -52,10 +53,10 @@ export async function ensureTablesExist() {
           SET tr.financial_year = d.financial_year
           WHERE d.financial_year IS NOT NULL AND d.financial_year != '' AND (tr.financial_year IS NULL OR tr.financial_year = '')
         `);
-      } catch (syncErr) {}
-      await db.execute("UPDATE tds_reconciliation_results SET financial_year = 'FY 2024-25' WHERE financial_year IS NULL OR financial_year = ''");
-      await db.execute("UPDATE tds_dues SET financial_year = 'FY 2024-25' WHERE financial_year IS NULL OR financial_year = ''");
-    } catch (e) {}
+      } catch (e) {}
+    } catch (cleanErr) {
+      console.warn('⚠️ Startup cleanup warning (non-fatal):', cleanErr.message);
+    }
 
     return;
   }

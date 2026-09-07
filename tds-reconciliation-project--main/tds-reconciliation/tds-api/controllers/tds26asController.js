@@ -605,7 +605,7 @@ export const getDashboardSummary = async (req, res) => {
     const params = [];
     if (fy && fy !== 'All' && fy !== 'All Financial Years') {
       const cleanFy = String(fy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push("(tr.financial_year = 'All Financial Years' OR COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
+      whereClauses.push("(tr.financial_year = 'All Financial Years' OR COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
       const fyWild = `%${cleanFy}%`;
       params.push(fyWild, fyWild, fyWild);
     }
@@ -728,7 +728,7 @@ export const getCleaningQueue = async (req, res) => {
         tr.id,
         tr.tan_no as tanNo,
         d.company_name as booksCompanyName,
-        COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') as financialYear,
+        COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') as financialYear,
         tr.books_tds as booksTds,
         tr.as26_tds as as26Tds,
         tr.tally_tds as tallyTds,
@@ -844,7 +844,7 @@ export const getCleaningQueue = async (req, res) => {
         as26Tan: as26Tan || null,
         saarthiName: booksName,
         saarthiTan: tan || 'UNKNOWN_TAN',
-        financialYear: r.financialYear || 'FY 2024-25',
+        financialYear: r.financialYear || 'Unspecified',
         saarthiSuggestion,
         confidence,
         isTanMismatch,
@@ -1086,7 +1086,7 @@ export const getReconciliationReport = async (req, res) => {
     const activeFy = fy || financialYear;
     if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
       const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push("(tr.financial_year = 'All Financial Years' OR COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
+      whereClauses.push("(tr.financial_year = 'All Financial Years' OR COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
       const fyWild = `%${cleanFy}%`;
       queryParams.push(fyWild, fyWild, fyWild);
     }
@@ -1163,7 +1163,7 @@ export const getReconciliationReport = async (req, res) => {
         'N/A' as billNumber,
         'N/A' as billDate,
         0 as totalBillAmount,
-        COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') as financialYear,
+        COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') as financialYear,
 
         COALESCE(tr.books_tds, 0) as booksTds,
         COALESCE(tr.as26_tds, 0) as as26Tds,
@@ -1228,23 +1228,33 @@ export const getReconciliationReport = async (req, res) => {
       let coverageLabel = `${countStr} · ${sources.join(' + ') || 'No match'}`;
 
       const primaryVal = tally > 0 ? tally : saarthi;
-      let financialStatus = 'Not Received';
-      if (tally <= 0 && saarthi <= 0 && as26 > 0) {
-        financialStatus = 'Excess';
-      } else if (as26 <= 0 || primaryVal <= 0) {
-        financialStatus = 'Not Received';
-      } else if (r.isManuallyEdited) {
+      const diffCalc = (tally || saarthi) - as26;
+
+      // Use stored overall_status as source of truth — map to UI display labels
+      const storedStatus = r.overallStatus || '';
+      let financialStatus;
+      if (r.isManuallyEdited) {
         financialStatus = 'Match';
+      } else if (storedStatus === 'All Matched' || storedStatus === 'Match' || storedStatus === 'Matched') {
+        financialStatus = 'Match';
+      } else if (storedStatus === 'Excess') {
+        financialStatus = 'Excess';
+      } else if (storedStatus === 'Less Paid' || storedStatus === 'Less') {
+        financialStatus = 'Less Paid';
+      } else if (storedStatus === 'Partial Mismatch') {
+        // Partial: books > 26AS => Less Paid, books < 26AS => Excess
+        if (primaryVal > 0 && as26 > 0) {
+          financialStatus = primaryVal > as26 + 1.0 ? 'Less Paid' : 'Excess';
+        } else {
+          financialStatus = 'Not Received';
+        }
+      } else if (storedStatus === 'Major Mismatch') {
+        financialStatus = 'Not Received';
       } else {
-        const diffVal = primaryVal - as26;
-        if (Math.abs(diffVal) <= 1.0) financialStatus = 'Match';
-        else if (diffVal > 1.0) financialStatus = 'Less Paid';
-        else financialStatus = 'Excess';
+        financialStatus = 'Not Received';
       }
 
-      const diffCalc = (tally || saarthi) - as26;
-      // Use the row's actual stored FY; only fall back to the active filter when it is genuinely empty
-      const displayFy = (r.financialYear && r.financialYear.trim()) ? r.financialYear.trim() : (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years' ? activeFy : 'FY 2024-25');
+      const displayFy = (r.financialYear && r.financialYear.trim()) ? r.financialYear.trim() : (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years' ? activeFy : 'Unspecified');
 
       const personName = (r.contactPersonName && r.contactPersonName.trim() !== '') ? r.contactPersonName.trim() : '';
       const desig = (r.designation && r.designation.trim() !== '') ? r.designation.trim() : '';
@@ -1429,7 +1439,7 @@ export const exportReconciliationCSV = async (req, res) => {
     const activeFy = fy || financialYear;
     if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
       const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push("(COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
+      whereClauses.push("(COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
       const fyWild = `%${cleanFy}%`;
       queryParams.push(fyWild, fyWild, fyWild);
     }

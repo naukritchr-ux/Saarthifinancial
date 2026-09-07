@@ -18,7 +18,7 @@ import { getFollowups, getFollowupSummary, deleteFollowup, purgeFollowups } from
 import AddFollowupModal from './AddFollowupModal';
 
 export default function FollowUp() {
-  const { followupPreFill, setFollowupPreFill, refreshKey } = useApp();
+  const { followupPreFill, setFollowupPreFill, refreshKey, fyFilter } = useApp();
 
   const [summary, setSummary] = useState({
     totalFollowedUp: 0,
@@ -86,7 +86,8 @@ export default function FollowUp() {
           endDate: customEnd,
           search,
           dueOnly: dueOnly ? 'true' : 'false',
-          responseFilter
+          responseFilter,
+          fy: fyFilter && fyFilter !== 'All Financial Years' ? fyFilter : ''
         })
       ]);
 
@@ -101,7 +102,7 @@ export default function FollowUp() {
 
   useEffect(() => {
     loadData();
-  }, [selectedStatuses, dateRange, customStart, customEnd, search, dueOnly, responseFilter, refreshKey]);
+  }, [selectedStatuses, dateRange, customStart, customEnd, search, dueOnly, responseFilter, refreshKey, fyFilter]);
 
   const handleStatusToggle = (st) => {
     if (selectedStatuses.includes(st)) {

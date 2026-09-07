@@ -205,7 +205,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
           overallStatus = 'Not Received';
         }
 
-        const financialYear = due.financial_year || (existing && existing.financial_year) || 'FY 2024-25';
+        const financialYear = due.financial_year || (existing && existing.financial_year) || null;
 
         if (existing && existing.id) {
           updatesList.push({
