@@ -199,7 +199,13 @@ export default function ReconciliationTable({
                       {/* Financial Status */}
                       <td className="px-4 py-3.5 text-center">
                         <div className="flex flex-col items-center gap-1">
-                          {getFinancialStatusPill(parseFloat(row.as26Tds || 0) === 0 ? 'Not Received' : (row.financialStatus || row.overallStatus))}
+                          {getFinancialStatusPill(
+                            parseFloat(row.as26Tds || 0) === 0 
+                              ? 'Not Received' 
+                              : (parseFloat(row.tallyTds || 0) === 0 && parseFloat(row.saarthiTds || row.booksTds || 0) === 0 && parseFloat(row.as26Tds || 0) > 0)
+                                ? 'Excess'
+                                : (row.financialStatus || row.overallStatus)
+                          )}
                           {(row.isManuallyEdited === 1 || row.isManuallyEdited === true || row.is_manually_edited === 1) && (
                             <span className="text-[10px] font-black text-[#9B87F5] bg-[#9B87F5]/10 border border-[#9B87F5]/30 px-2 py-0.5 rounded-full">
                               Resolved

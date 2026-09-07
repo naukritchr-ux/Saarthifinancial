@@ -138,15 +138,19 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
           return 'Less Paid';
         };
 
-        const booksVs26as = evaluatePair(as26Tds, booksTds, has26as, hasSaarthi);
-        const booksVsTally = evaluatePair(tallyTds, booksTds, hasTally, hasSaarthi);
-        const as26VsTally = evaluatePair(tallyTds, as26Tds, hasTally, has26as);
+        let booksVs26as = evaluatePair(as26Tds, booksTds, has26as, hasSaarthi);
+        let booksVsTally = evaluatePair(tallyTds, booksTds, hasTally, hasSaarthi);
+        let as26VsTally = evaluatePair(tallyTds, as26Tds, hasTally, has26as);
 
         // 3-way status classification
         const activeSourcesCount = [hasSaarthi, hasTally, has26as].filter(Boolean).length;
         let overallStatus = 'Not Received';
 
-        if (activeSourcesCount >= 2) {
+        if (tallyTds <= 0 && booksTds <= 0 && as26Tds > 0) {
+          overallStatus = 'Excess';
+          booksVs26as = 'Excess';
+          as26VsTally = 'Excess';
+        } else if (activeSourcesCount >= 2) {
           const vals = [];
           if (hasSaarthi) vals.push(booksTds);
           if (hasTally) vals.push(tallyTds);

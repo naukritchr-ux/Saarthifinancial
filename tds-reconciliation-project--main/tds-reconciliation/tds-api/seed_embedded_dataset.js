@@ -333,7 +333,9 @@ async function seedEmbeddedDatasetFallback() {
       let as26VsTally = Math.abs(e.as26Tds - e.tallyTds) <= 1 ? 'Matched' : (e.as26Tds > e.tallyTds ? 'Excess' : 'Less Paid');
 
       let overallStatus = 'All Matched';
-      if (booksVs26as !== 'Matched' || booksVsTally !== 'Matched' || as26VsTally !== 'Matched') {
+      if (e.tallyTds <= 0 && e.booksTds <= 0 && e.as26Tds > 0) {
+        overallStatus = 'Excess';
+      } else if (booksVs26as !== 'Matched' || booksVsTally !== 'Matched' || as26VsTally !== 'Matched') {
         overallStatus = (booksVs26as !== 'Matched' && booksVsTally !== 'Matched') ? 'Major Mismatch' : 'Partial Mismatch';
       }
 
@@ -517,8 +519,9 @@ async function seedFromMasterExcel(excelPath) {
       let as26VsTally = Math.abs(as26Tds - tallyTds) <= 1 ? 'Matched' : (as26Tds > tallyTds ? 'Excess' : 'Less Paid');
 
       let overallStatus = 'All Matched';
-
-      if (booksVs26as !== 'Matched' || booksVsTally !== 'Matched' || as26VsTally !== 'Matched') {
+      if (tallyTds <= 0 && booksTds <= 0 && as26Tds > 0) {
+        overallStatus = 'Excess';
+      } else if (booksVs26as !== 'Matched' || booksVsTally !== 'Matched' || as26VsTally !== 'Matched') {
         overallStatus = (booksVs26as !== 'Matched' && booksVsTally !== 'Matched') ? 'Major Mismatch' : 'Partial Mismatch';
       }
 
