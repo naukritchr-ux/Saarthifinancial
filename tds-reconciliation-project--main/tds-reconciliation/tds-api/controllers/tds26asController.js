@@ -1032,11 +1032,23 @@ export const resolveCleaningItem = async (req, res) => {
   }
 };
 
+let followupColumnChecked = false;
+async function ensureFollowupDoneColumn() {
+  if (followupColumnChecked) return;
+  try {
+    await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done BOOLEAN DEFAULT FALSE');
+  } catch (e) {
+    try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done INTEGER DEFAULT 0'); } catch (err) {}
+  }
+  followupColumnChecked = true;
+}
+
 /**
  * Get Paginated & Filterable Reconciliation Report
  */
 export const getReconciliationReport = async (req, res) => {
   try {
+    await ensureFollowupDoneColumn();
 
     const {
       page = 1,
@@ -1208,7 +1220,16 @@ export const getReconciliationReport = async (req, res) => {
       LIMIT ${limitNum} OFFSET ${offset}
     `;
 
-    const [rawRows] = await db.query(reportQuery, queryParams);
+    let rawRows = [];
+    try {
+      const [res] = await db.query(reportQuery, queryParams);
+      rawRows = res;
+    } catch (qErr) {
+      console.warn('⚠️ Primary report query failed, retrying with fallback:', qErr.message);
+      const fallbackQuery = reportQuery.replace('tr.is_followup_done as isFollowupDone,', '0 as isFollowupDone,');
+      const [res] = await db.query(fallbackQuery, queryParams);
+      rawRows = res;
+    }
 
     const rows = rawRows.map(r => {
       const tally = parseFloat(r.tallyTds || 0);
@@ -2000,6 +2021,7 @@ export const syncSarthiLiveApi = syncSaarthiLiveApi;
  */
 export const toggleFollowupDone = async (req, res) => {
   try {
+    await ensureFollowupDoneColumn();
     const { id } = req.params;
     const rowId = parseInt(id, 10);
     if (!rowId || isNaN(rowId)) {
