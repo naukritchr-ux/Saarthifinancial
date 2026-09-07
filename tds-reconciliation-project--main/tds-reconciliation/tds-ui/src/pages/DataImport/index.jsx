@@ -67,6 +67,13 @@ export default function DataImport() {
     fetchQueue();
   }, [refreshKey]);
 
+  const cleanTanInput = (val) => {
+    if (!val) return '';
+    const str = String(val).trim();
+    if (str.startsWith('NO_TAN_') || str.includes('UNKNOWN') || str === 'Pending TAN' || str === 'Not Available') return '';
+    return str;
+  };
+
   const openCleanModal = (item) => {
     setActiveEditItem(item);
     setTallyRawName(item.tallyCompanyName || item.companyName || '');
@@ -74,8 +81,8 @@ export default function DataImport() {
     setSaarthiName(item.saarthiSuggestion || item.companyName || '');
     setCanonicalName(item.saarthiSuggestion || item.companyName || '');
     
-    setEntityTan(item.tallyTan || item.tanNo || '');
-    setSaarthiTan(item.as26Tan || item.saarthiTan || item.tanNo || '');
+    setEntityTan(cleanTanInput(item.tallyTan || item.tanNo));
+    setSaarthiTan(cleanTanInput(item.as26Tan || item.saarthiTan || item.tanNo));
     setSaarthiPan(item.pan || 'RHMCT2664N');
     setSaarthiGstin(item.gstin || '24RHMCT2664N3Z6');
     
@@ -133,59 +140,61 @@ export default function DataImport() {
         triggerRefresh();
         fetchQueue();
       } else {
-        setResolveError(res?.error || 'Failed to save clean data');
+        setResolveError(res?.error || 'Failed to update record');
       }
     } catch (err) {
-      setResolveError(err.message || 'Connection error saving data');
+      setResolveError(err.message || 'Server error occurred');
     } finally {
       setResolving(false);
     }
   };
 
   return (
-    <div className="space-y-8 animate-fade-in pb-12">
-      {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-[#E9E4FA] shadow-sm text-[#1F1B2E]">
-        <div>
-          <h1 className="text-2xl font-black text-[#1F1B2E] tracking-tight flex items-center gap-2">
-            <Upload className="w-7 h-7 text-[#9B87F5]" />
-            Data Import & Cleaning Workbench
-          </h1>
-          <p className="text-xs text-[#6B6580] font-medium mt-1">
-            Upload Form 26AS portal reports, Tally ledger CSVs, resolve conflicting TAN format flags, and standardize deductor records.
+    <div className="space-y-6 animate-fade-in pb-12">
+      {/* Top Banner / Intro */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <h2 className="text-xl font-black text-slate-900 flex items-center gap-2.5">
+            <span className="p-2 bg-[#9B87F5]/15 text-[#9B87F5] rounded-xl">
+              <Sparkles className="w-5 h-5" />
+            </span>
+            Data Import & Cleaning Queue
+          </h2>
+          <p className="text-xs text-slate-500 font-medium max-w-xl">
+            Auto-detected fuzzy name discrepancies and missing/invalid TAN formats across 26AS, Tally, and Sarthi CRM.
           </p>
         </div>
 
-        <button
-          onClick={fetchQueue}
-          className="inline-flex items-center gap-2 bg-[#9B87F5] hover:bg-[#8572E0] text-white border border-[#9B87F5]/30 font-bold px-4 py-2.5 rounded-xl transition text-xs shadow-2xs cursor-pointer"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh Queue
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchQueue}
+            disabled={loading}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh Queue
+          </button>
+        </div>
       </div>
 
       {/* Upload Panel Section */}
       <UploadPanel onUploadSuccess={fetchQueue} />
 
-      {/* SECTION 2: Requires Attention (Cards & TAN Mismatch Tables) */}
+      {/* Main Queue Content */}
       <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-gray-200 pb-3">
-          <div>
-            <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-              <AlertTriangle className="w-6 h-6 text-amber-500" />
-              Requires Attention ({queue.length})
-            </h2>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Similar names with conflicting TANs, low-confidence name matches, and rejected matches. A fuzzy name match never overrides a conflicting TAN — resolve manually.
-            </p>
-          </div>
+        <div className="flex items-center justify-between border-b border-gray-200 pb-3">
+          <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+            Discrepancies Requiring Review
+            <span className="bg-amber-100 text-amber-800 text-[11px] font-black px-2.5 py-0.5 rounded-full">
+              {queue.length} items
+            </span>
+          </h3>
         </div>
 
         {loading ? (
-          <div className="bg-white p-12 rounded-2xl border border-gray-200 shadow-sm text-center text-gray-400 space-y-2">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto text-amber-500" />
-            <p className="text-xs font-bold text-slate-600">Loading flagged entries for manual review...</p>
+          <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto text-[#9B87F5] mb-2" />
+            <p className="text-xs font-semibold">Analyzing datasets for discrepancies...</p>
           </div>
         ) : queue.length === 0 ? (
           <div className="bg-white p-10 rounded-2xl border border-emerald-200 shadow-sm text-center text-slate-700 space-y-2">
@@ -204,9 +213,10 @@ export default function DataImport() {
               const tallyName = item.tallyCompanyName || item.companyName;
               const as26Name = item.as26CompanyName || '—';
               const saarthiName = item.saarthiSuggestion || item.companyName;
-              const tallyTan = item.tallyTan || item.tanNo;
-              const as26Tan = item.as26Tan || '—';
-              const saarthiTan = item.saarthiTan || item.tanNo;
+              const formatDisplayTan = (val) => (!val || String(val).startsWith('NO_TAN_') || String(val).includes('UNKNOWN') || String(val) === 'Pending TAN' || String(val) === 'Not Available') ? 'Not Available' : val;
+              const tallyTan = formatDisplayTan(item.tallyTan || item.tanNo);
+              const as26Tan = formatDisplayTan(item.as26Tan);
+              const saarthiTan = formatDisplayTan(item.saarthiTan || item.tanNo);
 
               return (
                 <div
