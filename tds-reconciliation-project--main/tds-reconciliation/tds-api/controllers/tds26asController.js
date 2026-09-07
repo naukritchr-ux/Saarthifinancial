@@ -1139,23 +1139,9 @@ export const getReconciliationReport = async (req, res) => {
     }
 
     let countQuery = `
-      SELECT COUNT(DISTINCT tr.id) as total 
+      SELECT COUNT(tr.id) as total 
       FROM tds_reconciliation_results tr
-      LEFT JOIN (
-        SELECT 
-          MAX(id) as id,
-          UPPER(TRIM(tan_no)) as tan_key,
-          MAX(company_name) as company_name,
-          MAX(contact_person_name) as contact_person_name,
-          MAX(designation) as designation,
-          MAX(contact_number) as contact_number,
-          MAX(email_id) as email_id,
-          MAX(teamleader) as teamleader,
-          MAX(financial_year) as financial_year
-        FROM tds_dues
-        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''
-        GROUP BY UPPER(TRIM(tan_no))
-      ) d ON (tr.tds_dues_id = d.id OR UPPER(TRIM(tr.tan_no)) = d.tan_key)
+      LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
       ${whereSQL}
     `;
     let [countRes] = await db.query(countQuery, queryParams);
@@ -1200,21 +1186,7 @@ export const getReconciliationReport = async (req, res) => {
         0 as as26InvoiceAmount
 
       FROM tds_reconciliation_results tr
-      LEFT JOIN (
-        SELECT 
-          MAX(id) as id,
-          UPPER(TRIM(tan_no)) as tan_key,
-          MAX(company_name) as company_name,
-          MAX(contact_person_name) as contact_person_name,
-          MAX(designation) as designation,
-          MAX(contact_number) as contact_number,
-          MAX(email_id) as email_id,
-          MAX(teamleader) as teamleader,
-          MAX(financial_year) as financial_year
-        FROM tds_dues
-        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''
-        GROUP BY UPPER(TRIM(tan_no))
-      ) d ON (tr.tds_dues_id = d.id OR UPPER(TRIM(tr.tan_no)) = d.tan_key)
+      LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
       ${whereSQL}
       ${orderSQL}
       LIMIT ${limitNum} OFFSET ${offset}
