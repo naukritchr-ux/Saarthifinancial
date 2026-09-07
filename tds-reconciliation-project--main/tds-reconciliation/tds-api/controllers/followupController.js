@@ -297,7 +297,7 @@ export const updateFollowup = async (req, res) => {
  */
 export const deleteFollowup = async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id || req.body?.id || req.query?.id;
     if (!id) return res.status(400).json({ success: false, error: 'Follow-up ID is required' });
 
     const targetId = isNaN(parseInt(id, 10)) ? id : parseInt(id, 10);

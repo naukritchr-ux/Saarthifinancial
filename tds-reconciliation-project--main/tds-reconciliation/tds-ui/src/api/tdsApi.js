@@ -325,9 +325,21 @@ export const deleteFollowup = async (id) => {
     });
     const resData = await response.json();
     if (response.ok && resData && resData.success !== false) return resData;
-    return { success: false, error: resData?.error || 'Failed to delete follow-up entry' };
+
+    // Fallback to POST /delete to bypass any proxies/CORS blocking HTTP DELETE
+    const postRes = await fetchWithTimeout(`${API_URL}/api/followups/${id}/delete`, {
+      method: 'POST'
+    });
+    return await postRes.json();
   } catch (err) {
-    return { success: false, error: err.message || 'Network error deleting follow-up entry' };
+    try {
+      const postRes = await fetchWithTimeout(`${API_URL}/api/followups/${id}/delete`, {
+        method: 'POST'
+      });
+      return await postRes.json();
+    } catch (e2) {
+      return { success: false, error: err.message || 'Network error deleting follow-up entry' };
+    }
   }
 };
 
