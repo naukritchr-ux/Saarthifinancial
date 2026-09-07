@@ -1,6 +1,7 @@
 import xlsx from 'xlsx';
 import db from './config/db.js';
 import { reconcile } from './services/tdsReconciliationService.js';
+import { normalizeFY } from './utils/fyHelper.js';
 
 // Helper to format values
 const cleanNumber = (val) => {
@@ -88,7 +89,7 @@ const run = async () => {
         const tdsAmount = cleanNumber(row[4]);
         
         tallyEntries.push([
-          tallyBatchId, tallyTan, companyName, entryDate, fy, tdsAmount
+          tallyTan, companyName, '', '', entryDate, 0.00, tdsAmount, 'Tally Ledger', normalizeFY(fy), tallyBatchId
         ]);
       }
 
@@ -101,7 +102,7 @@ const run = async () => {
         const tdsDeducted = cleanNumber(row[10]);
 
         as26Entries.push([
-          as26Tan, deductorName, 0.00, tdsDeducted, 'N/A', fy, as26BatchId
+          as26Tan, deductorName, 0.00, tdsDeducted, 'N/A', 'N/A', normalizeFY(fy), as26BatchId
         ]);
       }
     }
@@ -122,7 +123,7 @@ const run = async () => {
     for (let i = 0; i < tallyEntries.length; i += BATCH_SIZE) {
       const chunk = tallyEntries.slice(i, i + BATCH_SIZE);
       const query = `
-        INSERT INTO tds_tally_entries (upload_batch_id, tan_no, company_name, entry_date, financial_year, tds_deducted)
+        INSERT INTO tds_tally_entries (tan_no, party_name, gst_num, pan_no, voucher_date, amount, tds_amount, ledger_name, financial_year, upload_batch_id)
         VALUES ?
       `;
       await db.query(query, [chunk]);
@@ -133,7 +134,7 @@ const run = async () => {
     for (let i = 0; i < as26Entries.length; i += BATCH_SIZE) {
       const chunk = as26Entries.slice(i, i + BATCH_SIZE);
       const query = `
-        INSERT INTO tds_26as_entries (tan_no, deductor_name, amount_paid, tds_deducted, section, quarter, upload_batch_id)
+        INSERT INTO tds_26as_entries (tan_no, deductor_name, amount_paid, tds_deducted, section, quarter, financial_year, upload_batch_id)
         VALUES ?
       `;
       await db.query(query, [chunk]);

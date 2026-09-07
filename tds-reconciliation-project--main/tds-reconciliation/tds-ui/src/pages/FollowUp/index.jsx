@@ -241,6 +241,15 @@ export default function FollowUp() {
 
         <div className="flex items-center gap-2">
           <button
+            onClick={handlePurgeAllFollowups}
+            className="inline-flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold px-3 py-2.5 rounded-xl transition text-xs border border-red-200 cursor-pointer shadow-2xs"
+            title="Clear all follow-up call history logs"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Clear All Logs
+          </button>
+
+          <button
             onClick={() => {
               loadData();
             }}

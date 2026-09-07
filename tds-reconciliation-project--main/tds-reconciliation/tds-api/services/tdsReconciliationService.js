@@ -2,24 +2,27 @@ import db from '../config/db.js';
 
 /**
  * Perform three-way reconciliation for a given 26AS and/or Tally upload batch
+ * Grouped per (tan_no, financial_year)
  * @param {string|null} as26BatchId - The upload batch ID for 26AS entries
  * @param {string|null} tallyBatchId - The upload batch ID for Tally entries
  */
 export async function reconcile(as26BatchId = null, tallyBatchId = null) {
   try {
-    console.log(`🔄 Running 3-way reconciliation. 26AS Batch: ${as26BatchId || 'all'} | Tally Batch: ${tallyBatchId || 'all'}`);
+    console.log(`🔄 Running 3-way reconciliation by (tan, financial_year). 26AS Batch: ${as26BatchId || 'all'} | Tally Batch: ${tallyBatchId || 'all'}`);
 
-    // 1. Fetch rows from tds_dues grouped by TAN to prevent duplicate TAN records
+    const makeKey = (tan, fy) => `${(tan || '').toUpperCase().trim()}|${(fy || '').toUpperCase().trim()}`;
+
+    // 1. Fetch rows from tds_dues grouped by (tan_no, financial_year)
     const [groupedDuesRows] = await db.query(
       `SELECT 
          MAX(id) as id, 
          UPPER(TRIM(tan_no)) as tan, 
+         financial_year,
          SUM(COALESCE(tds, 0)) as tds, 
-         MAX(company_name) as company_name,
-         MAX(financial_year) as financial_year
+         MAX(company_name) as company_name
        FROM tds_dues 
        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''
-       GROUP BY UPPER(TRIM(tan_no))`
+       GROUP BY UPPER(TRIM(tan_no)), financial_year`
     );
 
     const [unnamedDuesRows] = await db.query(
@@ -34,38 +37,72 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
       tan: (r.tan || '').trim().toUpperCase(),
       tds: parseFloat(r.tds || 0),
       company_name: r.company_name || 'Client Entity',
-      financial_year: r.financial_year || null
+      financial_year: r.financial_year ? r.financial_year.trim() : null
     }));
 
-    // 2. Fetch sums for 26AS grouped by TAN
+    // 2. Fetch sums for 26AS grouped by (tan_no, financial_year)
     const [as26Rows] = await db.query(
-      `SELECT UPPER(TRIM(tan_no)) as tan, MAX(deductor_name) as company_name, SUM(tds_deducted) as total, MAX(upload_batch_id) as batch_id 
+      `SELECT 
+         UPPER(TRIM(tan_no)) as tan, 
+         financial_year,
+         MAX(deductor_name) as company_name, 
+         SUM(tds_deducted) as total, 
+         MAX(upload_batch_id) as batch_id 
        FROM tds_26as_entries 
        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' 
-       GROUP BY UPPER(TRIM(tan_no))`
+       GROUP BY UPPER(TRIM(tan_no)), financial_year`
     );
     const as26Map = new Map();
-    as26Rows.forEach(r => as26Map.set(r.tan, { total: parseFloat(r.total || 0), batchId: r.batch_id, companyName: r.company_name }));
+    as26Rows.forEach(r => {
+      const fy = r.financial_year ? r.financial_year.trim() : null;
+      as26Map.set(makeKey(r.tan, fy), {
+        tan: r.tan,
+        financial_year: fy,
+        total: parseFloat(r.total || 0),
+        batchId: r.batch_id,
+        companyName: r.company_name
+      });
+    });
 
-    // 3. Fetch sums for Tally grouped by TAN
+    // 3. Fetch sums for Tally grouped by (tan_no, financial_year)
     const [tallyRows] = await db.query(
-      `SELECT UPPER(TRIM(tan_no)) as tan, MAX(party_name) as company_name, SUM(tds_amount) as total, MAX(upload_batch_id) as batch_id 
+      `SELECT 
+         UPPER(TRIM(tan_no)) as tan, 
+         financial_year,
+         MAX(party_name) as company_name, 
+         SUM(tds_amount) as total, 
+         MAX(upload_batch_id) as batch_id 
        FROM tds_tally_entries 
        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' 
-       GROUP BY UPPER(TRIM(tan_no))`
+       GROUP BY UPPER(TRIM(tan_no)), financial_year`
     );
     const tallyMap = new Map();
-    tallyRows.forEach(r => tallyMap.set(r.tan, { total: parseFloat(r.total || 0), batchId: r.batch_id, companyName: r.company_name }));
+    tallyRows.forEach(r => {
+      const fy = r.financial_year ? r.financial_year.trim() : null;
+      tallyMap.set(makeKey(r.tan, fy), {
+        tan: r.tan,
+        financial_year: fy,
+        total: parseFloat(r.total || 0),
+        batchId: r.batch_id,
+        companyName: r.company_name
+      });
+    });
 
-    // Ensure all orphan TANs from 26AS / Tally also exist in duesList
-    const existingDuesTans = new Set(duesList.map(d => d.tan).filter(Boolean));
-    const allExternalTans = new Set([...as26Map.keys(), ...tallyMap.keys()]);
+    // Ensure all orphan (TAN, FY) from 26AS / Tally also exist in duesList
+    const existingDuesKeys = new Set(duesList.map(d => makeKey(d.tan, d.financial_year)));
+    const allExternalKeys = new Set([...as26Map.keys(), ...tallyMap.keys()]);
 
     const orphanItems = [];
-    for (const extTan of allExternalTans) {
-      if (!existingDuesTans.has(extTan)) {
-        const companyName = as26Map.get(extTan)?.companyName || tallyMap.get(extTan)?.companyName || `Entity ${extTan}`;
-        orphanItems.push({ tan: extTan, companyName });
+    for (const key of allExternalKeys) {
+      if (!existingDuesKeys.has(key)) {
+        const ext = as26Map.get(key) || tallyMap.get(key);
+        if (ext && ext.tan) {
+          orphanItems.push({
+            tan: ext.tan,
+            companyName: ext.companyName || `Entity ${ext.tan}`,
+            financial_year: ext.financial_year || null
+          });
+        }
       }
     }
 
@@ -73,10 +110,10 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
       const ORPHAN_CHUNK = 200;
       for (let i = 0; i < orphanItems.length; i += ORPHAN_CHUNK) {
         const chunk = orphanItems.slice(i, i + ORPHAN_CHUNK);
-        const placeholders = chunk.map(() => '(?, ?, 0.00, NULL)').join(', ');
+        const placeholders = chunk.map(() => '(?, ?, 0.00, ?)').join(', ');
         const params = [];
         for (const item of chunk) {
-          params.push(item.tan, item.companyName);
+          params.push(item.tan, item.companyName, item.financial_year);
         }
         await db.execute(
           `INSERT INTO tds_dues (tan_no, company_name, tds, financial_year) VALUES ${placeholders}`,
@@ -84,24 +121,16 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
         );
       }
 
-      // Fetch newly inserted dues to add them to duesList
-      const orphanTans = orphanItems.map(o => o.tan);
-      for (let i = 0; i < orphanTans.length; i += 200) {
-        const chunk = orphanTans.slice(i, i + 200);
-        const placeholders = chunk.map(() => '?').join(', ');
-        const [insertedRows] = await db.query(
-          `SELECT id, UPPER(TRIM(tan_no)) as tan, company_name FROM tds_dues WHERE UPPER(TRIM(tan_no)) IN (${placeholders})`,
-          chunk
-        );
-        for (const r of insertedRows) {
-          duesList.push({
-            id: r.id,
-            tan: r.tan,
-            tds: 0.00,
-            company_name: r.company_name
-          });
-          existingDuesTans.add(r.tan);
-        }
+      // Add newly inserted orphans to duesList
+      for (const item of orphanItems) {
+        duesList.push({
+          id: 0,
+          tan: item.tan,
+          tds: 0.00,
+          company_name: item.companyName,
+          financial_year: item.financial_year
+        });
+        existingDuesKeys.add(makeKey(item.tan, item.financial_year));
       }
     }
 
@@ -111,13 +140,13 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     }
 
     const [recRows] = await db.query(
-      'SELECT id, tds_dues_id, UPPER(TRIM(tan_no)) as tan_no, is_manually_edited, as26_batch_id, tally_batch_id, financial_year FROM tds_reconciliation_results'
+      'SELECT id, tds_dues_id, UPPER(TRIM(tan_no)) as tan_no, financial_year, is_manually_edited, as26_batch_id, tally_batch_id FROM tds_reconciliation_results'
     );
-    const existingByDuesId = new Map();
-    const existingByTan = new Map();
+    const existingByTanFy = new Map();
     (recRows || []).forEach(r => {
-      if (r.tds_dues_id) existingByDuesId.set(r.tds_dues_id, r);
-      if (r.tan_no) existingByTan.set(r.tan_no, r);
+      if (r.tan_no) {
+        existingByTanFy.set(makeKey(r.tan_no, r.financial_year), r);
+      }
     });
 
     const ghostIdsToDelete = [];
@@ -128,20 +157,22 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
       try {
         const dueId = due.id ? parseInt(due.id) : 0;
         const tan = due.tan || `NO_TAN_${dueId}`;
+        const financialYear = due.financial_year || null;
+        const compositeKey = makeKey(tan, financialYear);
         const booksTds = due.tds;
 
-        // Check existing reconciliation record by tds_dues_id or tan_no
-        let existing = (dueId > 0 ? existingByDuesId.get(dueId) : null) || (tan ? existingByTan.get(tan.toUpperCase()) : null);
+        // Check existing reconciliation record by (tan_no, financial_year)
+        const existing = existingByTanFy.get(compositeKey);
 
         if (existing && existing.is_manually_edited) {
           continue; // Respect manual overrides
         }
 
-        const as26Data = due.tan ? as26Map.get(due.tan) : null;
+        const as26Data = as26Map.get(compositeKey) || null;
         const as26Tds = as26Data ? as26Data.total : 0;
         const finalAs26BatchId = as26Data ? as26Data.batchId : (existing ? existing.as26_batch_id : null);
 
-        const tallyData = due.tan ? tallyMap.get(due.tan) : null;
+        const tallyData = tallyMap.get(compositeKey) || null;
         const tallyTds = tallyData ? tallyData.total : 0;
         const finalTallyBatchId = tallyData ? tallyData.batchId : (existing ? existing.tally_batch_id : null);
 
@@ -204,8 +235,6 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
         } else {
           overallStatus = 'Not Received';
         }
-
-        const financialYear = due.financial_year || (existing && existing.financial_year) || null;
 
         if (existing && existing.id) {
           updatesList.push({
@@ -295,9 +324,9 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
            books_vs_tally_status = VALUES(books_vs_tally_status),
            as26_vs_tally_status = VALUES(as26_vs_tally_status),
            overall_status = VALUES(overall_status),
-           as26_batch_id = VALUES(as26_batch_id),
-           tally_batch_id = VALUES(tally_batch_id),
-           financial_year = COALESCE(NULLIF(VALUES(financial_year), ''), tds_reconciliation_results.financial_year)`,
+           as26_batch_id = COALESCE(VALUES(as26_batch_id), tds_reconciliation_results.as26_batch_id),
+           tally_batch_id = COALESCE(VALUES(tally_batch_id), tds_reconciliation_results.tally_batch_id),
+           financial_year = VALUES(financial_year)`,
         params
       );
     }
@@ -329,7 +358,19 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
          (tds_dues_id, tan_no, books_tds, as26_tds, tally_tds, 
           books_vs_26as_status, books_vs_tally_status, as26_vs_tally_status, 
           overall_status, as26_batch_id, tally_batch_id, financial_year)
-         VALUES ${placeholders}`,
+         VALUES ${placeholders}
+         ON DUPLICATE KEY UPDATE
+           tds_dues_id = COALESCE(NULLIF(VALUES(tds_dues_id), 0), tds_dues_id),
+           books_tds = VALUES(books_tds),
+           as26_tds = VALUES(as26_tds),
+           tally_tds = VALUES(tally_tds),
+           books_vs_26as_status = VALUES(books_vs_26as_status),
+           books_vs_tally_status = VALUES(books_vs_tally_status),
+           as26_vs_tally_status = VALUES(as26_vs_tally_status),
+           overall_status = VALUES(overall_status),
+           as26_batch_id = COALESCE(VALUES(as26_batch_id), tds_reconciliation_results.as26_batch_id),
+           tally_batch_id = COALESCE(VALUES(tally_batch_id), tds_reconciliation_results.tally_batch_id),
+           financial_year = VALUES(financial_year)`,
         params
       );
     }
@@ -344,7 +385,3 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     throw error;
   }
 }
-
-export default {
-  reconcile
-};

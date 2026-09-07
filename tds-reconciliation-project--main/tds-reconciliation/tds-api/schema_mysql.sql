@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS tds_26as_entries (
   tds_deducted DECIMAL(15,2) NOT NULL,
   section VARCHAR(20),
   quarter VARCHAR(10),
+  financial_year VARCHAR(20),
   upload_batch_id VARCHAR(50) NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_tan (tan_no),
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS tds_tally_entries (
   amount DECIMAL(15,2),
   tds_amount DECIMAL(15,2) NOT NULL,
   ledger_name VARCHAR(255),
+  financial_year VARCHAR(20),
   upload_batch_id VARCHAR(50) NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_tan (tan_no),
@@ -75,7 +77,8 @@ CREATE TABLE IF NOT EXISTS tds_reconciliation_results (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_overall (overall_status),
-  INDEX idx_tan (tan_no)
+  INDEX idx_tan (tan_no),
+  UNIQUE KEY uniq_tan_fy (tan_no, financial_year)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS tds_reconciliation_audit_logs (

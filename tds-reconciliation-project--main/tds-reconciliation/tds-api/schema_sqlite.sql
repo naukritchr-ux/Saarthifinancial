@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS tds_26as_entries (
   tds_deducted DECIMAL(15,2) NOT NULL,
   section TEXT,
   quarter TEXT,
+  financial_year TEXT,
   upload_batch_id TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -45,6 +46,7 @@ CREATE TABLE IF NOT EXISTS tds_tally_entries (
   amount DECIMAL(15,2),
   tds_amount DECIMAL(15,2) NOT NULL,
   ledger_name TEXT,
+  financial_year TEXT,
   upload_batch_id TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -70,7 +72,7 @@ CREATE TABLE IF NOT EXISTS tds_reconciliation_results (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (tds_dues_id) REFERENCES tds_dues(id) ON DELETE CASCADE,
-  UNIQUE(as26_batch_id, tally_batch_id, tds_dues_id)
+  UNIQUE(tan_no, financial_year)
 );
 
 -- Reconciliation overrides audit logs
