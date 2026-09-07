@@ -263,9 +263,16 @@ export const upload26as = async (req, res) => {
       console.warn('⚠️ Background reconciliation warning:', recErr.message);
     }
 
+    if (uploadFy) {
+      try {
+        await db.execute('UPDATE tds_reconciliation_results SET financial_year = ? WHERE as26_batch_id = ?', [uploadFy, uploadBatchId]);
+      } catch (e) {}
+    }
+
     const metadata = JSON.stringify({
       upload_type: '26AS_TDS',
       upload_batch_id: uploadBatchId,
+      financial_year: uploadFy || 'FY 2024-25',
       total_rows: entries.length
     });
     
@@ -551,12 +558,19 @@ export const uploadTally = async (req, res) => {
     try {
       await reconcile(null, uploadBatchId);
     } catch (recErr) {
-      console.warn('⚠️ Background reconciliation warning:', recErr.message);
+      console.warn('⚠️ Background reconciliation warning in Tally:', recErr.message);
+    }
+
+    if (uploadFy) {
+      try {
+        await db.execute('UPDATE tds_reconciliation_results SET financial_year = ? WHERE tally_batch_id = ?', [uploadFy, uploadBatchId]);
+      } catch (e) {}
     }
 
     const metadata = JSON.stringify({
       upload_type: 'TALLY_TDS',
       upload_batch_id: uploadBatchId,
+      financial_year: uploadFy || 'FY 2024-25',
       total_rows: entries.length
     });
     
@@ -591,8 +605,9 @@ export const getDashboardSummary = async (req, res) => {
     const params = [];
     if (fy && fy !== 'All' && fy !== 'All Financial Years') {
       const cleanFy = String(fy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push("COALESCE(NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') LIKE ?");
-      params.push(`%${cleanFy}%`);
+      whereClauses.push("(COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
+      const fyWild = `%${cleanFy}%`;
+      params.push(fyWild, fyWild, fyWild);
     }
 
     const whereSQL = 'WHERE ' + whereClauses.join(' AND ');
