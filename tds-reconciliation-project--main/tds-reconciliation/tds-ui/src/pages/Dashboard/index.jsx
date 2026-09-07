@@ -4,6 +4,7 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   TrendingDown, 
+  TrendingUp,
   Layers, 
   PieChart as PieIcon, 
   BarChart3,
@@ -138,25 +139,29 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Net Gap */}
+        {/* Net Gap: positive means 26AS > Tally (surplus for the company) */}
         <div className="bg-white p-5 rounded-2xl border border-[#E9E4FA] shadow-2xs flex items-center justify-between">
           <div>
-            <div className="text-xs font-bold text-[#6B6580] uppercase tracking-wider">Net Tally − 26AS</div>
-            <div className={`text-2xl font-black mt-1 ${data.totals.netGap < 0 ? 'text-[#F87A9E]' : 'text-[#4ADE80]'}`}>
-              {formatCurrency(data.totals.netGap)}
+            <div className="text-xs font-bold text-[#6B6580] uppercase tracking-wider">Net 26AS − Tally</div>
+            <div className={`text-2xl font-black mt-1 ${data.totals.netGap > 0 ? 'text-[#4ADE80]' : data.totals.netGap < 0 ? 'text-[#F87A9E]' : 'text-[#1F1B2E]'}`}>
+              {formatCurrency(Math.abs(data.totals.netGap))}
             </div>
             <div className="text-[11px] text-[#6B6580] font-medium mt-1 flex items-center gap-1">
-              {data.totals.netGap < 0 ? (
+              {data.totals.netGap > 0 ? (
+                <span className="text-[#4ADE80] font-bold flex items-center gap-0.5">
+                  <TrendingUp className="w-3 h-3" /> 26AS Exceeds Tally (Surplus)
+                </span>
+              ) : data.totals.netGap < 0 ? (
                 <span className="text-[#F87A9E] font-bold flex items-center gap-0.5">
-                  <AlertTriangle className="w-3 h-3" /> 26AS Exceeds Tally
+                  <AlertTriangle className="w-3 h-3" /> Tally Exceeds 26AS (Shortfall)
                 </span>
               ) : (
-                <span className="text-[#4ADE80] font-bold">Matched / Surplus</span>
+                <span className="text-[#4ADE80] font-bold">Perfectly Matched</span>
               )}
             </div>
           </div>
-          <div className={`p-3 rounded-xl ${data.totals.netGap < 0 ? 'bg-[#F87A9E]/15 text-[#F87A9E]' : 'bg-[#4ADE80]/15 text-[#4ADE80]'}`}>
-            <TrendingDown className="w-6 h-6" />
+          <div className={`p-3 rounded-xl ${data.totals.netGap > 0 ? 'bg-[#4ADE80]/15 text-[#4ADE80]' : data.totals.netGap < 0 ? 'bg-[#F87A9E]/15 text-[#F87A9E]' : 'bg-[#E9E4FA] text-[#9B87F5]'}`}>
+            {data.totals.netGap >= 0 ? <TrendingUp className="w-6 h-6" /> : <TrendingDown className="w-6 h-6" />}
           </div>
         </div>
       </div>

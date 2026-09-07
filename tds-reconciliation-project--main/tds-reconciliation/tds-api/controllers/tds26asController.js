@@ -693,7 +693,7 @@ export const getDashboardSummary = async (req, res) => {
         tally: tallyTotal,
         as26: as26Total,
         saarthi: saarthiTotal,
-        netGap: tallyTotal - as26Total
+        netGap: as26Total - tallyTotal
       },
       recordCount: rows.length,
       sourceCoverage: {
@@ -1750,13 +1750,15 @@ export const syncSaarthiLiveApi = async (req, res) => {
       return { ok: false, data: [] };
     };
 
-    const [cRes, lRes] = await Promise.all([
+    const [cRes, lRes, tRes] = await Promise.all([
       fetchEndpointWithFallback('clients_info'),
-      fetchEndpointWithFallback('legals_info')
+      fetchEndpointWithFallback('legals_info'),
+      fetchEndpointWithFallback('tally_info')
     ]);
 
     let clientsData = cRes.data || [];
     let legalsData = lRes.data || [];
+    let tallyApiData = tRes.data || [];
 
     // If legals endpoint is unavailable, fall back to embedded legal dataset
     if (!lRes.ok || legalsData.length === 0) {
@@ -1781,7 +1783,8 @@ export const syncSaarthiLiveApi = async (req, res) => {
 
     const liveApiStatus = {
       clients_info: cRes.ok ? 'ok' : (clientsData.length > 0 ? 'fallback' : 'unreachable'),
-      legals_info: lRes.ok ? 'ok' : (legalsData.length > 0 ? 'local_dataset' : 'unreachable')
+      legals_info: lRes.ok ? 'ok' : (legalsData.length > 0 ? 'local_dataset' : 'unreachable'),
+      tally_info: tRes.ok ? 'ok' : 'unreachable'
     };
 
     const gstRegex = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i;
@@ -1814,6 +1817,8 @@ export const syncSaarthiLiveApi = async (req, res) => {
         contact_number: String(item.contactPhone || item.contactPhoneNumber || item.phoneNumber || item.mobile || item.mobileNo || item.phone || item.contact_no || '').trim() || null,
         email_id: String(item.contactEmail || item.contactEmailId || item.emailId || item.email || item.contact_email || '').trim() || null,
         teamleader: String(item.teamLeader || item.teamleader || item.tlName || item.manager || '').trim() || null,
+        saarthi_tds: parseFloat(item.tdsAmount || item.tds_amount || item.tds || 0) || 0,
+        saarthi_amount: parseFloat(item.amount || item.grossAmount || item.gross_amount || 0) || 0,
         status: String(item.status || 'active').toLowerCase()
       });
     });
@@ -1837,6 +1842,9 @@ export const syncSaarthiLiveApi = async (req, res) => {
         contact_number: String(item.contactPhoneNumber || item.phoneNumber || item.mobile || item.mobileNo || item.contactPhone || item.phone || item.contact_no || '').trim() || null,
         email_id: String(item.contactEmailId || item.emailId || item.email || item.contactEmail || item.contact_email || '').trim() || null,
         teamleader: String(item.teamLeader || item.teamleader || item.tlName || item.manager || '').trim() || null,
+        // ← KEY: TDS amount from CRM goes into Saarthi Books TDS column
+        saarthi_tds: parseFloat(item.tdsAmount || item.tds_amount || item.tds || 0) || 0,
+        saarthi_amount: parseFloat(item.amount || item.grossAmount || item.gross_amount || 0) || 0,
         status: String(item.status || 'ACTIVE').toLowerCase()
       });
     });
@@ -1916,7 +1924,8 @@ export const syncSaarthiLiveApi = async (req, res) => {
             designation = COALESCE(NULLIF(?, ''), designation),
             contact_number = COALESCE(NULLIF(?, ''), contact_number),
             email_id = COALESCE(NULLIF(?, ''), email_id),
-            teamleader = COALESCE(NULLIF(?, ''), teamleader)
+            teamleader = COALESCE(NULLIF(?, ''), teamleader),
+            tds = CASE WHEN ? > 0 THEN ? ELSE COALESCE(tds, 0) END
           WHERE id = ?
         `, [
           item.master.saarthi_client_id,
@@ -1928,6 +1937,8 @@ export const syncSaarthiLiveApi = async (req, res) => {
           item.master.contact_number,
           item.master.email_id,
           item.master.teamleader,
+          item.master.saarthi_tds || 0,   // condition check
+          item.master.saarthi_tds || 0,   // actual value
           item.id
         ])
       ));
@@ -1941,7 +1952,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
       const valueRows = [];
       const params = [];
       for (const m of chunk) {
-        valueRows.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        valueRows.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         params.push(
           m.saarthi_client_id || null,
           m.company_name || '',
@@ -1953,12 +1964,13 @@ export const syncSaarthiLiveApi = async (req, res) => {
           m.contact_number || null,
           m.email_id || null,
           m.teamleader || null,
-          'FY 2025-26'
+          'FY 2025-26',
+          m.saarthi_tds || 0   // ← Saarthi Books TDS from CRM legals
         );
       }
       const sql = `
         INSERT INTO tds_dues 
-        (saarthi_client_id, company_name, tan_no, pan_no, gst_num, contact_person_name, designation, contact_number, email_id, teamleader, financial_year)
+        (saarthi_client_id, company_name, tan_no, pan_no, gst_num, contact_person_name, designation, contact_number, email_id, teamleader, financial_year, tds)
         VALUES ${valueRows.join(', ')}
       `;
       await db.execute(sql, params);

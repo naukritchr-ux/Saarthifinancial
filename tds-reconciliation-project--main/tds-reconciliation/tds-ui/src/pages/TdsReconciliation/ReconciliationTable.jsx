@@ -142,7 +142,7 @@ export default function ReconciliationTable({
               <th className="px-4 py-3 text-right">Tally TDS</th>
               <th className="px-4 py-3 text-right">26AS TDS</th>
               <th className="px-4 py-3 text-right">Sarthi TDS</th>
-              <th className="px-4 py-3 text-right">Difference (Tally - 26AS)</th>
+              <th className="px-4 py-3 text-right">Difference (26AS - Tally)</th>
               <th className="px-4 py-3 text-center">Financial Status</th>
               <th className="px-4 py-3 text-center">Source Coverage</th>
               <th className="px-4 py-3 text-center">Follow-up Done</th>
@@ -165,9 +165,9 @@ export default function ReconciliationTable({
               rows.map((row) => {
                 const tallyVal = parseFloat(row.tallyTds || 0);
                 const as26Val = parseFloat(row.as26Tds || 0);
-                const diff = tallyVal - as26Val;
-                const isShort = diff > 1.0;
-                const isExcess = diff < -1.0;
+                const diff = as26Val - tallyVal;   // positive = 26AS surplus (good for company)
+                const isShort = diff < -1.0;        // Tally > 26AS = client under-deposited
+                const isExcess = diff > 1.0;        // 26AS > Tally = surplus / over-deposit
 
                 const validCompany = row.companyName && !['Client Entity', 'Unknown Client', 'Unknown Company'].includes(row.companyName.trim());
                 const displayName = validCompany 
