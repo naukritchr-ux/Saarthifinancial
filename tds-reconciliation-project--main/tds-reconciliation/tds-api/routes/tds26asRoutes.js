@@ -17,7 +17,8 @@ import {
   purgeUploadData,
   deleteUploadBatch,
   syncSaarthiLiveApi,
-  syncSarthiLiveApi
+  syncSarthiLiveApi,
+  toggleFollowupDone
 } from '../controllers/tds26asController.js';
 
 const router = express.Router();
@@ -62,6 +63,7 @@ router.get('/batches', getUploadHistory);
 router.get('/upload-history', getUploadHistory);
 router.delete('/batches/:id', deleteUploadBatch);
 router.get('/export', exportReconciliationCSV);
+router.patch('/report/:id/followup-done', toggleFollowupDone);
 
 
 

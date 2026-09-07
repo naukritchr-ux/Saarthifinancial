@@ -14,9 +14,12 @@ import {
   Briefcase,
   Layers,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { toggleFollowupDone } from '../../api/tdsApi';
 
 export default function ReconciliationTable({ 
   rows, 
@@ -29,6 +32,31 @@ export default function ReconciliationTable({
 }) {
   const { navigateTo } = useApp();
   const [expandedRow, setExpandedRow] = useState(null);
+  // Optimistic local state for follow-up done checkboxes (keyed by row.id)
+  const [followupDoneMap, setFollowupDoneMap] = useState({});
+
+  const getFollowupDone = (row) => {
+    if (followupDoneMap.hasOwnProperty(row.id)) return followupDoneMap[row.id];
+    return Boolean(row.isFollowupDone);
+  };
+
+  const handleToggleFollowupDone = async (row, e) => {
+    e.stopPropagation();
+    const current = getFollowupDone(row);
+    // Optimistic update
+    setFollowupDoneMap(prev => ({ ...prev, [row.id]: !current }));
+    try {
+      const res = await toggleFollowupDone(row.id);
+      if (res && res.success) {
+        setFollowupDoneMap(prev => ({ ...prev, [row.id]: res.isFollowupDone }));
+      } else {
+        // Revert on failure
+        setFollowupDoneMap(prev => ({ ...prev, [row.id]: current }));
+      }
+    } catch {
+      setFollowupDoneMap(prev => ({ ...prev, [row.id]: current }));
+    }
+  };
 
   const formatCurrency = (val) => {
     return new Intl.NumberFormat('en-IN', {
@@ -126,14 +154,15 @@ export default function ReconciliationTable({
               <th className="px-4 py-3 text-right">Difference (Tally - 26AS)</th>
               <th className="px-4 py-3 text-center">Financial Status</th>
               <th className="px-4 py-3 text-center">Source Coverage</th>
-              <th className="px-4 py-3 text-center">Follow-up</th>
+              <th className="px-4 py-3 text-center">Follow-up Done</th>
+              <th className="px-4 py-3 text-center">Log Call</th>
               <th className="px-4 py-3 text-center">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#E9E4FA] font-medium text-[#1F1B2E]">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan="12" className="px-6 py-12 text-center text-[#6B6580]">
+                <td colSpan="13" className="px-6 py-12 text-center text-[#6B6580]">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <AlertCircle className="w-8 h-8 text-[#B4A7F5]" />
                     <span className="font-bold text-[#1F1B2E]">No reconciliation records match the selected filters.</span>
@@ -217,7 +246,25 @@ export default function ReconciliationTable({
                       {/* Source Coverage */}
                       <td className="px-4 py-3.5 text-center">{getCoveragePill(row.sourceCoverage, row)}</td>
 
-                      {/* Follow-up button */}
+                      {/* Follow-up Done Checkbox */}
+                      <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={(e) => handleToggleFollowupDone(row, e)}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border font-black transition text-[11px] cursor-pointer shadow-2xs ${
+                            getFollowupDone(row)
+                              ? 'bg-[#4ADE80]/20 text-[#2E8B57] border-[#4ADE80]/40 hover:bg-[#4ADE80]/30'
+                              : 'bg-[#E8E4FF] text-[#6B6580] border-[#E9E4FA] hover:bg-[#D4CCFF]'
+                          }`}
+                          title={getFollowupDone(row) ? 'Mark as Pending' : 'Mark Follow-up Done'}
+                        >
+                          {getFollowupDone(row)
+                            ? <CheckSquare className="w-3.5 h-3.5" />
+                            : <Square className="w-3.5 h-3.5" />}
+                          {getFollowupDone(row) ? 'Done' : 'Pending'}
+                        </button>
+                      </td>
+
+                      {/* Log Follow-up Call button */}
                       <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => navigateTo('follow-up', { tan: row.tanNo, company: displayName })}
@@ -252,7 +299,7 @@ export default function ReconciliationTable({
                     {/* Expanded Rich Detail Panel */}
                     {isExpanded && (
                       <tr className="bg-[#E8E4FF]/30 border-b border-[#E9E4FA]">
-                        <td colSpan="12" className="px-6 py-4">
+                        <td colSpan="13" className="px-6 py-4">
                           <div className="bg-white p-5 rounded-2xl border border-[#E9E4FA] space-y-4 shadow-sm text-xs">
                             
                             {/* HR Contact & Designation Card */}

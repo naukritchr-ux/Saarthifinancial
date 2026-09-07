@@ -222,23 +222,38 @@ export const upload26as = async (req, res) => {
       return res.status(400).json({ success: false, error: 'No valid data rows found in 26AS file.' });
     }
 
-    for (const e of entries) {
+    // Bulk insert entries in chunks of 500
+    const INSERT_CHUNK = 500;
+    for (let i = 0; i < entries.length; i += INSERT_CHUNK) {
+      const chunk = entries.slice(i, i + INSERT_CHUNK);
+      const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const params = [];
+      for (const e of chunk) {
+        params.push(e.tan, e.deductorName, e.amountPaid, e.tdsDeducted, e.section, e.quarter, e.uploadBatchId);
+      }
       await db.execute(
-        'INSERT INTO tds_26as_entries (tan_no, deductor_name, amount_paid, tds_deducted, section, quarter, upload_batch_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [e.tan, e.deductorName, e.amountPaid, e.tdsDeducted, e.section, e.quarter, e.uploadBatchId]
+        `INSERT INTO tds_26as_entries (tan_no, deductor_name, amount_paid, tds_deducted, section, quarter, upload_batch_id) VALUES ${placeholders}`,
+        params
       );
     }
 
-    // Persist financial year onto matching tds_dues rows so the report shows the real FY
+    // Persist financial year onto matching tds_dues rows in bulk chunks of 200
     if (uploadFy) {
-      const uniqueTans = [...new Set(entries.map(e => e.tan))];
-      for (const t of uniqueTans) {
+      const uniqueTans = [...new Set(entries.map(e => e.tan).filter(Boolean))];
+      const FY_CHUNK = 200;
+      for (let i = 0; i < uniqueTans.length; i += FY_CHUNK) {
+        const chunk = uniqueTans.slice(i, i + FY_CHUNK);
+        const placeholders = chunk.map(() => '?').join(', ');
         try {
           await db.execute(
-            'UPDATE tds_dues SET financial_year = COALESCE(NULLIF(financial_year, \'\'), ?) WHERE UPPER(TRIM(tan_no)) = ?',
-            [uploadFy, t]
+            `UPDATE tds_dues 
+             SET financial_year = COALESCE(NULLIF(financial_year, ''), ?) 
+             WHERE UPPER(TRIM(tan_no)) IN (${placeholders})`,
+            [uploadFy, ...chunk]
           );
-        } catch (fyErr) {}
+        } catch (fyErr) {
+          console.warn('⚠️ Bulk FY update warning in 26AS:', fyErr.message);
+        }
       }
     }
 
@@ -445,14 +460,60 @@ export const uploadTally = async (req, res) => {
       return res.status(400).json({ success: false, error: 'No valid Tally rows found.' });
     }
 
-    for (const e of entries) {
+    // Bulk insert entries in chunks of 500
+    const TALLY_CHUNK = 500;
+    for (let i = 0; i < entries.length; i += TALLY_CHUNK) {
+      const chunk = entries.slice(i, i + TALLY_CHUNK);
+      const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const params = [];
+      for (const e of chunk) {
+        params.push(e.tan, e.partyName, e.gstNum, e.panNo, e.voucherDate, e.amount, e.tdsAmount, e.ledgerName, e.uploadBatchId);
+      }
       await db.execute(
-        'INSERT INTO tds_tally_entries (tan_no, party_name, gst_num, pan_no, voucher_date, amount, tds_amount, ledger_name, upload_batch_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        [e.tan, e.partyName, e.gstNum, e.panNo, e.voucherDate, e.amount, e.tdsAmount, e.ledgerName, e.uploadBatchId]
+        `INSERT INTO tds_tally_entries (tan_no, party_name, gst_num, pan_no, voucher_date, amount, tds_amount, ledger_name, upload_batch_id) VALUES ${placeholders}`,
+        params
       );
+    }
+
+    // Deduplicate contact info by TAN and update in parallel chunks of 30
+    const contactsByTan = new Map();
+    for (const e of entries) {
       if (e.tan && (e.contactPerson || e.designation || e.contactNumber || e.emailId || e.teamleader)) {
+        const existing = contactsByTan.get(e.tan.toUpperCase()) || {};
+        contactsByTan.set(e.tan.toUpperCase(), {
+          contactPerson: e.contactPerson || existing.contactPerson || null,
+          designation: e.designation || existing.designation || null,
+          contactNumber: e.contactNumber || existing.contactNumber || null,
+          emailId: e.emailId || existing.emailId || null,
+          teamleader: e.teamleader || existing.teamleader || null,
+        });
+      }
+    }
+
+    if (contactsByTan.size > 0) {
+      const allContactTans = Array.from(contactsByTan.keys());
+      const existingTansSet = new Set();
+      const CHECK_CHUNK = 500;
+      for (let i = 0; i < allContactTans.length; i += CHECK_CHUNK) {
+        const chunk = allContactTans.slice(i, i + CHECK_CHUNK);
         try {
-          await db.execute(`
+          const [rows] = await db.query(
+            `SELECT UPPER(TRIM(tan_no)) as tan FROM tds_dues WHERE UPPER(TRIM(tan_no)) IN (${chunk.map(() => '?').join(', ')})`,
+            chunk
+          );
+          (rows || []).forEach(r => existingTansSet.add(r.tan));
+        } catch (e) {}
+      }
+
+      const relevantContacts = allContactTans
+        .filter(tan => existingTansSet.has(tan))
+        .map(tan => [tan, contactsByTan.get(tan)]);
+
+      const CONTACT_CHUNK = 10;
+      for (let i = 0; i < relevantContacts.length; i += CONTACT_CHUNK) {
+        const chunk = relevantContacts.slice(i, i + CONTACT_CHUNK);
+        await Promise.all(chunk.map(([tan, info]) =>
+          db.execute(`
             UPDATE tds_dues 
             SET 
               contact_person_name = COALESCE(?, contact_person_name),
@@ -461,21 +522,29 @@ export const uploadTally = async (req, res) => {
               email_id = COALESCE(?, email_id),
               teamleader = COALESCE(?, teamleader)
             WHERE UPPER(TRIM(tan_no)) = ?
-          `, [e.contactPerson, e.designation, e.contactNumber, e.emailId, e.teamleader, e.tan.toUpperCase()]);
-        } catch (err) {}
+          `, [info.contactPerson, info.designation, info.contactNumber, info.emailId, info.teamleader, tan])
+          .catch(() => {})
+        ));
       }
     }
 
-    // Persist financial year onto matching tds_dues rows so the report shows the real FY
+    // Persist financial year onto matching tds_dues rows in bulk chunks of 200
     if (uploadFy) {
-      const uniqueTans = [...new Set(entries.map(e => e.tan))];
-      for (const t of uniqueTans) {
+      const uniqueTans = [...new Set(entries.map(e => e.tan).filter(Boolean))];
+      const FY_CHUNK = 200;
+      for (let i = 0; i < uniqueTans.length; i += FY_CHUNK) {
+        const chunk = uniqueTans.slice(i, i + FY_CHUNK);
+        const placeholders = chunk.map(() => '?').join(', ');
         try {
           await db.execute(
-            'UPDATE tds_dues SET financial_year = COALESCE(NULLIF(financial_year, \'\'), ?) WHERE UPPER(TRIM(tan_no)) = ?',
-            [uploadFy, t]
+            `UPDATE tds_dues 
+             SET financial_year = COALESCE(NULLIF(financial_year, ''), ?) 
+             WHERE UPPER(TRIM(tan_no)) IN (${placeholders})`,
+            [uploadFy, ...chunk]
           );
-        } catch (fyErr) {}
+        } catch (fyErr) {
+          console.warn('⚠️ Bulk FY update warning in Tally:', fyErr.message);
+        }
       }
     }
 
@@ -1101,6 +1170,7 @@ export const getReconciliationReport = async (req, res) => {
         tr.as26_batch_id as as26BatchId,
         tr.tally_batch_id as tallyBatchId,
         tr.is_manually_edited as isManuallyEdited,
+        tr.is_followup_done as isFollowupDone,
         tr.updated_at as updatedAt,
 
         COALESCE(NULLIF(TRIM(d.contact_person_name), ''), '') as contactPersonName,
@@ -1923,4 +1993,40 @@ export const syncSaarthiLiveApi = async (req, res) => {
 };
 
 export const syncSarthiLiveApi = syncSaarthiLiveApi;
+
+/**
+ * PATCH /api/tds-26as/report/:id/followup-done
+ * Toggle the is_followup_done flag on a single reconciliation row.
+ */
+export const toggleFollowupDone = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const rowId = parseInt(id, 10);
+    if (!rowId || isNaN(rowId)) {
+      return res.status(400).json({ success: false, error: 'Invalid reconciliation record ID' });
+    }
+
+    // Read current value
+    const [existing] = await db.query(
+      'SELECT is_followup_done FROM tds_reconciliation_results WHERE id = ? LIMIT 1',
+      [rowId]
+    );
+    if (!existing || existing.length === 0) {
+      return res.status(404).json({ success: false, error: 'Record not found' });
+    }
+
+    const currentVal = existing[0].is_followup_done;
+    const newVal = currentVal ? 0 : 1;
+
+    await db.query(
+      'UPDATE tds_reconciliation_results SET is_followup_done = ? WHERE id = ?',
+      [newVal, rowId]
+    );
+
+    res.json({ success: true, id: rowId, isFollowupDone: Boolean(newVal) });
+  } catch (error) {
+    console.error('💥 Error in toggleFollowupDone:', error);
+    res.status(500).json({ success: false, error: 'Failed to update follow-up done flag', details: error.message });
+  }
+};
 

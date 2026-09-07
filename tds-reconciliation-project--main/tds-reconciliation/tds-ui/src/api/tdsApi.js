@@ -115,6 +115,19 @@ export const applyStatusOverride = async (overrideData) => {
   }
 };
 
+export const toggleFollowupDone = async (id) => {
+  try {
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/report/${id}/followup-done`, {
+      method: 'PATCH'
+    });
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to toggle follow-up done' };
+  } catch (err) {
+    return { success: false, error: err.message || 'Network error toggling follow-up done' };
+  }
+};
+
 export const getCsvExportUrl = (filters = {}) => {
   const q = buildQuery(filters);
   return `${API_URL}/api/tds-26as/export?${q}`;
