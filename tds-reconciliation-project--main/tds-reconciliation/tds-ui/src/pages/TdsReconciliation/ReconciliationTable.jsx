@@ -199,7 +199,16 @@ export default function ReconciliationTable({
                         </div>
                       </td>
 
-                      <td className="px-4 py-3.5 font-mono font-bold text-[#1F1B2E]">{row.tanNo}</td>
+                      {/* TAN */}
+                      <td className="px-4 py-3.5 font-mono font-bold text-[#1F1B2E]">
+                        {(!row.tanNo || row.tanNo.startsWith('NO_TAN_') || row.tanNo === 'Pending TAN' || row.tanNo === 'Not Available' || row.tanNo.includes('UNKNOWN')) ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">
+                            Pending TAN
+                          </span>
+                        ) : (
+                          row.tanNo
+                        )}
+                      </td>
                       
                       <td className="px-4 py-3.5 text-[#6B6580] font-semibold">{row.financialYear || 'Unspecified'}</td>
 
@@ -262,7 +271,14 @@ export default function ReconciliationTable({
                       {/* Log Follow-up Call button */}
                       <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
                         <button
-                          onClick={() => onFollowupClick ? onFollowupClick(row) : navigateTo('follow-up', { tan: row.tanNo, company: displayName })}
+                          onClick={() => {
+                            const cleanTan = (!row.tanNo || row.tanNo.startsWith('NO_TAN_') || row.tanNo.includes('UNKNOWN')) ? '' : row.tanNo;
+                            if (onFollowupClick) {
+                              onFollowupClick({ ...row, tanNo: cleanTan });
+                            } else {
+                              navigateTo('follow-up', { tan: cleanTan, company: displayName });
+                            }
+                          }}
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#FBBF77]/20 text-[#D97706] border border-[#FBBF77]/40 font-black hover:bg-[#FBBF77]/30 transition text-[11px] cursor-pointer shadow-2xs"
                         >
                           <PhoneCall className="w-3 h-3" />
@@ -304,7 +320,9 @@ export default function ReconciliationTable({
                                   <User className="w-3.5 h-3.5" />
                                   Client HR & Accounts Leadership Contact Details
                                 </span>
-                                <span className="text-[#6B6580]">TAN: {row.tanNo}</span>
+                                <span className="text-[#6B6580]">
+                                  TAN: {(!row.tanNo || row.tanNo.startsWith('NO_TAN_') || row.tanNo === 'Pending TAN' || row.tanNo === 'Not Available' || row.tanNo.includes('UNKNOWN')) ? 'Not Available' : row.tanNo}
+                                </span>
                               </div>
 
                               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-4 bg-[#E8E4FF]/30 rounded-xl border border-[#E9E4FA] text-[#1F1B2E]">
@@ -414,7 +432,10 @@ export default function ReconciliationTable({
 
                               <div className="flex items-center gap-2">
                                 <button
-                                  onClick={() => navigateTo('follow-up', { tan: row.tanNo, company: displayName })}
+                                  onClick={() => {
+                                    const cleanTan = (!row.tanNo || row.tanNo.startsWith('NO_TAN_') || row.tanNo.includes('UNKNOWN')) ? '' : row.tanNo;
+                                    navigateTo('follow-up', { tan: cleanTan, company: displayName });
+                                  }}
                                   className="inline-flex items-center gap-1.5 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-bold text-xs px-3.5 py-1.5 rounded-xl transition cursor-pointer shadow-2xs"
                                 >
                                   <PhoneCall className="w-3.5 h-3.5" />

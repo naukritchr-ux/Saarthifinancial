@@ -360,7 +360,9 @@ export default function TdsReconciliation() {
             <div className="flex-none flex justify-between items-center bg-[#9B87F5] text-white px-6 py-4 border-b border-[#8572E0]">
               <div>
                 <h3 className="font-bold text-base text-white">Reconciliation Detail Record</h3>
-                <p className="text-xs text-[#E8E4FF] mt-0.5">{activeViewRow.companyName} ({activeViewRow.tanNo})</p>
+                <p className="text-xs text-[#E8E4FF] mt-0.5">
+                  {activeViewRow.companyName} {(!activeViewRow.tanNo || activeViewRow.tanNo.startsWith('NO_TAN_') || activeViewRow.tanNo === 'Pending TAN' || activeViewRow.tanNo.includes('UNKNOWN')) ? '' : `(${activeViewRow.tanNo})`}
+                </p>
               </div>
               <button
                 type="button"

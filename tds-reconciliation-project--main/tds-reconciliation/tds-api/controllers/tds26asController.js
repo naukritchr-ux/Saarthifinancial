@@ -753,10 +753,11 @@ export const getCleaningQueue = async (req, res) => {
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
       WHERE (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
         AND (COALESCE(tr.books_tds, 0) > 0 OR COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0)
-        AND (tr.tan_no IS NULL OR tr.tan_no = '' OR LENGTH(tr.tan_no) < 10 
-             OR d.company_name IS NULL OR d.company_name = 'Unknown Company' OR d.company_name = ''
-             OR tr.overall_status = 'Major Mismatch'
-             OR tr.overall_status = 'Partial Mismatch')
+        AND (
+          tr.tan_no IS NULL OR tr.tan_no = '' OR LENGTH(tr.tan_no) < 10 
+          OR tr.tan_no LIKE 'NO_TAN_%' OR tr.tan_no LIKE '%UNKNOWN%'
+          OR d.company_name IS NULL OR d.company_name = 'Unknown Company' OR d.company_name = ''
+        )
         AND tr.tan_no NOT IN ('COMPANYNAME', 'TANNO', 'TAN_NO', 'PANNO', 'TAN')
         AND UPPER(COALESCE(d.company_name, '')) NOT IN ('UNKNOWN CLIENT', 'COMPANYNAME')
       ORDER BY tr.id DESC
@@ -796,7 +797,7 @@ export const getCleaningQueue = async (req, res) => {
 
       let as26Name = null;
       let as26Tan = null;
-      const as26Match = (tan ? as26ByTan.get(tan) : null) || (normBooksName ? as26ByName.get(normBooksName) : null);
+      const as26Match = (tan && !tan.startsWith('NO_TAN_') ? as26ByTan.get(tan) : null) || (normBooksName ? as26ByName.get(normBooksName) : null);
       if (as26Match) {
         as26Name = as26Match.deductor_name;
         as26Tan = as26Match.tan_no;
@@ -804,7 +805,7 @@ export const getCleaningQueue = async (req, res) => {
 
       let tallyName = null;
       let tallyTan = null;
-      const tallyMatch = (tan ? tallyByTan.get(tan) : null) || (normBooksName ? tallyByName.get(normBooksName) : null);
+      const tallyMatch = (tan && !tan.startsWith('NO_TAN_') ? tallyByTan.get(tan) : null) || (normBooksName ? tallyByName.get(normBooksName) : null);
       if (tallyMatch) {
         tallyName = tallyMatch.party_name;
         tallyTan = tallyMatch.tan_no;
@@ -832,7 +833,8 @@ export const getCleaningQueue = async (req, res) => {
         saarthiSuggestion = tallyName;
       }
 
-      const resolvedTans = [tan, as26Tan, tallyTan].filter(Boolean);
+      const isMissingTan = !tan || tan.length < 10 || tan.startsWith('NO_TAN_') || tan.includes('UNKNOWN');
+      const resolvedTans = [isMissingTan ? null : tan, as26Tan, tallyTan].filter(Boolean);
       const uniqueTans = Array.from(new Set(resolvedTans));
       const isTanMismatch = uniqueTans.length > 1;
 
@@ -845,21 +847,21 @@ export const getCleaningQueue = async (req, res) => {
       } else if (confidence < 90) {
         reason = 'Deductor Name Discrepancy';
         issueType = 'name_mismatch';
-      } else if (!tan || tan.length < 10) {
-        reason = 'Missing or Invalid TAN Format';
+      } else if (isMissingTan) {
+        reason = 'Missing Client TAN in CRM';
         issueType = 'invalid_tan';
       }
 
       return {
         id: r.id,
-        tanNo: tan || 'UNKNOWN_TAN',
+        tanNo: isMissingTan ? 'Pending TAN' : tan,
         companyName: tallyName || booksName,
         tallyCompanyName: tallyName || booksName,
-        tallyTan: tallyTan || tan || 'UNKNOWN_TAN',
+        tallyTan: tallyTan || (isMissingTan ? '' : tan),
         as26CompanyName: as26Name || null,
         as26Tan: as26Tan || null,
         saarthiName: booksName,
-        saarthiTan: tan || 'UNKNOWN_TAN',
+        saarthiTan: isMissingTan ? '' : tan,
         financialYear: r.financialYear || 'Unspecified',
         saarthiSuggestion,
         confidence,
@@ -879,13 +881,11 @@ export const getCleaningQueue = async (req, res) => {
 
     const flaggedItems = cleaningItems.filter(item => {
       const isZeroData = (item.booksTds || 0) === 0 && (item.as26Tds || 0) === 0 && (item.tallyTds || 0) === 0;
-      const isNoTan = item.tanNo && item.tanNo.toUpperCase().startsWith('NO_TAN_');
       const isUnknownDummy = (item.companyName || item.saarthiName || '').toUpperCase().includes('UNKNOWN');
 
-      if (isNoTan && (isZeroData || isUnknownDummy)) return false;
       if (isZeroData && isUnknownDummy) return false;
 
-      const invalidTan = !item.tanNo || item.tanNo.length < 10 || item.tanNo.includes('UNKNOWN');
+      const invalidTan = !item.tanNo || item.tanNo === 'Pending TAN' || item.tanNo.length < 10 || item.tanNo.includes('UNKNOWN');
       const missingName = !item.saarthiName || item.saarthiName === 'Unknown Client' || item.saarthiName === 'Unknown Company';
       const lowConfidence = item.confidence < 90;
       const tanMismatch = item.isTanMismatch;
@@ -1276,8 +1276,14 @@ export const getReconciliationReport = async (req, res) => {
       const phone = (r.contactNumber && r.contactNumber.trim() !== '') ? r.contactNumber.trim() : '';
       const email = (r.emailId && r.emailId.trim() !== '') ? r.emailId.trim() : '';
 
+      const isMissingTan = !r.tanNo || String(r.tanNo).startsWith('NO_TAN_') || String(r.tanNo).includes('UNKNOWN');
+      const cleanTan = isMissingTan ? 'Pending TAN' : r.tanNo;
+
       return {
         ...r,
+        tanNo: cleanTan,
+        rawTanNo: r.tanNo,
+        isTanMissing: isMissingTan,
         contactPersonName: personName,
         designation: desig,
         contactNumber: phone,
@@ -1549,9 +1555,11 @@ export const exportReconciliationCSV = async (req, res) => {
 
     let csvContent = headers.join(',') + '\n';
     rows.forEach(r => {
+      const isMissingTan = !r.tanNo || String(r.tanNo).startsWith('NO_TAN_') || String(r.tanNo).includes('UNKNOWN');
+      const cleanTan = isMissingTan ? 'Pending TAN' : r.tanNo;
       const line = [
         `"${String(r.companyName || 'Unknown').replace(/"/g, '""')}"`,
-        `"${r.tanNo || ''}"`,
+        `"${cleanTan}"`,
         r.booksTds || 0,
         r.as26Tds || 0,
         r.tallyTds || 0,

@@ -528,7 +528,15 @@ export default function FollowUp() {
                       {row.notes && <div className="text-[10px] text-gray-400 truncate max-w-xs">{row.notes}</div>}
                     </td>
 
-                    <td className="px-4 py-3.5 font-mono font-bold text-slate-700">{row.tanNo}</td>
+                    <td className="px-4 py-3.5 font-mono font-bold text-slate-700">
+                      {(!row.tanNo || row.tanNo.startsWith('NO_TAN_') || row.tanNo === 'Pending TAN' || row.tanNo === 'Not Available' || row.tanNo.includes('UNKNOWN')) ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                          Pending TAN
+                        </span>
+                      ) : (
+                        row.tanNo
+                      )}
+                    </td>
 
                     <td className="px-4 py-3.5">
                       <div className="font-semibold text-gray-800">{row.contactPerson || '—'}</div>
