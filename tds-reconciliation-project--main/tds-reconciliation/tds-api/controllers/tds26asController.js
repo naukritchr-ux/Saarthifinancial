@@ -1160,21 +1160,59 @@ export const getReconciliationReport = async (req, res) => {
       orderSQL = 'ORDER BY ABS((COALESCE(tr.books_tds, tr.tally_tds, 0)) - COALESCE(tr.as26_tds, 0)) DESC';
     }
 
-    let countQuery = `
-      SELECT COUNT(tr.id) as total 
+    let statsQuery = `
+      SELECT 
+        COUNT(tr.id) as total,
+        SUM(CASE 
+          WHEN tr.is_manually_edited = 1 OR tr.overall_status IN ('All Matched', 'Match', 'Matched') THEN 1
+          WHEN (CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END) > 0 
+               AND COALESCE(tr.as26_tds, 0) > 0 
+               AND ABS((CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END) - COALESCE(tr.as26_tds, 0)) <= 1.0 THEN 1
+          ELSE 0 END) as matched,
+        SUM(CASE 
+          WHEN (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
+               AND tr.overall_status IN ('Less Paid', 'Less') THEN 1
+          WHEN (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
+               AND (CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END) > 0 
+               AND COALESCE(tr.as26_tds, 0) > 0 
+               AND (CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END) > COALESCE(tr.as26_tds, 0) + 1.0 THEN 1
+          ELSE 0 END) as less,
+        SUM(CASE 
+          WHEN (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
+               AND tr.overall_status IN ('Excess', 'Excess Paid') THEN 1
+          WHEN (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
+               AND COALESCE(tr.as26_tds, 0) > 0 
+               AND ((CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END) = 0 
+                    OR (CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END) < COALESCE(tr.as26_tds, 0) - 1.0) THEN 1
+          ELSE 0 END) as excess,
+        SUM(CASE 
+          WHEN (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
+               AND (COALESCE(tr.as26_tds, 0) = 0 AND (COALESCE(tr.tally_tds, 0) > 0 OR COALESCE(tr.books_tds, 0) > 0)) THEN 1
+          ELSE 0 END) as notReceived
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
       ${whereSQL}
     `;
-    let [countRes] = await db.query(countQuery, queryParams);
-    let total = countRes[0]?.total || 0;
+    let [statsRes] = await db.query(statsQuery, queryParams);
+    const aggStats = statsRes[0] || {};
+    let total = parseInt(aggStats.total) || 0;
+    let stats = {
+      total,
+      matched: parseInt(aggStats.matched) || 0,
+      less: parseInt(aggStats.less) || 0,
+      excess: parseInt(aggStats.excess) || 0,
+      notReceived: parseInt(aggStats.notReceived) || 0
+    };
 
     const reportQuery = `
       SELECT 
         tr.id,
         tr.tds_dues_id as tdsDuesId,
-        tr.tan_no as tanNo,
-        COALESCE(NULLIF(TRIM(d.company_name), ''), tr.tan_no, 'Unassigned Entity') as companyName,
+        COALESCE(
+          CASE WHEN tr.tan_no IS NOT NULL AND tr.tan_no NOT LIKE 'NO_TAN_%' AND tr.tan_no NOT LIKE '%UNKNOWN%' AND TRIM(tr.tan_no) != '' THEN TRIM(tr.tan_no) END,
+          CASE WHEN d.tan_no IS NOT NULL AND d.tan_no NOT LIKE 'NO_TAN_%' AND TRIM(d.tan_no) != '' THEN TRIM(d.tan_no) END
+        ) as tanNo,
+        COALESCE(NULLIF(TRIM(d.company_name), ''), COALESCE(CASE WHEN tr.tan_no NOT LIKE 'NO_TAN_%' THEN tr.tan_no END, d.tan_no), 'Unassigned Entity') as companyName,
         'N/A' as billNumber,
         'N/A' as billDate,
         0 as totalBillAmount,
@@ -1277,7 +1315,7 @@ export const getReconciliationReport = async (req, res) => {
       const email = (r.emailId && r.emailId.trim() !== '') ? r.emailId.trim() : '';
 
       const isMissingTan = !r.tanNo || String(r.tanNo).startsWith('NO_TAN_') || String(r.tanNo).includes('UNKNOWN');
-      const cleanTan = isMissingTan ? 'Pending TAN' : r.tanNo;
+      const cleanTan = isMissingTan ? null : r.tanNo;
 
       return {
         ...r,
@@ -1305,6 +1343,7 @@ export const getReconciliationReport = async (req, res) => {
       success: true,
       data: rows,
       total,
+      stats,
       page: parseInt(page),
       limit: limitNum,
       totalPages: Math.ceil(total / limitNum)
