@@ -28,25 +28,23 @@ const parseDateValue = (dateVal) => {
 
 export async function ensureTablesExist() {
   if (process.env.DB_TYPE === 'mysql') {
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN designation VARCHAR(100)'); } catch (err) {}
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN financial_year VARCHAR(50)'); } catch (err) {}
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN contact_person_name VARCHAR(100)'); } catch (err) {}
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN contact_number VARCHAR(50)'); } catch (err) {}
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN email_id VARCHAR(255)'); } catch (err) {}
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN teamleader VARCHAR(100)'); } catch (err) {}
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN pan_no VARCHAR(20)'); } catch (err) {}
-    try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year VARCHAR(50)'); } catch (err) {}
-    try { await db.execute('ALTER TABLE tds_26as_entries ADD COLUMN financial_year VARCHAR(20)'); } catch (err) {}
-    try { await db.execute('ALTER TABLE tds_tally_entries ADD COLUMN financial_year VARCHAR(20)'); } catch (err) {}
-    try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person VARCHAR(100)'); } catch (err) {}
-    try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number VARCHAR(50)'); } catch (err) {}
-    try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done BOOLEAN DEFAULT FALSE'); } catch (err) {}
+    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN designation VARCHAR(100)'); } catch (err) { }
+    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN financial_year VARCHAR(50)'); } catch (err) { }
+    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN contact_person_name VARCHAR(100)'); } catch (err) { }
+    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN contact_number VARCHAR(50)'); } catch (err) { }
+    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN email_id VARCHAR(255)'); } catch (err) { }
+    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN teamleader VARCHAR(100)'); } catch (err) { }
+    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN pan_no VARCHAR(20)'); } catch (err) { }
+    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN gst_num VARCHAR(30)'); } catch (err) { }
+    try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year VARCHAR(50)'); } catch (err) { }
+    try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person VARCHAR(100)'); } catch (err) { }
+    try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number VARCHAR(50)'); } catch (err) { }
+    try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done BOOLEAN DEFAULT FALSE'); } catch (err) { }
 
     try {
       await db.execute("UPDATE tds_dues SET contact_person_name = NULL WHERE contact_person_name IN ('HR & Accounts Lead', 'Unknown', 'HR Manager')");
       await db.execute("UPDATE tds_dues SET designation = NULL WHERE designation IN ('Finance Lead', 'Finance Manager', 'Accounts Lead')");
       await db.execute("UPDATE tds_dues SET contact_number = NULL WHERE contact_number LIKE '%98201%54321%'");
-      // Propagate financial_year from dues to reconciliation rows that have none yet
       try {
         await db.execute(`
           UPDATE tds_reconciliation_results tr
@@ -54,10 +52,20 @@ export async function ensureTablesExist() {
           SET tr.financial_year = d.financial_year
           WHERE d.financial_year IS NOT NULL AND d.financial_year != '' AND (tr.financial_year IS NULL OR tr.financial_year = '')
         `);
-      } catch (e) {}
-    } catch (cleanErr) {
-      console.warn('⚠️ Startup cleanup warning (non-fatal):', cleanErr.message);
-    }
+      } catch (syncErr) { }
+      // NOTE: this used to also blanket-fabricate financial_year = 'FY 2024-25'
+      // onto every NULL row here, on every server startup — same bug shape as
+      // the CRM sync's hardcoded default, just a different fake value and a
+      // different trigger. Removed: a genuinely unknown financial_year should
+      // stay NULL, not get overwritten with a guess each time the app boots.
+    } catch (e) { }
+
+    // Composite uniqueness so one TAN can have (at most) one row per real
+    // financial_year — NULLs are exempt (MySQL treats each NULL as distinct),
+    // so untagged-year rows aren't affected. Wrapped in try/catch because
+    // this will fail harmlessly until any pre-existing duplicate (tan_no,
+    // financial_year) pairs are cleaned up.
+    try { await db.execute('ALTER TABLE tds_dues ADD UNIQUE KEY unique_tan_fy (tan_no, financial_year)'); } catch (err) { }
 
     return;
   }
@@ -97,11 +105,16 @@ export async function ensureTablesExist() {
       if (!duesCols.includes('pan_no')) await db.execute(`ALTER TABLE tds_dues ADD COLUMN pan_no TEXT;`);
       if (!duesCols.includes('gst_num')) await db.execute(`ALTER TABLE tds_dues ADD COLUMN gst_num TEXT;`);
     } catch (e) {
-      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN designation VARCHAR(100)'); } catch (err) {}
-      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN gst_no VARCHAR(50)'); } catch (err) {}
-      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN pan_no VARCHAR(50)'); } catch (err) {}
-      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN gst_num VARCHAR(50)'); } catch (err) {}
+      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN designation VARCHAR(100)'); } catch (err) { }
+      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN gst_no VARCHAR(50)'); } catch (err) { }
+      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN pan_no VARCHAR(50)'); } catch (err) { }
+      try { await db.execute('ALTER TABLE tds_dues ADD COLUMN gst_num VARCHAR(50)'); } catch (err) { }
     }
+
+    // Same composite-uniqueness guard as the MySQL branch above (SQLite has
+    // no ADD CONSTRAINT, so a unique index is the equivalent). Harmless
+    // no-op if it already exists or if duplicates haven't been cleaned up yet.
+    try { await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS unique_tan_fy ON tds_dues (tan_no, financial_year)'); } catch (err) { }
 
     await db.execute(`
       CREATE TABLE IF NOT EXISTS tds_26as_entries (
@@ -143,7 +156,7 @@ export async function ensureTablesExist() {
       if (!cols.includes('pan_no')) {
         await db.execute(`ALTER TABLE tds_tally_entries ADD COLUMN pan_no TEXT;`);
       }
-    } catch (e) {}
+    } catch (e) { }
 
     await db.execute(`
       CREATE TABLE IF NOT EXISTS tds_reconciliation_results (
@@ -176,13 +189,9 @@ export async function ensureTablesExist() {
       if (!recCols.includes('financial_year')) {
         await db.execute(`ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year TEXT;`);
       }
-      try { await db.execute('ALTER TABLE tds_26as_entries ADD COLUMN financial_year TEXT;'); } catch (err) {}
-      try { await db.execute('ALTER TABLE tds_tally_entries ADD COLUMN financial_year TEXT;'); } catch (err) {}
     } catch (e) {
-      try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done INTEGER DEFAULT 0'); } catch (err) {}
-      try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year VARCHAR(50)'); } catch (err) {}
-      try { await db.execute('ALTER TABLE tds_26as_entries ADD COLUMN financial_year VARCHAR(20)'); } catch (err) {}
-      try { await db.execute('ALTER TABLE tds_tally_entries ADD COLUMN financial_year VARCHAR(20)'); } catch (err) {}
+      try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done INTEGER DEFAULT 0'); } catch (err) { }
+      try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year VARCHAR(50)'); } catch (err) { }
     }
 
     await db.execute(`
@@ -224,8 +233,8 @@ export async function ensureTablesExist() {
       if (!follCols.includes('accountant_person')) await db.execute(`ALTER TABLE tds_followups ADD COLUMN accountant_person TEXT;`);
       if (!follCols.includes('accountant_number')) await db.execute(`ALTER TABLE tds_followups ADD COLUMN accountant_number TEXT;`);
     } catch (e) {
-      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person VARCHAR(100)'); } catch (err) {}
-      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number VARCHAR(50)'); } catch (err) {}
+      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person VARCHAR(100)'); } catch (err) { }
+      try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number VARCHAR(50)'); } catch (err) { }
     }
 
     console.log('✅ SQLite table schemas verified.');
@@ -240,7 +249,7 @@ export function markPurgedFlag() {
   try {
     if (!fs.existsSync('uploads')) fs.mkdirSync('uploads', { recursive: true });
     fs.writeFileSync(PURGED_FLAG_FILE, 'purged', 'utf8');
-  } catch (e) {}
+  } catch (e) { }
 }
 
 export function clearPurgedFlag() {
@@ -248,7 +257,7 @@ export function clearPurgedFlag() {
     if (fs.existsSync(PURGED_FLAG_FILE)) {
       fs.unlinkSync(PURGED_FLAG_FILE);
     }
-  } catch (e) {}
+  } catch (e) { }
 }
 
 export function isPurgedFlag() {
