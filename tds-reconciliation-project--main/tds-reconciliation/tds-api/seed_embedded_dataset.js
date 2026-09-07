@@ -149,10 +149,26 @@ export async function ensureTablesExist() {
         as26_batch_id TEXT,
         tally_batch_id TEXT,
         is_manually_edited INTEGER DEFAULT 0,
+        is_followup_done INTEGER DEFAULT 0,
+        financial_year TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    try {
+      const [recInfo] = await db.execute(`PRAGMA table_info(tds_reconciliation_results);`);
+      const recCols = Array.isArray(recInfo) ? recInfo.map(c => c.name) : [];
+      if (!recCols.includes('is_followup_done')) {
+        await db.execute(`ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done INTEGER DEFAULT 0;`);
+      }
+      if (!recCols.includes('financial_year')) {
+        await db.execute(`ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year TEXT;`);
+      }
+    } catch (e) {
+      try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done INTEGER DEFAULT 0'); } catch (err) {}
+      try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year VARCHAR(50)'); } catch (err) {}
+    }
 
     await db.execute(`
       CREATE TABLE IF NOT EXISTS upload_history (

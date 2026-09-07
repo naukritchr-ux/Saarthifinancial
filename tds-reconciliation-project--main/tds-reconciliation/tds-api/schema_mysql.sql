@@ -70,6 +70,8 @@ CREATE TABLE IF NOT EXISTS tds_reconciliation_results (
   as26_batch_id VARCHAR(50),
   tally_batch_id VARCHAR(50),
   is_manually_edited BOOLEAN DEFAULT FALSE,
+  is_followup_done BOOLEAN DEFAULT FALSE,
+  financial_year VARCHAR(50),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_overall (overall_status),

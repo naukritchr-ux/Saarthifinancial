@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS tds_reconciliation_results (
   as26_batch_id TEXT,
   tally_batch_id TEXT,
   is_manually_edited INTEGER DEFAULT 0,
+  is_followup_done INTEGER DEFAULT 0,
+  financial_year TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (tds_dues_id) REFERENCES tds_dues(id) ON DELETE CASCADE,
