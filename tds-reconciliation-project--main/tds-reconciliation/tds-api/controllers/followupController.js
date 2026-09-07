@@ -60,7 +60,8 @@ export const getFollowups = async (req, res) => {
       endDate,
       search = '',
       dueOnly = 'false',
-      responseFilter = ''
+      responseFilter = '',
+      fy = ''
     } = req.query;
 
     let whereClauses = [];
@@ -119,30 +120,41 @@ export const getFollowups = async (req, res) => {
       whereClauses.push("status IN ('Call Not Picked Up', 'Call Tomorrow', 'HR Left', 'Mailed')");
     }
 
-    const whereSQL = whereClauses.length ? 'WHERE ' + whereClauses.join(' AND ') : '';
+    // FY filter: join to tds_dues by tan_no to check financial_year
+    const hasFyFilter = fy && fy.trim() && fy !== 'All' && fy !== 'All Financial Years';
+    const cleanFy = hasFyFilter ? String(fy).replace(/^FY\s*/i, '').trim() : null;
 
+    let fromSQL = 'FROM tds_followups f';
+    if (hasFyFilter) {
+      fromSQL = `FROM tds_followups f LEFT JOIN tds_dues d ON UPPER(TRIM(f.tan_no)) = UPPER(TRIM(d.tan_no))`;
+      whereClauses.push(`COALESCE(d.financial_year, '') LIKE ?`);
+      const fyWild = `%${cleanFy}%`;
+      params.push(fyWild);
+    }
+
+    const whereSQL = whereClauses.length ? 'WHERE ' + whereClauses.join(' AND ') : '';
 
     const query = `
       SELECT 
-        id,
-        tan_no as tanNo,
-        company_name as companyName,
-        contact_person as contactPerson,
-        department,
-        contact_number as contactNumber,
-        accountant_person as accountantPerson,
-        accountant_number as accountantNumber,
-        method,
-        status,
-        notes,
-        followup_date as followupDate,
-        next_followup_date as nextFollowupDate,
-        created_by as createdBy,
-        created_at as createdAt,
-        updated_at as updatedAt
-      FROM tds_followups
+        f.id,
+        f.tan_no as tanNo,
+        f.company_name as companyName,
+        f.contact_person as contactPerson,
+        f.department,
+        f.contact_number as contactNumber,
+        f.accountant_person as accountantPerson,
+        f.accountant_number as accountantNumber,
+        f.method,
+        f.status,
+        f.notes,
+        f.followup_date as followupDate,
+        f.next_followup_date as nextFollowupDate,
+        f.created_by as createdBy,
+        f.created_at as createdAt,
+        f.updated_at as updatedAt
+      ${fromSQL}
       ${whereSQL}
-      ORDER BY followup_date DESC, id DESC
+      ORDER BY f.followup_date DESC, f.id DESC
     `;
 
     const [rows] = await db.execute(query, params);
