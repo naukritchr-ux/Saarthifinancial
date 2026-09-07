@@ -117,9 +117,14 @@ export const applyStatusOverride = async (overrideData) => {
 
 export const toggleFollowupDone = async (id) => {
   try {
-    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/report/${id}/followup-done`, {
-      method: 'PATCH'
+    let response = await fetchWithTimeout(`${API_URL}/api/tds-26as/report/${id}/followup-done`, {
+      method: 'PUT'
     });
+    if (response.status === 404 || response.status === 405) {
+      response = await fetchWithTimeout(`${API_URL}/api/tds-26as/report/${id}/followup-done`, {
+        method: 'PATCH'
+      });
+    }
     const data = await response.json();
     if (response.ok && data && data.success !== false) return data;
     return { success: false, error: data?.error || 'Failed to toggle follow-up done' };
