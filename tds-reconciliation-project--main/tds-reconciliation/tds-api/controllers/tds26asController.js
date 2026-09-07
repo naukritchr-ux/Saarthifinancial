@@ -5,6 +5,9 @@ import db from '../config/db.js';
 import { reconcile } from '../services/tdsReconciliationService.js';
 import { seedEmbeddedDataset, markPurgedFlag, clearPurgedFlag } from '../seed_embedded_dataset.js';
 import { v4 as uuidv4 } from 'uuid';
+import { normalizeFY } from '../utils/fyHelper.js';
+
+export { normalizeFY };
 
 // Helper to format values
 const cleanNumber = (val) => {
@@ -124,7 +127,8 @@ export const upload26as = async (req, res) => {
       amount_paid: -1,
       tds_deducted: -1,
       section: -1,
-      quarter: -1
+      quarter: -1,
+      fy: -1
     };
 
     const tanRegex = /^([A-Z]{4}\d{5}[A-Z]|[A-Z]{5}\d{4}[A-Z]|[A-Z0-9]{8,15})$/i;
@@ -154,6 +158,9 @@ export const upload26as = async (req, res) => {
         }
         if (colMap.quarter === -1 && (text.includes('quarter') || text.includes('period') || text.includes('qtr'))) {
           colMap.quarter = col;
+        }
+        if (colMap.fy === -1 && (/^f\.?y\.?$/i.test(text) || text.includes('financial year') || text.includes('fin year') || text === 'fy' || text === 'f.y.')) {
+          colMap.fy = col;
         }
       });
 
@@ -212,9 +219,11 @@ export const upload26as = async (req, res) => {
       const tdsDeducted = colMap.tds_deducted !== -1 ? cleanNumber(row[colMap.tds_deducted]) : 0.00;
       const section = colMap.section !== -1 ? String(row[colMap.section] || '').trim() : 'N/A';
       const quarter = colMap.quarter !== -1 ? String(row[colMap.quarter] || '').trim() : 'N/A';
+      const rowFyRaw = colMap.fy !== -1 ? String(row[colMap.fy] || '').trim() : '';
+      const financialYear = normalizeFY(rowFyRaw) || normalizeFY(uploadFy) || null;
 
       entries.push({
-        tan, deductorName, amountPaid, tdsDeducted, section, quarter, uploadBatchId
+        tan, deductorName, amountPaid, tdsDeducted, section, quarter, financialYear, uploadBatchId
       });
     }
 
@@ -226,13 +235,13 @@ export const upload26as = async (req, res) => {
     const INSERT_CHUNK = 500;
     for (let i = 0; i < entries.length; i += INSERT_CHUNK) {
       const chunk = entries.slice(i, i + INSERT_CHUNK);
-      const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
       const params = [];
       for (const e of chunk) {
-        params.push(e.tan, e.deductorName, e.amountPaid, e.tdsDeducted, e.section, e.quarter, e.uploadBatchId);
+        params.push(e.tan, e.deductorName, e.amountPaid, e.tdsDeducted, e.section, e.quarter, e.financialYear, e.uploadBatchId);
       }
       await db.execute(
-        `INSERT INTO tds_26as_entries (tan_no, deductor_name, amount_paid, tds_deducted, section, quarter, upload_batch_id) VALUES ${placeholders}`,
+        `INSERT INTO tds_26as_entries (tan_no, deductor_name, amount_paid, tds_deducted, section, quarter, financial_year, upload_batch_id) VALUES ${placeholders}`,
         params
       );
     }
@@ -272,8 +281,9 @@ export const upload26as = async (req, res) => {
     const metadata = JSON.stringify({
       upload_type: '26AS_TDS',
       upload_batch_id: uploadBatchId,
-      financial_year: uploadFy || 'FY 2024-25',
-      total_rows: entries.length
+      financial_year: normalizeFY(uploadFy) || null,
+      file_name: file.originalname,
+      total_records: entries.length
     });
     
     await db.execute(
@@ -334,7 +344,8 @@ export const uploadTally = async (req, res) => {
       designation: -1,
       contact_number: -1,
       email_id: -1,
-      teamleader: -1
+      teamleader: -1,
+      fy: -1
     };
 
     const tanRegex = /^([A-Z]{4}\d{5}[A-Z]|[A-Z]{5}\d{4}[A-Z]|[A-Z0-9]{8,15})$/i;
@@ -387,6 +398,9 @@ export const uploadTally = async (req, res) => {
           }
           if (text.includes('teamleader') || text.includes('team leader') || text.includes('manager')) {
             colMap.teamleader = col;
+          }
+          if (colMap.fy === -1 && (/^f\.?y\.?$/i.test(text) || text.includes('financial year') || text.includes('fin year') || text === 'fy' || text === 'f.y.')) {
+            colMap.fy = col;
           }
         });
         break;
@@ -456,10 +470,12 @@ export const uploadTally = async (req, res) => {
       const contactNumber = colMap.contact_number !== -1 ? String(row[colMap.contact_number] || '').trim() : null;
       const emailId = colMap.email_id !== -1 ? String(row[colMap.email_id] || '').trim() : null;
       const teamleader = colMap.teamleader !== -1 ? String(row[colMap.teamleader] || '').trim() : null;
+      const rowFyRaw = colMap.fy !== -1 ? String(row[colMap.fy] || '').trim() : '';
+      const financialYear = normalizeFY(rowFyRaw) || normalizeFY(uploadFy) || null;
 
       entries.push({
         tan, partyName, gstNum, panNo, voucherDate, amount, tdsAmount, ledgerName, uploadBatchId,
-        contactPerson, designation, contactNumber, emailId, teamleader
+        contactPerson, designation, contactNumber, emailId, teamleader, financialYear
       });
     }
 
@@ -471,13 +487,13 @@ export const uploadTally = async (req, res) => {
     const TALLY_CHUNK = 500;
     for (let i = 0; i < entries.length; i += TALLY_CHUNK) {
       const chunk = entries.slice(i, i + TALLY_CHUNK);
-      const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
       const params = [];
       for (const e of chunk) {
-        params.push(e.tan, e.partyName, e.gstNum, e.panNo, e.voucherDate, e.amount, e.tdsAmount, e.ledgerName, e.uploadBatchId);
+        params.push(e.tan, e.partyName, e.gstNum, e.panNo, e.voucherDate, e.amount, e.tdsAmount, e.ledgerName, e.financialYear, e.uploadBatchId);
       }
       await db.execute(
-        `INSERT INTO tds_tally_entries (tan_no, party_name, gst_num, pan_no, voucher_date, amount, tds_amount, ledger_name, upload_batch_id) VALUES ${placeholders}`,
+        `INSERT INTO tds_tally_entries (tan_no, party_name, gst_num, pan_no, voucher_date, amount, tds_amount, ledger_name, financial_year, upload_batch_id) VALUES ${placeholders}`,
         params
       );
     }
@@ -570,8 +586,9 @@ export const uploadTally = async (req, res) => {
     const metadata = JSON.stringify({
       upload_type: 'TALLY_TDS',
       upload_batch_id: uploadBatchId,
-      financial_year: uploadFy || 'FY 2024-25',
-      total_rows: entries.length
+      financial_year: normalizeFY(uploadFy) || null,
+      file_name: file.originalname,
+      total_records: entries.length
     });
     
     await db.execute(
@@ -605,9 +622,8 @@ export const getDashboardSummary = async (req, res) => {
     const params = [];
     if (fy && fy !== 'All' && fy !== 'All Financial Years') {
       const cleanFy = String(fy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push("(tr.financial_year = 'All Financial Years' OR COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
-      const fyWild = `%${cleanFy}%`;
-      params.push(fyWild, fyWild, fyWild);
+      whereClauses.push("COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), '')) LIKE ?");
+      params.push(`%${cleanFy}%`);
     }
 
     const whereSQL = 'WHERE ' + whereClauses.join(' AND ');
@@ -1086,9 +1102,8 @@ export const getReconciliationReport = async (req, res) => {
     const activeFy = fy || financialYear;
     if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
       const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push("(tr.financial_year = 'All Financial Years' OR COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
-      const fyWild = `%${cleanFy}%`;
-      queryParams.push(fyWild, fyWild, fyWild);
+      whereClauses.push("COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), '')) LIKE ?");
+      queryParams.push(`%${cleanFy}%`);
     }
 
     if (search && String(search).trim() !== '') {
@@ -1439,9 +1454,8 @@ export const exportReconciliationCSV = async (req, res) => {
     const activeFy = fy || financialYear;
     if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
       const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push("(COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
-      const fyWild = `%${cleanFy}%`;
-      queryParams.push(fyWild, fyWild, fyWild);
+      whereClauses.push("COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), '')) LIKE ?");
+      queryParams.push(`%${cleanFy}%`);
     }
 
     if (search && String(search).trim() !== '') {
@@ -2001,7 +2015,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
           m.contact_number || null,
           m.email_id || null,
           m.teamleader || null,
-          'FY 2025-26',
+          normalizeFY(m.financial_year || m.fy) || null,
           m.saarthi_tds || 0   // ← Saarthi Books TDS from CRM legals
         );
       }

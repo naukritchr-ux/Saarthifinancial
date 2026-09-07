@@ -201,7 +201,7 @@ export default function ReconciliationTable({
 
                       <td className="px-4 py-3.5 font-mono font-bold text-[#1F1B2E]">{row.tanNo}</td>
                       
-                      <td className="px-4 py-3.5 text-[#6B6580] font-semibold">{row.financialYear || 'FY 2024-25'}</td>
+                      <td className="px-4 py-3.5 text-[#6B6580] font-semibold">{row.financialYear || 'Unspecified'}</td>
 
                       <td className="px-4 py-3.5 text-right font-bold text-[#9B87F5]">{formatCurrency(row.tallyTds)}</td>
 

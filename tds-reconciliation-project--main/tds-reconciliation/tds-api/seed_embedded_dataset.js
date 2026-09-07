@@ -35,8 +35,9 @@ export async function ensureTablesExist() {
     try { await db.execute('ALTER TABLE tds_dues ADD COLUMN email_id VARCHAR(255)'); } catch (err) {}
     try { await db.execute('ALTER TABLE tds_dues ADD COLUMN teamleader VARCHAR(100)'); } catch (err) {}
     try { await db.execute('ALTER TABLE tds_dues ADD COLUMN pan_no VARCHAR(20)'); } catch (err) {}
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN gst_num VARCHAR(30)'); } catch (err) {}
     try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year VARCHAR(50)'); } catch (err) {}
+    try { await db.execute('ALTER TABLE tds_26as_entries ADD COLUMN financial_year VARCHAR(20)'); } catch (err) {}
+    try { await db.execute('ALTER TABLE tds_tally_entries ADD COLUMN financial_year VARCHAR(20)'); } catch (err) {}
     try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person VARCHAR(100)'); } catch (err) {}
     try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number VARCHAR(50)'); } catch (err) {}
     try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done BOOLEAN DEFAULT FALSE'); } catch (err) {}
@@ -175,9 +176,13 @@ export async function ensureTablesExist() {
       if (!recCols.includes('financial_year')) {
         await db.execute(`ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year TEXT;`);
       }
+      try { await db.execute('ALTER TABLE tds_26as_entries ADD COLUMN financial_year TEXT;'); } catch (err) {}
+      try { await db.execute('ALTER TABLE tds_tally_entries ADD COLUMN financial_year TEXT;'); } catch (err) {}
     } catch (e) {
       try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done INTEGER DEFAULT 0'); } catch (err) {}
       try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year VARCHAR(50)'); } catch (err) {}
+      try { await db.execute('ALTER TABLE tds_26as_entries ADD COLUMN financial_year VARCHAR(20)'); } catch (err) {}
+      try { await db.execute('ALTER TABLE tds_tally_entries ADD COLUMN financial_year VARCHAR(20)'); } catch (err) {}
     }
 
     await db.execute(`
