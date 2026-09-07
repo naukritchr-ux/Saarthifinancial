@@ -15,14 +15,15 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
          MAX(id) as id, 
          UPPER(TRIM(tan_no)) as tan, 
          SUM(COALESCE(tds, 0)) as tds, 
-         MAX(company_name) as company_name 
+         MAX(company_name) as company_name,
+         MAX(financial_year) as financial_year
        FROM tds_dues 
        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''
        GROUP BY UPPER(TRIM(tan_no))`
     );
 
     const [unnamedDuesRows] = await db.query(
-      `SELECT id, '' as tan, COALESCE(tds, 0) as tds, company_name 
+      `SELECT id, '' as tan, COALESCE(tds, 0) as tds, company_name, financial_year 
        FROM tds_dues 
        WHERE tan_no IS NULL OR TRIM(tan_no) = ''`
     );
@@ -32,7 +33,8 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
       id: r.id,
       tan: (r.tan || '').trim().toUpperCase(),
       tds: parseFloat(r.tds || 0),
-      company_name: r.company_name || 'Client Entity'
+      company_name: r.company_name || 'Client Entity',
+      financial_year: r.financial_year || null
     }));
 
     // 2. Fetch sums for 26AS grouped by TAN
@@ -109,7 +111,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     }
 
     const [recRows] = await db.query(
-      'SELECT id, tds_dues_id, UPPER(TRIM(tan_no)) as tan_no, is_manually_edited, as26_batch_id, tally_batch_id FROM tds_reconciliation_results'
+      'SELECT id, tds_dues_id, UPPER(TRIM(tan_no)) as tan_no, is_manually_edited, as26_batch_id, tally_batch_id, financial_year FROM tds_reconciliation_results'
     );
     const existingByDuesId = new Map();
     const existingByTan = new Map();
@@ -203,6 +205,8 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
           overallStatus = 'Not Received';
         }
 
+        const financialYear = due.financial_year || (existing && existing.financial_year) || 'FY 2024-25';
+
         if (existing && existing.id) {
           updatesList.push({
             id: existing.id,
@@ -216,7 +220,8 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
             as26VsTally,
             overallStatus,
             finalAs26BatchId,
-            finalTallyBatchId
+            finalTallyBatchId,
+            financialYear
           });
         } else {
           insertsList.push({
@@ -230,7 +235,8 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
             as26VsTally,
             overallStatus,
             finalAs26BatchId,
-            finalTallyBatchId
+            finalTallyBatchId,
+            financialYear
           });
         }
       } catch (rowErr) {
@@ -254,7 +260,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     const UPSERT_CHUNK = 300;
     for (let i = 0; i < updatesList.length; i += UPSERT_CHUNK) {
       const chunk = updatesList.slice(i, i + UPSERT_CHUNK);
-      const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
       const params = [];
       for (const u of chunk) {
         params.push(
@@ -269,14 +275,15 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
           u.as26VsTally,
           u.overallStatus,
           u.finalAs26BatchId,
-          u.finalTallyBatchId
+          u.finalTallyBatchId,
+          u.financialYear
         );
       }
       await db.execute(
         `INSERT INTO tds_reconciliation_results 
          (id, tds_dues_id, tan_no, books_tds, as26_tds, tally_tds, 
           books_vs_26as_status, books_vs_tally_status, as26_vs_tally_status, 
-          overall_status, as26_batch_id, tally_batch_id)
+          overall_status, as26_batch_id, tally_batch_id, financial_year)
          VALUES ${placeholders}
          ON DUPLICATE KEY UPDATE 
            tds_dues_id = COALESCE(NULLIF(VALUES(tds_dues_id), 0), tds_dues_id),
@@ -289,7 +296,8 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
            as26_vs_tally_status = VALUES(as26_vs_tally_status),
            overall_status = VALUES(overall_status),
            as26_batch_id = VALUES(as26_batch_id),
-           tally_batch_id = VALUES(tally_batch_id)`,
+           tally_batch_id = VALUES(tally_batch_id),
+           financial_year = COALESCE(NULLIF(VALUES(financial_year), ''), tds_reconciliation_results.financial_year)`,
         params
       );
     }
@@ -298,7 +306,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     const INSERT_CHUNK = 300;
     for (let i = 0; i < insertsList.length; i += INSERT_CHUNK) {
       const chunk = insertsList.slice(i, i + INSERT_CHUNK);
-      const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
       const params = [];
       for (const ins of chunk) {
         params.push(
@@ -312,14 +320,15 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
           ins.as26VsTally,
           ins.overallStatus,
           ins.finalAs26BatchId,
-          ins.finalTallyBatchId
+          ins.finalTallyBatchId,
+          ins.financialYear
         );
       }
       await db.execute(
         `INSERT INTO tds_reconciliation_results 
          (tds_dues_id, tan_no, books_tds, as26_tds, tally_tds, 
           books_vs_26as_status, books_vs_tally_status, as26_vs_tally_status, 
-          overall_status, as26_batch_id, tally_batch_id)
+          overall_status, as26_batch_id, tally_batch_id, financial_year)
          VALUES ${placeholders}`,
         params
       );

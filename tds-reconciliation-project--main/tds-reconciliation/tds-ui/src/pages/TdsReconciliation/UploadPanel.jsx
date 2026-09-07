@@ -22,6 +22,17 @@ export default function UploadPanel({ onUploadSuccess }) {
   const { triggerRefresh, fyFilter } = useApp();
   const [as26File, setAs26File] = useState(null);
   const [tallyFile, setTallyFile] = useState(null);
+
+  const [as26Fy, setAs26Fy] = useState(fyFilter && fyFilter !== 'All Financial Years' ? fyFilter : 'FY 2024-25');
+  const [tallyFy, setTallyFy] = useState(fyFilter && fyFilter !== 'All Financial Years' ? fyFilter : 'FY 2024-25');
+
+  // Sync with global FY if user changed navbar dropdown
+  useEffect(() => {
+    if (fyFilter && fyFilter !== 'All Financial Years') {
+      setAs26Fy(fyFilter);
+      setTallyFy(fyFilter);
+    }
+  }, [fyFilter]);
   
   // Import mode selector: 'update' (upsert/merge), 'clean' (wipe past & import fresh)
   const [as26ImportMode, setAs26ImportMode] = useState('update');
@@ -139,13 +150,13 @@ export default function UploadPanel({ onUploadSuccess }) {
     setAs26Status({ loading: true, error: null, success: null });
     
     try {
-      const res = await upload26as(as26File, fyFilter || '', as26ImportMode);
+      const res = await upload26as(as26File, as26Fy || 'FY 2024-25', as26ImportMode);
       if (res && res.success) {
         const rowCount = (typeof res.records === 'number') ? res.records : 1;
         setAs26Status({
           loading: false,
           error: null,
-          success: `${as26ImportMode === 'clean' ? 'Past 26AS data cleared & imported ' : 'Imported '}${rowCount} rows successfully!`
+          success: `${as26ImportMode === 'clean' ? 'Past 26AS data cleared & imported ' : 'Imported '}${rowCount} rows successfully for ${as26Fy}!`
         });
         setAs26File(null);
         fetchBatches();
@@ -172,13 +183,13 @@ export default function UploadPanel({ onUploadSuccess }) {
     setTallyStatus({ loading: true, error: null, success: null });
 
     try {
-      const res = await uploadTally(tallyFile, fyFilter || '', tallyImportMode);
+      const res = await uploadTally(tallyFile, tallyFy || 'FY 2024-25', tallyImportMode);
       if (res && res.success) {
         const rowCount = (typeof res.records === 'number') ? res.records : 1;
         setTallyStatus({
           loading: false,
           error: null,
-          success: `${tallyImportMode === 'clean' ? 'Past Tally data cleared & imported ' : 'Imported '}${rowCount} rows successfully!`
+          success: `${tallyImportMode === 'clean' ? 'Past Tally data cleared & imported ' : 'Imported '}${rowCount} rows successfully for ${tallyFy}!`
         });
         setTallyFile(null);
         fetchBatches();
@@ -360,6 +371,28 @@ export default function UploadPanel({ onUploadSuccess }) {
             </div>
           </div>
 
+          {/* Target Financial Year Selector */}
+          <div className="bg-[#E8E4FF]/40 p-3 rounded-xl border border-[#E9E4FA] space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-black text-[#6B6580] uppercase tracking-wider">
+                Financial Year for this File:
+              </label>
+              <span className="text-[10px] bg-[#9B87F5]/20 text-[#9B87F5] px-2 py-0.5 rounded font-extrabold">Required</span>
+            </div>
+            <select
+              value={as26Fy}
+              onChange={(e) => setAs26Fy(e.target.value)}
+              className="w-full bg-white border border-[#E9E4FA] text-[#1F1B2E] font-bold text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-[#9B87F5] cursor-pointer"
+            >
+              <option value="FY 2026-27">FY 2026-27</option>
+              <option value="FY 2025-26">FY 2025-26</option>
+              <option value="FY 2024-25">FY 2024-25 (Current)</option>
+              <option value="FY 2023-24">FY 2023-24</option>
+              <option value="FY 2022-23">FY 2022-23</option>
+              <option value="FY 2021-22">FY 2021-22</option>
+            </select>
+          </div>
+
           {/* File Picker */}
           <div className="flex flex-col gap-3">
             <label className="flex flex-col items-center justify-center border-2 border-dashed border-[#B4A7F5] rounded-xl p-5 cursor-pointer bg-white hover:bg-[#E8E4FF]/50 transition group">
@@ -469,9 +502,14 @@ export default function UploadPanel({ onUploadSuccess }) {
                         className="flex items-center justify-between p-2 rounded-xl bg-white border border-[#E9E4FA] hover:border-[#9B87F5]/50 transition group"
                       >
                         <div className="min-w-0 pr-2">
-                          <p className="font-bold text-xs text-[#1F1B2E] truncate group-hover:text-[#9B87F5] transition">
-                            {file.fileName || file.file_name}
-                          </p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-bold text-xs text-[#1F1B2E] truncate group-hover:text-[#9B87F5] transition">
+                              {file.fileName || file.file_name}
+                            </p>
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-extrabold text-[9px] border border-indigo-200">
+                              {file.metadata?.financial_year || 'FY 2024-25'}
+                            </span>
+                          </div>
                           <p className="text-[10px] text-[#6B6580] mt-0.5">
                             {file.uploadTime ? new Date(file.uploadTime).toLocaleString('en-IN') : 'Uploaded'}
                             {file.metadata?.total_rows ? ` · ${file.metadata.total_rows.toLocaleString()} entries` : ''}
@@ -542,6 +580,28 @@ export default function UploadPanel({ onUploadSuccess }) {
                 <span>Clean Past Data First</span>
               </label>
             </div>
+          </div>
+
+          {/* Target Financial Year Selector */}
+          <div className="bg-[#E8E4FF]/40 p-3 rounded-xl border border-[#E9E4FA] space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-black text-[#6B6580] uppercase tracking-wider">
+                Financial Year for this File:
+              </label>
+              <span className="text-[10px] bg-[#9B87F5]/20 text-[#9B87F5] px-2 py-0.5 rounded font-extrabold">Required</span>
+            </div>
+            <select
+              value={tallyFy}
+              onChange={(e) => setTallyFy(e.target.value)}
+              className="w-full bg-white border border-[#E9E4FA] text-[#1F1B2E] font-bold text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-[#9B87F5] cursor-pointer"
+            >
+              <option value="FY 2026-27">FY 2026-27</option>
+              <option value="FY 2025-26">FY 2025-26</option>
+              <option value="FY 2024-25">FY 2024-25 (Current)</option>
+              <option value="FY 2023-24">FY 2023-24</option>
+              <option value="FY 2022-23">FY 2022-23</option>
+              <option value="FY 2021-22">FY 2021-22</option>
+            </select>
           </div>
 
           {/* File Picker */}
@@ -653,9 +713,14 @@ export default function UploadPanel({ onUploadSuccess }) {
                         className="flex items-center justify-between p-2 rounded-xl bg-white border border-[#E9E4FA] hover:border-[#9B87F5]/50 transition group"
                       >
                         <div className="min-w-0 pr-2">
-                          <p className="font-bold text-xs text-[#1F1B2E] truncate group-hover:text-[#9B87F5] transition">
-                            {file.fileName || file.file_name}
-                          </p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-bold text-xs text-[#1F1B2E] truncate group-hover:text-[#9B87F5] transition">
+                              {file.fileName || file.file_name}
+                            </p>
+                            <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 font-extrabold text-[9px] border border-indigo-200">
+                              {file.metadata?.financial_year || 'FY 2024-25'}
+                            </span>
+                          </div>
                           <p className="text-[10px] text-[#6B6580] mt-0.5">
                             {file.uploadTime ? new Date(file.uploadTime).toLocaleString('en-IN') : 'Uploaded'}
                             {file.metadata?.total_rows ? ` · ${file.metadata.total_rows.toLocaleString()} entries` : ''}
