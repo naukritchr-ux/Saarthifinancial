@@ -37,9 +37,8 @@ export async function ensureTablesExist() {
     try { await db.execute('ALTER TABLE tds_dues ADD COLUMN pan_no VARCHAR(20)'); } catch (err) { }
     try { await db.execute('ALTER TABLE tds_dues ADD COLUMN gst_num VARCHAR(30)'); } catch (err) { }
     try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year VARCHAR(50)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_person VARCHAR(100)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_followups ADD COLUMN accountant_number VARCHAR(50)'); } catch (err) { }
     try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done BOOLEAN DEFAULT FALSE'); } catch (err) { }
+    try { await db.execute('ALTER TABLE tds_dues ADD UNIQUE KEY uniq_due_tan_fy (tan_no, financial_year)'); } catch (err) { }
 
     try {
       await db.execute("UPDATE tds_dues SET contact_person_name = NULL WHERE contact_person_name IN ('HR & Accounts Lead', 'Unknown', 'HR Manager')");

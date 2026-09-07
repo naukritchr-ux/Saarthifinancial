@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS tds_dues (
   designation TEXT,
   email_id TEXT,
   note TEXT,
-  financial_year TEXT
+  financial_year TEXT,
+  UNIQUE(tan_no, financial_year)
 );
 
 -- Parsed Form 26AS entries
