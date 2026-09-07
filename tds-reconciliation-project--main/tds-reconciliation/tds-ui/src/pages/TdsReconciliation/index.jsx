@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { RefreshCw, Search, Download, Database, CheckCircle, AlertTriangle, X, ShieldCheck } from 'lucide-react';
 import ReconciliationTable from './ReconciliationTable';
 import EditModal from './EditModal';
-import { getReconciliationReport, getCsvExportUrl, triggerSeed } from '../../api/tdsApi';
+import { getReconciliationReport, getCsvExportUrl, triggerSeed, toggleFollowupDone } from '../../api/tdsApi';
 import { useApp } from '../../context/AppContext';
 
 export default function TdsReconciliation() {
@@ -94,6 +94,32 @@ export default function TdsReconciliation() {
       fy: fyFilter
     });
     window.open(exportUrl, '_blank');
+  };
+
+  const handleToggleFollowup = async (rowId) => {
+    // Optimistic toggle in parent rows state
+    setRows(prevRows => prevRows.map(r => 
+      r.id === rowId ? { ...r, isFollowupDone: r.isFollowupDone ? 0 : 1 } : r
+    ));
+    try {
+      const res = await toggleFollowupDone(rowId);
+      if (!res || !res.success) {
+        // Revert on failure
+        setRows(prevRows => prevRows.map(r => 
+          r.id === rowId ? { ...r, isFollowupDone: r.isFollowupDone ? 0 : 1 } : r
+        ));
+      } else if (res.hasOwnProperty('isFollowupDone')) {
+        setRows(prevRows => prevRows.map(r => 
+          r.id === rowId ? { ...r, isFollowupDone: res.isFollowupDone ? 1 : 0 } : r
+        ));
+      }
+    } catch (err) {
+      console.error('Failed to toggle followup:', err);
+      // Revert on error
+      setRows(prevRows => prevRows.map(r => 
+        r.id === rowId ? { ...r, isFollowupDone: r.isFollowupDone ? 0 : 1 } : r
+      ));
+    }
   };
 
   return (
@@ -288,6 +314,7 @@ export default function TdsReconciliation() {
         onPageChange={setPage}
         onEditClick={setActiveEditRow}
         onViewClick={setActiveViewRow}
+        onToggleFollowup={handleToggleFollowup}
       />
 
       {/* Manual Edit Modal */}

@@ -28,33 +28,24 @@ export default function ReconciliationTable({
   limit, 
   onPageChange, 
   onEditClick,
-  onViewClick
+  onViewClick,
+  onToggleFollowup
 }) {
   const { navigateTo } = useApp();
   const [expandedRow, setExpandedRow] = useState(null);
-  // Optimistic local state for follow-up done checkboxes (keyed by row.id)
-  const [followupDoneMap, setFollowupDoneMap] = useState({});
-
-  const getFollowupDone = (row) => {
-    if (followupDoneMap.hasOwnProperty(row.id)) return followupDoneMap[row.id];
-    return Boolean(row.isFollowupDone);
-  };
 
   const handleToggleFollowupDone = async (row, e) => {
-    e.stopPropagation();
-    const current = getFollowupDone(row);
-    // Optimistic update
-    setFollowupDoneMap(prev => ({ ...prev, [row.id]: !current }));
-    try {
-      const res = await toggleFollowupDone(row.id);
-      if (res && res.success) {
-        setFollowupDoneMap(prev => ({ ...prev, [row.id]: res.isFollowupDone }));
-      } else {
-        // Revert on failure
-        setFollowupDoneMap(prev => ({ ...prev, [row.id]: current }));
+    if (e) {
+      if (e.stopPropagation) e.stopPropagation();
+    }
+    if (onToggleFollowup) {
+      onToggleFollowup(row.id);
+    } else {
+      try {
+        await toggleFollowupDone(row.id);
+      } catch (err) {
+        console.error('Failed to toggle followup:', err);
       }
-    } catch {
-      setFollowupDoneMap(prev => ({ ...prev, [row.id]: current }));
     }
   };
 
@@ -248,20 +239,23 @@ export default function ReconciliationTable({
 
                       {/* Follow-up Done Checkbox */}
                       <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={(e) => handleToggleFollowupDone(row, e)}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border font-black transition text-[11px] cursor-pointer shadow-2xs ${
-                            getFollowupDone(row)
-                              ? 'bg-[#4ADE80]/20 text-[#2E8B57] border-[#4ADE80]/40 hover:bg-[#4ADE80]/30'
-                              : 'bg-[#E8E4FF] text-[#6B6580] border-[#E9E4FA] hover:bg-[#D4CCFF]'
+                        <label
+                          onClick={(e) => e.stopPropagation()}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border font-bold transition text-[11px] cursor-pointer shadow-2xs select-none ${
+                            Boolean(row.isFollowupDone)
+                              ? 'bg-[#4ADE80]/20 text-[#2E8B57] border-[#4ADE80]/50 hover:bg-[#4ADE80]/30'
+                              : 'bg-[#F6F8FA] text-[#6B6580] border-[#E9E4FA] hover:bg-[#E8E4FF]'
                           }`}
-                          title={getFollowupDone(row) ? 'Mark as Pending' : 'Mark Follow-up Done'}
+                          title={Boolean(row.isFollowupDone) ? 'Mark as Pending' : 'Mark Follow-up Done'}
                         >
-                          {getFollowupDone(row)
-                            ? <CheckSquare className="w-3.5 h-3.5" />
-                            : <Square className="w-3.5 h-3.5" />}
-                          {getFollowupDone(row) ? 'Done' : 'Pending'}
-                        </button>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(row.isFollowupDone)}
+                            onChange={(e) => handleToggleFollowupDone(row, e)}
+                            className="w-4 h-4 rounded text-[#2E8B57] focus:ring-[#2E8B57] border-gray-300 cursor-pointer accent-[#2E8B57]"
+                          />
+                          <span>{Boolean(row.isFollowupDone) ? 'Done' : 'Pending'}</span>
+                        </label>
                       </td>
 
                       {/* Log Follow-up Call button */}
