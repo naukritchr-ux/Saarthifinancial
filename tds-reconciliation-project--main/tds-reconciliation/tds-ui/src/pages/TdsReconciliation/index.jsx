@@ -46,13 +46,17 @@ export default function TdsReconciliation() {
         const tempStats = { total: res.total ?? res.data.length, matched: 0, less: 0, excess: 0, notReceived: 0 };
         res.data.forEach(r => {
           const as26 = parseFloat(r.as26Tds || 0);
-          if (as26 === 0 || r.financialStatus === 'Not Received') {
+          const tally = parseFloat(r.tallyTds || 0);
+          const saarthi = parseFloat(r.saarthiTds || r.booksTds || 0);
+          const effectiveStatus = (tally === 0 && saarthi === 0 && as26 > 0) ? 'Excess' : r.financialStatus;
+
+          if (as26 === 0 || effectiveStatus === 'Not Received') {
             tempStats.notReceived++;
-          } else if (r.financialStatus === 'Match') {
+          } else if (effectiveStatus === 'Match') {
             tempStats.matched++;
-          } else if (r.financialStatus === 'Less Paid') {
+          } else if (effectiveStatus === 'Less Paid') {
             tempStats.less++;
-          } else if (r.financialStatus === 'Excess') {
+          } else if (effectiveStatus === 'Excess') {
             tempStats.excess++;
           } else {
             tempStats.notReceived++;
@@ -316,7 +320,11 @@ export default function TdsReconciliation() {
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-[#6B6580] uppercase">Financial Status</span>
-                  <div className="font-extrabold text-[#1F1B2E] mt-1">{activeViewRow.financialStatus || activeViewRow.overallStatus}</div>
+                  <div className="font-extrabold text-[#1F1B2E] mt-1">
+                    {(parseFloat(activeViewRow.tallyTds || 0) === 0 && parseFloat(activeViewRow.saarthiTds || activeViewRow.booksTds || 0) === 0 && parseFloat(activeViewRow.as26Tds || 0) > 0)
+                      ? 'Excess'
+                      : (activeViewRow.financialStatus || activeViewRow.overallStatus)}
+                  </div>
                 </div>
               </div>
 
