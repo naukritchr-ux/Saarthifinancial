@@ -605,7 +605,7 @@ export const getDashboardSummary = async (req, res) => {
     const params = [];
     if (fy && fy !== 'All' && fy !== 'All Financial Years') {
       const cleanFy = String(fy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push("(COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
+      whereClauses.push("(tr.financial_year = 'All Financial Years' OR COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
       const fyWild = `%${cleanFy}%`;
       params.push(fyWild, fyWild, fyWild);
     }
@@ -1086,7 +1086,7 @@ export const getReconciliationReport = async (req, res) => {
     const activeFy = fy || financialYear;
     if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
       const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push("(COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
+      whereClauses.push("(tr.financial_year = 'All Financial Years' OR COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'FY 2024-25') LIKE ? OR tr.as26_batch_id LIKE ? OR tr.tally_batch_id LIKE ?)");
       const fyWild = `%${cleanFy}%`;
       queryParams.push(fyWild, fyWild, fyWild);
     }
@@ -1717,15 +1717,15 @@ export const syncSaarthiLiveApi = async (req, res) => {
     clearPurgedFlag();
     console.log('🔄 Syncing live Sarthi 360 client & legal master data...');
 
-    const fetchEndpointWithFallback = async (endpointName, ms = 10000) => {
+    const fetchEndpointWithFallback = async (endpointName, ms = 12000) => {
       const cleanName = String(endpointName || '').replace(/^api\//, '').trim();
       const candidates = [
-        `https://api.sarthi360.in/api/${cleanName}`,
         `https://api.sarthi360.in/${cleanName}`,
-        `https://sarthi360.in/api/${cleanName}`,
+        `https://api.sarthi360.in/api/${cleanName}`,
         `https://sarthi360.in/${cleanName}`,
-        `https://api.saarthi360.in/api/${cleanName}`,
-        `https://api.saarthi360.in/${cleanName}`
+        `https://sarthi360.in/api/${cleanName}`,
+        `https://api.saarthi360.in/${cleanName}`,
+        `https://api.saarthi360.in/api/${cleanName}`
       ];
 
       for (const url of candidates) {
@@ -1750,66 +1750,63 @@ export const syncSaarthiLiveApi = async (req, res) => {
       return { ok: false, data: [] };
     };
 
-    const [cRes, lRes, tRes] = await Promise.all([
+    const [cRes, lRes, iRes] = await Promise.all([
       fetchEndpointWithFallback('clients_info'),
       fetchEndpointWithFallback('legals_info'),
-      fetchEndpointWithFallback('tally_info')
+      fetchEndpointWithFallback('Invoice')
     ]);
 
     let clientsData = cRes.data || [];
     let legalsData = lRes.data || [];
-    let tallyApiData = tRes.data || [];
+    let invoicesData = iRes.data || [];
 
-    // If legals endpoint is unavailable, fall back to embedded legal dataset (JSON or CSV)
-    if (!lRes.ok || legalsData.length === 0) {
-      try {
-        const potentialPaths = [
-          path.resolve('data/legals_info.json'),
-          path.resolve(process.cwd(), 'data/legals_info.json'),
-          path.resolve(process.cwd(), 'tds-api/data/legals_info.json'),
-          path.resolve('data/legals_info.csv'),
-          path.resolve(process.cwd(), 'data/legals_info.csv'),
-          path.resolve(process.cwd(), 'tds-api/data/legals_info.csv')
-        ];
-        for (const p of potentialPaths) {
-          if (fs.existsSync(p)) {
-            const raw = fs.readFileSync(p, 'utf8');
-            if (p.endsWith('.json')) {
-              legalsData = JSON.parse(raw);
-            } else {
-              // Parse CSV: first line = headers
-              const lines = raw.split('\n').filter(l => l.trim());
-              const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
-              legalsData = lines.slice(1).map(line => {
-                // Handle quoted commas
-                const cols = [];
-                let cur = '';
-                let inQ = false;
-                for (const ch of line) {
-                  if (ch === '"') { inQ = !inQ; }
-                  else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
-                  else { cur += ch; }
-                }
-                cols.push(cur.trim());
-                const obj = {};
-                headers.forEach((h, i) => { obj[h] = (cols[i] || '').replace(/^"|"$/g, '').trim(); });
-                return obj;
-              }).filter(r => r.tanNo || r.partyName);
-            }
-            console.log(`ℹ️ Loaded ${legalsData.length} legal records from fallback ${p}`);
-            break;
-          }
-        }
-      } catch (fErr) {
-        console.warn('Local legals fallback notice:', fErr.message);
-      }
+    if (invoicesData.length === 0) {
+      const invAlt = await fetchEndpointWithFallback('invoice');
+      invoicesData = invAlt.data || [];
     }
 
+    console.log(`ℹ️ CRM Data Live: ${clientsData.length} clients, ${legalsData.length} legals, ${invoicesData.length} invoices`);
+
     const liveApiStatus = {
-      clients_info: cRes.ok ? 'ok' : (clientsData.length > 0 ? 'fallback' : 'unreachable'),
-      legals_info: lRes.ok ? 'ok' : (legalsData.length > 0 ? 'local_dataset' : 'unreachable'),
-      tally_info: tRes.ok ? 'ok' : 'unreachable'
+      clients_info: cRes.ok ? 'ok' : 'unreachable',
+      legals_info: lRes.ok ? 'ok' : 'unreachable',
+      invoices: invoicesData.length > 0 ? 'ok' : 'unreachable'
     };
+
+    const normalize = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+
+    // Map legals GST -> TAN and normalized company name -> TAN
+    const legalGstToTan = new Map();
+    const legalNameToTan = new Map();
+
+    legalsData.forEach(l => {
+      const tan = String(l.tanNo || '').trim().toUpperCase();
+      const gst = String(l.gstNo || '').trim().toUpperCase();
+      const norm = normalize(l.companyName || l.partyName);
+      if (tan) {
+        if (gst) legalGstToTan.set(gst, tan);
+        if (norm) legalNameToTan.set(norm, tan);
+      }
+    });
+
+    // Accumulate invoice TDS amounts from CRM
+    const crmTdsByTan = new Map();
+    const crmTdsByNormName = new Map();
+
+    invoicesData.forEach(inv => {
+      const tds = parseFloat(inv.tds || 0);
+      if (tds > 0) {
+        const gst = String(inv.gstNo || '').trim().toUpperCase();
+        const norm = normalize(inv.companyName);
+        const tan = legalGstToTan.get(gst) || legalNameToTan.get(norm);
+        if (tan) {
+          crmTdsByTan.set(tan, (crmTdsByTan.get(tan) || 0) + tds);
+        }
+        if (norm) {
+          crmTdsByNormName.set(norm, (crmTdsByNormName.get(norm) || 0) + tds);
+        }
+      }
+    });
 
     const gstRegex = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i;
     const tanRegex = /^[A-Z]{4}\d{5}[A-Z]$/i;
@@ -1829,19 +1826,24 @@ export const syncSaarthiLiveApi = async (req, res) => {
       if (!item || (!item.companyName && !item.id)) return;
       const gst = String(item.gstNumber || item.gstNo || item.gstNum || '').trim().toUpperCase();
       const pan = extractPanFromGst(gst) || (panRegex.test(item.panNo || item.panNumber || item.pan || '') ? String(item.panNo || item.panNumber || item.pan).trim().toUpperCase() : null);
+      const companyName = String(item.companyName || '').trim();
+      const norm = normalize(companyName);
+      const itemTan = String(item.tanNo || item.tanNumber || '').trim().toUpperCase() || legalGstToTan.get(gst) || legalNameToTan.get(norm) || null;
+      const itemTds = (itemTan && crmTdsByTan.get(itemTan)) || (norm && crmTdsByNormName.get(norm)) || parseFloat(item.tdsAmount || item.tds_amount || item.tds || 0) || 0;
+
       clientMasters.push({
         saarthi_client_id: item.id ? parseInt(item.id) : null,
-        company_name: String(item.companyName || '').trim(),
-        normalized_name: normalizeCompanyName(item.companyName || ''),
+        company_name: companyName,
+        normalized_name: normalizeCompanyName(companyName),
         gst_no: gstRegex.test(gst) ? gst : null,
         pan_no: pan,
-        tan_no: String(item.tanNo || item.tanNumber || '').trim().toUpperCase() || null,
+        tan_no: itemTan && tanRegex.test(itemTan) ? itemTan : null,
         contact_person_name: String(item.contactPersonName || item.contactPerson || item.clientName || item.personName || item.contact_name || '').trim() || null,
         designation: String(item.contactDesignation || item.designation || item.contact_designation || item.role || '').trim() || null,
         contact_number: String(item.contactPhone || item.contactPhoneNumber || item.phoneNumber || item.mobile || item.mobileNo || item.phone || item.contact_no || '').trim() || null,
         email_id: String(item.contactEmail || item.contactEmailId || item.emailId || item.email || item.contact_email || '').trim() || null,
         teamleader: String(item.teamLeader || item.teamleader || item.tlName || item.manager || '').trim() || null,
-        saarthi_tds: parseFloat(item.tdsAmount || item.tds_amount || item.tds || 0) || 0,
+        saarthi_tds: itemTds,
         saarthi_amount: parseFloat(item.amount || item.grossAmount || item.gross_amount || 0) || 0,
         status: String(item.status || 'active').toLowerCase()
       });
@@ -1853,6 +1855,8 @@ export const syncSaarthiLiveApi = async (req, res) => {
       const tan = String(item.tanNo || item.tanNumber || '').trim().toUpperCase();
       const pan = String(item.panNo || item.panNumber || '').trim().toUpperCase() || extractPanFromGst(gst);
       const companyName = String(item.companyName || item.partyName || '').trim();
+      const norm = normalize(companyName);
+      const itemTds = (tan && crmTdsByTan.get(tan)) || (norm && crmTdsByNormName.get(norm)) || parseFloat(item.tdsAmount || item.tds_amount || item.tds || 0) || 0;
       
       clientMasters.push({
         saarthi_client_id: item.id ? parseInt(item.id) : null,
@@ -1866,8 +1870,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
         contact_number: String(item.contactPhoneNumber || item.phoneNumber || item.mobile || item.mobileNo || item.contactPhone || item.phone || item.contact_no || '').trim() || null,
         email_id: String(item.contactEmailId || item.emailId || item.email || item.contactEmail || item.contact_email || '').trim() || null,
         teamleader: String(item.teamLeader || item.teamleader || item.tlName || item.manager || '').trim() || null,
-        // ← KEY: TDS amount from CRM goes into Saarthi Books TDS column
-        saarthi_tds: parseFloat(item.tdsAmount || item.tds_amount || item.tds || 0) || 0,
+        saarthi_tds: itemTds,
         saarthi_amount: parseFloat(item.amount || item.grossAmount || item.gross_amount || 0) || 0,
         status: String(item.status || 'ACTIVE').toLowerCase()
       });
@@ -2002,8 +2005,6 @@ export const syncSaarthiLiveApi = async (req, res) => {
     }
 
     // ─── Directly update tds_reconciliation_results.books_tds from tds_dues.tds ───
-    // This is faster than waiting for background reconcile() to run.
-    // It directly writes the Saarthi Books TDS into the results table by TAN match.
     try {
       await db.execute(`
         UPDATE tds_reconciliation_results tr
@@ -2016,7 +2017,52 @@ export const syncSaarthiLiveApi = async (req, res) => {
         SET tr.books_tds = d.total_tds
         WHERE d.total_tds > 0
       `);
-      console.log('✅ Directly updated tds_reconciliation_results.books_tds from tds_dues.tds (Saarthi TDS)');
+
+      // Match by company name for remaining rows with books_tds = 0
+      const [zeroRows] = await db.query(`
+        SELECT tr.id, d.company_name 
+        FROM tds_reconciliation_results tr 
+        LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id 
+        WHERE COALESCE(tr.books_tds, 0) = 0 AND d.company_name IS NOT NULL AND d.company_name != ''
+      `);
+      
+      const nameUpdates = [];
+      zeroRows.forEach(r => {
+        const norm = normalize(r.company_name);
+        const tds = crmTdsByNormName.get(norm);
+        if (tds && tds > 0) {
+          nameUpdates.push([tds, r.id]);
+        }
+      });
+
+      const BATCH = 50;
+      for (let i = 0; i < nameUpdates.length; i += BATCH) {
+        const chunk = nameUpdates.slice(i, i + BATCH);
+        await Promise.all(chunk.map(([tds, id]) =>
+          db.execute('UPDATE tds_reconciliation_results SET books_tds = ? WHERE id = ?', [tds, id]).catch(() => {})
+        ));
+      }
+
+      // Recalculate status for rows with books_tds > 0
+      await db.execute(`
+        UPDATE tds_reconciliation_results
+        SET 
+          books_vs_26as_status = CASE 
+            WHEN COALESCE(books_tds, 0) <= 0 OR COALESCE(as26_tds, 0) <= 0 THEN 'Not Received'
+            WHEN ABS(COALESCE(as26_tds, 0) - COALESCE(books_tds, 0)) <= 1.0 THEN 'Matched'
+            WHEN COALESCE(as26_tds, 0) > COALESCE(books_tds, 0) THEN 'Excess'
+            ELSE 'Less Paid'
+          END,
+          books_vs_tally_status = CASE 
+            WHEN COALESCE(books_tds, 0) <= 0 OR COALESCE(tally_tds, 0) <= 0 THEN 'Not Received'
+            WHEN ABS(COALESCE(tally_tds, 0) - COALESCE(books_tds, 0)) <= 1.0 THEN 'Matched'
+            WHEN COALESCE(tally_tds, 0) > COALESCE(books_tds, 0) THEN 'Excess'
+            ELSE 'Less Paid'
+          END
+        WHERE books_tds > 0
+      `);
+
+      console.log('✅ Directly updated tds_reconciliation_results.books_tds from Saarthi CRM TDS');
     } catch (directErr) {
       console.warn('Direct books_tds update warning:', directErr.message);
     }
