@@ -1760,18 +1760,42 @@ export const syncSaarthiLiveApi = async (req, res) => {
     let legalsData = lRes.data || [];
     let tallyApiData = tRes.data || [];
 
-    // If legals endpoint is unavailable, fall back to embedded legal dataset
+    // If legals endpoint is unavailable, fall back to embedded legal dataset (JSON or CSV)
     if (!lRes.ok || legalsData.length === 0) {
       try {
         const potentialPaths = [
           path.resolve('data/legals_info.json'),
           path.resolve(process.cwd(), 'data/legals_info.json'),
-          path.resolve(process.cwd(), 'tds-api/data/legals_info.json')
+          path.resolve(process.cwd(), 'tds-api/data/legals_info.json'),
+          path.resolve('data/legals_info.csv'),
+          path.resolve(process.cwd(), 'data/legals_info.csv'),
+          path.resolve(process.cwd(), 'tds-api/data/legals_info.csv')
         ];
         for (const p of potentialPaths) {
           if (fs.existsSync(p)) {
             const raw = fs.readFileSync(p, 'utf8');
-            legalsData = JSON.parse(raw);
+            if (p.endsWith('.json')) {
+              legalsData = JSON.parse(raw);
+            } else {
+              // Parse CSV: first line = headers
+              const lines = raw.split('\n').filter(l => l.trim());
+              const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+              legalsData = lines.slice(1).map(line => {
+                // Handle quoted commas
+                const cols = [];
+                let cur = '';
+                let inQ = false;
+                for (const ch of line) {
+                  if (ch === '"') { inQ = !inQ; }
+                  else if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+                  else { cur += ch; }
+                }
+                cols.push(cur.trim());
+                const obj = {};
+                headers.forEach((h, i) => { obj[h] = (cols[i] || '').replace(/^"|"$/g, '').trim(); });
+                return obj;
+              }).filter(r => r.tanNo || r.partyName);
+            }
             console.log(`ℹ️ Loaded ${legalsData.length} legal records from fallback ${p}`);
             break;
           }
@@ -1976,6 +2000,27 @@ export const syncSaarthiLiveApi = async (req, res) => {
       await db.execute(sql, params);
       inserted += chunk.length;
     }
+
+    // ─── Directly update tds_reconciliation_results.books_tds from tds_dues.tds ───
+    // This is faster than waiting for background reconcile() to run.
+    // It directly writes the Saarthi Books TDS into the results table by TAN match.
+    try {
+      await db.execute(`
+        UPDATE tds_reconciliation_results tr
+        INNER JOIN (
+          SELECT UPPER(TRIM(tan_no)) as tan, SUM(COALESCE(tds, 0)) as total_tds
+          FROM tds_dues
+          WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' AND tds > 0
+          GROUP BY UPPER(TRIM(tan_no))
+        ) d ON UPPER(TRIM(tr.tan_no)) = d.tan
+        SET tr.books_tds = d.total_tds
+        WHERE d.total_tds > 0
+      `);
+      console.log('✅ Directly updated tds_reconciliation_results.books_tds from tds_dues.tds (Saarthi TDS)');
+    } catch (directErr) {
+      console.warn('Direct books_tds update warning:', directErr.message);
+    }
+    // ─────────────────────────────────────────────────────────────────────────────
 
     reconcile(null, null).catch(rErr => {
       console.warn('Background reconcile warning:', rErr.message);
