@@ -36,28 +36,30 @@ const run = async () => {
     const sheet15 = workbook.Sheets['Sheet15'];
     const sheet15Data = xlsx.utils.sheet_to_json(sheet15, { header: 1 });
     
-    // We expect headers at Row 0: Name of Copmany, TAN No
-    let mappingCount = 0;
     const tanRegex = /^[A-Z]{4}\d{5}[A-Z]$/i;
-
+    const tanMapEntries = [];
     for (let r = 1; r < sheet15Data.length; r++) {
       const row = sheet15Data[r];
       if (!row || row.length < 2) continue;
-
       const companyName = String(row[0] || '').trim();
       const tan = String(row[1] || '').trim().toUpperCase().replace(/\s+/g, '');
-
       if (companyName && tan && tanRegex.test(tan)) {
-        const [updateResult] = await db.execute(`
-          UPDATE tds_dues 
-          SET tan_no = ? 
-          WHERE (tan_no IS NULL OR tan_no = "") AND UPPER(TRIM(company_name)) = ?
-        `, [tan, companyName.toUpperCase()]);
-
-        mappingCount += updateResult.affectedRows;
+        tanMapEntries.push({ tan, companyName: companyName.toUpperCase() });
       }
     }
-    console.log(`✅ Successfully mapped TAN numbers for ${mappingCount} records in tds_dues.`);
+
+    const MAP_CHUNK = 50;
+    for (let i = 0; i < tanMapEntries.length; i += MAP_CHUNK) {
+      const chunk = tanMapEntries.slice(i, i + MAP_CHUNK);
+      await Promise.all(chunk.map(entry =>
+        db.execute(`
+          UPDATE tds_dues 
+          SET tan_no = ? 
+          WHERE (tan_no IS NULL OR tan_no = '') AND UPPER(TRIM(company_name)) = ?
+        `, [entry.tan, entry.companyName])
+      ));
+    }
+    console.log(`✅ Processed TAN mappings for ${tanMapEntries.length} companies.`);
 
     // ==========================================
     // STEP 2: Parse Master Data sheet
@@ -115,6 +117,7 @@ const run = async () => {
     // ==========================================
     await db.execute('DELETE FROM tds_tally_entries');
     await db.execute('DELETE FROM tds_26as_entries');
+    await db.execute('DELETE FROM tds_reconciliation_results WHERE is_manually_edited = 0');
 
     const BATCH_SIZE = 1000;
 
