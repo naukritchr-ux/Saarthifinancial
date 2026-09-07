@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Upload, 
   CheckCircle2, 
@@ -11,9 +11,11 @@ import {
   Download, 
   RefreshCcw,
   Check,
-  Table
+  Table,
+  Layers,
+  ChevronDown
 } from 'lucide-react';
-import { upload26as, uploadTally, purgeData, purgeFollowups } from '../../api/tdsReconciliation';
+import { upload26as, uploadTally, purgeData, purgeFollowups, getUploadHistory, deleteUploadBatch } from '../../api/tdsReconciliation';
 import { useApp } from '../../context/AppContext';
 
 export default function UploadPanel({ onUploadSuccess }) {
@@ -29,6 +31,14 @@ export default function UploadPanel({ onUploadSuccess }) {
   const [tallyStatus, setTallyStatus] = useState({ loading: false, error: null, success: null });
   const [purgeStatus, setPurgeStatus] = useState({ loading: false, message: null, error: null });
   const [purgeConfirmTarget, setPurgeConfirmTarget] = useState(null);
+
+  // File Batch Management State (for choosing which file to delete)
+  const [uploadedBatches, setUploadedBatches] = useState([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [selected26asToDelete, setSelected26asToDelete] = useState('');
+  const [selectedTallyToDelete, setSelectedTallyToDelete] = useState('');
+  const [deleteFileConfirm, setDeleteFileConfirm] = useState(null);
+  const [deletingFile, setDeletingFile] = useState(false);
 
   const [showExpectedHeaders, setShowExpectedHeaders] = useState(true);
 
@@ -66,6 +76,64 @@ export default function UploadPanel({ onUploadSuccess }) {
     return lines.slice(1);
   };
 
+  const fetchBatches = async () => {
+    setLoadingBatches(true);
+    try {
+      const res = await getUploadHistory();
+      if (res && res.success && Array.isArray(res.data)) {
+        setUploadedBatches(res.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch upload batches:', err);
+    } finally {
+      setLoadingBatches(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBatches();
+  }, []);
+
+  const as26Files = uploadedBatches.filter(b => {
+    const meta = b.metadata || {};
+    const type = meta.upload_type || '';
+    const batchId = meta.upload_batch_id || b.upload_batch_id || '';
+    const name = (b.fileName || b.file_name || '').toLowerCase();
+    return type === '26AS_TDS' || batchId.startsWith('batch_26as') || name.includes('26as');
+  });
+
+  const tallyFiles = uploadedBatches.filter(b => {
+    const meta = b.metadata || {};
+    const type = meta.upload_type || '';
+    const batchId = meta.upload_batch_id || b.upload_batch_id || '';
+    const name = (b.fileName || b.file_name || '').toLowerCase();
+    return type === 'TALLY_TDS' || batchId.startsWith('batch_tally') || name.includes('tally');
+  });
+
+  const executeDeleteSingleFile = async (fileItem) => {
+    if (!fileItem) return;
+    setDeletingFile(true);
+    const batchId = fileItem.metadata?.upload_batch_id || fileItem.upload_batch_id || fileItem.batchId;
+
+    try {
+      const res = await deleteUploadBatch(fileItem.id, batchId);
+      if (res && res.success !== false) {
+        setDeleteFileConfirm(null);
+        setSelected26asToDelete('');
+        setSelectedTallyToDelete('');
+        await fetchBatches();
+        triggerRefresh();
+        if (onUploadSuccess) onUploadSuccess();
+      } else {
+        alert(`Delete failed: ${res?.error || 'Failed to delete file'}`);
+      }
+    } catch (err) {
+      alert(`Delete failed: ${err.message || 'Error connecting to database server'}`);
+    } finally {
+      setDeletingFile(false);
+    }
+  };
+
   const handleUpload26as = async () => {
     if (!as26File) return;
     setAs26Status({ loading: true, error: null, success: null });
@@ -80,6 +148,7 @@ export default function UploadPanel({ onUploadSuccess }) {
           success: `${as26ImportMode === 'clean' ? 'Past 26AS data cleared & imported ' : 'Imported '}${rowCount} rows successfully!`
         });
         setAs26File(null);
+        fetchBatches();
         triggerRefresh();
         if (onUploadSuccess) onUploadSuccess();
       } else {
@@ -112,6 +181,7 @@ export default function UploadPanel({ onUploadSuccess }) {
           success: `${tallyImportMode === 'clean' ? 'Past Tally data cleared & imported ' : 'Imported '}${rowCount} rows successfully!`
         });
         setTallyFile(null);
+        fetchBatches();
         triggerRefresh();
         if (onUploadSuccess) onUploadSuccess();
       } else {
@@ -150,6 +220,7 @@ export default function UploadPanel({ onUploadSuccess }) {
 
       if (res && res.success) {
         setPurgeStatus({ loading: false, message: res.message || `${labelMap[target]} cleared successfully`, error: null });
+        fetchBatches();
         triggerRefresh();
         if (onUploadSuccess) onUploadSuccess();
         return;
@@ -343,6 +414,86 @@ export default function UploadPanel({ onUploadSuccess }) {
                 <span>{as26Status.success}</span>
               </div>
             )}
+
+            {/* Manage Uploaded 26AS Files - Choose which file to delete */}
+            <div className="pt-4 border-t border-[#E9E4FA] space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-[#1F1B2E] flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-[#9B87F5]" />
+                  Uploaded 26AS Files ({as26Files.length})
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#E8E4FF] text-[#9B87F5]">
+                  {as26Files.length} {as26Files.length === 1 ? 'file active' : 'files active'}
+                </span>
+              </div>
+
+              {as26Files.length > 0 ? (
+                <div className="space-y-2.5">
+                  {/* Dropdown to pick which file to delete */}
+                  <div className="bg-[#E8E4FF]/30 p-2.5 rounded-xl border border-[#E9E4FA] space-y-1.5">
+                    <label className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider">
+                      Choose 26AS File to Delete:
+                    </label>
+                    <div className="flex gap-2">
+                      <select
+                        value={selected26asToDelete}
+                        onChange={(e) => setSelected26asToDelete(e.target.value)}
+                        className="flex-1 bg-white border border-[#E9E4FA] text-[#1F1B2E] rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer truncate"
+                      >
+                        <option value="">-- Select 26AS file to delete --</option>
+                        {as26Files.map((file) => (
+                          <option key={file.id} value={file.id}>
+                            {file.fileName || file.file_name} ({file.metadata?.total_rows ? `${file.metadata.total_rows.toLocaleString()} rows` : 'Uploaded file'})
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => {
+                          const target = as26Files.find(f => String(f.id) === String(selected26asToDelete));
+                          if (target) setDeleteFileConfirm(target);
+                        }}
+                        disabled={!selected26asToDelete || deletingFile}
+                        className="bg-[#F87A9E] hover:bg-[#E11D48] text-white font-bold px-3 py-1.5 rounded-lg transition text-xs flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs flex-shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* List of uploaded files with individual quick trash button */}
+                  <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                    {as26Files.map((file) => (
+                      <div
+                        key={file.id}
+                        className="flex items-center justify-between p-2 rounded-xl bg-white border border-[#E9E4FA] hover:border-[#9B87F5]/50 transition group"
+                      >
+                        <div className="min-w-0 pr-2">
+                          <p className="font-bold text-xs text-[#1F1B2E] truncate group-hover:text-[#9B87F5] transition">
+                            {file.fileName || file.file_name}
+                          </p>
+                          <p className="text-[10px] text-[#6B6580] mt-0.5">
+                            {file.uploadTime ? new Date(file.uploadTime).toLocaleString('en-IN') : 'Uploaded'}
+                            {file.metadata?.total_rows ? ` · ${file.metadata.total_rows.toLocaleString()} entries` : ''}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setDeleteFileConfirm(file)}
+                          className="p-1.5 rounded-lg bg-[#F87A9E]/15 hover:bg-[#F87A9E] text-[#E11D48] hover:text-white transition cursor-pointer flex-shrink-0"
+                          title="Delete this specific file"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-[#6B6580] italic bg-[#E8E4FF]/20 p-2.5 rounded-xl border border-dashed border-[#E9E4FA] text-center">
+                  No 26AS files currently uploaded.
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
@@ -447,6 +598,86 @@ export default function UploadPanel({ onUploadSuccess }) {
                 <span>{tallyStatus.success}</span>
               </div>
             )}
+
+            {/* Manage Uploaded Tally Sheets - Choose which sheet to delete */}
+            <div className="pt-4 border-t border-[#E9E4FA] space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-[#1F1B2E] flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-[#9B87F5]" />
+                  Uploaded Tally Sheets ({tallyFiles.length})
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#E8E4FF] text-[#9B87F5]">
+                  {tallyFiles.length} {tallyFiles.length === 1 ? 'sheet active' : 'sheets active'}
+                </span>
+              </div>
+
+              {tallyFiles.length > 0 ? (
+                <div className="space-y-2.5">
+                  {/* Dropdown to pick which Tally sheet to delete */}
+                  <div className="bg-[#E8E4FF]/30 p-2.5 rounded-xl border border-[#E9E4FA] space-y-1.5">
+                    <label className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider">
+                      Choose Tally Sheet to Delete:
+                    </label>
+                    <div className="flex gap-2">
+                      <select
+                        value={selectedTallyToDelete}
+                        onChange={(e) => setSelectedTallyToDelete(e.target.value)}
+                        className="flex-1 bg-white border border-[#E9E4FA] text-[#1F1B2E] rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer truncate"
+                      >
+                        <option value="">-- Select Tally sheet to delete --</option>
+                        {tallyFiles.map((file) => (
+                          <option key={file.id} value={file.id}>
+                            {file.fileName || file.file_name} ({file.metadata?.total_rows ? `${file.metadata.total_rows.toLocaleString()} rows` : 'Uploaded sheet'})
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => {
+                          const target = tallyFiles.find(f => String(f.id) === String(selectedTallyToDelete));
+                          if (target) setDeleteFileConfirm(target);
+                        }}
+                        disabled={!selectedTallyToDelete || deletingFile}
+                        className="bg-[#F87A9E] hover:bg-[#E11D48] text-white font-bold px-3 py-1.5 rounded-lg transition text-xs flex items-center gap-1 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs flex-shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* List of uploaded Tally sheets with individual quick trash button */}
+                  <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                    {tallyFiles.map((file) => (
+                      <div
+                        key={file.id}
+                        className="flex items-center justify-between p-2 rounded-xl bg-white border border-[#E9E4FA] hover:border-[#9B87F5]/50 transition group"
+                      >
+                        <div className="min-w-0 pr-2">
+                          <p className="font-bold text-xs text-[#1F1B2E] truncate group-hover:text-[#9B87F5] transition">
+                            {file.fileName || file.file_name}
+                          </p>
+                          <p className="text-[10px] text-[#6B6580] mt-0.5">
+                            {file.uploadTime ? new Date(file.uploadTime).toLocaleString('en-IN') : 'Uploaded'}
+                            {file.metadata?.total_rows ? ` · ${file.metadata.total_rows.toLocaleString()} entries` : ''}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setDeleteFileConfirm(file)}
+                          className="p-1.5 rounded-lg bg-[#F87A9E]/15 hover:bg-[#F87A9E] text-[#E11D48] hover:text-white transition cursor-pointer flex-shrink-0"
+                          title="Delete this specific Tally sheet"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-[#6B6580] italic bg-[#E8E4FF]/20 p-2.5 rounded-xl border border-dashed border-[#E9E4FA] text-center">
+                  No Tally sheets currently uploaded.
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -555,6 +786,82 @@ export default function UploadPanel({ onUploadSuccess }) {
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 Yes, Purge Data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Specific Single File Delete Confirmation Modal */}
+      {deleteFileConfirm && (
+        <div className="fixed inset-0 bg-[#1F1B2E]/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E9E4FA] text-[#1F1B2E] rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-scale-up">
+            <div className="flex items-center gap-3 border-b border-[#E9E4FA] pb-3">
+              <div className="p-2.5 rounded-xl bg-[#F87A9E]/15 text-[#E11D48]">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-[#1F1B2E]">Delete Uploaded File</h3>
+                <p className="text-xs text-[#6B6580] font-medium">Remove this specific dataset file</p>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <p className="text-[#1F1B2E] leading-relaxed font-semibold">
+                Are you sure you want to delete file{' '}
+                <span className="text-[#9B87F5] font-black underline">
+                  "{deleteFileConfirm.fileName || deleteFileConfirm.file_name}"
+                </span>
+                ?
+              </p>
+              <div className="p-3 bg-[#E8E4FF]/30 rounded-xl border border-[#E9E4FA] space-y-1.5">
+                <p className="font-bold text-[#1F1B2E]">
+                  Type:{' '}
+                  <span className="font-semibold text-[#6B6580]">
+                    {deleteFileConfirm.metadata?.upload_type === '26AS_TDS' || (deleteFileConfirm.fileName || deleteFileConfirm.file_name || '').toLowerCase().includes('26as')
+                      ? 'Form 26AS (Govt Tax Deductions)' 
+                      : 'Tally Ledger (Accountant CSV)'}
+                  </span>
+                </p>
+                {deleteFileConfirm.metadata?.total_rows && (
+                  <p className="font-bold text-[#1F1B2E]">
+                    Entries:{' '}
+                    <span className="font-semibold text-[#6B6580]">
+                      {deleteFileConfirm.metadata.total_rows.toLocaleString()} records
+                    </span>
+                  </p>
+                )}
+                <p className="text-[11px] text-[#2E8B57] font-bold pt-1 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Only this file's records will be removed. All other uploaded files of this year will remain safe and intact.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setDeleteFileConfirm(null)}
+                disabled={deletingFile}
+                className="px-4 py-2 text-xs font-bold text-[#6B6580] bg-[#E8E4FF]/50 hover:bg-[#E8E4FF] rounded-xl border border-[#E9E4FA] transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => executeDeleteSingleFile(deleteFileConfirm)}
+                disabled={deletingFile}
+                className="px-4 py-2 text-xs font-black text-white bg-[#F87A9E] hover:bg-[#E11D48] rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {deletingFile ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Deleting File...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Yes, Delete This File
+                  </>
+                )}
               </button>
             </div>
           </div>
