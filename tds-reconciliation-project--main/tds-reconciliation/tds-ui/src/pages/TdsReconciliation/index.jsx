@@ -37,7 +37,8 @@ export default function TdsReconciliation() {
         overallStatus: overallStatus === 'All' ? '' : overallStatus,
         coverageFilter: coverageFilter === 'All' ? '' : coverageFilter,
         fy: fyFilter,
-        sortBy
+        sortBy,
+        followupStatus: responseFilter === 'All' ? '' : responseFilter
       });
 
       if (res && res.success && Array.isArray(res.data)) {
@@ -74,7 +75,7 @@ export default function TdsReconciliation() {
 
   useEffect(() => {
     fetchReport();
-  }, [page, overallStatus, coverageFilter, sortBy, refreshTrigger, refreshKey, fyFilter]);
+  }, [page, overallStatus, coverageFilter, sortBy, refreshTrigger, refreshKey, fyFilter, responseFilter]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -305,9 +306,7 @@ export default function TdsReconciliation() {
 
       {/* Data Table */}
       <ReconciliationTable
-        rows={responseFilter === 'All' ? rows : rows.filter(r =>
-          responseFilter === 'done' ? Boolean(r.isFollowupDone) : !Boolean(r.isFollowupDone)
-        )}
+        rows={rows}
         total={total}
         page={page}
         limit={limit}
