@@ -46,7 +46,7 @@ export default function FollowUp() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [itemToEdit, setItemToEdit] = useState(null);
 
-  const statusOptions = [
+  const standardStatusOptions = [
     'Call Not Picked Up',
     'Call Tomorrow',
     'HR Left',
@@ -56,6 +56,13 @@ export default function FollowUp() {
     'Mailed',
     'Mail Reply'
   ];
+
+  const statusOptions = React.useMemo(() => {
+    const customList = (items || [])
+      .map(i => i.status)
+      .filter(st => st && !standardStatusOptions.includes(st));
+    return [...standardStatusOptions, ...Array.from(new Set(customList))];
+  }, [items]);
 
   // Handle pre-fill from Reconciliation table
   useEffect(() => {
