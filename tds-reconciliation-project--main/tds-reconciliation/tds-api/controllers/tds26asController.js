@@ -733,64 +733,50 @@ export const getCleaningQueue = async (req, res) => {
     `;
 
     const [rows] = await db.execute(query);
+    if (!rows || rows.length === 0) {
+      return res.json({ success: true, count: 0, data: [] });
+    }
 
-    const [all26as] = await db.execute('SELECT DISTINCT deductor_name, UPPER(TRIM(tan_no)) as tan_no FROM tds_26as_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ""');
-    const [allTally] = await db.execute('SELECT DISTINCT party_name, UPPER(TRIM(tan_no)) as tan_no FROM tds_tally_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ""');
+    const [all26as] = await db.execute('SELECT deductor_name, UPPER(TRIM(tan_no)) as tan_no FROM tds_26as_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != "" LIMIT 2000');
+    const [allTally] = await db.execute('SELECT party_name, UPPER(TRIM(tan_no)) as tan_no FROM tds_tally_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != "" LIMIT 2000');
 
     const as26ByTan = new Map();
+    const as26ByName = new Map();
     for (const e of all26as) {
-      const key = e.tan_no ? String(e.tan_no).trim().toUpperCase() : '';
-      if (key && !as26ByTan.has(key)) as26ByTan.set(key, e);
-    }
-    const tallyByTan = new Map();
-    for (const e of allTally) {
-      const key = e.tan_no ? String(e.tan_no).trim().toUpperCase() : '';
-      if (key && !tallyByTan.has(key)) tallyByTan.set(key, e);
+      const tanKey = e.tan_no ? String(e.tan_no).trim().toUpperCase() : '';
+      if (tanKey && !as26ByTan.has(tanKey)) as26ByTan.set(tanKey, e);
+      const nameKey = e.deductor_name ? String(e.deductor_name).trim().toUpperCase() : '';
+      if (nameKey && !as26ByName.has(nameKey)) as26ByName.set(nameKey, e);
     }
 
-    const findFuzzy = (name, list, nameField) => {
-      let best = null;
-      let bestScore = 0;
-      for (const f of list) {
-        const score = calculateStringSimilarity(name, f[nameField]);
-        if (score >= 80 && score > bestScore) {
-          best = f;
-          bestScore = score;
-        }
-      }
-      return best;
-    };
+    const tallyByTan = new Map();
+    const tallyByName = new Map();
+    for (const e of allTally) {
+      const tanKey = e.tan_no ? String(e.tan_no).trim().toUpperCase() : '';
+      if (tanKey && !tallyByTan.has(tanKey)) tallyByTan.set(tanKey, e);
+      const nameKey = e.party_name ? String(e.party_name).trim().toUpperCase() : '';
+      if (nameKey && !tallyByName.has(nameKey)) tallyByName.set(nameKey, e);
+    }
 
     const cleaningItems = rows.map((r) => {
       const tan = r.tanNo ? String(r.tanNo).trim().toUpperCase() : '';
       const booksName = r.booksCompanyName || 'Unknown Client';
+      const normBooksName = String(booksName).trim().toUpperCase();
 
       let as26Name = null;
       let as26Tan = null;
-      const as26ExactMatch = tan ? as26ByTan.get(tan) : null;
-      if (as26ExactMatch) {
-        as26Name = as26ExactMatch.deductor_name;
-        as26Tan = as26ExactMatch.tan_no;
-      } else if (booksName && booksName !== 'Unknown Client') {
-        const fuzzy = findFuzzy(booksName, all26as, 'deductor_name');
-        if (fuzzy) {
-          as26Name = fuzzy.deductor_name;
-          as26Tan = fuzzy.tan_no;
-        }
+      const as26Match = (tan ? as26ByTan.get(tan) : null) || (normBooksName ? as26ByName.get(normBooksName) : null);
+      if (as26Match) {
+        as26Name = as26Match.deductor_name;
+        as26Tan = as26Match.tan_no;
       }
 
       let tallyName = null;
       let tallyTan = null;
-      const tallyExactMatch = tan ? tallyByTan.get(tan) : null;
-      if (tallyExactMatch) {
-        tallyName = tallyExactMatch.party_name;
-        tallyTan = tallyExactMatch.tan_no;
-      } else if (booksName && booksName !== 'Unknown Client') {
-        const fuzzy = findFuzzy(booksName, allTally, 'party_name');
-        if (fuzzy) {
-          tallyName = fuzzy.party_name;
-          tallyTan = fuzzy.tan_no;
-        }
+      const tallyMatch = (tan ? tallyByTan.get(tan) : null) || (normBooksName ? tallyByName.get(normBooksName) : null);
+      if (tallyMatch) {
+        tallyName = tallyMatch.party_name;
+        tallyTan = tallyMatch.tan_no;
       }
 
       const namesToCompare = [tallyName, as26Name, booksName].filter(Boolean);
