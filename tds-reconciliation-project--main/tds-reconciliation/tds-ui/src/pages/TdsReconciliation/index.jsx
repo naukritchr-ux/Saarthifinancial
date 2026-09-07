@@ -47,26 +47,38 @@ export default function TdsReconciliation() {
         setRows(res.data);
         setTotal(res.total ?? res.data.length);
         
-        const tempStats = { total: res.total ?? res.data.length, matched: 0, less: 0, excess: 0, notReceived: 0 };
-        res.data.forEach(r => {
-          const as26 = parseFloat(r.as26Tds || 0);
-          const tally = parseFloat(r.tallyTds || 0);
-          const saarthi = parseFloat(r.saarthiTds || r.booksTds || 0);
-          const effectiveStatus = (tally === 0 && saarthi === 0 && as26 > 0) ? 'Excess' : r.financialStatus;
+        // Prefer server-computed stats (covers all pages), fall back to page-level tally
+        if (res.stats && typeof res.stats.total === 'number') {
+          setStats({
+            total: res.stats.total,
+            matched: res.stats.matched || 0,
+            less: res.stats.less || 0,
+            excess: res.stats.excess || 0,
+            notReceived: res.stats.notReceived || 0
+          });
+        } else {
+          // Legacy fallback: tally from current page only
+          const tempStats = { total: res.total ?? res.data.length, matched: 0, less: 0, excess: 0, notReceived: 0 };
+          res.data.forEach(r => {
+            const as26 = parseFloat(r.as26Tds || 0);
+            const tally = parseFloat(r.tallyTds || 0);
+            const saarthi = parseFloat(r.saarthiTds || r.booksTds || 0);
+            const effectiveStatus = (tally === 0 && saarthi === 0 && as26 > 0) ? 'Excess' : r.financialStatus;
 
-          if (as26 === 0 || effectiveStatus === 'Not Received') {
-            tempStats.notReceived++;
-          } else if (effectiveStatus === 'Match') {
-            tempStats.matched++;
-          } else if (effectiveStatus === 'Less Paid') {
-            tempStats.less++;
-          } else if (effectiveStatus === 'Excess') {
-            tempStats.excess++;
-          } else {
-            tempStats.notReceived++;
-          }
-        });
-        setStats(tempStats);
+            if (as26 === 0 || effectiveStatus === 'Not Received') {
+              tempStats.notReceived++;
+            } else if (effectiveStatus === 'Match') {
+              tempStats.matched++;
+            } else if (effectiveStatus === 'Less Paid') {
+              tempStats.less++;
+            } else if (effectiveStatus === 'Excess') {
+              tempStats.excess++;
+            } else {
+              tempStats.notReceived++;
+            }
+          });
+          setStats(tempStats);
+        }
       }
     } catch (err) {
       console.error('Failed to load reconciliation report:', err);
