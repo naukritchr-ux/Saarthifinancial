@@ -1047,17 +1047,23 @@ export const getReconciliationReport = async (req, res) => {
       sortBy = 'updated_at',
       booksVs26asStatus = '',
       booksVsTallyStatus = '',
-      as26VsTallyStatus = ''
+      as26VsTallyStatus = '',
+      followupStatus = ''
     } = req.query;
 
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.max(1, Math.min(1000, parseInt(limit) || 20));
     const offset = (pageNum - 1) * limitNum;
 
-
-
     let whereClauses = [];
     const queryParams = [];
+
+    // Filter by follow-up done / pending
+    if (followupStatus === 'done' || followupStatus === '1' || followupStatus === 'true') {
+      whereClauses.push('(tr.is_followup_done = 1 OR tr.is_followup_done = true)');
+    } else if (followupStatus === 'pending' || followupStatus === '0' || followupStatus === 'false') {
+      whereClauses.push('(tr.is_followup_done = 0 OR tr.is_followup_done IS NULL OR tr.is_followup_done = false)');
+    }
 
     // Always exclude zero-data ghost rows where all 3 TDS amounts are zero/null
     whereClauses.push("NOT (COALESCE(tr.books_tds, 0) = 0 AND COALESCE(tr.as26_tds, 0) = 0 AND COALESCE(tr.tally_tds, 0) = 0)");
