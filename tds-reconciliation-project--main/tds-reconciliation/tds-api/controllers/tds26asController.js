@@ -752,8 +752,8 @@ export const getCleaningQueue = async (req, res) => {
       return res.json({ success: true, count: 0, data: [] });
     }
 
-    const [all26as] = await db.execute('SELECT deductor_name, UPPER(TRIM(tan_no)) as tan_no FROM tds_26as_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != "" LIMIT 2000');
-    const [allTally] = await db.execute('SELECT party_name, UPPER(TRIM(tan_no)) as tan_no FROM tds_tally_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != "" LIMIT 2000');
+    const [all26as] = await db.execute("SELECT deductor_name, UPPER(TRIM(tan_no)) as tan_no FROM tds_26as_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' LIMIT 2000");
+    const [allTally] = await db.execute("SELECT party_name, UPPER(TRIM(tan_no)) as tan_no FROM tds_tally_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' LIMIT 2000");
 
     const as26ByTan = new Map();
     const as26ByName = new Map();
