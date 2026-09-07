@@ -1617,6 +1617,12 @@ export const deleteUploadBatch = async (req, res) => {
     }
 
     try {
+      await reconcile(null, null);
+    } catch (recErr) {
+      console.warn('Reconcile after delete warning:', recErr.message);
+    }
+
+    try {
       await db.execute(
         `DELETE FROM tds_reconciliation_results 
          WHERE (as26_tds IS NULL OR as26_tds = 0) 
@@ -1625,10 +1631,6 @@ export const deleteUploadBatch = async (req, res) => {
            AND (is_manually_edited IS NULL OR is_manually_edited = 0)`
       );
     } catch (e) {}
-
-    reconcile(null, null).catch(recErr => {
-      console.warn('Background reconcile after delete warning:', recErr.message);
-    });
 
     res.json({ success: true, message: 'Upload file batch deleted successfully', id });
   } catch (error) {
