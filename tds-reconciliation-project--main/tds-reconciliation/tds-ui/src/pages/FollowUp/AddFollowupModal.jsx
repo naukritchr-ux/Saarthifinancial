@@ -13,7 +13,22 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
   const [accountantPerson, setAccountantPerson] = useState(isEditing ? (itemToEdit.accountantPerson || '') : '');
   const [accountantNumber, setAccountantNumber] = useState(isEditing ? (itemToEdit.accountantNumber || '') : '');
   const [method, setMethod] = useState(isEditing ? itemToEdit.method : 'Call');
-  const [status, setStatus] = useState(isEditing ? itemToEdit.status : 'Call Tomorrow');
+  const standardOptions = [
+    'Call Not Picked Up',
+    'Call Tomorrow',
+    'HR Left',
+    'Form Received',
+    'TDS Paid',
+    'Check & Revert',
+    'Mailed',
+    'Mail Reply'
+  ];
+
+  const initialRawStatus = isEditing ? (itemToEdit.status || 'Call Tomorrow') : 'Call Tomorrow';
+  const isCustomStatus = isEditing && initialRawStatus && !standardOptions.includes(initialRawStatus);
+
+  const [status, setStatus] = useState(isCustomStatus ? 'Custom' : initialRawStatus);
+  const [customStatus, setCustomStatus] = useState(isCustomStatus ? initialRawStatus : '');
   const [notes, setNotes] = useState(isEditing ? itemToEdit.notes : '');
   const [followupDate, setFollowupDate] = useState(
     isEditing ? (itemToEdit.followupDate ? itemToEdit.followupDate.split('T')[0] : new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0]
@@ -24,17 +39,6 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-
-  const statusOptions = [
-    'Call Not Picked Up',
-    'Call Tomorrow',
-    'HR Left',
-    'Form Received',
-    'TDS Paid',
-    'Check & Revert',
-    'Mailed',
-    'Mail Reply'
-  ];
 
   // Close on Escape key press
   useEffect(() => {
@@ -52,8 +56,15 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
       return;
     }
 
+    if (status === 'Custom' && !customStatus.trim()) {
+      setError('Please type your custom follow-up status');
+      return;
+    }
+
     setLoading(true);
     setError(null);
+
+    const resolvedStatus = (status === 'Custom' ? customStatus.trim() : status) || 'Call Tomorrow';
 
     const payload = {
       tanNo: tanNo.trim().toUpperCase(),
@@ -64,7 +75,7 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
       accountantPerson: accountantPerson.trim(),
       accountantNumber: accountantNumber.trim(),
       method,
-      status,
+      status: resolvedStatus,
       notes: notes.trim(),
       followupDate,
       nextFollowupDate: nextFollowupDate || null
@@ -261,10 +272,28 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
                   onChange={(e) => setStatus(e.target.value)}
                   className="w-full bg-white border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:border-[#9B87F5] transition-all cursor-pointer"
                 >
-                  {statusOptions.map((opt) => (
+                  {standardOptions.map((opt) => (
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
+                  <option value="Custom">Custom Status...</option>
                 </select>
+
+                {status === 'Custom' && (
+                  <div className="mt-2.5 animate-fade-in">
+                    <label className="block text-[10px] font-bold text-[#9B87F5] uppercase tracking-wider mb-1">
+                      Type Custom Status <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      autoFocus
+                      value={customStatus}
+                      onChange={(e) => setCustomStatus(e.target.value)}
+                      placeholder="e.g. Awaiting Director Approval, Disputed Amount..."
+                      className="w-full bg-white border-2 border-[#9B87F5] text-[#1F1B2E] rounded-xl px-3 py-2 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#9B87F5]/30 transition-all shadow-xs"
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
