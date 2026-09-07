@@ -64,6 +64,8 @@ router.get('/upload-history', getUploadHistory);
 router.delete('/batches/:id', deleteUploadBatch);
 router.get('/export', exportReconciliationCSV);
 router.patch('/report/:id/followup-done', toggleFollowupDone);
+router.put('/report/:id/followup-done', toggleFollowupDone);
+router.post('/report/:id/followup-done', toggleFollowupDone);
 
 
 
