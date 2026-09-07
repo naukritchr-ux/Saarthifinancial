@@ -17,5 +17,8 @@ router.put('/:id', updateFollowup);
 router.delete('/purge', purgeFollowups);
 router.post('/purge', purgeFollowups);
 router.delete('/:id', deleteFollowup);
+router.post('/:id/delete', deleteFollowup);
+router.post('/delete/:id', deleteFollowup);
+router.delete('/', deleteFollowup);
 
 export default router;

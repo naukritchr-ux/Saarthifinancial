@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { RefreshCw, Search, Download, Database, CheckCircle, AlertTriangle, X, ShieldCheck } from 'lucide-react';
 import ReconciliationTable from './ReconciliationTable';
 import EditModal from './EditModal';
+import AddFollowupModal from '../FollowUp/AddFollowupModal';
 import { getReconciliationReport, getCsvExportUrl, triggerSeed, toggleFollowupDone } from '../../api/tdsApi';
 import { useApp } from '../../context/AppContext';
 
@@ -11,7 +12,7 @@ export default function TdsReconciliation() {
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [limit] = useState(25);
+  const [limit, setLimit] = useState(25);
   
   const [search, setSearch] = useState('');
   const [overallStatus, setOverallStatus] = useState('All');
@@ -23,6 +24,7 @@ export default function TdsReconciliation() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [activeEditRow, setActiveEditRow] = useState(null);
   const [activeViewRow, setActiveViewRow] = useState(null);
+  const [followupRow, setFollowupRow] = useState(null);
 
   // Statistics counters
   const [stats, setStats] = useState({ total: 0, matched: 0, less: 0, excess: 0, notReceived: 0 });
@@ -314,7 +316,27 @@ export default function TdsReconciliation() {
         onEditClick={setActiveEditRow}
         onViewClick={setActiveViewRow}
         onToggleFollowup={handleToggleFollowup}
+        onFollowupClick={(r) => setFollowupRow(r)}
       />
+
+      {/* Direct Follow-up Modal on Reconciliation Table */}
+      {followupRow && (
+        <AddFollowupModal
+          initialData={{
+            tan: followupRow.tanNo,
+            company: followupRow.companyName && !['Client Entity', 'Unknown Client', 'Unknown Company', 'Unassigned Entity'].includes(followupRow.companyName.trim()) 
+              ? followupRow.companyName 
+              : (followupRow.tallyPartyName || followupRow.as26DeductorName || followupRow.deductorName || followupRow.partyName || ''),
+            contactPerson: followupRow.contactPersonName || '',
+            contactNumber: followupRow.contactNumber || ''
+          }}
+          onClose={() => setFollowupRow(null)}
+          onSaveSuccess={() => {
+            setFollowupRow(null);
+            fetchReport();
+          }}
+        />
+      )}
 
       {/* Manual Edit Modal */}
       {activeEditRow && (

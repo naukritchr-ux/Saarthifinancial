@@ -21,7 +21,8 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
     'TDS Paid',
     'Check & Revert',
     'Mailed',
-    'Mail Reply'
+    'Mail Reply',
+    'Custom'
   ];
 
   const initialRawStatus = isEditing ? (itemToEdit.status || 'Call Tomorrow') : 'Call Tomorrow';
@@ -275,7 +276,6 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
                   {standardOptions.map((opt) => (
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
-                  <option value="Custom">Custom Status...</option>
                 </select>
 
                 {status === 'Custom' && (

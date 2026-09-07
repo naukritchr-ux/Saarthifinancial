@@ -29,7 +29,8 @@ export default function ReconciliationTable({
   onPageChange, 
   onEditClick,
   onViewClick,
-  onToggleFollowup
+  onToggleFollowup,
+  onFollowupClick
 }) {
   const { navigateTo } = useApp();
   const [expandedRow, setExpandedRow] = useState(null);
@@ -261,7 +262,7 @@ export default function ReconciliationTable({
                       {/* Log Follow-up Call button */}
                       <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
                         <button
-                          onClick={() => navigateTo('follow-up', { tan: row.tanNo, company: displayName })}
+                          onClick={() => onFollowupClick ? onFollowupClick(row) : navigateTo('follow-up', { tan: row.tanNo, company: displayName })}
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#FBBF77]/20 text-[#D97706] border border-[#FBBF77]/40 font-black hover:bg-[#FBBF77]/30 transition text-[11px] cursor-pointer shadow-2xs"
                         >
                           <PhoneCall className="w-3 h-3" />
