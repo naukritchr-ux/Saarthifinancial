@@ -5,9 +5,9 @@ import db from '../config/db.js';
 import { reconcile } from '../services/tdsReconciliationService.js';
 import { seedEmbeddedDataset, markPurgedFlag, clearPurgedFlag } from '../seed_embedded_dataset.js';
 import { v4 as uuidv4 } from 'uuid';
-import { normalizeFY } from '../utils/fyHelper.js';
+import { normalizeFY, getFinancialYearFromDate } from '../utils/fyHelper.js';
 
-export { normalizeFY };
+export { normalizeFY, getFinancialYearFromDate };
 
 // Helper to format values
 const cleanNumber = (val) => {
@@ -1798,6 +1798,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
     };
 
     const normalize = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+    const makeKey = (tan, fy) => `${(tan || '').toUpperCase().trim()}|${(fy || '').toUpperCase().trim()}`;
 
     // Map legals GST -> TAN and normalized company name -> TAN
     const legalGstToTan = new Map();
@@ -1813,21 +1814,60 @@ export const syncSaarthiLiveApi = async (req, res) => {
       }
     });
 
-    // Accumulate invoice TDS amounts from CRM
-    const crmTdsByTan = new Map();
-    const crmTdsByNormName = new Map();
+    // Accumulate invoice TDS amounts from CRM by (TAN, Financial Year)
+    const crmTdsByTanFy = new Map();
+    const crmTdsByNormNameFy = new Map();
+    const distinctFyByTan = new Map();
+    const distinctFyByNorm = new Map();
 
     invoicesData.forEach(inv => {
-      const tds = parseFloat(inv.tds || 0);
-      if (tds > 0) {
-        const gst = String(inv.gstNo || '').trim().toUpperCase();
-        const norm = normalize(inv.companyName);
-        const tan = legalGstToTan.get(gst) || legalNameToTan.get(norm);
-        if (tan) {
-          crmTdsByTan.set(tan, (crmTdsByTan.get(tan) || 0) + tds);
+      const tds = parseFloat(inv.tds || inv.legal_amount || inv.amount || 0);
+      const invFy = normalizeFY(inv.financialYear || inv.fy || inv.financial_year || inv.fin_year || inv.finYear) ||
+                    getFinancialYearFromDate(inv.legal_invoiceDate || inv.invoiceDate || inv.billDate || inv.date || inv.created_at) || null;
+      
+      const gst = String(inv.gstNo || '').trim().toUpperCase();
+      const norm = normalize(inv.companyName || inv.partyName);
+      const tan = legalGstToTan.get(gst) || legalNameToTan.get(norm) || (inv.tanNo ? String(inv.tanNo).trim().toUpperCase() : null);
+
+      if (tan) {
+        if (!distinctFyByTan.has(tan)) distinctFyByTan.set(tan, new Set());
+        if (invFy) distinctFyByTan.get(tan).add(invFy);
+        if (tds > 0) {
+          const key = makeKey(tan, invFy);
+          crmTdsByTanFy.set(key, (crmTdsByTanFy.get(key) || 0) + tds);
         }
-        if (norm) {
-          crmTdsByNormName.set(norm, (crmTdsByNormName.get(norm) || 0) + tds);
+      }
+      if (norm) {
+        if (!distinctFyByNorm.has(norm)) distinctFyByNorm.set(norm, new Set());
+        if (invFy) distinctFyByNorm.get(norm).add(invFy);
+        if (tds > 0) {
+          const normKey = makeKey(norm, invFy);
+          crmTdsByNormNameFy.set(normKey, (crmTdsByNormNameFy.get(normKey) || 0) + tds);
+        }
+      }
+    });
+
+    // Also check date fields on legalsData rows
+    legalsData.forEach(l => {
+      const legalTds = parseFloat(l.legal_amount || 0);
+      const legalFy = getFinancialYearFromDate(l.legal_invoiceDate || l.contractDate) || null;
+      const tan = String(l.tanNo || '').trim().toUpperCase();
+      const norm = normalize(l.companyName || l.partyName);
+
+      if (tan && legalFy) {
+        if (!distinctFyByTan.has(tan)) distinctFyByTan.set(tan, new Set());
+        distinctFyByTan.get(tan).add(legalFy);
+        if (legalTds > 0) {
+          const key = makeKey(tan, legalFy);
+          crmTdsByTanFy.set(key, (crmTdsByTanFy.get(key) || 0) + legalTds);
+        }
+      }
+      if (norm && legalFy) {
+        if (!distinctFyByNorm.has(norm)) distinctFyByNorm.set(norm, new Set());
+        distinctFyByNorm.get(norm).add(legalFy);
+        if (legalTds > 0) {
+          const normKey = makeKey(norm, legalFy);
+          crmTdsByNormNameFy.set(normKey, (crmTdsByNormNameFy.get(normKey) || 0) + legalTds);
         }
       }
     });
@@ -1853,24 +1893,33 @@ export const syncSaarthiLiveApi = async (req, res) => {
       const companyName = String(item.companyName || '').trim();
       const norm = normalize(companyName);
       const itemTan = String(item.tanNo || item.tanNumber || '').trim().toUpperCase() || legalGstToTan.get(gst) || legalNameToTan.get(norm) || null;
-      const itemTds = (itemTan && crmTdsByTan.get(itemTan)) || (norm && crmTdsByNormName.get(norm)) || parseFloat(item.tdsAmount || item.tds_amount || item.tds || 0) || 0;
+      
+      const itemFys = (itemTan && distinctFyByTan.get(itemTan)) || (norm && distinctFyByNorm.get(norm)) || new Set([null]);
+      const fyList = itemFys.size > 0 ? Array.from(itemFys) : [null];
 
-      clientMasters.push({
-        saarthi_client_id: item.id ? parseInt(item.id) : null,
-        company_name: companyName,
-        normalized_name: normalizeCompanyName(companyName),
-        gst_no: gstRegex.test(gst) ? gst : null,
-        pan_no: pan,
-        tan_no: itemTan && tanRegex.test(itemTan) ? itemTan : null,
-        contact_person_name: String(item.contactPersonName || item.contactPerson || item.clientName || item.personName || item.contact_name || '').trim() || null,
-        designation: String(item.contactDesignation || item.designation || item.contact_designation || item.role || '').trim() || null,
-        contact_number: String(item.contactPhone || item.contactPhoneNumber || item.phoneNumber || item.mobile || item.mobileNo || item.phone || item.contact_no || '').trim() || null,
-        email_id: String(item.contactEmail || item.contactEmailId || item.emailId || item.email || item.contact_email || '').trim() || null,
-        teamleader: String(item.teamLeader || item.teamleader || item.tlName || item.manager || '').trim() || null,
-        saarthi_tds: itemTds,
-        saarthi_amount: parseFloat(item.amount || item.grossAmount || item.gross_amount || 0) || 0,
-        status: String(item.status || 'active').toLowerCase()
-      });
+      for (const fy of fyList) {
+        const itemTds = (itemTan && crmTdsByTanFy.get(makeKey(itemTan, fy))) ||
+                        (norm && crmTdsByNormNameFy.get(makeKey(norm, fy))) ||
+                        parseFloat(item.tdsAmount || item.tds_amount || item.tds || 0) || 0;
+
+        clientMasters.push({
+          saarthi_client_id: item.id ? parseInt(item.id) : null,
+          company_name: companyName,
+          normalized_name: normalizeCompanyName(companyName),
+          gst_no: gstRegex.test(gst) ? gst : null,
+          pan_no: pan,
+          tan_no: itemTan && tanRegex.test(itemTan) ? itemTan : null,
+          contact_person_name: String(item.contactPersonName || item.contactPerson || item.clientName || item.personName || item.contact_name || '').trim() || null,
+          designation: String(item.contactDesignation || item.designation || item.contact_designation || item.role || '').trim() || null,
+          contact_number: String(item.contactPhone || item.contactPhoneNumber || item.phoneNumber || item.mobile || item.mobileNo || item.phone || item.contact_no || '').trim() || null,
+          email_id: String(item.contactEmail || item.contactEmailId || item.emailId || item.email || item.contact_email || '').trim() || null,
+          teamleader: String(item.teamLeader || item.teamleader || item.tlName || item.manager || '').trim() || null,
+          financial_year: fy,
+          saarthi_tds: itemTds,
+          saarthi_amount: parseFloat(item.amount || item.grossAmount || item.gross_amount || 0) || 0,
+          status: String(item.status || 'active').toLowerCase()
+        });
+      }
     });
 
     legalsData.forEach(item => {
@@ -1880,49 +1929,56 @@ export const syncSaarthiLiveApi = async (req, res) => {
       const pan = String(item.panNo || item.panNumber || '').trim().toUpperCase() || extractPanFromGst(gst);
       const companyName = String(item.companyName || item.partyName || '').trim();
       const norm = normalize(companyName);
-      const itemTds = (tan && crmTdsByTan.get(tan)) || (norm && crmTdsByNormName.get(norm)) || parseFloat(item.tdsAmount || item.tds_amount || item.tds || 0) || 0;
       
-      clientMasters.push({
-        saarthi_client_id: item.id ? parseInt(item.id) : null,
-        company_name: companyName,
-        normalized_name: normalizeCompanyName(companyName),
-        gst_no: gstRegex.test(gst) ? gst : null,
-        pan_no: panRegex.test(pan) ? pan : null,
-        tan_no: tanRegex.test(tan) ? tan : null,
-        contact_person_name: String(item.contactPersonName || item.contactPerson || item.clientName || item.personName || item.contact_name || '').trim() || null,
-        designation: String(item.designation || item.contactDesignation || item.contact_designation || item.role || '').trim() || null,
-        contact_number: String(item.contactPhoneNumber || item.phoneNumber || item.mobile || item.mobileNo || item.contactPhone || item.phone || item.contact_no || '').trim() || null,
-        email_id: String(item.contactEmailId || item.emailId || item.email || item.contactEmail || item.contact_email || '').trim() || null,
-        teamleader: String(item.teamLeader || item.teamleader || item.tlName || item.manager || '').trim() || null,
-        saarthi_tds: itemTds,
-        saarthi_amount: parseFloat(item.amount || item.grossAmount || item.gross_amount || 0) || 0,
-        status: String(item.status || 'ACTIVE').toLowerCase()
-      });
+      const itemFys = (tan && distinctFyByTan.get(tan)) || (norm && distinctFyByNorm.get(norm)) || new Set([null]);
+      const fyList = itemFys.size > 0 ? Array.from(itemFys) : [null];
+
+      for (const fy of fyList) {
+        const itemTds = (tan && crmTdsByTanFy.get(makeKey(tan, fy))) ||
+                        (norm && crmTdsByNormNameFy.get(makeKey(norm, fy))) ||
+                        parseFloat(item.tdsAmount || item.tds_amount || item.tds || 0) || 0;
+        
+        clientMasters.push({
+          saarthi_client_id: item.id ? parseInt(item.id) : null,
+          company_name: companyName,
+          normalized_name: normalizeCompanyName(companyName),
+          gst_no: gstRegex.test(gst) ? gst : null,
+          pan_no: panRegex.test(pan) ? pan : null,
+          tan_no: tanRegex.test(tan) ? tan : null,
+          contact_person_name: String(item.contactPersonName || item.contactPerson || item.clientName || item.personName || item.contact_name || '').trim() || null,
+          designation: String(item.designation || item.contactDesignation || item.contact_designation || item.role || '').trim() || null,
+          contact_number: String(item.contactPhoneNumber || item.phoneNumber || item.mobile || item.mobileNo || item.contactPhone || item.phone || item.contact_no || '').trim() || null,
+          email_id: String(item.contactEmailId || item.emailId || item.email || item.contactEmail || item.contact_email || '').trim() || null,
+          teamleader: String(item.teamLeader || item.teamleader || item.tlName || item.manager || '').trim() || null,
+          financial_year: fy,
+          saarthi_tds: itemTds,
+          saarthi_amount: parseFloat(item.amount || item.grossAmount || item.gross_amount || 0) || 0,
+          status: String(item.status || 'ACTIVE').toLowerCase()
+        });
+      }
     });
 
-    // Filter out records that have neither a TAN nor a client ID nor PAN —
-    // they can't be matched to reconciliation rows and just accumulate as dead junk on every sync.
+    // Filter out records that have neither a TAN nor a client ID nor PAN
     const usableMasters = clientMasters.filter(m => m.tan_no || m.saarthi_client_id || m.pan_no);
     const skippedCount = clientMasters.length - usableMasters.length;
     if (skippedCount > 0) {
       console.log(`⚠️  Skipped ${skippedCount} records with no TAN, PAN, or client ID (unreconcilable).`);
     }
 
-    // 1. Fetch all existing records in ONE query for fast in-memory matching
+    // 1. Fetch all existing records in ONE query for fast in-memory matching by (TAN/Client, Financial Year)
     const [existingAll] = await db.execute(
-      'SELECT id, saarthi_client_id, UPPER(TRIM(tan_no)) as tan_no, UPPER(TRIM(pan_no)) as pan_no, UPPER(TRIM(company_name)) as company_name FROM tds_dues'
+      'SELECT id, saarthi_client_id, UPPER(TRIM(tan_no)) as tan_no, UPPER(TRIM(pan_no)) as pan_no, UPPER(TRIM(company_name)) as company_name, financial_year FROM tds_dues'
     );
 
-    const clientIdMap = new Map();
-    const tanMap = new Map();
-    const panMap = new Map();
-    const nameMap = new Map();
+    const clientTanFyMap = new Map();
+    const clientIdFyMap = new Map();
+    const clientNameFyMap = new Map();
 
     (existingAll || []).forEach(row => {
-      if (row.saarthi_client_id) clientIdMap.set(row.saarthi_client_id, row.id);
-      if (row.tan_no) tanMap.set(row.tan_no.toUpperCase(), row.id);
-      if (row.pan_no) panMap.set(row.pan_no.toUpperCase(), row.id);
-      if (row.company_name) nameMap.set(row.company_name.toUpperCase(), row.id);
+      const fy = row.financial_year ? row.financial_year.trim() : '';
+      if (row.tan_no) clientTanFyMap.set(makeKey(row.tan_no, fy), row.id);
+      if (row.saarthi_client_id) clientIdFyMap.set(`${row.saarthi_client_id}|${fy}`, row.id);
+      if (row.company_name) clientNameFyMap.set(makeKey(row.company_name, fy), row.id);
     });
 
     const toUpdate = [];
@@ -1930,25 +1986,23 @@ export const syncSaarthiLiveApi = async (req, res) => {
     const seenNewKeys = new Set();
 
     for (const master of usableMasters) {
+      const fy = master.financial_year || '';
       let matchedId = null;
-      if (master.saarthi_client_id && clientIdMap.has(master.saarthi_client_id)) {
-        matchedId = clientIdMap.get(master.saarthi_client_id);
-      } else if (master.tan_no && tanMap.has(master.tan_no.toUpperCase())) {
-        matchedId = tanMap.get(master.tan_no.toUpperCase());
-      } else if (master.pan_no && panMap.has(master.pan_no.toUpperCase())) {
-        matchedId = panMap.get(master.pan_no.toUpperCase());
-      } else if (master.company_name && nameMap.has(master.company_name.toUpperCase())) {
-        matchedId = nameMap.get(master.company_name.toUpperCase());
+
+      if (master.tan_no && clientTanFyMap.has(makeKey(master.tan_no, fy))) {
+        matchedId = clientTanFyMap.get(makeKey(master.tan_no, fy));
+      } else if (master.saarthi_client_id && clientIdFyMap.has(`${master.saarthi_client_id}|${fy}`)) {
+        matchedId = clientIdFyMap.get(`${master.saarthi_client_id}|${fy}`);
+      } else if (master.company_name && clientNameFyMap.has(makeKey(master.company_name, fy))) {
+        matchedId = clientNameFyMap.get(makeKey(master.company_name, fy));
       }
 
       if (matchedId) {
         toUpdate.push({ id: matchedId, master });
       } else {
-        // Prevent duplicate inserts within the same sync payload
-        const dedupeKey = master.saarthi_client_id ? `id_${master.saarthi_client_id}` :
-                          master.tan_no ? `tan_${master.tan_no.toUpperCase()}` :
-                          master.pan_no ? `pan_${master.pan_no.toUpperCase()}` :
-                          master.company_name ? `name_${master.company_name.toUpperCase()}` : null;
+        const dedupeKey = master.tan_no ? makeKey(master.tan_no, fy) :
+                          master.saarthi_client_id ? `${master.saarthi_client_id}|${fy}` :
+                          master.company_name ? makeKey(master.company_name, fy) : null;
         if (!dedupeKey || !seenNewKeys.has(dedupeKey)) {
           if (dedupeKey) seenNewKeys.add(dedupeKey);
           toInsert.push(master);
@@ -1976,6 +2030,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
             contact_number = COALESCE(NULLIF(?, ''), contact_number),
             email_id = COALESCE(NULLIF(?, ''), email_id),
             teamleader = COALESCE(NULLIF(?, ''), teamleader),
+            financial_year = COALESCE(?, financial_year),
             tds = CASE WHEN ? > 0 THEN ? ELSE COALESCE(tds, 0) END
           WHERE id = ?
         `, [
@@ -1988,8 +2043,9 @@ export const syncSaarthiLiveApi = async (req, res) => {
           item.master.contact_number,
           item.master.email_id,
           item.master.teamleader,
-          item.master.saarthi_tds || 0,   // condition check
-          item.master.saarthi_tds || 0,   // actual value
+          item.master.financial_year || null,
+          item.master.saarthi_tds || 0,
+          item.master.saarthi_tds || 0,
           item.id
         ])
       ));
@@ -2015,8 +2071,8 @@ export const syncSaarthiLiveApi = async (req, res) => {
           m.contact_number || null,
           m.email_id || null,
           m.teamleader || null,
-          normalizeFY(m.financial_year || m.fy) || null,
-          m.saarthi_tds || 0   // ← Saarthi Books TDS from CRM legals
+          m.financial_year || null,
+          m.saarthi_tds || 0
         );
       }
       const sql = `
@@ -2028,23 +2084,23 @@ export const syncSaarthiLiveApi = async (req, res) => {
       inserted += chunk.length;
     }
 
-    // ─── Directly update tds_reconciliation_results.books_tds from tds_dues.tds ───
+    // ─── Directly update tds_reconciliation_results.books_tds from tds_dues.tds matching (tan, financial_year) ───
     try {
       await db.execute(`
         UPDATE tds_reconciliation_results tr
         INNER JOIN (
-          SELECT UPPER(TRIM(tan_no)) as tan, SUM(COALESCE(tds, 0)) as total_tds
+          SELECT UPPER(TRIM(tan_no)) as tan, financial_year, SUM(COALESCE(tds, 0)) as total_tds
           FROM tds_dues
           WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' AND tds > 0
-          GROUP BY UPPER(TRIM(tan_no))
-        ) d ON UPPER(TRIM(tr.tan_no)) = d.tan
+          GROUP BY UPPER(TRIM(tan_no)), financial_year
+        ) d ON UPPER(TRIM(tr.tan_no)) = d.tan AND COALESCE(tr.financial_year, '') = COALESCE(d.financial_year, '')
         SET tr.books_tds = d.total_tds
         WHERE d.total_tds > 0
       `);
 
-      // Match by company name for remaining rows with books_tds = 0
+
       const [zeroRows] = await db.query(`
-        SELECT tr.id, d.company_name 
+        SELECT tr.id, d.company_name, tr.financial_year 
         FROM tds_reconciliation_results tr 
         LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id 
         WHERE COALESCE(tr.books_tds, 0) = 0 AND d.company_name IS NOT NULL AND d.company_name != ''
@@ -2053,7 +2109,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
       const nameUpdates = [];
       zeroRows.forEach(r => {
         const norm = normalize(r.company_name);
-        const tds = crmTdsByNormName.get(norm);
+        const tds = crmTdsByNormNameFy.get(makeKey(norm, r.financial_year));
         if (tds && tds > 0) {
           nameUpdates.push([tds, r.id]);
         }

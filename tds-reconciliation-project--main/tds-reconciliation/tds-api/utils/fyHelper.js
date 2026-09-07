@@ -9,7 +9,7 @@
 export function normalizeFY(rawValue) {
   if (!rawValue) return null;
   const str = String(rawValue).trim();
-  if (!str || str.toLowerCase() === 'all' || str.toLowerCase() === 'all financial years' || str.toLowerCase() === 'unspecified' || str === 'N/A') {
+  if (!str || str.toLowerCase() === 'all' || str.toLowerCase() === 'all financial years' || str.toLowerCase() === 'unspecified' || str === 'n/a') {
     return null;
   }
 
@@ -50,4 +50,24 @@ export function normalizeFY(rawValue) {
   }
 
   return null;
+}
+
+/**
+ * Derive Indian financial year (April 1 - March 31) from any date value
+ * e.g. "2024-05-15" -> "FY 2024-25"
+ *      "2026-03-25" -> "FY 2025-26"
+ */
+export function getFinancialYearFromDate(dateVal) {
+  if (!dateVal) return null;
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return null;
+  const month = d.getUTCMonth() + 1; // 1-indexed (1=Jan, 4=Apr, 12=Dec)
+  const year = d.getUTCFullYear();
+  if (month >= 4) {
+    const nextYr = String((year + 1) % 100).padStart(2, '0');
+    return `FY ${year}-${nextYr}`;
+  } else {
+    const currYr = String(year % 100).padStart(2, '0');
+    return `FY ${year - 1}-${currYr}`;
+  }
 }

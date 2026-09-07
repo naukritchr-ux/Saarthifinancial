@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS tds_dues (
   note TEXT,
   financial_year VARCHAR(20),
   INDEX idx_tan (tan_no),
-  INDEX idx_saarthi_client (saarthi_client_id)
+  INDEX idx_saarthi_client (saarthi_client_id),
+  UNIQUE KEY uniq_due_tan_fy (tan_no, financial_year)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS tds_26as_entries (
