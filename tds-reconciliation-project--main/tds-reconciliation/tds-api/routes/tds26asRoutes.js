@@ -6,6 +6,7 @@ import {
   uploadTally,
   getDashboardSummary,
   getCleaningQueue,
+  getCleaningQueueCount,
   resolveCleaningItem,
   getReconciliationReport,
   overrideReconciliationStatus,
@@ -35,6 +36,7 @@ router.post('/upload-tally', upload.single('file'), uploadTally);
 router.get('/dashboard-summary', getDashboardSummary);
 
 // Cleaning queue
+router.get('/cleaning-queue/count', getCleaningQueueCount);   // fast badge count
 router.get('/cleaning-queue', getCleaningQueue);
 router.put('/cleaning-queue/:id', resolveCleaningItem);
 

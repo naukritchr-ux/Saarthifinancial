@@ -737,6 +737,33 @@ export const getDashboardSummary = async (req, res) => {
 /**
  * Get Data Import Cleaning Queue
  */
+/**
+ * Fast badge count — single SQL COUNT(*), no JS processing.
+ * Used by AppContext on every page load; must be cheap.
+ */
+export const getCleaningQueueCount = async (req, res) => {
+  try {
+    const [[{ cnt }]] = await db.execute(`
+      SELECT COUNT(*) as cnt
+      FROM tds_reconciliation_results tr
+      LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+      WHERE (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
+        AND (COALESCE(tr.books_tds, 0) > 0 OR COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0)
+        AND (
+          tr.tan_no IS NULL OR tr.tan_no = '' OR LENGTH(tr.tan_no) < 10
+          OR tr.tan_no LIKE 'NO_TAN_%' OR tr.tan_no LIKE '%UNKNOWN%'
+          OR d.company_name IS NULL OR d.company_name = 'Unknown Company' OR d.company_name = ''
+        )
+        AND tr.tan_no NOT IN ('COMPANYNAME', 'TANNO', 'TAN_NO', 'PANNO', 'TAN')
+        AND UPPER(COALESCE(d.company_name, '')) NOT IN ('UNKNOWN CLIENT', 'COMPANYNAME')
+    `);
+    return res.json({ success: true, count: Number(cnt) });
+  } catch (error) {
+    console.error('💥 Error in getCleaningQueueCount:', error);
+    return res.status(500).json({ success: false, count: 0, error: error.message });
+  }
+};
+
 export const getCleaningQueue = async (req, res) => {
   try {
     // Pagination for the response (does NOT limit which rows are scanned/flagged).
