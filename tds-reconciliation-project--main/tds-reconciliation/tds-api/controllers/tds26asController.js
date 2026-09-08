@@ -1966,11 +1966,12 @@ export const syncSaarthiLiveApi = async (req, res) => {
     const distinctFyByNorm = new Map();
 
     invoicesData.forEach(inv => {
-      const tds = parseFloat(inv.tds || inv.legal_amount || inv.amount || 0);
+      // tdsAmount is the primary field from Sarthi API; fall back to legacy aliases
+      const tds = parseFloat(inv.tdsAmount || inv.tds_amount || inv.tds || inv.legal_amount || inv.amount || 0);
       const invFy = normalizeFY(inv.financialYear || inv.fy || inv.financial_year || inv.fin_year || inv.finYear) ||
         getFinancialYearFromDate(inv.legal_invoiceDate || inv.invoiceDate || inv.billDate || inv.date || inv.created_at) || null;
 
-      const gst = String(inv.gstNo || '').trim().toUpperCase();
+      const gst = String(inv.gstNo || inv.gstNum || '').trim().toUpperCase();
       const norm = normalize(inv.companyName || inv.partyName);
       const tan = legalGstToTan.get(gst) || legalNameToTan.get(norm) || (inv.tanNo ? String(inv.tanNo).trim().toUpperCase() : null);
 
@@ -1992,10 +1993,12 @@ export const syncSaarthiLiveApi = async (req, res) => {
       }
     });
 
-    // Also check date fields on legalsData rows
+    // Also accumulate TDS directly from legals_info rows (works even when Invoice API is unreachable)
     legalsData.forEach(l => {
-      const legalTds = parseFloat(l.legal_amount || 0);
-      const legalFy = getFinancialYearFromDate(l.legal_invoiceDate || l.contractDate) || null;
+      // Primary field is tdsAmount; fall back to legacy aliases
+      const legalTds = parseFloat(l.tdsAmount || l.tds_amount || l.tds || l.legal_amount || 0);
+      const legalFy = normalizeFY(l.financialYear || l.fy || l.financial_year) ||
+        getFinancialYearFromDate(l.voucherDate || l.legal_invoiceDate || l.invoiceDate || l.contractDate) || null;
       const tan = String(l.tanNo || '').trim().toUpperCase();
       const norm = normalize(l.companyName || l.partyName);
 
@@ -2004,6 +2007,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
         distinctFyByTan.get(tan).add(legalFy);
         if (legalTds > 0) {
           const key = makeKey(tan, legalFy);
+          // Don't overwrite invoice data; add on top
           crmTdsByTanFy.set(key, (crmTdsByTanFy.get(key) || 0) + legalTds);
         }
       }
