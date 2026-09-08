@@ -779,8 +779,59 @@ export const getCleaningQueue = async (req, res) => {
       return res.json({ success: true, count: 0, data: [] });
     }
 
-    const [all26as] = await db.execute("SELECT deductor_name, UPPER(TRIM(tan_no)) as tan_no FROM tds_26as_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' LIMIT 2000");
-    const [allTally] = await db.execute("SELECT party_name, UPPER(TRIM(tan_no)) as tan_no FROM tds_tally_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' LIMIT 2000");
+    // Build the set of TANs / company names we actually need to look up, scoped
+    // to this batch of candidate rows — instead of pulling the whole
+    // tds_26as_entries / tds_tally_entries tables with a blind LIMIT 2000.
+    // The old LIMIT 2000 (with no ORDER BY) silently dropped rows once either
+    // table grew past 2000, which could make a genuinely matching record look
+    // like a "TAN mismatch" / "source discrepancy" purely because the matching
+    // code never saw it — not because the data actually disagreed.
+    const neededTans = new Set();
+    const neededNames = new Set();
+    for (const r of rows) {
+      const tan = r.tanNo ? String(r.tanNo).trim().toUpperCase() : '';
+      const isUsableTan = tan && tan.length >= 10 && !tan.startsWith('NO_TAN_') && !tan.includes('UNKNOWN');
+      if (isUsableTan) neededTans.add(tan);
+      const name = r.booksCompanyName ? String(r.booksCompanyName).trim().toUpperCase() : '';
+      if (name) neededNames.add(name);
+    }
+    const tanList = Array.from(neededTans);
+    const nameList = Array.from(neededNames);
+
+    const LOOKUP_CHUNK = 500;
+    const fetchScoped = async (table, nameCol) => {
+      const results = [];
+      // Chunk both the TAN and name IN-lists separately since a batch of ~250-500
+      // flagged rows can still produce a long parameter list.
+      for (let i = 0; i < tanList.length; i += LOOKUP_CHUNK) {
+        const chunk = tanList.slice(i, i + LOOKUP_CHUNK);
+        const placeholders = chunk.map(() => '?').join(', ');
+        const [batch] = await db.execute(
+          `SELECT ${nameCol}, UPPER(TRIM(tan_no)) as tan_no FROM ${table}
+           WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' AND UPPER(TRIM(tan_no)) IN (${placeholders})`,
+          chunk
+        );
+        results.push(...batch);
+      }
+      for (let i = 0; i < nameList.length; i += LOOKUP_CHUNK) {
+        const chunk = nameList.slice(i, i + LOOKUP_CHUNK);
+        const placeholders = chunk.map(() => '?').join(', ');
+        const [batch] = await db.execute(
+          `SELECT ${nameCol}, UPPER(TRIM(tan_no)) as tan_no FROM ${table}
+           WHERE ${nameCol} IS NOT NULL AND TRIM(${nameCol}) != '' AND UPPER(TRIM(${nameCol})) IN (${placeholders})`,
+          chunk
+        );
+        results.push(...batch);
+      }
+      return results;
+    };
+
+    const all26as = (tanList.length || nameList.length)
+      ? await fetchScoped('tds_26as_entries', 'deductor_name')
+      : [];
+    const allTally = (tanList.length || nameList.length)
+      ? await fetchScoped('tds_tally_entries', 'party_name')
+      : [];
 
     const as26ByTan = new Map();
     const as26ByName = new Map();
