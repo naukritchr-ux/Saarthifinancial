@@ -166,9 +166,11 @@ export default function ReconciliationTable({
               rows.map((row) => {
                 const tallyVal = parseFloat(row.tallyTds || 0);
                 const as26Val = parseFloat(row.as26Tds || 0);
-                const diff = as26Val - tallyVal;   // positive = 26AS surplus (good for company)
-                const isShort = diff < -1.0;        // Tally > 26AS = client under-deposited
-                const isExcess = diff > 1.0;        // 26AS > Tally = surplus / over-deposit
+                const saarthiVal = parseFloat(row.saarthiTds || row.booksTds || 0);
+                const primaryVal = tallyVal > 0 ? tallyVal : saarthiVal;
+                const diff = as26Val - primaryVal;   // positive = 26AS surplus (good for company)
+                const isShort = diff < -1.0;        // 26AS < primary = client under-deposited
+                const isExcess = diff > 1.0;        // 26AS > primary = surplus / over-deposit
 
                 const validCompany = row.companyName && !['Client Entity', 'Unknown Client', 'Unknown Company'].includes(row.companyName.trim());
                 const displayName = validCompany 
@@ -218,7 +220,7 @@ export default function ReconciliationTable({
 
                       <td className="px-4 py-3.5 text-right font-bold text-[#B4A7F5]">{formatCurrency(row.saarthiTds || row.booksTds)}</td>
 
-                      {/* Difference: (Tally - 26AS) */}
+                      {/* Difference: (26AS - Primary) */}
                       <td className="px-4 py-3.5 text-right font-black">
                         <div className={`inline-flex items-center gap-0.5 ${isShort ? 'text-[#E11D48]' : isExcess ? 'text-[#D97706]' : 'text-[#2E8B57]'}`}>
                           {isShort ? <ArrowDownRight className="w-3.5 h-3.5 flex-shrink-0" /> : isExcess ? <ArrowUpRight className="w-3.5 h-3.5 flex-shrink-0" /> : null}
@@ -230,11 +232,9 @@ export default function ReconciliationTable({
                       <td className="px-4 py-3.5 text-center">
                         <div className="flex flex-col items-center gap-1">
                           {getFinancialStatusPill(
-                            parseFloat(row.as26Tds || 0) === 0 
-                              ? 'Not Received' 
-                              : (parseFloat(row.tallyTds || 0) === 0 && parseFloat(row.saarthiTds || row.booksTds || 0) === 0 && parseFloat(row.as26Tds || 0) > 0)
-                                ? 'Excess'
-                                : (row.financialStatus || row.overallStatus)
+                            (row.isManuallyEdited === 1 || row.isManuallyEdited === true || row.is_manually_edited === 1)
+                              ? 'Match'
+                              : (row.financialStatus || row.overallStatus)
                           )}
                           {(row.isManuallyEdited === 1 || row.isManuallyEdited === true || row.is_manually_edited === 1) && (
                             <span className="text-[10px] font-black text-[#9B87F5] bg-[#9B87F5]/10 border border-[#9B87F5]/30 px-2 py-0.5 rounded-full">
@@ -372,7 +372,7 @@ export default function ReconciliationTable({
                                       Less Paid: {formatCurrency(Math.abs(diff))}
                                     </span>
                                     <p className="text-[11px] text-[#6B6580] font-medium leading-tight">
-                                      26AS portal deduction is lower than Tally ledger. Client deductor under-deposited tax.
+                                      26AS portal deduction is lower than internal books. Client deductor under-deposited tax.
                                     </p>
                                   </div>
                                 ) : isExcess ? (
@@ -382,7 +382,7 @@ export default function ReconciliationTable({
                                       Excess Deducted: {formatCurrency(Math.abs(diff))}
                                     </span>
                                     <p className="text-[11px] text-[#6B6580] font-medium leading-tight">
-                                      26AS portal reflects higher deduction than recorded in Tally ledger.
+                                      26AS portal reflects higher deduction than recorded in internal books.
                                     </p>
                                   </div>
                                 ) : (
@@ -392,7 +392,7 @@ export default function ReconciliationTable({
                                       Fully Matched (Zero Gap)
                                     </span>
                                     <p className="text-[11px] text-[#6B6580] font-medium leading-tight">
-                                      Tally ledger and 26AS portal TDS figures align perfectly.
+                                      Internal books (Tally / Saarthi) and 26AS portal TDS figures align perfectly.
                                     </p>
                                   </div>
                                 )}
