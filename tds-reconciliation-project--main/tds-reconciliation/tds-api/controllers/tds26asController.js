@@ -620,10 +620,10 @@ export const getDashboardSummary = async (req, res) => {
       "(COALESCE(tr.books_tds, 0) > 0 OR COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0)"
     ];
     const params = [];
-    if (fy && fy !== 'All' && fy !== 'All Financial Years') {
+    if (fy && fy !== 'All' && fy !== 'All Financial Years' && String(fy).trim() !== '') {
       const cleanFy = String(fy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push("COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), '')) LIKE ?");
-      params.push(`%${cleanFy}%`);
+      whereClauses.push('(TRIM(tr.financial_year) LIKE ? OR (tr.financial_year IS NULL AND TRIM(d.financial_year) LIKE ?))');
+      params.push(`%${cleanFy}%`, `%${cleanFy}%`);
     }
 
     const whereSQL = 'WHERE ' + whereClauses.join(' AND ');
@@ -1198,10 +1198,10 @@ export const getReconciliationReport = async (req, res) => {
     whereClauses.push("NOT (COALESCE(tr.books_tds, 0) = 0 AND COALESCE(tr.as26_tds, 0) = 0 AND COALESCE(tr.tally_tds, 0) = 0)");
 
     const activeFy = fy || financialYear;
-    if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
+    if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years' && String(activeFy).trim() !== '') {
       const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
-      whereClauses.push("COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), '')) LIKE ?");
-      queryParams.push(`%${cleanFy}%`);
+      whereClauses.push('(TRIM(tr.financial_year) LIKE ? OR (tr.financial_year IS NULL AND TRIM(d.financial_year) LIKE ?))');
+      queryParams.push(`%${cleanFy}%`, `%${cleanFy}%`);
     }
 
     if (search && String(search).trim() !== '') {
