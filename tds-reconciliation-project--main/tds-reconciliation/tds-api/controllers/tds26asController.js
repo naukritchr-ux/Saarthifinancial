@@ -20,13 +20,13 @@ const isTanOrPanHeaderCell = (text) => {
   const t = String(text || '').toLowerCase().trim();
   if (!t) return false;
   if (t === 'tan' || t === 'tan no' || t === 'tan_no' || t === 'tan number' || t === 'tan num' ||
-      t === 'pan' || t === 'pan no' || t === 'pan_no' || t === 'pan number' || t === 'pan num' ||
-      t === 'deductor tan' || t === 'party tan' || t === 'deductor pan' || t === 'party pan' ||
-      t === 'deductor id' || t === 'tan of deductor' || t === 'tan/pan' || t === 'pan/tan') {
+    t === 'pan' || t === 'pan no' || t === 'pan_no' || t === 'pan number' || t === 'pan num' ||
+    t === 'deductor tan' || t === 'party tan' || t === 'deductor pan' || t === 'party pan' ||
+    t === 'deductor id' || t === 'tan of deductor' || t === 'tan/pan' || t === 'pan/tan') {
     return true;
   }
   return /^(tan|pan)(\s*(no|number|num|id|code))?$/i.test(t) ||
-         /^(deductor|party|client)\s*(tan|pan)$/i.test(t);
+    /^(deductor|party|client)\s*(tan|pan)$/i.test(t);
 };
 
 const normalizeCompanyName = (name) => {
@@ -136,7 +136,7 @@ export const upload26as = async (req, res) => {
     for (let r = 0; r < Math.min(100, rawData.length); r++) {
       const row = rawData[r];
       if (!row || !Array.isArray(row)) continue;
-      
+
       let foundHeader = false;
       row.forEach((cell, col) => {
         const text = String(cell || '').toLowerCase().trim();
@@ -275,7 +275,7 @@ export const upload26as = async (req, res) => {
     if (uploadFy) {
       try {
         await db.execute('UPDATE tds_reconciliation_results SET financial_year = ? WHERE as26_batch_id = ?', [uploadFy, uploadBatchId]);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const metadata = JSON.stringify({
@@ -285,7 +285,7 @@ export const upload26as = async (req, res) => {
       file_name: file.originalname,
       total_records: entries.length
     });
-    
+
     await db.execute(
       'INSERT INTO upload_history (file_name, file_path, uploaded_by, status, metadata) VALUES (?, ?, ?, ?, ?)',
       [file.originalname, file.path, req.user?.email || 'System', 'Completed', metadata]
@@ -452,7 +452,7 @@ export const uploadTally = async (req, res) => {
       const gstNum = colMap.gst_num !== -1 ? String(row[colMap.gst_num] || '').trim() : '';
       const panNo = colMap.pan_no !== -1 ? String(row[colMap.pan_no] || '').trim() : '';
       const voucherDateRaw = colMap.voucher_date !== -1 ? String(row[colMap.voucher_date] || '').trim() : null;
-      
+
       let voucherDate = null;
       if (voucherDateRaw) {
         const parsedDate = Date.parse(voucherDateRaw);
@@ -525,7 +525,7 @@ export const uploadTally = async (req, res) => {
             chunk
           );
           (rows || []).forEach(r => existingTansSet.add(r.tan));
-        } catch (e) {}
+        } catch (e) { }
       }
 
       const relevantContacts = allContactTans
@@ -546,7 +546,7 @@ export const uploadTally = async (req, res) => {
               teamleader = COALESCE(?, teamleader)
             WHERE UPPER(TRIM(tan_no)) = ?
           `, [info.contactPerson, info.designation, info.contactNumber, info.emailId, info.teamleader, tan])
-          .catch(() => {})
+            .catch(() => { })
         ));
       }
     }
@@ -580,7 +580,7 @@ export const uploadTally = async (req, res) => {
     if (uploadFy) {
       try {
         await db.execute('UPDATE tds_reconciliation_results SET financial_year = ? WHERE tally_batch_id = ?', [uploadFy, uploadBatchId]);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     const metadata = JSON.stringify({
@@ -590,7 +590,7 @@ export const uploadTally = async (req, res) => {
       file_name: file.originalname,
       total_records: entries.length
     });
-    
+
     await db.execute(
       'INSERT INTO upload_history (file_name, file_path, uploaded_by, status, metadata) VALUES (?, ?, ?, ?, ?)',
       [file.originalname, file.path, req.user?.email || 'System', 'Completed', metadata]
@@ -739,6 +739,12 @@ export const getDashboardSummary = async (req, res) => {
  */
 export const getCleaningQueue = async (req, res) => {
   try {
+    // Pagination for the response (does NOT limit which rows are scanned/flagged).
+    // Defaults keep old behavior of "first page looks like ~100 items" without
+    // silently dropping everything past the 100th candidate row.
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(500, Math.max(1, parseInt(req.query.pageSize, 10) || 100));
+
     const query = `
       SELECT 
         tr.id,
@@ -761,8 +767,12 @@ export const getCleaningQueue = async (req, res) => {
         AND tr.tan_no NOT IN ('COMPANYNAME', 'TANNO', 'TAN_NO', 'PANNO', 'TAN')
         AND UPPER(COALESCE(d.company_name, '')) NOT IN ('UNKNOWN CLIENT', 'COMPANYNAME')
       ORDER BY tr.id DESC
-      LIMIT 100
     `;
+    // NOTE: no SQL LIMIT here anymore — the old "LIMIT 100" capped the candidate
+    // rows *before* the JS confidence/mismatch filtering below ever ran, so the
+    // queue silently froze at (at most) 100 items and ignored everything older
+    // than the newest 100 reconciliation rows. We now scan everything and
+    // paginate the already-filtered result instead.
 
     const [rows] = await db.execute(query);
     if (!rows || rows.length === 0) {
@@ -892,10 +902,18 @@ export const getCleaningQueue = async (req, res) => {
       return invalidTan || missingName || lowConfidence || tanMismatch;
     });
 
+    const totalCount = flaggedItems.length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const startIndex = (page - 1) * pageSize;
+    const pagedItems = flaggedItems.slice(startIndex, startIndex + pageSize);
+
     res.json({
       success: true,
-      count: flaggedItems.length,
-      data: flaggedItems
+      count: totalCount,      // TRUE total across the whole backlog, not just this page
+      page,
+      pageSize,
+      totalPages,
+      data: pagedItems
     });
 
   } catch (error) {
@@ -928,7 +946,7 @@ export const resolveCleaningItem = async (req, res) => {
             'DELETE FROM tds_dues WHERE UPPER(TRIM(tan_no)) = ? AND (tds IS NULL OR tds = 0)',
             [targetTan]
           );
-        } catch (e) {}
+        } catch (e) { }
       }
 
       return res.json({
@@ -1055,7 +1073,7 @@ async function ensureFollowupDoneColumn() {
   try {
     await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done BOOLEAN DEFAULT FALSE');
   } catch (e) {
-    try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done INTEGER DEFAULT 0'); } catch (err) {}
+    try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done INTEGER DEFAULT 0'); } catch (err) { }
   }
   followupColumnChecked = true;
 }
@@ -1376,7 +1394,7 @@ export const overrideReconciliationStatus = async (req, res) => {
 
     const validPairStatuses = ['Match', 'Less Paid', 'Excess', 'Not Received', 'Matched', 'Less'];
     const validOverallStatuses = ['Match', 'Less Paid', 'Excess', 'All Matched', 'Partial Mismatch', 'Major Mismatch', 'Matched', 'Less'];
-    
+
     if (overrideField === 'overall_status') {
       if (!validOverallStatuses.includes(newValue)) {
         return res.status(400).json({ success: false, error: `Invalid overall status value: ${newValue}` });
@@ -1628,7 +1646,7 @@ export const purgeUploadData = async (req, res) => {
     const { target } = req.body || {};
 
     if (process.env.DB_TYPE === 'mysql') {
-      try { await db.execute('SET FOREIGN_KEY_CHECKS = 0'); } catch (e) {}
+      try { await db.execute('SET FOREIGN_KEY_CHECKS = 0'); } catch (e) { }
     }
 
     if (target === '26as') {
@@ -1679,7 +1697,7 @@ export const purgeUploadData = async (req, res) => {
     }
 
     if (process.env.DB_TYPE === 'mysql') {
-      try { await db.execute('SET FOREIGN_KEY_CHECKS = 1'); } catch (e) {}
+      try { await db.execute('SET FOREIGN_KEY_CHECKS = 1'); } catch (e) { }
     }
 
     markPurgedFlag();
@@ -1722,7 +1740,7 @@ export const deleteUploadBatch = async (req, res) => {
       let meta = {};
       try {
         meta = typeof batchRecord.metadata === 'string' ? JSON.parse(batchRecord.metadata) : (batchRecord.metadata || {});
-      } catch (e) {}
+      } catch (e) { }
       batchId = meta.upload_batch_id || batchId;
     }
 
@@ -1733,7 +1751,7 @@ export const deleteUploadBatch = async (req, res) => {
     if (batchId) {
       await db.execute('DELETE FROM tds_26as_entries WHERE upload_batch_id = ?', [batchId]);
       await db.execute('DELETE FROM tds_tally_entries WHERE upload_batch_id = ?', [batchId]);
-      
+
       // Zero out matching 26AS side
       await db.execute(
         `UPDATE tds_reconciliation_results 
@@ -1771,7 +1789,7 @@ export const deleteUploadBatch = async (req, res) => {
            AND (books_tds IS NULL OR books_tds = 0)
            AND (is_manually_edited IS NULL OR is_manually_edited = 0)`
       );
-    } catch (e) {}
+    } catch (e) { }
 
     res.json({ success: true, message: 'Upload file batch deleted successfully', id });
   } catch (error) {
@@ -1870,8 +1888,8 @@ export const syncSaarthiLiveApi = async (req, res) => {
     invoicesData.forEach(inv => {
       const tds = parseFloat(inv.tds || inv.legal_amount || inv.amount || 0);
       const invFy = normalizeFY(inv.financialYear || inv.fy || inv.financial_year || inv.fin_year || inv.finYear) ||
-                    getFinancialYearFromDate(inv.legal_invoiceDate || inv.invoiceDate || inv.billDate || inv.date || inv.created_at) || null;
-      
+        getFinancialYearFromDate(inv.legal_invoiceDate || inv.invoiceDate || inv.billDate || inv.date || inv.created_at) || null;
+
       const gst = String(inv.gstNo || '').trim().toUpperCase();
       const norm = normalize(inv.companyName || inv.partyName);
       const tan = legalGstToTan.get(gst) || legalNameToTan.get(norm) || (inv.tanNo ? String(inv.tanNo).trim().toUpperCase() : null);
@@ -1932,7 +1950,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
     };
 
     const clientMasters = [];
-    
+
     clientsData.forEach(item => {
       if (!item || (!item.companyName && !item.id)) return;
       const gst = String(item.gstNumber || item.gstNo || item.gstNum || '').trim().toUpperCase();
@@ -1940,14 +1958,14 @@ export const syncSaarthiLiveApi = async (req, res) => {
       const companyName = String(item.companyName || '').trim();
       const norm = normalize(companyName);
       const itemTan = String(item.tanNo || item.tanNumber || '').trim().toUpperCase() || legalGstToTan.get(gst) || legalNameToTan.get(norm) || null;
-      
+
       const itemFys = (itemTan && distinctFyByTan.get(itemTan)) || (norm && distinctFyByNorm.get(norm)) || new Set([null]);
       const fyList = itemFys.size > 0 ? Array.from(itemFys) : [null];
 
       for (const fy of fyList) {
         const itemTds = (itemTan && crmTdsByTanFy.get(makeKey(itemTan, fy))) ||
-                        (norm && crmTdsByNormNameFy.get(makeKey(norm, fy))) ||
-                        parseFloat(item.tdsAmount || item.tds_amount || item.tds || 0) || 0;
+          (norm && crmTdsByNormNameFy.get(makeKey(norm, fy))) ||
+          parseFloat(item.tdsAmount || item.tds_amount || item.tds || 0) || 0;
 
         clientMasters.push({
           saarthi_client_id: item.id ? parseInt(item.id) : null,
@@ -1976,15 +1994,15 @@ export const syncSaarthiLiveApi = async (req, res) => {
       const pan = String(item.panNo || item.panNumber || '').trim().toUpperCase() || extractPanFromGst(gst);
       const companyName = String(item.companyName || item.partyName || '').trim();
       const norm = normalize(companyName);
-      
+
       const itemFys = (tan && distinctFyByTan.get(tan)) || (norm && distinctFyByNorm.get(norm)) || new Set([null]);
       const fyList = itemFys.size > 0 ? Array.from(itemFys) : [null];
 
       for (const fy of fyList) {
         const itemTds = (tan && crmTdsByTanFy.get(makeKey(tan, fy))) ||
-                        (norm && crmTdsByNormNameFy.get(makeKey(norm, fy))) ||
-                        parseFloat(item.tdsAmount || item.tds_amount || item.tds || 0) || 0;
-        
+          (norm && crmTdsByNormNameFy.get(makeKey(norm, fy))) ||
+          parseFloat(item.tdsAmount || item.tds_amount || item.tds || 0) || 0;
+
         clientMasters.push({
           saarthi_client_id: item.id ? parseInt(item.id) : null,
           company_name: companyName,
@@ -2048,8 +2066,8 @@ export const syncSaarthiLiveApi = async (req, res) => {
         toUpdate.push({ id: matchedId, master });
       } else {
         const dedupeKey = master.tan_no ? makeKey(master.tan_no, fy) :
-                          master.saarthi_client_id ? `${master.saarthi_client_id}|${fy}` :
-                          master.company_name ? makeKey(master.company_name, fy) : null;
+          master.saarthi_client_id ? `${master.saarthi_client_id}|${fy}` :
+            master.company_name ? makeKey(master.company_name, fy) : null;
         if (!dedupeKey || !seenNewKeys.has(dedupeKey)) {
           if (dedupeKey) seenNewKeys.add(dedupeKey);
           toInsert.push(master);
@@ -2064,7 +2082,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
     const UPDATE_CHUNK_SIZE = 50;
     for (let i = 0; i < toUpdate.length; i += UPDATE_CHUNK_SIZE) {
       const chunk = toUpdate.slice(i, i + UPDATE_CHUNK_SIZE);
-      await Promise.all(chunk.map(item => 
+      await Promise.all(chunk.map(item =>
         db.execute(`
           UPDATE tds_dues 
           SET 
@@ -2152,7 +2170,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
         LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id 
         WHERE COALESCE(tr.books_tds, 0) = 0 AND d.company_name IS NOT NULL AND d.company_name != ''
       `);
-      
+
       const nameUpdates = [];
       zeroRows.forEach(r => {
         const norm = normalize(r.company_name);
@@ -2166,7 +2184,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
       for (let i = 0; i < nameUpdates.length; i += BATCH) {
         const chunk = nameUpdates.slice(i, i + BATCH);
         await Promise.all(chunk.map(([tds, id]) =>
-          db.execute('UPDATE tds_reconciliation_results SET books_tds = ? WHERE id = ?', [tds, id]).catch(() => {})
+          db.execute('UPDATE tds_reconciliation_results SET books_tds = ? WHERE id = ?', [tds, id]).catch(() => { })
         ));
       }
 
@@ -2260,4 +2278,3 @@ export const toggleFollowupDone = async (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to update follow-up done flag', details: error.message });
   }
 };
-
