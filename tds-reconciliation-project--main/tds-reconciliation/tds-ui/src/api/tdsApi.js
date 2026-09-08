@@ -70,6 +70,18 @@ export const getCleaningQueue = async () => {
   }
 };
 
+/** Fast badge count only — does NOT fetch all queue rows, very cheap */
+export const getCleaningQueueCount = async () => {
+  try {
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/cleaning-queue/count`);
+    const data = await response.json();
+    if (response.ok && data && typeof data.count === 'number') return data.count;
+    return 0;
+  } catch {
+    return 0;
+  }
+};
+
 export const resolveCleaningItem = async (id, data) => {
   try {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/cleaning-queue/${id}`, {

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { getCleaningQueue } from '../api/tdsApi';
+import { getCleaningQueueCount } from '../api/tdsApi';
 
 const AppContext = createContext();
 
@@ -51,16 +51,8 @@ export function AppProvider({ children }) {
   // Fetch cleaning queue count on load and on any refresh trigger
   useEffect(() => {
     const fetchQueueCount = async () => {
-      try {
-        const res = await getCleaningQueue();
-        if (res && res.success && typeof res.count === 'number') {
-          setCleaningQueueCount(res.count);
-        } else {
-          setCleaningQueueCount(0);
-        }
-      } catch (err) {
-        setCleaningQueueCount(0);
-      }
+      const count = await getCleaningQueueCount();
+      setCleaningQueueCount(count);
     };
     fetchQueueCount();
   }, [refreshKey]);
