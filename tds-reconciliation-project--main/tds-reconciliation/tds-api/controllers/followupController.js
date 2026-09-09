@@ -329,10 +329,16 @@ export const deleteFollowup = async (req, res) => {
  */
 export const purgeFollowups = async (req, res) => {
   try {
-    await db.execute('DELETE FROM tds_followups');
+    // WHERE id > 0 bypasses MySQL safe updates mode
+    await db.execute('DELETE FROM tds_followups WHERE id > 0');
     res.json({ success: true, message: 'Follow-up history log purged successfully' });
   } catch (error) {
     console.error('💥 Error in purgeFollowups:', error);
-    res.status(500).json({ success: false, error: 'Failed to purge follow-up history log', details: error.message });
+    try {
+      await db.execute('DELETE FROM tds_followups');
+      return res.json({ success: true, message: 'Follow-up history log purged successfully' });
+    } catch (err2) {
+      res.status(500).json({ success: false, error: 'Failed to purge follow-up history log', details: error.message });
+    }
   }
 };

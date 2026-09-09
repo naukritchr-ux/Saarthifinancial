@@ -220,7 +220,9 @@ export const upload26as = async (req, res) => {
       const section = colMap.section !== -1 ? String(row[colMap.section] || '').trim() : 'N/A';
       const quarter = colMap.quarter !== -1 ? String(row[colMap.quarter] || '').trim() : 'N/A';
       const rowFyRaw = colMap.fy !== -1 ? String(row[colMap.fy] || '').trim() : '';
-      const financialYear = normalizeFY(rowFyRaw) || normalizeFY(uploadFy) || null;
+      const isSpecificFy = uploadFy && uploadFy !== 'All' && uploadFy !== 'All Financial Years';
+      const fallbackFy = isSpecificFy ? (normalizeFY(uploadFy) || null) : null;
+      const financialYear = normalizeFY(rowFyRaw) || fallbackFy;
 
       entries.push({
         tan, deductorName, amountPaid, tdsDeducted, section, quarter, financialYear, uploadBatchId
@@ -246,8 +248,8 @@ export const upload26as = async (req, res) => {
       );
     }
 
-    // Persist financial year onto matching tds_dues rows in bulk chunks of 200
-    if (uploadFy) {
+    // Persist financial year onto matching tds_dues rows in bulk chunks of 200 only if specific FY
+    if (uploadFy && uploadFy !== 'All' && uploadFy !== 'All Financial Years') {
       const uniqueTans = [...new Set(entries.map(e => e.tan).filter(Boolean))];
       const FY_CHUNK = 200;
       for (let i = 0; i < uniqueTans.length; i += FY_CHUNK) {
@@ -270,12 +272,6 @@ export const upload26as = async (req, res) => {
       await reconcile(uploadBatchId, null);
     } catch (recErr) {
       console.warn('⚠️ Background reconciliation warning:', recErr.message);
-    }
-
-    if (uploadFy) {
-      try {
-        await db.execute('UPDATE tds_reconciliation_results SET financial_year = ? WHERE as26_batch_id = ?', [uploadFy, uploadBatchId]);
-      } catch (e) { }
     }
 
     const metadata = JSON.stringify({
@@ -469,9 +465,10 @@ export const uploadTally = async (req, res) => {
       const designation = colMap.designation !== -1 ? String(row[colMap.designation] || '').trim() : null;
       const contactNumber = colMap.contact_number !== -1 ? String(row[colMap.contact_number] || '').trim() : null;
       const emailId = colMap.email_id !== -1 ? String(row[colMap.email_id] || '').trim() : null;
-      const teamleader = colMap.teamleader !== -1 ? String(row[colMap.teamleader] || '').trim() : null;
       const rowFyRaw = colMap.fy !== -1 ? String(row[colMap.fy] || '').trim() : '';
-      const financialYear = normalizeFY(rowFyRaw) || normalizeFY(uploadFy) || null;
+      const isSpecificFy = uploadFy && uploadFy !== 'All' && uploadFy !== 'All Financial Years';
+      const fallbackFy = isSpecificFy ? (normalizeFY(uploadFy) || null) : null;
+      const financialYear = normalizeFY(rowFyRaw) || fallbackFy;
 
       entries.push({
         tan, partyName, gstNum, panNo, voucherDate, amount, tdsAmount, ledgerName, uploadBatchId,
@@ -551,8 +548,8 @@ export const uploadTally = async (req, res) => {
       }
     }
 
-    // Persist financial year onto matching tds_dues rows in bulk chunks of 200
-    if (uploadFy) {
+    // Persist financial year onto matching tds_dues rows in bulk chunks of 200 only if specific FY
+    if (uploadFy && uploadFy !== 'All' && uploadFy !== 'All Financial Years') {
       const uniqueTans = [...new Set(entries.map(e => e.tan).filter(Boolean))];
       const FY_CHUNK = 200;
       for (let i = 0; i < uniqueTans.length; i += FY_CHUNK) {
@@ -575,12 +572,6 @@ export const uploadTally = async (req, res) => {
       await reconcile(null, uploadBatchId);
     } catch (recErr) {
       console.warn('⚠️ Background reconciliation warning in Tally:', recErr.message);
-    }
-
-    if (uploadFy) {
-      try {
-        await db.execute('UPDATE tds_reconciliation_results SET financial_year = ? WHERE tally_batch_id = ?', [uploadFy, uploadBatchId]);
-      } catch (e) { }
     }
 
     const metadata = JSON.stringify({
