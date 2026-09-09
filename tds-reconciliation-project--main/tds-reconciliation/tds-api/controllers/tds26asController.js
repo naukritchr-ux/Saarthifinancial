@@ -6,6 +6,14 @@ import { reconcile, cleanNameTokens } from '../services/tdsReconciliationService
 import { seedEmbeddedDataset, markPurgedFlag, clearPurgedFlag } from '../seed_embedded_dataset.js';
 import { v4 as uuidv4 } from 'uuid';
 import { normalizeFY, getFinancialYearFromDate } from '../utils/fyHelper.js';
+import {
+  TDS_TOLERANCE,
+  PRIMARY_TDS_SQL,
+  getPrimaryTdsVal,
+  getDifferenceAmount,
+  deriveFinancialStatus,
+  getFinancialStatusWhereClause
+} from '../services/reconciliationRules.js';
 
 export { normalizeFY, getFinancialYearFromDate };
 
@@ -705,29 +713,28 @@ export const getDashboardSummary = async (req, res) => {
       else if (sourcesPresent === 1) oneOfThree++;
       else noMatch++;
 
-      const primaryVal = tally > 0 ? tally : saarthi;
+      const primaryVal = getPrimaryTdsVal(tally, saarthi);
 
       if (r.is_manually_edited) {
         resolvedCount++;
         matchCount++;
-      } else if (primaryVal > 0 && as26 > 0 && Math.abs(primaryVal - as26) <= 1.0) {
-        matchCount++;
-      } else if (as26 === 0 && primaryVal > 0) {
-        missingCount++;
-      } else if (primaryVal > 0 && as26 > 0 && primaryVal > as26 + 1.0) {
-        lessCount++;
-      } else if (as26 > 0 && (primaryVal === 0 || as26 > primaryVal + 1.0)) {
-        excessCount++;
-      } else if (r.overall_status === 'All Matched' || r.overall_status === 'Match' || r.overall_status === 'Matched') {
-        matchCount++;
-      } else if (r.overall_status === 'Partial Mismatch') {
-        pendingReviewCount++;
       } else {
-        missingCount++;
+        const derived = deriveFinancialStatus({
+          tally,
+          as26,
+          saarthi,
+          isManuallyEdited: false,
+          overallStatus: r.overall_status
+        });
+        if (derived === 'Match') matchCount++;
+        else if (derived === 'Less Paid') lessCount++;
+        else if (derived === 'Excess') excessCount++;
+        else if (derived === 'Pending Review') pendingReviewCount++;
+        else missingCount++;
       }
     });
 
-    const primaryTotal = tallyTotal > 0 ? tallyTotal : saarthiTotal;
+    const primaryTotal = getPrimaryTdsVal(tallyTotal, saarthiTotal);
 
     res.json({
       success: true,
@@ -735,7 +742,7 @@ export const getDashboardSummary = async (req, res) => {
         tally: tallyTotal,
         as26: as26Total,
         saarthi: saarthiTotal,
-        netGap: as26Total - primaryTotal
+        netGap: getDifferenceAmount(as26Total, primaryTotal)
       },
       recordCount: rows.length,
       sourceCoverage: {
@@ -978,21 +985,31 @@ export const getCleaningQueue = async (req, res) => {
       let reason = 'Multi-source Data Discrepancy';
       let issueType = 'source_discrepancy';
 
-      if (isPanAsTan) {
-        reason = `PAN (${tan}) entered instead of TAN Number`;
-        issueType = 'pan_as_tan';
+      // Explicit triage priority:
+      // 1. Conflicting TANs across datasets (hard mismatch between 26AS, Tally, or Sarthi)
+      // 2. Multiple TAN registrations for the same legal company entity (e.g. branch offices)
+      // 3. PAN entered into TAN field (common user/accountant transposition)
+      // 4. Missing or syntactically invalid TAN format
+      // 5. Missing / dummy company entity name
+      // 6. Name discrepancy / fuzzy token confidence < 90%
+      if (uniqueTans.length > 1) {
+        reason = 'Conflicting TANs across datasets';
+        issueType = 'tan_mismatch';
       } else if (isMultiTan) {
         reason = `Multiple TANs for company (${companyTans.join(', ')})`;
         issueType = 'multi_tan';
-      } else if (uniqueTans.length > 1) {
-        reason = 'Conflicting TANs across datasets';
-        issueType = 'tan_mismatch';
-      } else if (confidence < 90) {
-        reason = 'Deductor Name Discrepancy';
-        issueType = 'name_mismatch';
+      } else if (isPanAsTan) {
+        reason = `PAN (${tan}) entered instead of TAN Number`;
+        issueType = 'pan_as_tan';
       } else if (isMissingTan || isInvalidTanFormat) {
         reason = 'Missing or Invalid TAN format';
         issueType = 'invalid_tan';
+      } else if (!booksName || ['Unknown Client', 'Unknown Company', 'Client Entity'].includes(booksName.trim())) {
+        reason = 'Missing Client Entity Name';
+        issueType = 'missing_name';
+      } else if (confidence < 90) {
+        reason = 'Deductor Name Discrepancy';
+        issueType = 'name_mismatch';
       }
 
       return {
@@ -1031,10 +1048,11 @@ export const getCleaningQueue = async (req, res) => {
 
       const invalidTan = !item.tanNo || item.tanNo === 'Pending TAN' || item.tanNo.length < 10 || item.tanNo.includes('UNKNOWN') || !/^[A-Za-z]{4}[0-9]{5}[A-Za-z]$/.test(item.tanNo);
       const isPanAsTan = /^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(item.tanNo);
-      const missingName = !item.saarthiName || item.saarthiName === 'Unknown Client' || item.saarthiName === 'Unknown Company';
+      const missingName = !item.saarthiName || item.saarthiName === 'Unknown Client' || item.saarthiName === 'Unknown Company' || item.saarthiName === 'Client Entity';
       const lowConfidence = item.confidence < 90;
       const tanMismatch = item.isTanMismatch;
-      return invalidTan || isPanAsTan || missingName || lowConfidence || tanMismatch;
+      const isMultiTan = item.issueType === 'multi_tan';
+      return invalidTan || isPanAsTan || missingName || lowConfidence || tanMismatch || isMultiTan;
     });
 
     const totalCount = flaggedItems.length;
@@ -1259,20 +1277,15 @@ export const getReconciliationReport = async (req, res) => {
       queryParams.push(wild, wild);
     }
 
-    const primaryTdsSQL = '(CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END)';
+    const primaryTdsSQL = PRIMARY_TDS_SQL;
 
     if (overallStatus && overallStatus !== 'All') {
-      if (overallStatus === 'Match' || overallStatus === 'All Matched') {
-        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 1 OR (${primaryTdsSQL} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND ABS(${primaryTdsSQL} - COALESCE(tr.as26_tds, 0)) <= 1.0) OR tr.overall_status IN ('All Matched', 'Match', 'Matched'))`);
-      } else if (overallStatus === 'Less Paid' || overallStatus === 'Less') {
-        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND ${primaryTdsSQL} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND ${primaryTdsSQL} > COALESCE(tr.as26_tds, 0) + 1.0)`);
-      } else if (overallStatus === 'Excess' || overallStatus === 'Excess Paid') {
-        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND COALESCE(tr.as26_tds, 0) > 0 AND (${primaryTdsSQL} = 0 OR ${primaryTdsSQL} < COALESCE(tr.as26_tds, 0) - 1.0))`);
-      } else if (overallStatus === 'Not Received' || overallStatus === 'No Match' || overallStatus === 'Missing') {
-        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND COALESCE(tr.as26_tds, 0) = 0 AND ${primaryTdsSQL} > 0)`);
-      } else {
-        whereClauses.push('tr.overall_status = ?');
-        queryParams.push(overallStatus);
+      const statusCondition = getFinancialStatusWhereClause(overallStatus, primaryTdsSQL);
+      if (statusCondition) {
+        whereClauses.push(statusCondition);
+        if (statusCondition === 'tr.overall_status = ?') {
+          queryParams.push(overallStatus);
+        }
       }
     }
 
@@ -1424,33 +1437,17 @@ export const getReconciliationReport = async (req, res) => {
       const countStr = `${sources.length}/3`;
       let coverageLabel = `${countStr} · ${sources.join(' + ') || 'No match'}`;
 
-      const primaryVal = tally > 0 ? tally : saarthi;
-      const diffCalc = as26 - primaryVal;
+      const primaryVal = getPrimaryTdsVal(tally, saarthi);
+      const diffCalc = getDifferenceAmount(as26, primaryVal);
 
-      // Derive financialStatus based on real numbers and manual resolution
-      let financialStatus;
-      if (r.isManuallyEdited) {
-        financialStatus = 'Match';
-      } else if (primaryVal > 0 && as26 > 0 && Math.abs(primaryVal - as26) <= 1.0) {
-        financialStatus = 'Match';
-      } else if (as26 === 0 && primaryVal > 0) {
-        financialStatus = 'Not Received';
-      } else if (primaryVal > 0 && as26 > 0 && primaryVal > as26 + 1.0) {
-        financialStatus = 'Less Paid';
-      } else if (as26 > 0 && (primaryVal === 0 || as26 > primaryVal + 1.0)) {
-        financialStatus = 'Excess';
-      } else {
-        const storedStatus = r.overallStatus || '';
-        if (storedStatus === 'All Matched' || storedStatus === 'Match' || storedStatus === 'Matched') {
-          financialStatus = 'Match';
-        } else if (storedStatus === 'Less Paid' || storedStatus === 'Less') {
-          financialStatus = 'Less Paid';
-        } else if (storedStatus === 'Excess' || storedStatus === 'Excess Paid') {
-          financialStatus = 'Excess';
-        } else {
-          financialStatus = 'Not Received';
-        }
-      }
+      // Derive financialStatus based on centralized rules
+      const financialStatus = deriveFinancialStatus({
+        tally,
+        as26,
+        saarthi,
+        isManuallyEdited: r.isManuallyEdited,
+        overallStatus: r.overallStatus
+      });
 
       const displayFy = (r.financialYear && r.financialYear.trim()) ? r.financialYear.trim() : (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years' ? activeFy : 'Unspecified');
 
@@ -1656,20 +1653,15 @@ export const exportReconciliationCSV = async (req, res) => {
       queryParams.push(wild, wild);
     }
 
-    const primaryTdsSQL = '(CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END)';
+    const primaryTdsSQL = PRIMARY_TDS_SQL;
 
     if (overallStatus && overallStatus !== 'All') {
-      if (overallStatus === 'Match' || overallStatus === 'All Matched') {
-        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 1 OR (${primaryTdsSQL} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND ABS(${primaryTdsSQL} - COALESCE(tr.as26_tds, 0)) <= 1.0) OR tr.overall_status IN ('All Matched', 'Match', 'Matched'))`);
-      } else if (overallStatus === 'Less Paid' || overallStatus === 'Less') {
-        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND ${primaryTdsSQL} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND ${primaryTdsSQL} > COALESCE(tr.as26_tds, 0) + 1.0)`);
-      } else if (overallStatus === 'Excess' || overallStatus === 'Excess Paid') {
-        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND COALESCE(tr.as26_tds, 0) > 0 AND (${primaryTdsSQL} = 0 OR ${primaryTdsSQL} < COALESCE(tr.as26_tds, 0) - 1.0))`);
-      } else if (overallStatus === 'Not Received' || overallStatus === 'No Match' || overallStatus === 'Missing') {
-        whereClauses.push(`(COALESCE(tr.is_manually_edited, 0) = 0 AND COALESCE(tr.as26_tds, 0) = 0 AND ${primaryTdsSQL} > 0)`);
-      } else {
-        whereClauses.push('tr.overall_status = ?');
-        queryParams.push(overallStatus);
+      const statusCondition = getFinancialStatusWhereClause(overallStatus, primaryTdsSQL);
+      if (statusCondition) {
+        whereClauses.push(statusCondition);
+        if (statusCondition === 'tr.overall_status = ?') {
+          queryParams.push(overallStatus);
+        }
       }
     }
 
@@ -1748,26 +1740,14 @@ export const exportReconciliationCSV = async (req, res) => {
       const tally = parseFloat(r.tallyTds || 0);
       const as26 = parseFloat(r.as26Tds || 0);
       const saarthi = parseFloat(r.booksTds || 0);
-      const primaryVal = tally > 0 ? tally : saarthi;
-
-      let calculatedStatus = 'Not Received';
-      if (r.isManuallyEdited) {
-        calculatedStatus = 'Match';
-      } else if (primaryVal > 0 && as26 > 0 && Math.abs(primaryVal - as26) <= 1.0) {
-        calculatedStatus = 'Match';
-      } else if (as26 === 0 && primaryVal > 0) {
-        calculatedStatus = 'Not Received';
-      } else if (primaryVal > 0 && as26 > 0 && primaryVal > as26 + 1.0) {
-        calculatedStatus = 'Less Paid';
-      } else if (as26 > 0 && (primaryVal === 0 || as26 > primaryVal + 1.0)) {
-        calculatedStatus = 'Excess';
-      } else {
-        const stored = r.overallStatus || '';
-        if (stored === 'All Matched' || stored === 'Match' || stored === 'Matched') calculatedStatus = 'Match';
-        else if (stored === 'Less Paid' || stored === 'Less') calculatedStatus = 'Less Paid';
-        else if (stored === 'Excess' || stored === 'Excess Paid') calculatedStatus = 'Excess';
-        else calculatedStatus = 'Not Received';
-      }
+      const primaryVal = getPrimaryTdsVal(tally, saarthi);
+      const calculatedStatus = deriveFinancialStatus({
+        tally,
+        as26,
+        saarthi,
+        isManuallyEdited: r.isManuallyEdited,
+        overallStatus: r.overallStatus
+      });
 
       const line = [
         `"${String(r.companyName || 'Unknown').replace(/"/g, '""')}"`,
@@ -1911,11 +1891,12 @@ export const deleteUploadBatch = async (req, res) => {
       batchId = meta.upload_batch_id || batchId;
     }
 
-    if (!batchId && id) {
-      batchId = String(id);
-    }
-
-    if (batchId) {
+    let batchWarning = null;
+    if (!batchId) {
+      // Do NOT fall back to numeric upload_history.id as batch UUID
+      batchWarning = `No resolvable upload_batch_id UUID found for upload history record ${id}. Cascade deletion of raw entries and reconciliation results was skipped.`;
+      console.warn(`⚠️ [deleteUploadBatch] ${batchWarning}`);
+    } else {
       await db.execute('DELETE FROM tds_26as_entries WHERE upload_batch_id = ?', [batchId]);
       await db.execute('DELETE FROM tds_tally_entries WHERE upload_batch_id = ?', [batchId]);
 
@@ -1958,7 +1939,13 @@ export const deleteUploadBatch = async (req, res) => {
       );
     } catch (e) { }
 
-    res.json({ success: true, message: 'Upload file batch deleted successfully', id });
+    res.json({ 
+      success: true, 
+      message: 'Upload file batch deleted successfully', 
+      warning: batchWarning || undefined,
+      id,
+      batchId: batchId || null
+    });
   } catch (error) {
     console.error('💥 Error in deleteUploadBatch:', error);
     res.status(500).json({ success: false, error: 'Failed to delete upload batch', details: error.message });

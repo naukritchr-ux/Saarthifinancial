@@ -10,12 +10,12 @@ export const getFollowupSummary = async (req, res) => {
     const [rows] = await db.execute(`
       SELECT 
         COUNT(*) as totalFollowedUp,
-        SUM(CASE WHEN status IN ('Call Tomorrow', 'Check & Revert', 'Mailed', 'Pending') THEN 1 ELSE 0 END) as pendingResponse,
-        SUM(CASE WHEN status = 'Call Not Picked Up' THEN 1 ELSE 0 END) as callNotPickedUp,
-        SUM(CASE WHEN status = 'Check & Revert' THEN 1 ELSE 0 END) as checkAndRevert,
-        SUM(CASE WHEN status = 'TDS Paid' THEN 1 ELSE 0 END) as tdsPaid,
-        SUM(CASE WHEN status = 'Form Received' THEN 1 ELSE 0 END) as formReceived,
-        SUM(CASE WHEN next_followup_date IS NOT NULL AND next_followup_date <= ? AND status NOT IN ('TDS Paid', 'Form Received') THEN 1 ELSE 0 END) as dueForFollowup
+        SUM(CASE WHEN LOWER(TRIM(status)) IN ('call tomorrow', 'check & revert', 'mailed', 'pending') THEN 1 ELSE 0 END) as pendingResponse,
+        SUM(CASE WHEN LOWER(TRIM(status)) = 'call not picked up' THEN 1 ELSE 0 END) as callNotPickedUp,
+        SUM(CASE WHEN LOWER(TRIM(status)) = 'check & revert' THEN 1 ELSE 0 END) as checkAndRevert,
+        SUM(CASE WHEN LOWER(TRIM(status)) = 'tds paid' THEN 1 ELSE 0 END) as tdsPaid,
+        SUM(CASE WHEN LOWER(TRIM(status)) = 'form received' THEN 1 ELSE 0 END) as formReceived,
+        SUM(CASE WHEN next_followup_date IS NOT NULL AND next_followup_date <= ? AND LOWER(TRIM(status)) NOT IN ('tds paid', 'form received') THEN 1 ELSE 0 END) as dueForFollowup
       FROM tds_followups
     `, [todayStr]);
 
@@ -74,10 +74,12 @@ export const getFollowups = async (req, res) => {
     }
 
     if (status && status !== 'All') {
-      const statuses = Array.isArray(status) ? status : String(status).split(',').map(s => s.trim()).filter(Boolean);
+      const statuses = (Array.isArray(status) ? status : String(status).split(','))
+        .map(s => s.trim().toLowerCase())
+        .filter(Boolean);
       if (statuses.length > 0) {
         const placeholders = statuses.map(() => '?').join(',');
-        whereClauses.push(`status IN (${placeholders})`);
+        whereClauses.push(`LOWER(TRIM(status)) IN (${placeholders})`);
         params.push(...statuses);
       }
     }
@@ -110,14 +112,14 @@ export const getFollowups = async (req, res) => {
 
     if (dueOnly === 'true' || dueOnly === true) {
       const todayStr = now.toISOString().split('T')[0];
-      whereClauses.push("next_followup_date IS NOT NULL AND next_followup_date <= ? AND status NOT IN ('TDS Paid', 'Form Received')");
+      whereClauses.push("next_followup_date IS NOT NULL AND next_followup_date <= ? AND LOWER(TRIM(status)) NOT IN ('tds paid', 'form received')");
       params.push(todayStr);
     }
 
     if (responseFilter === 'responded') {
-      whereClauses.push("status IN ('TDS Paid', 'Form Received', 'Check & Revert', 'Mail Reply')");
+      whereClauses.push("LOWER(TRIM(status)) IN ('tds paid', 'form received', 'check & revert', 'mail reply')");
     } else if (responseFilter === 'no_response') {
-      whereClauses.push("status IN ('Call Not Picked Up', 'Call Tomorrow', 'HR Left', 'Mailed')");
+      whereClauses.push("LOWER(TRIM(status)) IN ('call not picked up', 'call tomorrow', 'hr left', 'mailed')");
     }
 
     // FY filter: join to tds_dues by tan_no to check financial_year
