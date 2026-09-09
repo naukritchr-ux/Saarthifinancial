@@ -4,13 +4,17 @@ export const cleanNameTokens = (name) => {
   if (!name) return '';
   return String(name)
     .toUpperCase()
+    .replace(/PVT\.?\s*(LIMITED|LTD\.?)/gi, ' ')
     .replace(/PRIVATE\s+LIMITED/gi, ' ')
     .replace(/PVT\.?\s*LTD\.?/gi, ' ')
+    .replace(/PRIVATE/gi, ' ')
+    .replace(/PVT\.?/gi, ' ')
     .replace(/LIMITED/gi, ' ')
     .replace(/LTD\.?/gi, ' ')
     .replace(/LLP/gi, ' ')
     .replace(/INCORPORATED|INC\.?/gi, ' ')
     .replace(/CORP(\.|ORATION)?/gi, ' ')
+    .replace(/\b(COMPANY|CO\.?)\b/gi, ' ')
     .replace(/\b(THE|FOR|OF|AND|&|AN|IN|TO)\b/gi, ' ')
     .replace(/[^A-Z0-9]/gi, '')
     .trim();
@@ -21,22 +25,34 @@ export const extractAliases = (name) => {
   const aliases = new Set();
   const raw = String(name).toUpperCase().trim();
   const clean = cleanNameTokens(raw);
-  if (clean) aliases.add(clean);
+  if (clean) {
+    aliases.add(clean);
+    if (clean.endsWith('S') && clean.length > 4) aliases.add(clean.slice(0, -1));
+  }
 
   const match = raw.match(/\((.*?)\)/);
   if (match && match[1]) {
     const sub = cleanNameTokens(match[1]);
-    if (sub) aliases.add(sub);
+    if (sub) {
+      aliases.add(sub);
+      if (sub.endsWith('S') && sub.length > 4) aliases.add(sub.slice(0, -1));
+    }
   }
   const beforeParen = raw.replace(/\(.*?\)/g, '').trim();
   if (beforeParen) {
     const sub = cleanNameTokens(beforeParen);
-    if (sub) aliases.add(sub);
+    if (sub) {
+      aliases.add(sub);
+      if (sub.endsWith('S') && sub.length > 4) aliases.add(sub.slice(0, -1));
+    }
   }
   if (raw.includes('/')) {
     raw.split('/').forEach(part => {
       const sub = cleanNameTokens(part);
-      if (sub) aliases.add(sub);
+      if (sub) {
+        aliases.add(sub);
+        if (sub.endsWith('S') && sub.length > 4) aliases.add(sub.slice(0, -1));
+      }
     });
   }
 
@@ -59,22 +75,32 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
 
     // Pre-build knowledge base of TANs across 26AS, Tally, and existing Dues
     const [as26TanRows] = await db.query("SELECT DISTINCT UPPER(TRIM(tan_no)) as tan_no, UPPER(TRIM(deductor_name)) as name FROM tds_26as_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''");
-    const [tallyTanRows] = await db.query("SELECT DISTINCT UPPER(TRIM(tan_no)) as tan_no, UPPER(TRIM(party_name)) as name, UPPER(TRIM(pan_no)) as pan_no FROM tds_tally_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''");
-    const [duesWithTan] = await db.query("SELECT DISTINCT UPPER(TRIM(tan_no)) as tan_no, UPPER(TRIM(company_name)) as name, UPPER(TRIM(pan_no)) as pan_no FROM tds_dues WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' AND tan_no NOT LIKE 'NO_TAN_%'");
+    const [tallyTanRows] = await db.query("SELECT DISTINCT UPPER(TRIM(tan_no)) as tan_no, UPPER(TRIM(party_name)) as name, UPPER(TRIM(pan_no)) as pan_no, gst_num FROM tds_tally_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''");
+    const [duesWithTan] = await db.query("SELECT DISTINCT UPPER(TRIM(tan_no)) as tan_no, UPPER(TRIM(company_name)) as name, UPPER(TRIM(pan_no)) as pan_no, gst_num FROM tds_dues WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' AND tan_no NOT LIKE 'NO_TAN_%'");
 
     const tanByPan = new Map();
     const tanByAlias = new Map();
     const tanByCleanName = new Map();
 
-    const registerTan = (tan, name, pan) => {
+    const registerTan = (tan, name, pan, gst) => {
       if (!isTan(tan)) return;
       const cleanTan = tan.toUpperCase().trim();
       if (pan && isPan(pan) && !tanByPan.has(pan.toUpperCase().trim())) {
         tanByPan.set(pan.toUpperCase().trim(), cleanTan);
       }
+      if (gst && gst.length >= 12) {
+        const derivedPan = gst.substring(2, 12).toUpperCase().trim();
+        if (isPan(derivedPan) && !tanByPan.has(derivedPan)) {
+          tanByPan.set(derivedPan, cleanTan);
+        }
+      }
       const cleanName = cleanNameTokens(name);
-      if (cleanName && !tanByCleanName.has(cleanName)) {
-        tanByCleanName.set(cleanName, cleanTan);
+      if (cleanName) {
+        if (!tanByCleanName.has(cleanName)) tanByCleanName.set(cleanName, cleanTan);
+        if (cleanName.endsWith('S') && cleanName.length > 4) {
+          const sing = cleanName.slice(0, -1);
+          if (!tanByCleanName.has(sing)) tanByCleanName.set(sing, cleanTan);
+        }
       }
       extractAliases(name).forEach(a => {
         if (!tanByAlias.has(a)) tanByAlias.set(a, cleanTan);
@@ -82,11 +108,11 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     };
 
     // Official 26AS entries are authoritative for genuine TANs
-    as26TanRows.forEach(r => registerTan(r.tan_no, r.name, null));
-    duesWithTan.forEach(r => registerTan(r.tan_no, r.name, isPan(r.tan_no) ? r.tan_no : r.pan_no));
-    tallyTanRows.forEach(r => registerTan(r.tan_no, r.name, isPan(r.tan_no) ? r.tan_no : r.pan_no));
+    as26TanRows.forEach(r => registerTan(r.tan_no, r.name, null, null));
+    duesWithTan.forEach(r => registerTan(r.tan_no, r.name, isPan(r.tan_no) ? r.tan_no : r.pan_no, r.gst_num));
+    tallyTanRows.forEach(r => registerTan(r.tan_no, r.name, isPan(r.tan_no) ? r.tan_no : r.pan_no, r.gst_num));
 
-    // Resolve any unpopulated or PAN-based TANs in tds_dues using PAN and Aliases
+    // Resolve any unpopulated or PAN-based TANs in tds_dues using PAN, GST, and Aliases
     const [unresolvedDues] = await db.query(
       `SELECT id, company_name, tan_no, pan_no, gst_num, financial_year, tds 
        FROM tds_dues 
@@ -101,7 +127,8 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
       const pan = row.pan_no ? row.pan_no.toUpperCase().trim() : (row.gst_num && row.gst_num.length >= 12 ? row.gst_num.substring(2, 12).toUpperCase().trim() : (isPan(row.tan_no) ? row.tan_no.toUpperCase().trim() : null));
       let resolved = pan ? tanByPan.get(pan) : null;
       if (!resolved && row.company_name) {
-        resolved = tanByCleanName.get(cleanNameTokens(row.company_name));
+        const cl = cleanNameTokens(row.company_name);
+        resolved = tanByCleanName.get(cl) || (cl.endsWith('S') && cl.length > 4 ? tanByCleanName.get(cl.slice(0, -1)) : null);
       }
       if (!resolved) {
         for (const a of extractAliases(row.company_name)) {
