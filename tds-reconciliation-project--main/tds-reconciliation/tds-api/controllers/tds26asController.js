@@ -2,7 +2,7 @@ import xlsx from 'xlsx';
 import fs from 'fs';
 import path from 'path';
 import db from '../config/db.js';
-import { reconcile } from '../services/tdsReconciliationService.js';
+import { reconcile, cleanNameTokens } from '../services/tdsReconciliationService.js';
 import { seedEmbeddedDataset, markPurgedFlag, clearPurgedFlag } from '../seed_embedded_dataset.js';
 import { v4 as uuidv4 } from 'uuid';
 import { normalizeFY, getFinancialYearFromDate } from '../utils/fyHelper.js';
@@ -434,6 +434,16 @@ export const uploadTally = async (req, res) => {
     const entries = [];
     const startRow = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
 
+    // Pre-load known genuine TANs from Form 26AS to resolve any PANs or aliases provided in Tally
+    const [known26asTans] = await db.query(
+      "SELECT DISTINCT UPPER(TRIM(tan_no)) as tan_no, UPPER(TRIM(deductor_name)) as name FROM tds_26as_entries WHERE tan_no REGEXP '^[A-Za-z]{4}[0-9]{5}[A-Za-z]$'"
+    );
+    const tanByCleanName = new Map();
+    for (const k of known26asTans) {
+      const c = cleanNameTokens(k.name);
+      if (c && !tanByCleanName.has(c)) tanByCleanName.set(c, k.tan_no);
+    }
+
     for (let r = startRow; r < rawData.length; r++) {
       const row = rawData[r];
       if (!row || row.length === 0) continue;
@@ -446,8 +456,22 @@ export const uploadTally = async (req, res) => {
 
       const partyName = colMap.party_name !== -1 ? String(row[colMap.party_name] || '').trim() : 'Unknown Client';
       const gstNum = colMap.gst_num !== -1 ? String(row[colMap.gst_num] || '').trim() : '';
-      const panNo = colMap.pan_no !== -1 ? String(row[colMap.pan_no] || '').trim() : '';
+      let panNo = colMap.pan_no !== -1 ? String(row[colMap.pan_no] || '').trim() : '';
       const voucherDateRaw = colMap.voucher_date !== -1 ? String(row[colMap.voucher_date] || '').trim() : null;
+
+      // Detect if TAN is actually a PAN (5 letters, 4 numbers, 1 letter)
+      const isRealTan = /^[A-Z]{4}\d{5}[A-Z]$/i.test(tan);
+      const isRealPan = /^[A-Z]{5}\d{4}[A-Z]$/i.test(tan);
+      let finalTan = tan;
+      if (isRealPan && !panNo) {
+        panNo = tan;
+      }
+      if (!isRealTan) {
+        const resolvedTan = tanByCleanName.get(cleanNameTokens(partyName));
+        if (resolvedTan) {
+          finalTan = resolvedTan;
+        }
+      }
 
       let voucherDate = null;
       if (voucherDateRaw) {
@@ -471,7 +495,7 @@ export const uploadTally = async (req, res) => {
       const financialYear = normalizeFY(rowFyRaw) || fallbackFy;
 
       entries.push({
-        tan, partyName, gstNum, panNo, voucherDate, amount, tdsAmount, ledgerName, uploadBatchId,
+        tan: finalTan, partyName, gstNum, panNo, voucherDate, amount, tdsAmount, ledgerName, uploadBatchId,
         contactPerson, designation, contactNumber, emailId, teamleader, financialYear
       });
     }
@@ -740,12 +764,21 @@ export const getCleaningQueueCount = async (req, res) => {
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
       WHERE (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
-        -- Only show CSV-sourced data (26AS or Tally uploads), never CRM-only rows
-        AND (COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0)
+        AND (COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0 OR COALESCE(tr.books_tds, 0) > 0)
         AND (
           tr.tan_no IS NULL OR tr.tan_no = '' OR LENGTH(tr.tan_no) < 10
           OR tr.tan_no LIKE 'NO_TAN_%' OR tr.tan_no LIKE '%UNKNOWN%'
+          OR tr.tan_no REGEXP '^[A-Za-z]{5}[0-9]{4}[A-Za-z]$'
+          OR NOT (tr.tan_no REGEXP '^[A-Za-z]{4}[0-9]{5}[A-Za-z]$')
           OR d.company_name IS NULL OR d.company_name = 'Unknown Company' OR d.company_name = ''
+          OR d.company_name IN (
+            SELECT d_sub.company_name
+            FROM tds_reconciliation_results tr_sub
+            JOIN tds_dues d_sub ON tr_sub.tds_dues_id = d_sub.id
+            WHERE d_sub.company_name IS NOT NULL AND d_sub.company_name != ''
+            GROUP BY d_sub.company_name
+            HAVING COUNT(DISTINCT tr_sub.tan_no) > 1
+          )
         )
         AND tr.tan_no NOT IN ('COMPANYNAME', 'TANNO', 'TAN_NO', 'PANNO', 'TAN')
         AND UPPER(COALESCE(d.company_name, '')) NOT IN ('UNKNOWN CLIENT', 'COMPANYNAME')
@@ -759,17 +792,29 @@ export const getCleaningQueueCount = async (req, res) => {
 
 export const getCleaningQueue = async (req, res) => {
   try {
-    // Pagination for the response (does NOT limit which rows are scanned/flagged).
-    // Defaults keep old behavior of "first page looks like ~100 items" without
-    // silently dropping everything past the 100th candidate row.
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const pageSize = Math.min(500, Math.max(1, parseInt(req.query.pageSize, 10) || 100));
+
+    // Fetch multi-TAN companies so we can flag them
+    const [multiTanRows] = await db.execute(`
+      SELECT d.company_name, COUNT(DISTINCT tr.tan_no) as tan_count, GROUP_CONCAT(DISTINCT tr.tan_no) as tans
+      FROM tds_reconciliation_results tr
+      JOIN tds_dues d ON tr.tds_dues_id = d.id
+      WHERE d.company_name IS NOT NULL AND d.company_name != ''
+      GROUP BY d.company_name
+      HAVING tan_count > 1
+    `);
+    const multiTanMap = new Map();
+    (multiTanRows || []).forEach(r => {
+      multiTanMap.set(String(r.company_name).trim().toUpperCase(), r.tans.split(','));
+    });
 
     const query = `
       SELECT 
         tr.id,
         tr.tan_no as tanNo,
         d.company_name as booksCompanyName,
+        d.pan_no as booksPanNo,
         COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') as financialYear,
         tr.books_tds as booksTds,
         tr.as26_tds as as26Tds,
@@ -778,35 +823,32 @@ export const getCleaningQueue = async (req, res) => {
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
       WHERE (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
-        -- Only show CSV-sourced data (26AS or Tally uploads), never CRM-only rows
-        AND (COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0)
+        AND (COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0 OR COALESCE(tr.books_tds, 0) > 0)
         AND (
           tr.tan_no IS NULL OR tr.tan_no = '' OR LENGTH(tr.tan_no) < 10 
           OR tr.tan_no LIKE 'NO_TAN_%' OR tr.tan_no LIKE '%UNKNOWN%'
+          OR tr.tan_no REGEXP '^[A-Za-z]{5}[0-9]{4}[A-Za-z]$'
+          OR NOT (tr.tan_no REGEXP '^[A-Za-z]{4}[0-9]{5}[A-Za-z]$')
           OR d.company_name IS NULL OR d.company_name = 'Unknown Company' OR d.company_name = ''
+          OR d.company_name IN (
+            SELECT d_sub.company_name
+            FROM tds_reconciliation_results tr_sub
+            JOIN tds_dues d_sub ON tr_sub.tds_dues_id = d_sub.id
+            WHERE d_sub.company_name IS NOT NULL AND d_sub.company_name != ''
+            GROUP BY d_sub.company_name
+            HAVING COUNT(DISTINCT tr_sub.tan_no) > 1
+          )
         )
         AND tr.tan_no NOT IN ('COMPANYNAME', 'TANNO', 'TAN_NO', 'PANNO', 'TAN')
         AND UPPER(COALESCE(d.company_name, '')) NOT IN ('UNKNOWN CLIENT', 'COMPANYNAME')
       ORDER BY tr.id DESC
     `;
-    // NOTE: no SQL LIMIT here anymore — the old "LIMIT 100" capped the candidate
-    // rows *before* the JS confidence/mismatch filtering below ever ran, so the
-    // queue silently froze at (at most) 100 items and ignored everything older
-    // than the newest 100 reconciliation rows. We now scan everything and
-    // paginate the already-filtered result instead.
 
     const [rows] = await db.execute(query);
     if (!rows || rows.length === 0) {
       return res.json({ success: true, count: 0, data: [] });
     }
 
-    // Build the set of TANs / company names we actually need to look up, scoped
-    // to this batch of candidate rows — instead of pulling the whole
-    // tds_26as_entries / tds_tally_entries tables with a blind LIMIT 2000.
-    // The old LIMIT 2000 (with no ORDER BY) silently dropped rows once either
-    // table grew past 2000, which could make a genuinely matching record look
-    // like a "TAN mismatch" / "source discrepancy" purely because the matching
-    // code never saw it — not because the data actually disagreed.
     const neededTans = new Set();
     const neededNames = new Set();
     for (const r of rows) {
@@ -822,8 +864,6 @@ export const getCleaningQueue = async (req, res) => {
     const LOOKUP_CHUNK = 500;
     const fetchScoped = async (table, nameCol) => {
       const results = [];
-      // Chunk both the TAN and name IN-lists separately since a batch of ~250-500
-      // flagged rows can still produce a long parameter list.
       for (let i = 0; i < tanList.length; i += LOOKUP_CHUNK) {
         const chunk = tanList.slice(i, i + LOOKUP_CHUNK);
         const placeholders = chunk.map(() => '?').join(', ');
@@ -916,27 +956,39 @@ export const getCleaningQueue = async (req, res) => {
       }
 
       const isMissingTan = !tan || tan.length < 10 || tan.startsWith('NO_TAN_') || tan.includes('UNKNOWN');
+      const isPanAsTan = /^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(tan);
+      const isInvalidTanFormat = !isPanAsTan && !/^[A-Za-z]{4}[0-9]{5}[A-Za-z]$/.test(tan);
+      const companyTans = multiTanMap.get(normBooksName);
+      const isMultiTan = companyTans && companyTans.length > 1;
+
       const resolvedTans = [isMissingTan ? null : tan, as26Tan, tallyTan].filter(Boolean);
       const uniqueTans = Array.from(new Set(resolvedTans));
-      const isTanMismatch = uniqueTans.length > 1;
+      const isTanMismatch = uniqueTans.length > 1 || isPanAsTan || isMultiTan;
 
       let reason = 'Multi-source Data Discrepancy';
       let issueType = 'source_discrepancy';
 
-      if (isTanMismatch) {
+      if (isPanAsTan) {
+        reason = `PAN (${tan}) entered instead of TAN Number`;
+        issueType = 'pan_as_tan';
+      } else if (isMultiTan) {
+        reason = `Multiple TANs for company (${companyTans.join(', ')})`;
+        issueType = 'multi_tan';
+      } else if (uniqueTans.length > 1) {
         reason = 'Conflicting TANs across datasets';
         issueType = 'tan_mismatch';
       } else if (confidence < 90) {
         reason = 'Deductor Name Discrepancy';
         issueType = 'name_mismatch';
-      } else if (isMissingTan) {
-        reason = 'Missing Client TAN in CRM';
+      } else if (isMissingTan || isInvalidTanFormat) {
+        reason = 'Missing or Invalid TAN format';
         issueType = 'invalid_tan';
       }
 
       return {
         id: r.id,
         tanNo: isMissingTan ? 'Pending TAN' : tan,
+        pan: r.booksPanNo || (isPanAsTan ? tan : null),
         companyName: tallyName || booksName,
         tallyCompanyName: tallyName || booksName,
         tallyTan: tallyTan || (isMissingTan ? '' : tan),
@@ -967,11 +1019,12 @@ export const getCleaningQueue = async (req, res) => {
 
       if (isZeroData && isUnknownDummy) return false;
 
-      const invalidTan = !item.tanNo || item.tanNo === 'Pending TAN' || item.tanNo.length < 10 || item.tanNo.includes('UNKNOWN');
+      const invalidTan = !item.tanNo || item.tanNo === 'Pending TAN' || item.tanNo.length < 10 || item.tanNo.includes('UNKNOWN') || !/^[A-Za-z]{4}[0-9]{5}[A-Za-z]$/.test(item.tanNo);
+      const isPanAsTan = /^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(item.tanNo);
       const missingName = !item.saarthiName || item.saarthiName === 'Unknown Client' || item.saarthiName === 'Unknown Company';
       const lowConfidence = item.confidence < 90;
       const tanMismatch = item.isTanMismatch;
-      return invalidTan || missingName || lowConfidence || tanMismatch;
+      return invalidTan || isPanAsTan || missingName || lowConfidence || tanMismatch;
     });
 
     const totalCount = flaggedItems.length;
@@ -981,7 +1034,7 @@ export const getCleaningQueue = async (req, res) => {
 
     res.json({
       success: true,
-      count: totalCount,      // TRUE total across the whole backlog, not just this page
+      count: totalCount,
       page,
       pageSize,
       totalPages,
