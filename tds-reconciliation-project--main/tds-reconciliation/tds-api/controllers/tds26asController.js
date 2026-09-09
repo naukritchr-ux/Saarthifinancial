@@ -1068,23 +1068,15 @@ export const resolveCleaningItem = async (req, res) => {
     }
 
     if (String(status || '').toLowerCase() === 'rejected') {
-      const targetTan = String(tanNo || '').trim().toUpperCase();
+      // Mark as manually edited so it leaves the cleaning queue without wiping other FYs sharing that TAN
       await db.execute(
-        'DELETE FROM tds_reconciliation_results WHERE id = ? OR (tan_no IS NOT NULL AND UPPER(TRIM(tan_no)) = ?)',
-        [id, targetTan || id]
+        'UPDATE tds_reconciliation_results SET is_manually_edited = 1 WHERE id = ?',
+        [id]
       );
-      if (targetTan) {
-        try {
-          await db.execute(
-            'DELETE FROM tds_dues WHERE UPPER(TRIM(tan_no)) = ? AND (tds IS NULL OR tds = 0)',
-            [targetTan]
-          );
-        } catch (e) { }
-      }
 
       return res.json({
         success: true,
-        message: 'Cleaning item rejected and removed successfully',
+        message: 'Cleaning item rejected and removed from review queue successfully',
         id
       });
     }
