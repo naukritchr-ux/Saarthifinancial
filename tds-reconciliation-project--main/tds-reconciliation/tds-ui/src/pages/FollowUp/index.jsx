@@ -11,7 +11,9 @@ import {
   Calendar,
   Edit2,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  X,
+  Loader2
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { getFollowups, getFollowupSummary, deleteFollowup, purgeFollowups } from '../../api/tdsApi';
@@ -74,6 +76,20 @@ export default function FollowUp() {
     }
   }, [followupPreFill]);
 
+  // Delete / Purge confirmation states
+  const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
+  const [purgeConfirmOpen, setPurgeConfirmOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [feedbackToast, setFeedbackToast] = useState(null);
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (feedbackToast) {
+      const timer = setTimeout(() => setFeedbackToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [feedbackToast]);
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -117,43 +133,52 @@ export default function FollowUp() {
     loadData();
   };
 
-  const handleDeleteSingle = async (id, companyName, e) => {
-    if (e && e.stopPropagation) e.stopPropagation();
-    if (window.confirm(`Are you sure you want to delete follow-up log for "${companyName || 'this client'}"?`)) {
-      try {
-        // Optimistic UI update
-        setItems(prev => prev.filter(item => item.id !== id));
-        const res = await deleteFollowup(id);
-        if (!res || res.success === false) {
-          alert(res?.error || 'Failed to delete follow-up log entry');
-          loadData();
-        } else {
-          loadData();
-        }
-      } catch (err) {
-        console.error('Failed to delete follow-up:', err);
-        alert('Network error deleting follow-up entry.');
+  const handleDeleteConfirmed = async () => {
+    if (!deleteConfirmItem) return;
+    const { id, companyName } = deleteConfirmItem;
+    setIsDeleting(true);
+    try {
+      // Optimistic UI update
+      setItems(prev => prev.filter(item => item.id !== id));
+      const res = await deleteFollowup(id);
+      if (!res || res.success === false) {
+        setFeedbackToast({ type: 'error', text: res?.error || 'Failed to delete follow-up log entry' });
+        loadData();
+      } else {
+        setFeedbackToast({ type: 'success', text: `Deleted follow-up log for ${companyName || 'client'}` });
+        setDeleteConfirmItem(null);
         loadData();
       }
+    } catch (err) {
+      console.error('Failed to delete follow-up:', err);
+      setFeedbackToast({ type: 'error', text: 'Network error deleting follow-up entry.' });
+      loadData();
+    } finally {
+      setIsDeleting(false);
+      setDeleteConfirmItem(null);
     }
   };
 
-  const handlePurgeAllFollowups = async () => {
-    if (window.confirm('Are you sure you want to clear/delete ALL Client Follow-up Call Logs? This will remove previous client call updates.')) {
-      try {
-        setItems([]);
-        const res = await purgeFollowups();
-        if (res && res.success) {
-          loadData();
-        } else {
-          alert(res?.error || 'Failed to clear follow-ups');
-          loadData();
-        }
-      } catch (err) {
-        console.error('Failed to purge follow-ups:', err);
-        alert('Network error clearing follow-up logs.');
+  const handlePurgeConfirmed = async () => {
+    setIsDeleting(true);
+    try {
+      setItems([]);
+      const res = await purgeFollowups();
+      if (res && res.success) {
+        setFeedbackToast({ type: 'success', text: 'All follow-up logs have been cleared successfully.' });
+        setPurgeConfirmOpen(false);
+        loadData();
+      } else {
+        setFeedbackToast({ type: 'error', text: res?.error || 'Failed to clear follow-ups' });
         loadData();
       }
+    } catch (err) {
+      console.error('Failed to purge follow-ups:', err);
+      setFeedbackToast({ type: 'error', text: 'Network error clearing follow-up logs.' });
+      loadData();
+    } finally {
+      setIsDeleting(false);
+      setPurgeConfirmOpen(false);
     }
   };
 
@@ -241,7 +266,7 @@ export default function FollowUp() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={handlePurgeAllFollowups}
+            onClick={() => setPurgeConfirmOpen(true)}
             className="inline-flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold px-3 py-2.5 rounded-xl transition text-xs border border-red-200 cursor-pointer shadow-2xs"
             title="Clear all follow-up call history logs"
           >
@@ -577,7 +602,10 @@ export default function FollowUp() {
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={(e) => handleDeleteSingle(row.id, row.companyName, e)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteConfirmItem({ id: row.id, companyName: row.companyName });
+                          }}
                           className="p-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition cursor-pointer"
                           title="Delete Follow-up Log Entry"
                         >
@@ -592,6 +620,122 @@ export default function FollowUp() {
           </table>
         </div>
       </div>
+
+      {/* Floating Feedback Toast */}
+      {feedbackToast && (
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-semibold animate-fade-in ${
+          feedbackToast.type === 'error'
+            ? 'bg-red-50 text-red-700 border-red-200'
+            : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+        }`}>
+          {feedbackToast.type === 'error' ? (
+            <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          )}
+          <span>{feedbackToast.text}</span>
+          <button
+            onClick={() => setFeedbackToast(null)}
+            className="ml-2 text-gray-400 hover:text-gray-700 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Single Item Delete Confirmation Modal */}
+      {deleteConfirmItem && (
+        <div
+          onClick={() => !isDeleting && setDeleteConfirmItem(null)}
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 animate-scale-up"
+          >
+            <div className="flex items-center gap-3 text-red-600 mb-3">
+              <div className="p-2.5 rounded-xl bg-red-50 border border-red-100">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Delete Follow-up Log?</h3>
+                <p className="text-xs text-slate-500">This action cannot be undone.</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-slate-700 my-4 bg-slate-50 p-3 rounded-xl border border-slate-100">
+              Are you sure you want to permanently delete the follow-up log for <span className="font-bold text-slate-900">{deleteConfirmItem.companyName || 'this client'}</span>?
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeleteConfirmItem(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleDeleteConfirmed}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-xl transition cursor-pointer shadow-sm disabled:opacity-50"
+              >
+                {isDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {isDeleting ? 'Deleting...' : 'Delete Log'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Purge All Follow-ups Confirmation Modal */}
+      {purgeConfirmOpen && (
+        <div
+          onClick={() => !isDeleting && setPurgeConfirmOpen(false)}
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 animate-scale-up"
+          >
+            <div className="flex items-center gap-3 text-red-600 mb-3">
+              <div className="p-2.5 rounded-xl bg-red-50 border border-red-100">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Clear All Follow-up History?</h3>
+                <p className="text-xs text-slate-500">Irreversible Action</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-slate-700 my-4 bg-red-50/50 p-3 rounded-xl border border-red-100">
+              Are you sure you want to clear <span className="font-bold text-red-900">ALL Client Follow-up Call Logs</span>? This will wipe out all logged call notes and history across all clients.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setPurgeConfirmOpen(false)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handlePurgeConfirmed}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-xl transition cursor-pointer shadow-sm disabled:opacity-50"
+              >
+                {isDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {isDeleting ? 'Clearing...' : 'Clear All Logs'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add / Edit Modal */}
       {showAddModal && (
