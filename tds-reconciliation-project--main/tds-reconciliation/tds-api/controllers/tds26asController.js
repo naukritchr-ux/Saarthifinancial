@@ -568,9 +568,24 @@ export const uploadTally = async (req, res) => {
 
       let voucherDate = null;
       if (voucherDateRaw) {
-        const parsedDate = Date.parse(voucherDateRaw);
-        if (!isNaN(parsedDate)) {
-          voucherDate = new Date(parsedDate).toISOString().split('T')[0];
+        if (typeof voucherDateRaw === 'number' || (!isNaN(Number(voucherDateRaw)) && Number(voucherDateRaw) > 20000 && Number(voucherDateRaw) < 60000)) {
+          const UTC_DAYS_DIFF = 25569;
+          const date = new Date((Number(voucherDateRaw) - UTC_DAYS_DIFF) * 86400 * 1000);
+          if (!isNaN(date.getTime())) voucherDate = date.toISOString().split('T')[0];
+        } else {
+          const parsedDate = Date.parse(voucherDateRaw);
+          if (!isNaN(parsedDate)) {
+            voucherDate = new Date(parsedDate).toISOString().split('T')[0];
+          } else {
+            // Check DD-Mon-YY or DD/MM/YYYY
+            const ddmmyyyy = String(voucherDateRaw).match(/^(\d{1,2})[-/]([A-Za-z]{3}|\d{1,2})[-/](\d{2,4})$/);
+            if (ddmmyyyy) {
+              const tryParsed = Date.parse(`${ddmmyyyy[2]} ${ddmmyyyy[1]}, ${ddmmyyyy[3].length === 2 ? '20' + ddmmyyyy[3] : ddmmyyyy[3]}`);
+              if (!isNaN(tryParsed)) {
+                voucherDate = new Date(tryParsed).toISOString().split('T')[0];
+              }
+            }
+          }
         }
       }
 
@@ -586,7 +601,7 @@ export const uploadTally = async (req, res) => {
       const rowFyRaw = colMap.fy !== -1 ? String(row[colMap.fy] || '').trim() : '';
       const isSpecificFy = uploadFy && uploadFy !== 'All' && uploadFy !== 'All Financial Years';
       const fallbackFy = isSpecificFy ? (normalizeFY(uploadFy) || null) : null;
-      const financialYear = normalizeFY(rowFyRaw) || fallbackFy;
+      const financialYear = normalizeFY(rowFyRaw) || (voucherDate ? getFinancialYearFromDate(voucherDate) : null) || fallbackFy;
 
       entries.push({
         tan: finalTan, partyName, gstNum, panNo, voucherDate, amount, tdsAmount, ledgerName, uploadBatchId,
