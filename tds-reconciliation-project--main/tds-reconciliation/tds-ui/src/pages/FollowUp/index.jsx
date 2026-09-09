@@ -60,8 +60,9 @@ export default function FollowUp() {
   ];
 
   const statusOptions = React.useMemo(() => {
-    const customList = (items || [])
-      .map(i => i.status)
+    const list = Array.isArray(items) ? items : [];
+    const customList = list
+      .map(i => i?.status)
       .filter(st => st && !standardStatusOptions.includes(st));
     return [...standardStatusOptions, ...Array.from(new Set(customList))];
   }, [items]);
@@ -107,10 +108,17 @@ export default function FollowUp() {
         })
       ]);
 
-      if (sumRes && sumRes.success) setSummary(sumRes.data);
-      if (listRes && listRes.success) setItems(listRes.data || []);
+      if (sumRes && sumRes.success && sumRes.data) setSummary(sumRes.data);
+      if (listRes && listRes.success && Array.isArray(listRes.data)) {
+        setItems(listRes.data);
+      } else if (Array.isArray(listRes)) {
+        setItems(listRes);
+      } else {
+        setItems([]);
+      }
     } catch (err) {
       console.error('Failed to load follow-up report:', err);
+      setItems([]);
     } finally {
       setLoading(false);
     }
@@ -229,7 +237,8 @@ export default function FollowUp() {
     }
   };
 
-  const filteredEntries = items.filter(row => {
+  const filteredEntries = (Array.isArray(items) ? items : []).filter(row => {
+    if (!row) return false;
     if (selectedStatuses.length > 0 && !selectedStatuses.includes(row.status)) return false;
     if (search.trim()) {
       const q = search.toLowerCase().trim();
@@ -493,7 +502,9 @@ export default function FollowUp() {
                   </td>
                 </tr>
               ) : (() => {
-                const displayItems = items.filter(row => {
+                const list = Array.isArray(items) ? items : [];
+                const displayItems = list.filter(row => {
+                  if (!row) return false;
                   if (selectedStatuses.length > 0 && !selectedStatuses.includes(row.status)) return false;
                   if (search.trim()) {
                     const q = search.toLowerCase().trim();
@@ -647,7 +658,7 @@ export default function FollowUp() {
       {deleteConfirmItem && (
         <div
           onClick={() => !isDeleting && setDeleteConfirmItem(null)}
-          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50"
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -694,7 +705,7 @@ export default function FollowUp() {
       {purgeConfirmOpen && (
         <div
           onClick={() => !isDeleting && setPurgeConfirmOpen(false)}
-          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50"
         >
           <div
             onClick={(e) => e.stopPropagation()}
