@@ -54,6 +54,8 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     console.log(`🔄 Running 3-way reconciliation by (tan, financial_year). 26AS Batch: ${as26BatchId || 'all'} | Tally Batch: ${tallyBatchId || 'all'}`);
 
     const makeKey = (tan, fy) => `${(tan || '').toUpperCase().trim()}|${(fy || '').toUpperCase().trim()}`;
+    const isTan = (v) => /^[A-Za-z]{4}\d{5}[A-Za-z]$/.test(String(v || '').trim());
+    const isPan = (v) => /^[A-Za-z]{5}\d{4}[A-Za-z]$/.test(String(v || '').trim());
 
     // Pre-build knowledge base of TANs across 26AS, Tally, and existing Dues
     const [as26TanRows] = await db.query("SELECT DISTINCT UPPER(TRIM(tan_no)) as tan_no, UPPER(TRIM(deductor_name)) as name FROM tds_26as_entries WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''");
@@ -62,25 +64,33 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
 
     const tanByPan = new Map();
     const tanByAlias = new Map();
+    const tanByCleanName = new Map();
 
     const registerTan = (tan, name, pan) => {
-      if (!tan || tan.length < 10 || tan.startsWith('NO_TAN_')) return;
+      if (!isTan(tan)) return;
       const cleanTan = tan.toUpperCase().trim();
-      if (pan && pan.length === 10 && !tanByPan.has(pan)) tanByPan.set(pan.toUpperCase().trim(), cleanTan);
+      if (pan && isPan(pan) && !tanByPan.has(pan.toUpperCase().trim())) {
+        tanByPan.set(pan.toUpperCase().trim(), cleanTan);
+      }
+      const cleanName = cleanNameTokens(name);
+      if (cleanName && !tanByCleanName.has(cleanName)) {
+        tanByCleanName.set(cleanName, cleanTan);
+      }
       extractAliases(name).forEach(a => {
         if (!tanByAlias.has(a)) tanByAlias.set(a, cleanTan);
       });
     };
 
-    duesWithTan.forEach(r => registerTan(r.tan_no, r.name, r.pan_no));
-    tallyTanRows.forEach(r => registerTan(r.tan_no, r.name, r.pan_no));
+    // Official 26AS entries are authoritative for genuine TANs
     as26TanRows.forEach(r => registerTan(r.tan_no, r.name, null));
+    duesWithTan.forEach(r => registerTan(r.tan_no, r.name, isPan(r.tan_no) ? r.tan_no : r.pan_no));
+    tallyTanRows.forEach(r => registerTan(r.tan_no, r.name, isPan(r.tan_no) ? r.tan_no : r.pan_no));
 
-    // Resolve any unpopulated TANs in tds_dues using PAN and Aliases
+    // Resolve any unpopulated or PAN-based TANs in tds_dues using PAN and Aliases
     const [unresolvedDues] = await db.query(
-      `SELECT id, company_name, pan_no, gst_num, financial_year, tds 
+      `SELECT id, company_name, tan_no, pan_no, gst_num, financial_year, tds 
        FROM tds_dues 
-       WHERE tan_no IS NULL OR TRIM(tan_no) = '' OR tan_no LIKE 'NO_TAN_%'`
+       WHERE tan_no IS NULL OR TRIM(tan_no) = '' OR tan_no LIKE 'NO_TAN_%' OR tan_no REGEXP '^[A-Za-z]{5}[0-9]{4}[A-Za-z]$'`
     );
 
     const duesToUpdateTan = [];
@@ -88,8 +98,11 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     const unresolvedGroupMap = new Map();
 
     for (const row of unresolvedDues) {
-      const pan = row.pan_no ? row.pan_no.toUpperCase().trim() : (row.gst_num && row.gst_num.length >= 12 ? row.gst_num.substring(2, 12).toUpperCase().trim() : null);
+      const pan = row.pan_no ? row.pan_no.toUpperCase().trim() : (row.gst_num && row.gst_num.length >= 12 ? row.gst_num.substring(2, 12).toUpperCase().trim() : (isPan(row.tan_no) ? row.tan_no.toUpperCase().trim() : null));
       let resolved = pan ? tanByPan.get(pan) : null;
+      if (!resolved && row.company_name) {
+        resolved = tanByCleanName.get(cleanNameTokens(row.company_name));
+      }
       if (!resolved) {
         for (const a of extractAliases(row.company_name)) {
           if (tanByAlias.has(a)) {
@@ -103,7 +116,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
       const tdsVal = parseFloat(row.tds || 0);
 
       if (resolved) {
-        duesToUpdateTan.push({ id: row.id, tan: resolved });
+        duesToUpdateTan.push({ id: row.id, tan: resolved, pan: isPan(row.tan_no) ? row.tan_no : row.pan_no });
         resolvedDuesList.push({
           id: row.id,
           tan: resolved,
@@ -111,13 +124,13 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
           tds: tdsVal,
           company_name: row.company_name
         });
-      } else {
+      } else if (!isTan(row.tan_no)) {
         // Group unresolved rows by (cleanNameTokens(company_name), financial_year) to prevent duplicates
         const normKey = `${cleanNameTokens(row.company_name) || 'ENTITY'}|${fy || ''}`;
         if (!unresolvedGroupMap.has(normKey)) {
           unresolvedGroupMap.set(normKey, {
             id: row.id,
-            tan: `NO_TAN_${cleanNameTokens(row.company_name) || row.id}`,
+            tan: String(row.tan_no || ('NO_TAN_' + (cleanNameTokens(row.company_name) || row.id))).slice(0, 50),
             financial_year: fy,
             tds: 0,
             company_name: row.company_name || 'Client Entity'
@@ -132,7 +145,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
       const BATCH = 100;
       for (let i = 0; i < duesToUpdateTan.length; i += BATCH) {
         const chunk = duesToUpdateTan.slice(i, i + BATCH);
-        Promise.all(chunk.map(u => db.query("UPDATE tds_dues SET tan_no = ? WHERE id = ?", [u.tan, u.id]))).catch(() => {});
+        Promise.all(chunk.map(u => db.query("UPDATE tds_dues SET tan_no = ?, pan_no = COALESCE(pan_no, ?) WHERE id = ?", [u.tan, u.pan || null, u.id]))).catch(() => {});
       }
     }
 
@@ -143,20 +156,28 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
          UPPER(TRIM(tan_no)) as tan, 
          financial_year,
          SUM(COALESCE(tds, 0)) as tds, 
-         MAX(company_name) as company_name
+         MAX(company_name) as company_name,
+         MAX(pan_no) as pan_no
        FROM tds_dues 
        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' AND tan_no NOT LIKE 'NO_TAN_%'
        GROUP BY UPPER(TRIM(tan_no)), financial_year`
     );
 
-    // Merge resolved dues into grouped rows
+    // Merge resolved dues into grouped rows, normalizing any PAN to real TAN if known
     const allDuesGroupMap = new Map();
     for (const r of [...groupedDuesRows, ...resolvedDuesList]) {
-      const k = makeKey(r.tan, r.financial_year);
+      let finalTan = r.tan;
+      if (!isTan(finalTan)) {
+        const pan = isPan(finalTan) ? finalTan : (r.pan_no ? r.pan_no.toUpperCase().trim() : null);
+        const resolved = (pan ? tanByPan.get(pan) : null) || 
+                         (r.company_name ? tanByCleanName.get(cleanNameTokens(r.company_name)) : null);
+        if (resolved) finalTan = resolved;
+      }
+      const k = makeKey(finalTan, r.financial_year);
       if (!allDuesGroupMap.has(k)) {
         allDuesGroupMap.set(k, {
           id: r.id,
-          tan: r.tan.toUpperCase().trim(),
+          tan: finalTan.toUpperCase().trim(),
           financial_year: r.financial_year ? r.financial_year.trim() : null,
           tds: 0,
           company_name: r.company_name || 'Client Entity'
@@ -198,6 +219,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     const [tallyRows] = await db.query(
       `SELECT 
          UPPER(TRIM(tan_no)) as tan, 
+         MAX(pan_no) as pan_no,
          financial_year,
          MAX(party_name) as company_name, 
          SUM(tds_amount) as total, 
@@ -208,14 +230,27 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     );
     const tallyMap = new Map();
     tallyRows.forEach(r => {
+      let finalTan = r.tan;
+      if (!isTan(finalTan)) {
+        const pan = isPan(finalTan) ? finalTan : (r.pan_no ? r.pan_no.toUpperCase().trim() : null);
+        const resolved = (pan ? tanByPan.get(pan) : null) || 
+                         (r.company_name ? tanByCleanName.get(cleanNameTokens(r.company_name)) : null);
+        if (resolved) finalTan = resolved;
+      }
       const fy = r.financial_year ? r.financial_year.trim() : null;
-      tallyMap.set(makeKey(r.tan, fy), {
-        tan: r.tan,
-        financial_year: fy,
-        total: parseFloat(r.total || 0),
-        batchId: r.batch_id,
-        companyName: r.company_name
-      });
+      const key = makeKey(finalTan, fy);
+      if (tallyMap.has(key)) {
+        const existing = tallyMap.get(key);
+        existing.total += parseFloat(r.total || 0);
+      } else {
+        tallyMap.set(key, {
+          tan: finalTan,
+          financial_year: fy,
+          total: parseFloat(r.total || 0),
+          batchId: r.batch_id,
+          companyName: r.company_name
+        });
+      }
     });
 
     // Ensure all orphan (TAN, FY) from 26AS / Tally also exist in duesList
@@ -289,6 +324,12 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
         WHERE tr.tan_no LIKE 'NO_TAN_%' 
           AND d.tan_no IS NOT NULL AND d.tan_no != '' AND d.tan_no NOT LIKE 'NO_TAN_%'
       `);
+      await db.execute(`
+        DELETE tr FROM tds_reconciliation_results tr
+        JOIN tds_dues d ON tr.tds_dues_id = d.id
+        WHERE tr.tan_no REGEXP '^[A-Za-z]{5}[0-9]{4}[A-Za-z]$'
+          AND d.tan_no REGEXP '^[A-Za-z]{4}[0-9]{5}[A-Za-z]$'
+      `);
     } catch (cleanErr) {
       console.warn('Ghost cleanup warning:', cleanErr.message);
     }
@@ -312,8 +353,8 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     for (const due of duesList) {
       try {
         const dueId = due.id ? parseInt(due.id) : 0;
-        const tan = due.tan || `NO_TAN_${dueId}`;
-        const financialYear = due.financial_year || null;
+        const tan = String(due.tan || `NO_TAN_${dueId}`).trim().slice(0, 50);
+        const financialYear = due.financial_year ? String(due.financial_year).trim().slice(0, 50) : null;
         const compositeKey = makeKey(tan, financialYear);
         const booksTds = due.tds;
 
