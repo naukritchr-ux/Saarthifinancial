@@ -315,10 +315,16 @@ export const deleteFollowup = async (req, res) => {
     if (!id) return res.status(400).json({ success: false, error: 'Follow-up ID is required' });
 
     const targetId = isNaN(parseInt(id, 10)) ? id : parseInt(id, 10);
-    const [result] = await db.execute('DELETE FROM tds_followups WHERE id = ?', [targetId]);
+    let [result] = await db.execute('DELETE FROM tds_followups WHERE id = ?', [targetId]);
+
     if (!result || result.affectedRows === 0) {
-      await db.execute('DELETE FROM tds_followups WHERE tan_no = ? OR id = ?', [String(id), targetId]);
+      [result] = await db.execute('DELETE FROM tds_followups WHERE tan_no = ?', [String(id).trim()]);
     }
+
+    if (!result || result.affectedRows === 0) {
+      return res.status(404).json({ success: false, error: `No follow-up entry found for ID "${targetId}"` });
+    }
+
     res.json({ success: true, message: 'Follow-up entry deleted successfully', id: targetId });
   } catch (error) {
     console.error('💥 Error in deleteFollowup:', error);

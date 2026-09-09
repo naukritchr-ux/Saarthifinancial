@@ -330,45 +330,26 @@ export const updateFollowup = async (id, data) => {
   }
 };
 
+// Use POST /:id/delete as primary — DELETE verb is blocked by Render's proxy in production
+// while POST/GET pass through fine. The POST route already exists on the backend.
 export const deleteFollowup = async (id) => {
   try {
-    const response = await fetchWithTimeout(`${API_URL}/api/followups/${id}`, {
-      method: 'DELETE'
+    const response = await fetchWithTimeout(`${API_URL}/api/followups/${id}/delete`, {
+      method: 'POST'
     });
     const resData = await response.json().catch(() => null);
     if (response.ok && resData && resData.success !== false) return resData;
-
-    // Fallback to POST /:id/delete or POST /delete to bypass any proxies/CORS blocking HTTP DELETE
-    const postRes = await fetchWithTimeout(`${API_URL}/api/followups/${id}/delete`, {
-      method: 'POST'
-    });
-    const postData = await postRes.json().catch(() => null);
-    if (postRes.ok && postData && postData.success !== false) return postData;
-
-    const bodyPostRes = await fetchWithTimeout(`${API_URL}/api/followups/delete`, {
+    // Final fallback: POST /delete with id in body
+    const bodyRes = await fetchWithTimeout(`${API_URL}/api/followups/delete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id })
     });
-    return await bodyPostRes.json();
+    const bodyData = await bodyRes.json().catch(() => null);
+    if (bodyRes.ok && bodyData && bodyData.success !== false) return bodyData;
+    return { success: false, error: resData?.error || bodyData?.error || `Failed to delete follow-up (status ${response.status})` };
   } catch (err) {
-    try {
-      const postRes = await fetchWithTimeout(`${API_URL}/api/followups/${id}/delete`, {
-        method: 'POST'
-      });
-      return await postRes.json();
-    } catch (e2) {
-      try {
-        const bodyPostRes = await fetchWithTimeout(`${API_URL}/api/followups/delete`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id })
-        });
-        return await bodyPostRes.json();
-      } catch (e3) {
-        return { success: false, error: err.message || 'Network error deleting follow-up entry' };
-      }
-    }
+    return { success: false, error: err.message || 'Network error deleting follow-up entry' };
   }
 };
 

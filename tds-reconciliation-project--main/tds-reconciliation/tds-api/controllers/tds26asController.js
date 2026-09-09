@@ -847,7 +847,19 @@ export const getDashboardSummary = async (req, res) => {
 };
 
 /**
- * Get Data Import Cleaning Queue
+ * Detect placeholder or dummy company names (e.g. 'Unknown Client', 'Client Entity', 'Entity <TAN>')
+ */
+export const isDummyPlaceholderName = (name) => {
+  if (!name) return true;
+  const str = String(name).trim();
+  if (!str) return true;
+  if (['Unknown Client', 'Unknown Company', 'Client Entity', 'Unassigned Entity'].includes(str)) return true;
+  if (/^Entity\s+[A-Za-z0-9]+$/i.test(str)) return true;
+  return false;
+};
+
+/**
+ * Get Data Cleaning Queue items
  */
 /**
  * Fast badge count — single SQL COUNT(*), no JS processing.
@@ -926,6 +938,7 @@ export const getCleaningQueue = async (req, res) => {
           OR tr.tan_no REGEXP '^[A-Za-z]{5}[0-9]{4}[A-Za-z]$'
           OR NOT (tr.tan_no REGEXP '^[A-Za-z]{4}[0-9]{5}[A-Za-z]$')
           OR d.company_name IS NULL OR d.company_name = 'Unknown Company' OR d.company_name = ''
+          OR d.company_name LIKE 'Entity %'
           OR d.company_name IN (
             SELECT d_sub.company_name
             FROM tds_reconciliation_results tr_sub
@@ -1010,12 +1023,14 @@ export const getCleaningQueue = async (req, res) => {
 
     const cleaningItems = rows.map((r) => {
       const tan = r.tanNo ? String(r.tanNo).trim().toUpperCase() : '';
-      const booksName = r.booksCompanyName || 'Unknown Client';
+      const rawBooksName = r.booksCompanyName || '';
+      const isMissingBooksName = isDummyPlaceholderName(rawBooksName);
+      const booksName = isMissingBooksName ? (rawBooksName || 'Unknown Client') : rawBooksName;
       const normBooksName = String(booksName).trim().toUpperCase();
 
       let as26Name = null;
       let as26Tan = null;
-      const as26Match = (tan && !tan.startsWith('NO_TAN_') ? as26ByTan.get(tan) : null) || (normBooksName ? as26ByName.get(normBooksName) : null);
+      const as26Match = (tan && !tan.startsWith('NO_TAN_') ? as26ByTan.get(tan) : null) || (!isMissingBooksName && normBooksName ? as26ByName.get(normBooksName) : null);
       if (as26Match) {
         as26Name = as26Match.deductor_name;
         as26Tan = as26Match.tan_no;
@@ -1023,13 +1038,19 @@ export const getCleaningQueue = async (req, res) => {
 
       let tallyName = null;
       let tallyTan = null;
-      const tallyMatch = (tan && !tan.startsWith('NO_TAN_') ? tallyByTan.get(tan) : null) || (normBooksName ? tallyByName.get(normBooksName) : null);
+      const tallyMatch = (tan && !tan.startsWith('NO_TAN_') ? tallyByTan.get(tan) : null) || (!isMissingBooksName && normBooksName ? tallyByName.get(normBooksName) : null);
       if (tallyMatch) {
         tallyName = tallyMatch.party_name;
         tallyTan = tallyMatch.tan_no;
       }
 
-      const namesToCompare = [tallyName, as26Name, booksName].filter(Boolean);
+      // Do not score confidence against dummy/placeholder names like 'Entity <TAN>' or 'Unknown Client'
+      const namesToCompare = [
+        tallyName && !isDummyPlaceholderName(tallyName) ? tallyName : null,
+        as26Name && !isDummyPlaceholderName(as26Name) ? as26Name : null,
+        !isMissingBooksName ? booksName : null
+      ].filter(Boolean);
+
       let confidence = 100;
       if (namesToCompare.length >= 2) {
         let totalSim = 0;
@@ -1043,7 +1064,8 @@ export const getCleaningQueue = async (req, res) => {
         confidence = Math.round(totalSim / pairCount);
       }
 
-      let saarthiSuggestion = booksName;
+      // If booksName is a dummy placeholder, prefer genuine names from 26AS or Tally as suggestion
+      let saarthiSuggestion = !isMissingBooksName ? booksName : (as26Name || tallyName || booksName);
       if (as26Name && as26Name.length > saarthiSuggestion.length && as26Name !== 'Unknown Deductor') {
         saarthiSuggestion = as26Name;
       }
@@ -1083,7 +1105,7 @@ export const getCleaningQueue = async (req, res) => {
       } else if (isMissingTan || isInvalidTanFormat) {
         reason = 'Missing or Invalid TAN format';
         issueType = 'invalid_tan';
-      } else if (!booksName || ['Unknown Client', 'Unknown Company', 'Client Entity'].includes(booksName.trim())) {
+      } else if (isMissingBooksName) {
         reason = 'Missing Client Entity Name';
         issueType = 'missing_name';
       } else if (confidence < 90) {
@@ -1121,13 +1143,13 @@ export const getCleaningQueue = async (req, res) => {
 
     const flaggedItems = cleaningItems.filter(item => {
       const isZeroData = (item.booksTds || 0) === 0 && (item.as26Tds || 0) === 0 && (item.tallyTds || 0) === 0;
-      const isUnknownDummy = (item.companyName || item.saarthiName || '').toUpperCase().includes('UNKNOWN');
+      const isUnknownDummy = (item.companyName || item.saarthiName || '').toUpperCase().includes('UNKNOWN') || isDummyPlaceholderName(item.companyName || item.saarthiName);
 
       if (isZeroData && isUnknownDummy) return false;
 
       const invalidTan = !item.tanNo || item.tanNo === 'Pending TAN' || item.tanNo.length < 10 || item.tanNo.includes('UNKNOWN') || !/^[A-Za-z]{4}[0-9]{5}[A-Za-z]$/.test(item.tanNo);
       const isPanAsTan = /^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(item.tanNo);
-      const missingName = !item.saarthiName || item.saarthiName === 'Unknown Client' || item.saarthiName === 'Unknown Company' || item.saarthiName === 'Client Entity';
+      const missingName = isDummyPlaceholderName(item.saarthiName);
       const lowConfidence = item.confidence < 90;
       const tanMismatch = item.isTanMismatch;
       const isMultiTan = item.issueType === 'multi_tan';
