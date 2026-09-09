@@ -387,7 +387,7 @@ export default function UploadPanel({ onUploadSuccess }) {
               <option value="All Financial Years">All Financial Years</option>
               <option value="FY 2026-27">FY 2026-27</option>
               <option value="FY 2025-26">FY 2025-26</option>
-              <option value="FY 2024-25">FY 2024-25 (Current)</option>
+              <option value="FY 2024-25">FY 2024-25</option>
               <option value="FY 2023-24">FY 2023-24</option>
               <option value="FY 2022-23">FY 2022-23</option>
               <option value="FY 2021-22">FY 2021-22</option>
@@ -603,7 +603,7 @@ export default function UploadPanel({ onUploadSuccess }) {
               <option value="All Financial Years">All Financial Years</option>
               <option value="FY 2026-27">FY 2026-27</option>
               <option value="FY 2025-26">FY 2025-26</option>
-              <option value="FY 2024-25">FY 2024-25 (Current)</option>
+              <option value="FY 2024-25">FY 2024-25</option>
               <option value="FY 2023-24">FY 2023-24</option>
               <option value="FY 2022-23">FY 2022-23</option>
               <option value="FY 2021-22">FY 2021-22</option>
