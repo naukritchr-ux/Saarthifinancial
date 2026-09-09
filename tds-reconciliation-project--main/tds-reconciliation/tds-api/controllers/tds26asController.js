@@ -879,6 +879,7 @@ export const getCleaningQueueCount = async (req, res) => {
           OR tr.tan_no REGEXP '^[A-Za-z]{5}[0-9]{4}[A-Za-z]$'
           OR NOT (tr.tan_no REGEXP '^[A-Za-z]{4}[0-9]{5}[A-Za-z]$')
           OR d.company_name IS NULL OR d.company_name = 'Unknown Company' OR d.company_name = ''
+          OR d.company_name LIKE 'Entity %'
           OR d.company_name IN (
             SELECT d_sub.company_name
             FROM tds_reconciliation_results tr_sub
