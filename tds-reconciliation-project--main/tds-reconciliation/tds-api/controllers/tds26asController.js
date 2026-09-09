@@ -639,7 +639,8 @@ export const getDashboardSummary = async (req, res) => {
     const { fy } = req.query;
 
     let whereClauses = [
-      "(COALESCE(tr.books_tds, 0) > 0 OR COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0)"
+      "(COALESCE(tr.books_tds, 0) > 0 OR COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0)",
+      "(tr.tan_no IS NOT NULL AND tr.tan_no NOT LIKE 'NO_TAN_%' AND tr.tan_no != 'Pending TAN' AND tr.tan_no != 'Not Available' AND tr.tan_no NOT LIKE '%UNKNOWN%' AND TRIM(tr.tan_no) != '')"
     ];
     const params = [];
     if (fy && fy !== 'All' && fy !== 'All Financial Years' && String(fy).trim() !== '') {
@@ -1248,6 +1249,8 @@ export const getReconciliationReport = async (req, res) => {
 
     // Always exclude zero-data ghost rows where all 3 TDS amounts are zero/null
     whereClauses.push("NOT (COALESCE(tr.books_tds, 0) = 0 AND COALESCE(tr.as26_tds, 0) = 0 AND COALESCE(tr.tally_tds, 0) = 0)");
+    // Exclude unassigned/unresolved dummy TAN rows (Pending TAN / NO_TAN_) from the reconciliation table
+    whereClauses.push("(tr.tan_no IS NOT NULL AND tr.tan_no NOT LIKE 'NO_TAN_%' AND tr.tan_no != 'Pending TAN' AND tr.tan_no != 'Not Available' AND tr.tan_no NOT LIKE '%UNKNOWN%' AND TRIM(tr.tan_no) != '')");
 
     const activeFy = fy || financialYear;
     if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years' && String(activeFy).trim() !== '') {
@@ -1643,6 +1646,8 @@ export const exportReconciliationCSV = async (req, res) => {
 
     // Always exclude zero-data ghost rows where all 3 TDS amounts are zero/null
     whereClauses.push("NOT (COALESCE(tr.books_tds, 0) = 0 AND COALESCE(tr.as26_tds, 0) = 0 AND COALESCE(tr.tally_tds, 0) = 0)");
+    // Exclude unassigned/unresolved dummy TAN rows (Pending TAN / NO_TAN_) from export
+    whereClauses.push("(tr.tan_no IS NOT NULL AND tr.tan_no NOT LIKE 'NO_TAN_%' AND tr.tan_no != 'Pending TAN' AND tr.tan_no != 'Not Available' AND tr.tan_no NOT LIKE '%UNKNOWN%' AND TRIM(tr.tan_no) != '')");
 
     const activeFy = fy || financialYear;
     if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
