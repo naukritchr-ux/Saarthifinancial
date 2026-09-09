@@ -489,6 +489,7 @@ export const uploadTally = async (req, res) => {
       const designation = colMap.designation !== -1 ? String(row[colMap.designation] || '').trim() : null;
       const contactNumber = colMap.contact_number !== -1 ? String(row[colMap.contact_number] || '').trim() : null;
       const emailId = colMap.email_id !== -1 ? String(row[colMap.email_id] || '').trim() : null;
+      const teamleader = colMap.teamleader !== -1 ? String(row[colMap.teamleader] || '').trim() : null;
       const rowFyRaw = colMap.fy !== -1 ? String(row[colMap.fy] || '').trim() : '';
       const isSpecificFy = uploadFy && uploadFy !== 'All' && uploadFy !== 'All Financial Years';
       const fallbackFy = isSpecificFy ? (normalizeFY(uploadFy) || null) : null;
