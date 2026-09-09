@@ -167,12 +167,28 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
       }
     }
 
-    // Persist resolved TANs back to tds_dues in background
+    // Persist resolved TANs back to tds_dues in bulk chunks of 100
     if (duesToUpdateTan.length > 0) {
       const BATCH = 100;
       for (let i = 0; i < duesToUpdateTan.length; i += BATCH) {
         const chunk = duesToUpdateTan.slice(i, i + BATCH);
-        Promise.all(chunk.map(u => db.query("UPDATE tds_dues SET tan_no = ?, pan_no = COALESCE(pan_no, ?) WHERE id = ?", [u.tan, u.pan || null, u.id]))).catch(() => {});
+        const ids = chunk.map(u => u.id);
+        const tanCases = chunk.map(u => `WHEN ${parseInt(u.id)} THEN ?`).join(' ');
+        const panCases = chunk.map(u => `WHEN ${parseInt(u.id)} THEN ?`).join(' ');
+        const tanParams = chunk.map(u => u.tan);
+        const panParams = chunk.map(u => u.pan || null);
+
+        try {
+          await db.execute(
+            `UPDATE tds_dues 
+             SET tan_no = CASE id ${tanCases} END,
+                 pan_no = COALESCE(CASE id ${panCases} END, pan_no)
+             WHERE id IN (${ids.map(() => '?').join(', ')})`,
+            [...tanParams, ...panParams, ...ids]
+          );
+        } catch (e) {
+          // Fallback ignore if batch syntax unsupported
+        }
       }
     }
 
@@ -308,7 +324,8 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
           params.push(item.tan, item.companyName, item.financial_year);
         }
         await db.execute(
-          `INSERT INTO tds_dues (tan_no, company_name, tds, financial_year) VALUES ${placeholders}`,
+          `INSERT INTO tds_dues (tan_no, company_name, tds, financial_year) VALUES ${placeholders}
+           ON DUPLICATE KEY UPDATE company_name = COALESCE(NULLIF(VALUES(company_name), ''), tds_dues.company_name)`,
           params
         );
       }
@@ -362,7 +379,9 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     }
 
     const [recRows] = await db.query(
-      'SELECT id, tds_dues_id, UPPER(TRIM(tan_no)) as tan_no, financial_year, is_manually_edited, as26_batch_id, tally_batch_id FROM tds_reconciliation_results'
+      `SELECT id, tds_dues_id, UPPER(TRIM(tan_no)) as tan_no, financial_year, is_manually_edited, as26_batch_id, tally_batch_id,
+              books_tds, as26_tds, tally_tds, overall_status, books_vs_26as_status, books_vs_tally_status, as26_vs_tally_status
+       FROM tds_reconciliation_results`
     );
     const existingByTanFy = new Map();
     (recRows || []).forEach(r => {
@@ -461,21 +480,34 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
         }
 
         if (existing && existing.id) {
-          updatesList.push({
-            id: existing.id,
-            dueId,
-            tan,
-            booksTds,
-            as26Tds,
-            tallyTds,
-            booksVs26as,
-            booksVsTally,
-            as26VsTally,
-            overallStatus,
-            finalAs26BatchId,
-            finalTallyBatchId,
-            financialYear
-          });
+          const hasChanged = 
+            Math.abs(parseFloat(existing.books_tds || 0) - booksTds) > 0.001 ||
+            Math.abs(parseFloat(existing.as26_tds || 0) - as26Tds) > 0.001 ||
+            Math.abs(parseFloat(existing.tally_tds || 0) - tallyTds) > 0.001 ||
+            existing.overall_status !== overallStatus ||
+            existing.books_vs_26as_status !== booksVs26as ||
+            existing.books_vs_tally_status !== booksVsTally ||
+            existing.as26_vs_tally_status !== as26VsTally ||
+            existing.as26_batch_id !== finalAs26BatchId ||
+            existing.tally_batch_id !== finalTallyBatchId;
+
+          if (hasChanged) {
+            updatesList.push({
+              id: existing.id,
+              dueId,
+              tan,
+              booksTds,
+              as26Tds,
+              tallyTds,
+              booksVs26as,
+              booksVsTally,
+              as26VsTally,
+              overallStatus,
+              finalAs26BatchId,
+              finalTallyBatchId,
+              financialYear
+            });
+          }
         } else if (seenInserts.has(compositeKey)) {
           const existingIns = seenInserts.get(compositeKey);
           existingIns.booksTds = Math.max(existingIns.booksTds, booksTds);
