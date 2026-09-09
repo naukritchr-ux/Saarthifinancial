@@ -233,7 +233,7 @@ export const purgeData = async (target = 'all') => {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/purge`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target })
+      body: JSON.stringify({ target, confirm: true })
     }, 60000);
     const data = await response.json();
     if (response.ok && data && data.success !== false) return data;
