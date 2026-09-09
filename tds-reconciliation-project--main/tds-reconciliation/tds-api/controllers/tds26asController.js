@@ -727,13 +727,15 @@ export const getDashboardSummary = async (req, res) => {
       }
     });
 
+    const primaryTotal = tallyTotal > 0 ? tallyTotal : saarthiTotal;
+
     res.json({
       success: true,
       totals: {
         tally: tallyTotal,
         as26: as26Total,
         saarthi: saarthiTotal,
-        netGap: as26Total - tallyTotal
+        netGap: as26Total - primaryTotal
       },
       recordCount: rows.length,
       sourceCoverage: {
@@ -1302,7 +1304,7 @@ export const getReconciliationReport = async (req, res) => {
 
     let orderSQL = 'ORDER BY tr.id DESC';
     if (sortBy === 'difference_desc' || sortBy === 'difference' || sortBy === 'Difference (High → Low)') {
-      orderSQL = 'ORDER BY ABS((COALESCE(tr.books_tds, tr.tally_tds, 0)) - COALESCE(tr.as26_tds, 0)) DESC';
+      orderSQL = `ORDER BY ABS(${primaryTdsSQL} - COALESCE(tr.as26_tds, 0)) DESC`;
     }
 
     let statsQuery = `

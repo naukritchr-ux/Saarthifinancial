@@ -139,21 +139,23 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Net Gap: positive means 26AS > Tally (surplus for the company) */}
+        {/* Net Gap: positive means 26AS > Primary (Tally or Books fallback) */}
         <div className="bg-white p-5 rounded-2xl border border-[#E9E4FA] shadow-2xs flex items-center justify-between">
           <div>
-            <div className="text-xs font-bold text-[#6B6580] uppercase tracking-wider">Net 26AS − Tally</div>
+            <div className="text-xs font-bold text-[#6B6580] uppercase tracking-wider">
+              Net 26AS − {data.totals?.tally > 0 ? 'Tally' : 'Books'}
+            </div>
             <div className={`text-2xl font-black mt-1 ${data.totals.netGap > 0 ? 'text-[#4ADE80]' : data.totals.netGap < 0 ? 'text-[#F87A9E]' : 'text-[#1F1B2E]'}`}>
               {formatCurrency(Math.abs(data.totals.netGap))}
             </div>
             <div className="text-[11px] text-[#6B6580] font-medium mt-1 flex items-center gap-1">
               {data.totals.netGap > 0 ? (
                 <span className="text-[#4ADE80] font-bold flex items-center gap-0.5">
-                  <TrendingUp className="w-3 h-3" /> 26AS Exceeds Tally (Surplus)
+                  <TrendingUp className="w-3 h-3" /> 26AS Exceeds {data.totals?.tally > 0 ? 'Tally' : 'Books'} (Surplus)
                 </span>
               ) : data.totals.netGap < 0 ? (
                 <span className="text-[#F87A9E] font-bold flex items-center gap-0.5">
-                  <AlertTriangle className="w-3 h-3" /> Tally Exceeds 26AS (Shortfall)
+                  <AlertTriangle className="w-3 h-3" /> {data.totals?.tally > 0 ? 'Tally' : 'Books'} Exceeds 26AS (Shortfall)
                 </span>
               ) : (
                 <span className="text-[#4ADE80] font-bold">Perfectly Matched</span>
