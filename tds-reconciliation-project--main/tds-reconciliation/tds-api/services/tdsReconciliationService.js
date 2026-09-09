@@ -490,7 +490,7 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
             existing.as26_vs_tally_status !== as26VsTally ||
             String(existing.as26_batch_id || '') !== String(finalAs26BatchId || '') ||
             String(existing.tally_batch_id || '') !== String(finalTallyBatchId || '') ||
-            (dueId > 0 && (!existing.tds_dues_id || existing.tds_dues_id !== dueId)) ||
+            parseInt(existing.tds_dues_id || 0) !== parseInt(dueId || 0) ||
             String(existing.financial_year || '').trim() !== String(financialYear || '').trim();
 
           if (hasChanged) {
