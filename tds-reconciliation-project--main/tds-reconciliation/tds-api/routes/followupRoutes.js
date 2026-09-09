@@ -22,9 +22,10 @@ const router = express.Router();
 router.get('/summary',  asyncHandler(getFollowupSummary));
 router.get('/',         asyncHandler(getFollowups));
 router.post('/',        asyncHandler(createFollowup));
-router.put('/:id',      validateId, asyncHandler(updateFollowup));
-router.delete('/purge', asyncHandler(purgeFollowups));
-router.post('/purge',   asyncHandler(purgeFollowups));   // POST alias for browser compat
-router.delete('/:id',   validateId, asyncHandler(deleteFollowup));
+router.delete('/purge',      asyncHandler(purgeFollowups));
+router.post('/purge',        asyncHandler(purgeFollowups));   // POST alias for browser/proxy compat
+router.delete('/:id',        asyncHandler(deleteFollowup));
+router.post('/:id/delete',   asyncHandler(deleteFollowup));   // POST alias for browser/proxy compat
+router.post('/delete',       asyncHandler(deleteFollowup));   // POST with body.id
 
 export default router;

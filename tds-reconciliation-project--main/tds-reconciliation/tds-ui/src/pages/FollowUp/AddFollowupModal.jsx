@@ -10,8 +10,6 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
   const [contactPerson, setContactPerson] = useState(isEditing ? (itemToEdit.contactPerson || '') : '');
   const [department, setDepartment] = useState(isEditing ? (itemToEdit.department || 'Accounts') : 'Accounts');
   const [contactNumber, setContactNumber] = useState(isEditing ? (itemToEdit.contactNumber || '') : '');
-  const [accountantPerson, setAccountantPerson] = useState(isEditing ? (itemToEdit.accountantPerson || '') : '');
-  const [accountantNumber, setAccountantNumber] = useState(isEditing ? (itemToEdit.accountantNumber || '') : '');
   const [method, setMethod] = useState(isEditing ? itemToEdit.method : 'Call');
   const standardOptions = [
     'Call Not Picked Up',
@@ -73,8 +71,8 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
       contactPerson: contactPerson.trim(),
       department: department.trim(),
       contactNumber: contactNumber.trim(),
-      accountantPerson: accountantPerson.trim(),
-      accountantNumber: accountantNumber.trim(),
+      accountantPerson: null,
+      accountantNumber: null,
       method,
       status: resolvedStatus,
       notes: notes.trim(),
@@ -174,13 +172,13 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="block font-bold text-[#6B6580] uppercase tracking-wider mb-1 text-[10px]">
-                  HR / Contact Person
+                  Contact Person
                 </label>
                 <input
                   type="text"
                   value={contactPerson}
                   onChange={(e) => setContactPerson(e.target.value)}
-                  placeholder="HR Name"
+                  placeholder="e.g. Contact Person Name"
                   className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#9B87F5] transition-all font-medium"
                 />
               </div>
@@ -193,14 +191,14 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
                   type="text"
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
-                  placeholder="Accounts/HR"
+                  placeholder="Accounts/Finance"
                   className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#9B87F5] transition-all font-medium"
                 />
               </div>
 
               <div>
                 <label className="block font-bold text-[#6B6580] uppercase tracking-wider mb-1 text-[10px]">
-                  HR Contact Number
+                  Contact Number
                 </label>
                 <input
                   type="text"
@@ -209,40 +207,6 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
                   placeholder="+91 98..."
                   className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#9B87F5] transition-all font-medium"
                 />
-              </div>
-            </div>
-
-            {/* Accountant Contact Details Given by HR */}
-            <div className="p-3 bg-[#E8E4FF]/40 rounded-xl border border-[#E9E4FA] space-y-2">
-              <div className="text-[10px] font-black text-[#9B87F5] uppercase tracking-wider flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#9B87F5]"></span>
-                Accountant / Accounts Lead Contact (Given by HR)
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-[#6B6580] text-[10px] mb-1">
-                    Accountant Person Name
-                  </label>
-                  <input
-                    type="text"
-                    value={accountantPerson}
-                    onChange={(e) => setAccountantPerson(e.target.value)}
-                    placeholder="e.g. Ramesh Accounts Lead"
-                    className="w-full bg-white border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-[#9B87F5] font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-[#6B6580] text-[10px] mb-1">
-                    Accountant Phone / Mobile
-                  </label>
-                  <input
-                    type="text"
-                    value={accountantNumber}
-                    onChange={(e) => setAccountantNumber(e.target.value)}
-                    placeholder="e.g. +91 98190 12345"
-                    className="w-full bg-white border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-1.5 text-xs font-medium focus:outline-none focus:border-[#9B87F5]"
-                  />
-                </div>
               </div>
             </div>
 

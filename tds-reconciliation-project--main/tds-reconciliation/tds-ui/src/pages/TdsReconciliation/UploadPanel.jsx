@@ -23,12 +23,12 @@ export default function UploadPanel({ onUploadSuccess }) {
   const [as26File, setAs26File] = useState(null);
   const [tallyFile, setTallyFile] = useState(null);
 
-  const [as26Fy, setAs26Fy] = useState(fyFilter && fyFilter !== 'All Financial Years' ? fyFilter : 'FY 2024-25');
-  const [tallyFy, setTallyFy] = useState(fyFilter && fyFilter !== 'All Financial Years' ? fyFilter : 'FY 2024-25');
+  const [as26Fy, setAs26Fy] = useState(fyFilter || 'All Financial Years');
+  const [tallyFy, setTallyFy] = useState(fyFilter || 'All Financial Years');
 
   // Sync with global FY if user changed navbar dropdown
   useEffect(() => {
-    if (fyFilter && fyFilter !== 'All Financial Years') {
+    if (fyFilter) {
       setAs26Fy(fyFilter);
       setTallyFy(fyFilter);
     }
@@ -384,6 +384,7 @@ export default function UploadPanel({ onUploadSuccess }) {
               onChange={(e) => setAs26Fy(e.target.value)}
               className="w-full bg-white border border-[#E9E4FA] text-[#1F1B2E] font-bold text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-[#9B87F5] cursor-pointer"
             >
+              <option value="All Financial Years">All Financial Years</option>
               <option value="FY 2026-27">FY 2026-27</option>
               <option value="FY 2025-26">FY 2025-26</option>
               <option value="FY 2024-25">FY 2024-25 (Current)</option>
@@ -599,6 +600,7 @@ export default function UploadPanel({ onUploadSuccess }) {
               onChange={(e) => setTallyFy(e.target.value)}
               className="w-full bg-white border border-[#E9E4FA] text-[#1F1B2E] font-bold text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-[#9B87F5] cursor-pointer"
             >
+              <option value="All Financial Years">All Financial Years</option>
               <option value="FY 2026-27">FY 2026-27</option>
               <option value="FY 2025-26">FY 2025-26</option>
               <option value="FY 2024-25">FY 2024-25 (Current)</option>

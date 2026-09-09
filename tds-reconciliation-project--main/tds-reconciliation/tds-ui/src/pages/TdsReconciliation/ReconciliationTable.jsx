@@ -318,7 +318,7 @@ export default function ReconciliationTable({
                               <div className="flex items-center justify-between text-[10px] font-black uppercase text-[#9B87F5] tracking-wider">
                                 <span className="flex items-center gap-1.5">
                                   <User className="w-3.5 h-3.5" />
-                                  Client HR & Accounts Leadership Contact Details
+                                  Client Contact Details
                                 </span>
                                 <span className="text-[#6B6580]">
                                   TAN: {(!row.tanNo || row.tanNo.startsWith('NO_TAN_') || row.tanNo === 'Pending TAN' || row.tanNo === 'Not Available' || row.tanNo.includes('UNKNOWN')) ? 'Not Available' : row.tanNo}
@@ -327,7 +327,7 @@ export default function ReconciliationTable({
 
                               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-4 bg-[#E8E4FF]/30 rounded-xl border border-[#E9E4FA] text-[#1F1B2E]">
                                 <div>
-                                  <span className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider mb-0.5">HR / Contact Person</span>
+                                  <span className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider mb-0.5">Contact Person</span>
                                   <span className="font-black text-[#1F1B2E] text-xs flex items-center gap-1">
                                     <User className="w-3 h-3 text-[#9B87F5]" />
                                     {row.contactPersonName || 'Not Available'}
@@ -341,7 +341,7 @@ export default function ReconciliationTable({
                                   </span>
                                 </div>
                                 <div>
-                                  <span className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider mb-0.5">Direct Phone / Mobile</span>
+                                  <span className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider mb-0.5">Contact Number</span>
                                   <span className="font-mono font-black text-[#1F1B2E] text-xs flex items-center gap-1">
                                     <Phone className="w-3 h-3 text-[#4ADE80]" />
                                     {row.contactNumber || 'N/A'}

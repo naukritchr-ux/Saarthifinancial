@@ -307,6 +307,8 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
     const updatesList = [];
     const insertsList = [];
 
+    const seenInserts = new Map();
+
     for (const due of duesList) {
       try {
         const dueId = due.id ? parseInt(due.id) : 0;
@@ -406,8 +408,13 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
             finalTallyBatchId,
             financialYear
           });
+        } else if (seenInserts.has(compositeKey)) {
+          const existingIns = seenInserts.get(compositeKey);
+          existingIns.booksTds = Math.max(existingIns.booksTds, booksTds);
+          existingIns.tallyTds = Math.max(existingIns.tallyTds, tallyTds);
+          existingIns.as26Tds = Math.max(existingIns.as26Tds, as26Tds);
         } else {
-          insertsList.push({
+          const insObj = {
             dueId,
             tan,
             booksTds,
@@ -420,7 +427,9 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
             finalAs26BatchId,
             finalTallyBatchId,
             financialYear
-          });
+          };
+          seenInserts.set(compositeKey, insObj);
+          insertsList.push(insObj);
         }
       } catch (rowErr) {
         console.warn(`⚠️ Skipped reconciliation preparation for row ${due.id}:`, rowErr.message);

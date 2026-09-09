@@ -335,14 +335,22 @@ export const deleteFollowup = async (id) => {
     const response = await fetchWithTimeout(`${API_URL}/api/followups/${id}`, {
       method: 'DELETE'
     });
-    const resData = await response.json();
+    const resData = await response.json().catch(() => null);
     if (response.ok && resData && resData.success !== false) return resData;
 
-    // Fallback to POST /delete to bypass any proxies/CORS blocking HTTP DELETE
+    // Fallback to POST /:id/delete or POST /delete to bypass any proxies/CORS blocking HTTP DELETE
     const postRes = await fetchWithTimeout(`${API_URL}/api/followups/${id}/delete`, {
       method: 'POST'
     });
-    return await postRes.json();
+    const postData = await postRes.json().catch(() => null);
+    if (postRes.ok && postData && postData.success !== false) return postData;
+
+    const bodyPostRes = await fetchWithTimeout(`${API_URL}/api/followups/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    return await bodyPostRes.json();
   } catch (err) {
     try {
       const postRes = await fetchWithTimeout(`${API_URL}/api/followups/${id}/delete`, {
@@ -350,7 +358,16 @@ export const deleteFollowup = async (id) => {
       });
       return await postRes.json();
     } catch (e2) {
-      return { success: false, error: err.message || 'Network error deleting follow-up entry' };
+      try {
+        const bodyPostRes = await fetchWithTimeout(`${API_URL}/api/followups/delete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id })
+        });
+        return await bodyPostRes.json();
+      } catch (e3) {
+        return { success: false, error: err.message || 'Network error deleting follow-up entry' };
+      }
     }
   }
 };
@@ -360,10 +377,22 @@ export const purgeFollowups = async () => {
     const response = await fetchWithTimeout(`${API_URL}/api/followups/purge`, {
       method: 'DELETE'
     });
-    const resData = await response.json();
+    const resData = await response.json().catch(() => null);
     if (response.ok && resData && resData.success !== false) return resData;
-    return { success: false, error: resData?.error || 'Failed to purge follow-up history log' };
+
+    // Fallback to POST /purge for browser/proxy compatibility
+    const postRes = await fetchWithTimeout(`${API_URL}/api/followups/purge`, {
+      method: 'POST'
+    });
+    return await postRes.json();
   } catch (err) {
-    return { success: false, error: err.message || 'Network error purging follow-up history log' };
+    try {
+      const postRes = await fetchWithTimeout(`${API_URL}/api/followups/purge`, {
+        method: 'POST'
+      });
+      return await postRes.json();
+    } catch (e2) {
+      return { success: false, error: err.message || 'Network error purging follow-up history log' };
+    }
   }
 };
