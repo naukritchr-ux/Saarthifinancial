@@ -488,8 +488,10 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
             existing.books_vs_26as_status !== booksVs26as ||
             existing.books_vs_tally_status !== booksVsTally ||
             existing.as26_vs_tally_status !== as26VsTally ||
-            existing.as26_batch_id !== finalAs26BatchId ||
-            existing.tally_batch_id !== finalTallyBatchId;
+            String(existing.as26_batch_id || '') !== String(finalAs26BatchId || '') ||
+            String(existing.tally_batch_id || '') !== String(finalTallyBatchId || '') ||
+            (dueId > 0 && (!existing.tds_dues_id || existing.tds_dues_id !== dueId)) ||
+            String(existing.financial_year || '').trim() !== String(financialYear || '').trim();
 
           if (hasChanged) {
             updatesList.push({
