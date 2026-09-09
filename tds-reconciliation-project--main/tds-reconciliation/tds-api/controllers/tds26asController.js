@@ -82,6 +82,12 @@ const calculateStringSimilarity = (str1, str2) => {
  * Trigger Database Seeding Endpoint
  */
 export const seedDatabaseEndpoint = async (req, res) => {
+  if (process.env.NODE_ENV === 'production' || process.env.ALLOW_SEED !== 'true') {
+    return res.status(403).json({
+      success: false,
+      error: 'Database seeding is disabled in production'
+    });
+  }
   try {
     clearPurgedFlag();
     await seedEmbeddedDataset(true);
@@ -1793,7 +1799,14 @@ export const exportReconciliationCSV = async (req, res) => {
  */
 export const purgeUploadData = async (req, res) => {
   try {
-    const { target } = req.body || {};
+    const { target, confirm } = req.body || {};
+
+    if (!target || (confirm !== true && confirm !== 'true')) {
+      return res.status(400).json({
+        success: false,
+        error: 'Refusing to purge data: explicit "target" (26as, tally, or all) and "confirm: true" are required in request body.'
+      });
+    }
 
     if (process.env.DB_TYPE === 'mysql') {
       try { await db.execute('SET FOREIGN_KEY_CHECKS = 0'); } catch (e) { }
@@ -1837,13 +1850,18 @@ export const purgeUploadData = async (req, res) => {
            AND (is_manually_edited IS NULL OR is_manually_edited = 0)`
       );
       await reconcile(null, null);
-    } else {
+    } else if (target === 'all') {
       await db.execute('DELETE FROM tds_26as_entries');
       await db.execute('DELETE FROM tds_tally_entries');
       await db.execute('DELETE FROM upload_history');
       await db.execute('DELETE FROM tds_reconciliation_results');
       await db.execute('DELETE FROM tds_dues');
       // NOTE: Follow-up logs (tds_followups) are preserved and never deleted during dataset purge
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid purge target: "${target}". Valid targets are '26as', 'tally', or 'all'.`
+      });
     }
 
     if (process.env.DB_TYPE === 'mysql') {
@@ -1851,7 +1869,7 @@ export const purgeUploadData = async (req, res) => {
     }
 
     markPurgedFlag();
-    res.json({ success: true, message: `Successfully cleaned ${target || 'all'} dataset records` });
+    res.json({ success: true, message: `Successfully cleaned ${target} dataset records` });
   } catch (err) {
     console.error('Error in purgeUploadData:', err);
     res.status(500).json({ success: false, error: err.message });
