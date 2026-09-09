@@ -772,7 +772,7 @@ export const getCleaningQueueCount = async (req, res) => {
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
       WHERE (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
-        AND (COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0 OR COALESCE(tr.books_tds, 0) > 0)
+        AND (COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0)
         AND (
           tr.tan_no IS NULL OR tr.tan_no = '' OR LENGTH(tr.tan_no) < 10
           OR tr.tan_no LIKE 'NO_TAN_%' OR tr.tan_no LIKE '%UNKNOWN%'
@@ -831,7 +831,7 @@ export const getCleaningQueue = async (req, res) => {
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
       WHERE (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
-        AND (COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0 OR COALESCE(tr.books_tds, 0) > 0)
+        AND (COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0)
         AND (
           tr.tan_no IS NULL OR tr.tan_no = '' OR LENGTH(tr.tan_no) < 10 
           OR tr.tan_no LIKE 'NO_TAN_%' OR tr.tan_no LIKE '%UNKNOWN%'
