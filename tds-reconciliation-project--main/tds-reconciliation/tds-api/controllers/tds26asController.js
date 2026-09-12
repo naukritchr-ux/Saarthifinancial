@@ -312,10 +312,37 @@ export const upload26as = async (req, res) => {
       return res.status(400).json({ success: false, error: 'No valid data rows found in 26AS file.' });
     }
 
+    // Deduplicate exact matching rows in-memory before bulk insert:
+    // (tan_no, financial_year, tds_deducted, section, quarter)
+    const seen26asKeys = new Set();
+    const dedupedEntries = [];
+    let duplicatesSkipped = 0;
+
+    for (const entry of entries) {
+      const key = [
+        String(entry.tan || '').toUpperCase().trim(),
+        String(entry.financialYear || '').toUpperCase().trim(),
+        parseFloat(entry.tdsDeducted || 0).toFixed(2),
+        String(entry.section || '').toUpperCase().trim(),
+        String(entry.quarter || '').toUpperCase().trim()
+      ].join('|');
+
+      if (seen26asKeys.has(key)) {
+        duplicatesSkipped++;
+      } else {
+        seen26asKeys.add(key);
+        dedupedEntries.push(entry);
+      }
+    }
+
+    if (dedupedEntries.length === 0) {
+      return res.status(400).json({ success: false, error: 'All rows in 26AS file were empty or skipped.' });
+    }
+
     // Bulk insert entries in chunks of 500
     const INSERT_CHUNK = 500;
-    for (let i = 0; i < entries.length; i += INSERT_CHUNK) {
-      const chunk = entries.slice(i, i + INSERT_CHUNK);
+    for (let i = 0; i < dedupedEntries.length; i += INSERT_CHUNK) {
+      const chunk = dedupedEntries.slice(i, i + INSERT_CHUNK);
       const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
       const params = [];
       for (const e of chunk) {
@@ -329,7 +356,7 @@ export const upload26as = async (req, res) => {
 
     // Persist financial year onto matching tds_dues rows in bulk chunks of 200 only if specific FY
     if (uploadFy && uploadFy !== 'All' && uploadFy !== 'All Financial Years') {
-      const uniqueTans = [...new Set(entries.map(e => e.tan).filter(Boolean))];
+      const uniqueTans = [...new Set(dedupedEntries.map(e => e.tan).filter(Boolean))];
       const FY_CHUNK = 200;
       for (let i = 0; i < uniqueTans.length; i += FY_CHUNK) {
         const chunk = uniqueTans.slice(i, i + FY_CHUNK);
@@ -358,7 +385,8 @@ export const upload26as = async (req, res) => {
       upload_batch_id: uploadBatchId,
       financial_year: normalizeFY(uploadFy) || null,
       file_name: file.originalname,
-      total_records: entries.length
+      total_records: dedupedEntries.length,
+      duplicates_skipped: duplicatesSkipped
     });
 
     await db.execute(
@@ -370,7 +398,8 @@ export const upload26as = async (req, res) => {
       success: true,
       message: `26AS CSV uploaded and parsed successfully. Created batch ID ${uploadBatchId}`,
       batchId: uploadBatchId,
-      records: entries.length
+      records: dedupedEntries.length,
+      duplicatesSkipped
     });
 
   } catch (error) {
@@ -613,10 +642,36 @@ export const uploadTally = async (req, res) => {
       return res.status(400).json({ success: false, error: 'No valid Tally rows found.' });
     }
 
+    // Deduplicate exact matching rows in-memory before bulk insert:
+    // (tan_no, financial_year, tds_amount, voucher_date)
+    const seenTallyKeys = new Set();
+    const dedupedEntries = [];
+    let duplicatesSkipped = 0;
+
+    for (const entry of entries) {
+      const key = [
+        String(entry.tan || '').toUpperCase().trim(),
+        String(entry.financialYear || '').toUpperCase().trim(),
+        parseFloat(entry.tdsAmount || 0).toFixed(2),
+        String(entry.voucherDate || '').trim()
+      ].join('|');
+
+      if (seenTallyKeys.has(key)) {
+        duplicatesSkipped++;
+      } else {
+        seenTallyKeys.add(key);
+        dedupedEntries.push(entry);
+      }
+    }
+
+    if (dedupedEntries.length === 0) {
+      return res.status(400).json({ success: false, error: 'All rows in Tally file were empty or skipped.' });
+    }
+
     // Bulk insert entries in chunks of 500
     const TALLY_CHUNK = 500;
-    for (let i = 0; i < entries.length; i += TALLY_CHUNK) {
-      const chunk = entries.slice(i, i + TALLY_CHUNK);
+    for (let i = 0; i < dedupedEntries.length; i += TALLY_CHUNK) {
+      const chunk = dedupedEntries.slice(i, i + TALLY_CHUNK);
       const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
       const params = [];
       for (const e of chunk) {
@@ -630,7 +685,7 @@ export const uploadTally = async (req, res) => {
 
     // Deduplicate contact info by TAN and update in parallel chunks of 30
     const contactsByTan = new Map();
-    for (const e of entries) {
+    for (const e of dedupedEntries) {
       if (e.tan && (e.contactPerson || e.designation || e.contactNumber || e.emailId || e.teamleader)) {
         const existing = contactsByTan.get(e.tan.toUpperCase()) || {};
         contactsByTan.set(e.tan.toUpperCase(), {
@@ -683,7 +738,7 @@ export const uploadTally = async (req, res) => {
 
     // Persist financial year onto matching tds_dues rows in bulk chunks of 200 only if specific FY
     if (uploadFy && uploadFy !== 'All' && uploadFy !== 'All Financial Years') {
-      const uniqueTans = [...new Set(entries.map(e => e.tan).filter(Boolean))];
+      const uniqueTans = [...new Set(dedupedEntries.map(e => e.tan).filter(Boolean))];
       const FY_CHUNK = 200;
       for (let i = 0; i < uniqueTans.length; i += FY_CHUNK) {
         const chunk = uniqueTans.slice(i, i + FY_CHUNK);
@@ -712,7 +767,8 @@ export const uploadTally = async (req, res) => {
       upload_batch_id: uploadBatchId,
       financial_year: normalizeFY(uploadFy) || null,
       file_name: file.originalname,
-      total_records: entries.length
+      total_records: dedupedEntries.length,
+      duplicates_skipped: duplicatesSkipped
     });
 
     await db.execute(
@@ -724,7 +780,8 @@ export const uploadTally = async (req, res) => {
       success: true,
       message: `Tally CSV uploaded and parsed successfully. Created batch ID ${uploadBatchId}`,
       batchId: uploadBatchId,
-      records: entries.length
+      records: dedupedEntries.length,
+      duplicatesSkipped
     });
 
   } catch (error) {
@@ -903,6 +960,22 @@ export const getCleaningQueueCount = async (req, res) => {
             GROUP BY d_sub.company_name
             HAVING COUNT(DISTINCT tr_sub.tan_no) > 1
           )
+          OR (
+            tr.tan_no IN (
+              SELECT tan_no FROM tds_26as_entries 
+              WHERE tan_no IS NOT NULL AND tan_no != '' 
+              GROUP BY tan_no, COALESCE(financial_year, '') 
+              HAVING COUNT(*) > 1 AND COUNT(DISTINCT tds_deducted) > 1
+            )
+          )
+          OR (
+            tr.tan_no IN (
+              SELECT tan_no FROM tds_tally_entries 
+              WHERE tan_no IS NOT NULL AND tan_no != '' 
+              GROUP BY tan_no, COALESCE(financial_year, '') 
+              HAVING COUNT(*) > 1 AND COUNT(DISTINCT tds_amount) > 1
+            )
+          )
         )
         AND tr.tan_no NOT IN ('COMPANYNAME', 'TANNO', 'TAN_NO', 'PANNO', 'TAN')
         AND UPPER(COALESCE(d.company_name, '')) NOT IN ('UNKNOWN CLIENT', 'COMPANYNAME')
@@ -931,6 +1004,70 @@ export const getCleaningQueue = async (req, res) => {
     const multiTanMap = new Map();
     (multiTanRows || []).forEach(r => {
       multiTanMap.set(String(r.company_name).trim().toUpperCase(), r.tans.split(','));
+    });
+
+    // Fetch ambiguous duplicate entries (same TAN+FY with conflicting distinct amounts)
+    const [dup26asRows] = await db.execute(`
+      SELECT 
+        UPPER(TRIM(tan_no)) as tan_no, 
+        COALESCE(NULLIF(TRIM(financial_year), ''), 'Unspecified') as financial_year,
+        COUNT(*) as row_count,
+        COUNT(DISTINCT tds_deducted) as distinct_amounts_count,
+        GROUP_CONCAT(DISTINCT tds_deducted) as amounts
+      FROM tds_26as_entries
+      WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''
+      GROUP BY UPPER(TRIM(tan_no)), COALESCE(NULLIF(TRIM(financial_year), ''), 'Unspecified')
+      HAVING COUNT(*) > 1 AND COUNT(DISTINCT tds_deducted) > 1
+    `);
+
+    const [dupTallyRows] = await db.execute(`
+      SELECT 
+        UPPER(TRIM(tan_no)) as tan_no, 
+        COALESCE(NULLIF(TRIM(financial_year), ''), 'Unspecified') as financial_year,
+        COUNT(*) as row_count,
+        COUNT(DISTINCT tds_amount) as distinct_amounts_count,
+        GROUP_CONCAT(DISTINCT tds_amount) as amounts
+      FROM tds_tally_entries
+      WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''
+      GROUP BY UPPER(TRIM(tan_no)), COALESCE(NULLIF(TRIM(financial_year), ''), 'Unspecified')
+      HAVING COUNT(*) > 1 AND COUNT(DISTINCT tds_amount) > 1
+    `);
+
+    const duplicateEntriesMap = new Map();
+    (dup26asRows || []).forEach(r => {
+      const amountsList = String(r.amounts || '').split(',').map(a => `₹${parseFloat(a).toLocaleString('en-IN')}`).join(', ');
+      const key = `${r.tan_no}|${r.financial_year}`.toUpperCase();
+      duplicateEntriesMap.set(key, {
+        source: 'Form 26AS',
+        tan: r.tan_no,
+        fy: r.financial_year,
+        amounts: amountsList,
+        reason: `Multiple Form 26AS entries for this TAN+FY with different amounts (${amountsList})`
+      });
+      if (!duplicateEntriesMap.has(r.tan_no)) {
+        duplicateEntriesMap.set(r.tan_no, duplicateEntriesMap.get(key));
+      }
+    });
+
+    (dupTallyRows || []).forEach(r => {
+      const amountsList = String(r.amounts || '').split(',').map(a => `₹${parseFloat(a).toLocaleString('en-IN')}`).join(', ');
+      const key = `${r.tan_no}|${r.financial_year}`.toUpperCase();
+      if (duplicateEntriesMap.has(key)) {
+        const existing = duplicateEntriesMap.get(key);
+        existing.source = 'Form 26AS & Tally';
+        existing.reason = `Multiple entries with conflicting amounts in 26AS & Tally (${amountsList})`;
+      } else {
+        duplicateEntriesMap.set(key, {
+          source: 'Tally Ledger',
+          tan: r.tan_no,
+          fy: r.financial_year,
+          amounts: amountsList,
+          reason: `Multiple Tally Ledger entries for this TAN+FY with different amounts (${amountsList})`
+        });
+      }
+      if (!duplicateEntriesMap.has(r.tan_no)) {
+        duplicateEntriesMap.set(r.tan_no, duplicateEntriesMap.get(key));
+      }
     });
 
     const query = `
@@ -962,6 +1099,22 @@ export const getCleaningQueue = async (req, res) => {
             WHERE d_sub.company_name IS NOT NULL AND d_sub.company_name != ''
             GROUP BY d_sub.company_name
             HAVING COUNT(DISTINCT tr_sub.tan_no) > 1
+          )
+          OR (
+            tr.tan_no IN (
+              SELECT tan_no FROM tds_26as_entries 
+              WHERE tan_no IS NOT NULL AND tan_no != '' 
+              GROUP BY tan_no, COALESCE(financial_year, '') 
+              HAVING COUNT(*) > 1 AND COUNT(DISTINCT tds_deducted) > 1
+            )
+          )
+          OR (
+            tr.tan_no IN (
+              SELECT tan_no FROM tds_tally_entries 
+              WHERE tan_no IS NOT NULL AND tan_no != '' 
+              GROUP BY tan_no, COALESCE(financial_year, '') 
+              HAVING COUNT(*) > 1 AND COUNT(DISTINCT tds_amount) > 1
+            )
           )
         )
         AND tr.tan_no NOT IN ('COMPANYNAME', 'TANNO', 'TAN_NO', 'PANNO', 'TAN')
@@ -1095,6 +1248,10 @@ export const getCleaningQueue = async (req, res) => {
       const companyTans = multiTanMap.get(normBooksName);
       const isMultiTan = companyTans && companyTans.length > 1;
 
+      const fyKey = `${tan}|${r.financialYear || 'Unspecified'}`.toUpperCase();
+      const dupInfo = duplicateEntriesMap.get(fyKey) || duplicateEntriesMap.get(tan);
+      const isDuplicateEntry = Boolean(dupInfo);
+
       const resolvedTans = [isMissingTan ? null : tan, as26Tan, tallyTan].filter(Boolean);
       const uniqueTans = Array.from(new Set(resolvedTans));
       const isTanMismatch = uniqueTans.length > 1 || isPanAsTan || isMultiTan;
@@ -1106,9 +1263,10 @@ export const getCleaningQueue = async (req, res) => {
       // 1. Conflicting TANs across datasets (hard mismatch between 26AS, Tally, or Sarthi)
       // 2. Multiple TAN registrations for the same legal company entity (e.g. branch offices)
       // 3. PAN entered into TAN field (common user/accountant transposition)
-      // 4. Missing or syntactically invalid TAN format
-      // 5. Missing / dummy company entity name
-      // 6. Name discrepancy / fuzzy token confidence < 90%
+      // 4. Ambiguous duplicate entry with differing amounts for the same TAN+FY
+      // 5. Missing or syntactically invalid TAN format
+      // 6. Missing / dummy company entity name
+      // 7. Name discrepancy / fuzzy token confidence < 90%
       if (uniqueTans.length > 1) {
         reason = 'Conflicting TANs across datasets';
         issueType = 'tan_mismatch';
@@ -1118,6 +1276,9 @@ export const getCleaningQueue = async (req, res) => {
       } else if (isPanAsTan) {
         reason = `PAN (${tan}) entered instead of TAN Number`;
         issueType = 'pan_as_tan';
+      } else if (isDuplicateEntry) {
+        reason = dupInfo.reason;
+        issueType = 'duplicate_entry';
       } else if (isMissingTan || isInvalidTanFormat) {
         reason = 'Missing or Invalid TAN format';
         issueType = 'invalid_tan';
@@ -1169,7 +1330,8 @@ export const getCleaningQueue = async (req, res) => {
       const lowConfidence = item.confidence < 90;
       const tanMismatch = item.isTanMismatch;
       const isMultiTan = item.issueType === 'multi_tan';
-      return invalidTan || isPanAsTan || missingName || lowConfidence || tanMismatch || isMultiTan;
+      const isDuplicateEntry = item.issueType === 'duplicate_entry';
+      return invalidTan || isPanAsTan || missingName || lowConfidence || tanMismatch || isMultiTan || isDuplicateEntry;
     });
 
     const totalCount = flaggedItems.length;
