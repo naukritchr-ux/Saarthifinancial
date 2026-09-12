@@ -14,11 +14,13 @@ import express from 'express';
 import uploadRoutes       from './uploads.js';
 import cleaningRoutes     from './cleaning.js';
 import reconcileRoutes    from './reconciliation.js';
+import reportsRoutes      from './reports.js';
 
 const router = express.Router();
 
 router.use('/', uploadRoutes);
 router.use('/', cleaningRoutes);
 router.use('/', reconcileRoutes);
+router.use('/', reportsRoutes);
 
 export default router;

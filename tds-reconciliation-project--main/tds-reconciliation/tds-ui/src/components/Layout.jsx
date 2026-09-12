@@ -43,6 +43,7 @@ export default function Layout({ children }) {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'import', label: 'Data Import & Cleaning', icon: Upload, badge: cleaningQueueCount },
     { id: 'reconciliation', label: 'Reconciliation', icon: GitCompare },
+    { id: 'reports', label: 'Reports', icon: FileText },
     { id: 'follow-up', label: 'Follow-up Report', icon: PhoneCall },
     { id: 'import-history', label: 'Import History', icon: Clock }
   ];

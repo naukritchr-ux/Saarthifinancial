@@ -377,3 +377,41 @@ export const purgeFollowups = async () => {
     }
   }
 };
+
+/** Aggregated Reports API */
+export const getFyWiseReport = async (view = 'all') => {
+  try {
+    const q = buildQuery({ view });
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/reports/fy-wise?${q}`);
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to load FY-wise report', data: [] };
+  } catch (err) {
+    return { success: false, error: err.message || 'Error connecting to reports service', data: [] };
+  }
+};
+
+export const getTanWiseReport = async (view = 'all', search = '') => {
+  try {
+    const q = buildQuery({ view, search });
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/reports/tan-wise?${q}`);
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to load TAN-wise report', data: [] };
+  } catch (err) {
+    return { success: false, error: err.message || 'Error connecting to reports service', data: [] };
+  }
+};
+
+export const getTanWiseByFyReport = async (view = 'all', fy = '', search = '') => {
+  try {
+    const q = buildQuery({ view, fy, search });
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/reports/tan-wise-by-fy?${q}`);
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to load TAN-wise by FY report', data: [] };
+  } catch (err) {
+    return { success: false, error: err.message || 'Error connecting to reports service', data: [] };
+  }
+};
+
