@@ -13,7 +13,11 @@ import {
   ArrowDownRight,
   User,
   Phone,
-  Layers
+  Layers,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { 
@@ -41,6 +45,15 @@ export default function Reports() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(25);
+
+  // Reset page to 1 whenever filters change
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, viewFilter, search, tabFyFilter, limit]);
 
   // Sync tabFyFilter if global fyFilter changes
   useEffect(() => {
@@ -179,6 +192,14 @@ export default function Reports() {
     if (viewFilter === 'less') return true;
     return data.some(r => r.hr_name || r.contact_no);
   }, [activeTab, viewFilter, data]);
+
+  // Paginated slice of current data
+  const total = data.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const paginatedData = useMemo(() => {
+    const start = (page - 1) * limit;
+    return data.slice(start, start + limit);
+  }, [data, page, limit]);
 
   // CSV Export handler
   const handleExportCSV = () => {
@@ -497,176 +518,248 @@ export default function Reports() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-[#F6F8FA] border-b border-[#E9E4FA] text-[#6B6580] font-extrabold uppercase tracking-wider text-[11px]">
-                  {/* Columns for Year-Wise */}
-                  {activeTab === 'year-wise' && (
-                    <>
-                      <th className="py-3.5 px-4">Financial Year</th>
-                      <th className="py-3.5 px-4 text-right">Total as per Tally</th>
-                      <th className="py-3.5 px-4 text-right">Total as per 26AS</th>
-                      <th className="py-3.5 px-4 text-right">Difference (Tally - 26AS)</th>
-                      <th className="py-3.5 px-4 text-center">Status</th>
-                    </>
-                  )}
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-[#F6F8FA] border-b border-[#E9E4FA] text-[#6B6580] font-extrabold uppercase tracking-wider text-[11px]">
+                    {/* Columns for Year-Wise */}
+                    {activeTab === 'year-wise' && (
+                      <>
+                        <th className="py-3.5 px-4">Financial Year</th>
+                        <th className="py-3.5 px-4 text-right">Total as per Tally</th>
+                        <th className="py-3.5 px-4 text-right">Total as per 26AS</th>
+                        <th className="py-3.5 px-4 text-right">Difference (Tally - 26AS)</th>
+                        <th className="py-3.5 px-4 text-center">Status</th>
+                      </>
+                    )}
 
-                  {/* Columns for TAN No.-Wise */}
-                  {activeTab === 'tan-wise' && (
-                    <>
-                      <th className="py-3.5 px-4">TAN Number</th>
-                      <th className="py-3.5 px-4">Client Company Name</th>
-                      <th className="py-3.5 px-4 text-right">Total as per Tally</th>
-                      <th className="py-3.5 px-4 text-right">Total as per 26AS</th>
-                      <th className="py-3.5 px-4 text-right">Difference (Tally - 26AS)</th>
-                      <th className="py-3.5 px-4 text-center">Status</th>
-                    </>
-                  )}
+                    {/* Columns for TAN No.-Wise */}
+                    {activeTab === 'tan-wise' && (
+                      <>
+                        <th className="py-3.5 px-4">TAN Number</th>
+                        <th className="py-3.5 px-4">Client Company Name</th>
+                        <th className="py-3.5 px-4 text-right">Total as per Tally</th>
+                        <th className="py-3.5 px-4 text-right">Total as per 26AS</th>
+                        <th className="py-3.5 px-4 text-right">Difference (Tally - 26AS)</th>
+                        <th className="py-3.5 px-4 text-center">Status</th>
+                      </>
+                    )}
 
-                  {/* Columns for TAN-Wise by FY */}
-                  {activeTab === 'tan-wise-fy' && (
-                    <>
-                      <th className="py-3.5 px-4">TAN Number</th>
-                      <th className="py-3.5 px-4">Client Company Name</th>
-                      <th className="py-3.5 px-4">Financial Year</th>
-                      <th className="py-3.5 px-4 text-right">Total as per Tally</th>
-                      <th className="py-3.5 px-4 text-right">Total as per 26AS</th>
-                      <th className="py-3.5 px-4 text-right">Difference (Tally - 26AS)</th>
-                      <th className="py-3.5 px-4 text-center">Status</th>
-                      {showContactColumns && (
-                        <>
-                          <th className="py-3.5 px-4">HR Name</th>
-                          <th className="py-3.5 px-4">Contact No.</th>
-                        </>
-                      )}
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E9E4FA]">
-                {data.map((row, idx) => {
-                  const diff = parseFloat(row.difference || 0);
-                  const isMatch = Math.abs(diff) <= 1.0;
-                  const isLess = diff > 1.0;
+                    {/* Columns for TAN-Wise by FY */}
+                    {activeTab === 'tan-wise-fy' && (
+                      <>
+                        <th className="py-3.5 px-4">TAN Number</th>
+                        <th className="py-3.5 px-4">Client Company Name</th>
+                        <th className="py-3.5 px-4">Financial Year</th>
+                        <th className="py-3.5 px-4 text-right">Total as per Tally</th>
+                        <th className="py-3.5 px-4 text-right">Total as per 26AS</th>
+                        <th className="py-3.5 px-4 text-right">Difference (Tally - 26AS)</th>
+                        <th className="py-3.5 px-4 text-center">Status</th>
+                        {showContactColumns && (
+                          <>
+                            <th className="py-3.5 px-4">HR Name</th>
+                            <th className="py-3.5 px-4">Contact No.</th>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E9E4FA]">
+                  {paginatedData.map((row, idx) => {
+                    const diff = parseFloat(row.difference || 0);
+                    const isMatch = Math.abs(diff) <= 1.0;
+                    const isLess = diff > 1.0;
 
-                  return (
-                    <tr 
-                      key={`${row.tan_no || ''}-${row.financial_year || ''}-${idx}`}
-                      className="hover:bg-[#E8E4FF]/30 transition-colors"
+                    return (
+                      <tr 
+                        key={`${row.tan_no || ''}-${row.financial_year || ''}-${idx}`}
+                        className="hover:bg-[#E8E4FF]/30 transition-colors"
+                      >
+                        {/* Year-Wise Row */}
+                        {activeTab === 'year-wise' && (
+                          <>
+                            <td className="py-3.5 px-4 font-black text-[#1F1B2E]">
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#E8E4FF] text-[#9B87F5] font-extrabold text-xs border border-[#9B87F5]/30">
+                                <Calendar className="w-3.5 h-3.5" />
+                                {row.financial_year}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 text-right font-black text-[#1F1B2E]">
+                              {formatCurrency(row.tally_total)}
+                            </td>
+                            <td className="py-3.5 px-4 text-right font-black text-[#1F1B2E]">
+                              {formatCurrency(row.as26_total)}
+                            </td>
+                            <td className={`py-3.5 px-4 text-right font-black ${
+                              isMatch ? 'text-[#2E8B57]' : isLess ? 'text-[#D97706]' : 'text-[#E11D48]'
+                            }`}>
+                              {formatCurrency(row.difference)}
+                            </td>
+                            <td className="py-3.5 px-4 text-center">
+                              {getStatusBadge(row.status)}
+                            </td>
+                          </>
+                        )}
+
+                        {/* TAN No.-Wise Row */}
+                        {activeTab === 'tan-wise' && (
+                          <>
+                            <td className="py-3.5 px-4 font-mono font-black text-[#9B87F5]">
+                              {row.tan_no}
+                            </td>
+                            <td className="py-3.5 px-4 font-bold text-[#1F1B2E] max-w-xs truncate" title={row.company_name}>
+                              {row.company_name}
+                            </td>
+                            <td className="py-3.5 px-4 text-right font-black text-[#1F1B2E]">
+                              {formatCurrency(row.tally_total)}
+                            </td>
+                            <td className="py-3.5 px-4 text-right font-black text-[#1F1B2E]">
+                              {formatCurrency(row.as26_total)}
+                            </td>
+                            <td className={`py-3.5 px-4 text-right font-black ${
+                              isMatch ? 'text-[#2E8B57]' : isLess ? 'text-[#D97706]' : 'text-[#E11D48]'
+                            }`}>
+                              {formatCurrency(row.difference)}
+                            </td>
+                            <td className="py-3.5 px-4 text-center">
+                              {getStatusBadge(row.status)}
+                            </td>
+                          </>
+                        )}
+
+                        {/* TAN-Wise by FY Row */}
+                        {activeTab === 'tan-wise-fy' && (
+                          <>
+                            <td className="py-3.5 px-4 font-mono font-black text-[#9B87F5]">
+                              {row.tan_no}
+                            </td>
+                            <td className="py-3.5 px-4 font-bold text-[#1F1B2E] max-w-xs truncate" title={row.company_name}>
+                              {row.company_name}
+                            </td>
+                            <td className="py-3.5 px-4 font-extrabold text-[#6B6580]">
+                              <span className="px-2 py-0.5 rounded-lg bg-[#F6F8FA] border border-[#E9E4FA]">
+                                {row.financial_year}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 text-right font-black text-[#1F1B2E]">
+                              {formatCurrency(row.tally_total)}
+                            </td>
+                            <td className="py-3.5 px-4 text-right font-black text-[#1F1B2E]">
+                              {formatCurrency(row.as26_total)}
+                            </td>
+                            <td className={`py-3.5 px-4 text-right font-black ${
+                              isMatch ? 'text-[#2E8B57]' : isLess ? 'text-[#D97706]' : 'text-[#E11D48]'
+                            }`}>
+                              {formatCurrency(row.difference)}
+                            </td>
+                            <td className="py-3.5 px-4 text-center">
+                              {getStatusBadge(row.status)}
+                            </td>
+                            {showContactColumns && (
+                              <>
+                                <td className="py-3.5 px-4 text-[#1F1B2E] font-medium">
+                                  {row.hr_name ? (
+                                    <span className="inline-flex items-center gap-1">
+                                      <User className="w-3.5 h-3.5 text-[#9B87F5]" />
+                                      {row.hr_name}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[#6B6580] italic">—</span>
+                                  )}
+                                </td>
+                                <td className="py-3.5 px-4 text-[#1F1B2E] font-medium">
+                                  {row.contact_no ? (
+                                    <span className="inline-flex items-center gap-1 font-mono text-xs">
+                                      <Phone className="w-3.5 h-3.5 text-[#9B87F5]" />
+                                      {row.contact_no}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[#6B6580] italic">—</span>
+                                  )}
+                                </td>
+                              </>
+                            )}
+                          </>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            {total > 0 && (
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-3 border-t border-[#E9E4FA] bg-[#F6F8FA] px-6 py-4 text-xs font-medium text-[#6B6580]">
+                {/* Left: Row Count Info & Page Size */}
+                <div className="flex items-center gap-4">
+                  <div>
+                    Showing <span className="font-bold text-[#1F1B2E]">{(page - 1) * limit + 1}</span> to{' '}
+                    <span className="font-bold text-[#1F1B2E]">{Math.min(page * limit, total)}</span> of{' '}
+                    <span className="font-bold text-[#1F1B2E]">{total}</span> records
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span>Rows per page:</span>
+                    <select
+                      value={limit}
+                      onChange={(e) => setLimit(Number(e.target.value))}
+                      className="bg-white border border-[#E9E4FA] rounded-lg px-2 py-1 text-xs font-bold text-[#1F1B2E] focus:outline-none cursor-pointer"
                     >
-                      {/* Year-Wise Row */}
-                      {activeTab === 'year-wise' && (
-                        <>
-                          <td className="py-3.5 px-4 font-black text-[#1F1B2E]">
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[#E8E4FF] text-[#9B87F5] font-extrabold text-xs border border-[#9B87F5]/30">
-                              <Calendar className="w-3.5 h-3.5" />
-                              {row.financial_year}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4 text-right font-black text-[#1F1B2E]">
-                            {formatCurrency(row.tally_total)}
-                          </td>
-                          <td className="py-3.5 px-4 text-right font-black text-[#1F1B2E]">
-                            {formatCurrency(row.as26_total)}
-                          </td>
-                          <td className={`py-3.5 px-4 text-right font-black ${
-                            isMatch ? 'text-[#2E8B57]' : isLess ? 'text-[#D97706]' : 'text-[#E11D48]'
-                          }`}>
-                            {formatCurrency(row.difference)}
-                          </td>
-                          <td className="py-3.5 px-4 text-center">
-                            {getStatusBadge(row.status)}
-                          </td>
-                        </>
-                      )}
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                </div>
 
-                      {/* TAN No.-Wise Row */}
-                      {activeTab === 'tan-wise' && (
-                        <>
-                          <td className="py-3.5 px-4 font-mono font-black text-[#9B87F5]">
-                            {row.tan_no}
-                          </td>
-                          <td className="py-3.5 px-4 font-bold text-[#1F1B2E] max-w-xs truncate" title={row.company_name}>
-                            {row.company_name}
-                          </td>
-                          <td className="py-3.5 px-4 text-right font-black text-[#1F1B2E]">
-                            {formatCurrency(row.tally_total)}
-                          </td>
-                          <td className="py-3.5 px-4 text-right font-black text-[#1F1B2E]">
-                            {formatCurrency(row.as26_total)}
-                          </td>
-                          <td className={`py-3.5 px-4 text-right font-black ${
-                            isMatch ? 'text-[#2E8B57]' : isLess ? 'text-[#D97706]' : 'text-[#E11D48]'
-                          }`}>
-                            {formatCurrency(row.difference)}
-                          </td>
-                          <td className="py-3.5 px-4 text-center">
-                            {getStatusBadge(row.status)}
-                          </td>
-                        </>
-                      )}
+                {/* Right: Page Navigation Buttons */}
+                {totalPages > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setPage(1)}
+                      disabled={page === 1}
+                      className="p-1.5 rounded-xl border border-[#E9E4FA] bg-white hover:bg-[#E8E4FF] transition disabled:opacity-40 disabled:cursor-not-allowed font-bold cursor-pointer text-[#1F1B2E]"
+                      title="First Page"
+                    >
+                      <ChevronsLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setPage(prev => Math.max(1, prev - 1))}
+                      disabled={page === 1}
+                      className="px-3 py-1.5 rounded-xl border border-[#E9E4FA] bg-white hover:bg-[#E8E4FF] transition disabled:opacity-40 disabled:cursor-not-allowed font-bold cursor-pointer text-[#1F1B2E] flex items-center gap-1"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      <span>Prev</span>
+                    </button>
 
-                      {/* TAN-Wise by FY Row */}
-                      {activeTab === 'tan-wise-fy' && (
-                        <>
-                          <td className="py-3.5 px-4 font-mono font-black text-[#9B87F5]">
-                            {row.tan_no}
-                          </td>
-                          <td className="py-3.5 px-4 font-bold text-[#1F1B2E] max-w-xs truncate" title={row.company_name}>
-                            {row.company_name}
-                          </td>
-                          <td className="py-3.5 px-4 font-extrabold text-[#6B6580]">
-                            <span className="px-2 py-0.5 rounded-lg bg-[#F6F8FA] border border-[#E9E4FA]">
-                              {row.financial_year}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-4 text-right font-black text-[#1F1B2E]">
-                            {formatCurrency(row.tally_total)}
-                          </td>
-                          <td className="py-3.5 px-4 text-right font-black text-[#1F1B2E]">
-                            {formatCurrency(row.as26_total)}
-                          </td>
-                          <td className={`py-3.5 px-4 text-right font-black ${
-                            isMatch ? 'text-[#2E8B57]' : isLess ? 'text-[#D97706]' : 'text-[#E11D48]'
-                          }`}>
-                            {formatCurrency(row.difference)}
-                          </td>
-                          <td className="py-3.5 px-4 text-center">
-                            {getStatusBadge(row.status)}
-                          </td>
-                          {showContactColumns && (
-                            <>
-                              <td className="py-3.5 px-4 text-[#1F1B2E] font-medium">
-                                {row.hr_name ? (
-                                  <span className="inline-flex items-center gap-1">
-                                    <User className="w-3.5 h-3.5 text-[#9B87F5]" />
-                                    {row.hr_name}
-                                  </span>
-                                ) : (
-                                  <span className="text-[#6B6580] italic">—</span>
-                                )}
-                              </td>
-                              <td className="py-3.5 px-4 text-[#1F1B2E] font-medium">
-                                {row.contact_no ? (
-                                  <span className="inline-flex items-center gap-1 font-mono text-xs">
-                                    <Phone className="w-3.5 h-3.5 text-[#9B87F5]" />
-                                    {row.contact_no}
-                                  </span>
-                                ) : (
-                                  <span className="text-[#6B6580] italic">—</span>
-                                )}
-                              </td>
-                            </>
-                          )}
-                        </>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                    <div className="px-3 py-1 font-bold text-[#1F1B2E] bg-white border border-[#E9E4FA] rounded-xl text-xs">
+                      Page {page} of {totalPages}
+                    </div>
+
+                    <button
+                      onClick={() => setPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={page === totalPages}
+                      className="px-3 py-1.5 rounded-xl border border-[#E9E4FA] bg-white hover:bg-[#E8E4FF] transition disabled:opacity-40 disabled:cursor-not-allowed font-bold cursor-pointer text-[#1F1B2E] flex items-center gap-1"
+                    >
+                      <span>Next</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setPage(totalPages)}
+                      disabled={page === totalPages}
+                      className="p-1.5 rounded-xl border border-[#E9E4FA] bg-white hover:bg-[#E8E4FF] transition disabled:opacity-40 disabled:cursor-not-allowed font-bold cursor-pointer text-[#1F1B2E]"
+                      title="Last Page"
+                    >
+                      <ChevronsRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
 
