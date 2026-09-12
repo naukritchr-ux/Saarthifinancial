@@ -226,7 +226,12 @@ export default function DataImport() {
                   {/* Card Header Tag */}
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
                     <div className="flex items-center gap-2">
-                      {isTanMismatch ? (
+                      {item.issueType === 'duplicate_entry' ? (
+                        <span className="inline-flex items-center gap-1 bg-purple-50 text-purple-700 border border-purple-200 px-3 py-1 rounded-full text-xs font-black">
+                          <AlertTriangle className="w-3.5 h-3.5 text-purple-600" />
+                          Ambiguous Duplicate Entry — Manual Review Required
+                        </span>
+                      ) : isTanMismatch ? (
                         <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 border border-red-200 px-3 py-1 rounded-full text-xs font-black">
                           <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
                           TAN Mismatch — Manual Review Required
@@ -255,7 +260,11 @@ export default function DataImport() {
                       </div>
                     )}
 
-                    {isTanMismatch ? (
+                    {item.issueType === 'duplicate_entry' ? (
+                      <p className="text-[11px] text-purple-700 font-semibold pt-0.5">
+                        {item.issueReason || 'Multiple entries for this TAN+FY with different amounts detected.'}
+                      </p>
+                    ) : isTanMismatch ? (
                       <p className="text-[11px] text-red-600 font-semibold pt-0.5">
                         Names look alike but TANs differ ({tallyTan} vs {as26Tan !== '—' ? as26Tan : saarthiTan}). Correct a TAN via Edit, or reject the suggestion.
                       </p>

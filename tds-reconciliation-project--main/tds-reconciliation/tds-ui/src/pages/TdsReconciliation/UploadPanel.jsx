@@ -153,10 +153,11 @@ export default function UploadPanel({ onUploadSuccess }) {
       const res = await upload26as(as26File, as26Fy || 'FY 2024-25', as26ImportMode);
       if (res && res.success) {
         const rowCount = (typeof res.records === 'number') ? res.records : 1;
+        const dupMsg = (res.duplicatesSkipped > 0) ? ` (${res.duplicatesSkipped} duplicate rows skipped)` : '';
         setAs26Status({
           loading: false,
           error: null,
-          success: `${as26ImportMode === 'clean' ? 'Past 26AS data cleared & imported ' : 'Imported '}${rowCount} rows successfully for ${as26Fy}!`
+          success: `${as26ImportMode === 'clean' ? 'Past 26AS data cleared & imported ' : 'Imported '}${rowCount} rows successfully for ${as26Fy}!${dupMsg}`
         });
         setAs26File(null);
         fetchBatches();
@@ -186,10 +187,11 @@ export default function UploadPanel({ onUploadSuccess }) {
       const res = await uploadTally(tallyFile, tallyFy || 'FY 2024-25', tallyImportMode);
       if (res && res.success) {
         const rowCount = (typeof res.records === 'number') ? res.records : 1;
+        const dupMsg = (res.duplicatesSkipped > 0) ? ` (${res.duplicatesSkipped} duplicate rows skipped)` : '';
         setTallyStatus({
           loading: false,
           error: null,
-          success: `${tallyImportMode === 'clean' ? 'Past Tally data cleared & imported ' : 'Imported '}${rowCount} rows successfully for ${tallyFy}!`
+          success: `${tallyImportMode === 'clean' ? 'Past Tally data cleared & imported ' : 'Imported '}${rowCount} rows successfully for ${tallyFy}!${dupMsg}`
         });
         setTallyFile(null);
         fetchBatches();
