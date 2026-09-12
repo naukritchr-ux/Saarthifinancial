@@ -42,52 +42,48 @@ A full-stack financial reconciliation platform designed to match and reconcile T
 ## Project Structure
 
 ```text
-tds-reconciliation-project/
-├── 26as demo sheet - Sheet1.csv      # Sample Form 26AS upload dataset
-├── tally demo - Sheet1.csv           # Sample Tally ledger dataset
-├── ca.pem                            # SSL certificate authority for Aiven MySQL
-└── tds-reconciliation/
-    ├── tds-api/                      # Express.js REST API Backend
-    │   ├── config/
-    │   │   └── db.js                 # Unified MySQL/SQLite database adapter
-    │   ├── controllers/
-    │   │   ├── followupController.js # Follow-up management logic
-    │   │   └── tds26asController.js  # 26AS, Books & Tally reconciliation controllers
-    │   ├── middleware/
-    │   │   ├── apiKey.js             # API key security validation middleware
-    │   │   ├── asyncHandler.js       # Express async route wrapper
-    │   │   ├── errorHandler.js       # Centralised error handler
-    │   │   └── validator.js          # Request payload validators
-    │   ├── routes/
-    │   │   ├── followupRoutes.js     # Follow-up routes (/api/followups)
-    │   │   ├── tds26asRoutes.js      # Reconciliation & dues routes (/api/tds-26as)
-    │   │   └── uploads.js            # File upload routes
-    │   ├── services/
-    │   │   └── tdsReconciliationService.js # Reconciliation business logic
-    │   ├── schema_mysql.sql          # MySQL database schema definition
-    │   ├── schema_sqlite.sql         # SQLite database schema definition
-    │   ├── .env.example              # Template for API environment variables
-    │   ├── package.json
-    │   └── server.js                 # API server entrypoint
-    │
-    └── tds-ui/                       # React + Vite Frontend
-        ├── src/
-        │   ├── api/                  # Axios/Fetch API client functions
-        │   ├── components/           # Reusable UI components & layouts
-        │   ├── context/              # React context providers
-        │   ├── pages/
-        │   │   ├── Dashboard/        # Overview & key reconciliation metrics
-        │   │   ├── DataImport/       # File upload & batch management
-        │   │   ├── FollowUp/         # Client communication & follow-up tracking
-        │   │   ├── ImportHistory/    # Historical import logs
-        │   │   └── TdsReconciliation/# Reconciliation grid & manual resolution
-        │   ├── App.jsx               # Main React application component
-        │   ├── main.jsx              # Vite entrypoint
-        │   └── index.css             # Tailwind CSS styles
-        ├── .env                      # Frontend environment config
-        ├── package.json
-        ├── tailwind.config.js
-        └── vite.config.js
+tds-reconciliation/
+├── tds-api/                      # Express.js REST API Backend
+│   ├── config/
+│   │   └── db.js                 # Unified MySQL/SQLite database adapter
+│   ├── controllers/
+│   │   ├── followupController.js # Follow-up management logic
+│   │   └── tds26asController.js  # 26AS, Books & Tally reconciliation controllers
+│   ├── middleware/
+│   │   ├── apiKey.js             # API key security validation middleware
+│   │   ├── asyncHandler.js       # Express async route wrapper
+│   │   ├── errorHandler.js       # Centralised error handler
+│   │   └── validator.js          # Request payload validators
+│   ├── routes/
+│   │   ├── followupRoutes.js     # Follow-up routes (/api/followups)
+│   │   ├── tds26asRoutes.js      # Reconciliation & dues routes (/api/tds-26as)
+│   │   └── uploads.js            # File upload routes
+│   ├── services/
+│   │   └── tdsReconciliationService.js # Reconciliation business logic
+│   ├── schema_mysql.sql          # MySQL database schema definition
+│   ├── schema_sqlite.sql         # SQLite database schema definition
+│   ├── .env.example              # Template for API environment variables
+│   ├── package.json
+│   └── server.js                 # API server entrypoint
+│
+└── tds-ui/                       # React + Vite Frontend
+    ├── src/
+    │   ├── api/                  # Axios/Fetch API client functions
+    │   ├── components/           # Reusable UI components & layouts
+    │   ├── context/              # React context providers
+    │   ├── pages/
+    │   │   ├── Dashboard/        # Overview & key reconciliation metrics
+    │   │   ├── DataImport/       # File upload & batch management
+    │   │   ├── FollowUp/         # Client communication & follow-up tracking
+    │   │   ├── ImportHistory/    # Historical import logs
+    │   │   └── TdsReconciliation/# Reconciliation grid & manual resolution
+    │   ├── App.jsx               # Main React application component
+    │   ├── main.jsx              # Vite entrypoint
+    │   └── index.css             # Tailwind CSS styles
+    ├── .env                      # Frontend environment config
+    ├── package.json
+    ├── tailwind.config.js
+    └── vite.config.js
 ```
 
 ---
@@ -98,7 +94,7 @@ tds-reconciliation-project/
 
 1. Open a terminal and navigate to the `tds-api` directory:
    ```bash
-   cd tds-reconciliation/tds-api
+   cd tds-api
    ```
 
 2. Install dependencies:
@@ -118,7 +114,7 @@ tds-reconciliation-project/
 
 1. Open a new terminal and navigate to the `tds-ui` directory:
    ```bash
-   cd tds-reconciliation/tds-ui
+   cd tds-ui
    ```
 
 2. Install dependencies:
@@ -175,14 +171,14 @@ Refer to [tds-api/.env.example](file:///c:/Users/ADMIN/Downloads/finance_Saarthi
 
 ### Start the API Server
 ```bash
-cd tds-reconciliation/tds-api
+cd tds-api
 npm run dev
 ```
 > The API will start on `http://localhost:5000` with nodemon live reloading.
 
 ### Start the Frontend UI
 ```bash
-cd tds-reconciliation/tds-ui
+cd tds-ui
 npm run dev
 ```
 > The UI development server will start on `http://localhost:5173`.
