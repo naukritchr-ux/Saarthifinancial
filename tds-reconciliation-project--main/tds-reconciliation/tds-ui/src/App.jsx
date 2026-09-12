@@ -4,6 +4,7 @@ import { useApp } from './context/AppContext';
 import Dashboard from './pages/Dashboard';
 import DataImport from './pages/DataImport';
 import TdsReconciliation from './pages/TdsReconciliation';
+import Reports from './pages/Reports';
 import FollowUp from './pages/FollowUp';
 import ImportHistory from './pages/ImportHistory';
 
@@ -17,6 +18,8 @@ function AppContent() {
       return <DataImport />;
     case 'reconciliation':
       return <TdsReconciliation />;
+    case 'reports':
+      return <Reports />;
     case 'follow-up':
       return <FollowUp />;
     case 'import-history':

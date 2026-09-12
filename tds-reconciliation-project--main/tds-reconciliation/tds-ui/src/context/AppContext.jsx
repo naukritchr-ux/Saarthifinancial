@@ -7,7 +7,7 @@ export function AppProvider({ children }) {
   // Parse initial route from location hash or pathname
   const getInitialPage = () => {
     const hash = window.location.hash.replace('#', '').split('?')[0];
-    if (['dashboard', 'import', 'reconciliation', 'follow-up', 'import-history'].includes(hash)) {
+    if (['dashboard', 'import', 'reconciliation', 'reports', 'follow-up', 'import-history'].includes(hash)) {
       return hash;
     }
     return 'dashboard';
@@ -24,7 +24,7 @@ export function AppProvider({ children }) {
     const handleHashChange = () => {
       const hashPart = window.location.hash.replace('#', '');
       const [page, queryString] = hashPart.split('?');
-      if (['dashboard', 'import', 'reconciliation', 'follow-up', 'import-history'].includes(page)) {
+      if (['dashboard', 'import', 'reconciliation', 'reports', 'follow-up', 'import-history'].includes(page)) {
         setActivePage(page);
       }
       if (queryString) {
