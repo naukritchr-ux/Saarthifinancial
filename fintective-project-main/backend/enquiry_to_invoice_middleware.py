@@ -23,14 +23,16 @@ except ImportError:
 def enquiry_to_invoice_after_request(response):
     if response.status_code in (200, 201):
         url = request.path
-        method = request.method
+        if "/api/CandidateForm" not in url:
+            return response
 
+        method = request.method
         response_data = {}
         try:
             raw = response.get_data(as_text=True)
             response_data = json.loads(raw) if raw else {}
-        except (ValueError, TypeError) as error:
-            print("⚠️ Could not parse response body:", error)
+        except Exception:
+            pass
 
         request_body = request.get_json(silent=True) or {}
 

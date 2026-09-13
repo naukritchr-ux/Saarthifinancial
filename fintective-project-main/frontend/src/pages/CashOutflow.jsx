@@ -7,48 +7,50 @@ import { TrendingDown, ArrowDownRight, DollarSign } from 'lucide-react';
 const CashOutflow = () => {
   const { transactions, selectedMonth } = useContext(FinanceContext);
 
-  // Filter current expenses
-  const currentExpenses = transactions.filter(tx => {
-    if (tx.type !== 'expense') return false;
-    if (selectedMonth === 'All Months') return true;
-
-    const date = new Date(tx.date);
+  // Filter current expenses with useMemo
+  const currentExpenses = useMemo(() => {
+    if (!Array.isArray(transactions)) return [];
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    const txMonthYear = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
-    return txMonthYear === selectedMonth;
-  });
 
-  const totalExpense = currentExpenses.reduce((sum, tx) => sum + tx.amount, 0);
+    return transactions.filter(tx => {
+      if (!tx || tx.type !== 'expense') return false;
+      if (selectedMonth === 'All Months') return true;
 
-  // Direct cost = expense tied to a specific franchisee or BD agent (wouldn't exist without that deal/hub)
-  // Overhead = expense that exists regardless of any single deal (rent, subscriptions, fixed salaries, etc.)
-  const directCostTxs = currentExpenses.filter(tx => tx.franchiseeId || tx.bdAgentId);
-  const overheadTxs = currentExpenses.filter(tx => !tx.franchiseeId && !tx.bdAgentId);
-  const directCost = directCostTxs.reduce((sum, tx) => sum + tx.amount, 0);
-  const overheadCost = overheadTxs.reduce((sum, tx) => sum + tx.amount, 0);
-  const overheadPct = totalExpense > 0 ? (overheadCost / totalExpense) * 100 : 0;
+      const date = new Date(tx.date);
+      const txMonthYear = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+      return txMonthYear === selectedMonth;
+    });
+  }, [transactions, selectedMonth]);
 
-  // Group by category
-  const expenseCategories = {};
-  currentExpenses.forEach(tx => {
-    const cat = tx.category || 'Other';
-    expenseCategories[cat] = (expenseCategories[cat] || 0) + tx.amount;
-  });
+  const { totalExpense, directCost, overheadCost, overheadPct, chartData } = useMemo(() => {
+    const tot = currentExpenses.reduce((sum, tx) => sum + (tx.amount || 0), 0);
+    const dir = currentExpenses.filter(tx => tx.franchiseeId || tx.bdAgentId).reduce((sum, tx) => sum + (tx.amount || 0), 0);
+    const ovh = currentExpenses.filter(tx => !tx.franchiseeId && !tx.bdAgentId).reduce((sum, tx) => sum + (tx.amount || 0), 0);
+    const pct = tot > 0 ? (ovh / tot) * 100 : 0;
 
-  const categoryColors = {
-    'Salaries': '#6366f1',
-    'BD commissions': '#3b82f6',
-    'Marketing': '#f59e0b',
-    'Office & infra': '#ef4444',
-    'Portal subscriptions': '#10b981',
-    'Other': '#94a3b8'
-  };
+    const expenseCategories = {};
+    currentExpenses.forEach(tx => {
+      const cat = tx.category || 'Other';
+      expenseCategories[cat] = (expenseCategories[cat] || 0) + (tx.amount || 0);
+    });
 
-  const chartData = Object.keys(expenseCategories).map(cat => ({
-    label: cat,
-    value: expenseCategories[cat],
-    color: categoryColors[cat] || '#8b5cf6'
-  })).sort((a, b) => b.value - a.value);
+    const categoryColors = {
+      'Salaries': '#6366f1',
+      'BD commissions': '#3b82f6',
+      'Marketing': '#f59e0b',
+      'Office & infra': '#ef4444',
+      'Portal subscriptions': '#10b981',
+      'Other': '#94a3b8'
+    };
+
+    const cData = Object.keys(expenseCategories).map(cat => ({
+      label: cat,
+      value: expenseCategories[cat],
+      color: categoryColors[cat] || '#8b5cf6'
+    })).sort((a, b) => b.value - a.value);
+
+    return { totalExpense: tot, directCost: dir, overheadCost: ovh, overheadPct: pct, chartData: cData };
+  }, [currentExpenses]);
 
   // State for company/search filtering
   const [vendorFilter, setVendorFilter] = React.useState('all');

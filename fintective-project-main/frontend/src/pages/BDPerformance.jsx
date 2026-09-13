@@ -148,16 +148,34 @@ const BDPerformance = () => {
       .catch(err => console.error("Leaderboard load failed:", err));
   }, [selectedMonth, selectedYear]);
 
+  // Pre-indexed transaction map for instant O(1) agent metric calculation
+  const agentTxsMap = useMemo(() => {
+    const map = {};
+    if (!Array.isArray(transactions)) return map;
+    transactions.forEach(t => {
+      if (!isInFilteredPeriod(t)) return;
+      if (t.bdAgentId) {
+        if (!map[t.bdAgentId]) map[t.bdAgentId] = [];
+        map[t.bdAgentId].push(t);
+      }
+      if (t.bdAgentName) {
+        const nameKey = t.bdAgentName.trim().toLowerCase();
+        if (!map[nameKey]) map[nameKey] = [];
+        map[nameKey].push(t);
+      }
+    });
+    return map;
+  }, [transactions, selectedMonth, selectedYear]);
+
   const getAgentMetrics = (agent) => {
     const safeAgent = getSafeAgent(agent);
     
     // Look up this agent's period-specific stats in the fetched leaderboard
     const lbMatch = leaderboard.find(item => item.bd_name.trim().toLowerCase() === safeAgent.name.trim().toLowerCase());
     
-    const agentTxs = transactions.filter(t => 
-      (t.bdAgentId === safeAgent.id || (t.bdAgentName && t.bdAgentName.toLowerCase().includes(safeAgent.name.toLowerCase()))) &&
-      isInFilteredPeriod(t)
-    );
+    const nameKey = safeAgent.name.trim().toLowerCase();
+    const agentTxs = agentTxsMap[safeAgent.id] || agentTxsMap[nameKey] || [];
+    
     const contextGross = agentTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
     const contextNet = agentTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.rShare || t.amount * 0.4375 || t.amount), 0);
 
@@ -170,9 +188,9 @@ const BDPerformance = () => {
     const revenueGenerated = netRevenue > 0 ? netRevenue : grossRevenue;
     
     // Actual payout is the sum of expense payments under 'BD commissions' or 'Salaries' linked to this agent
-    const commissionsEarned = transactions
-      .filter(t => t.type === 'expense' && (t.category === 'BD commissions' || t.category === 'Salaries') && (t.bdAgentId === safeAgent.id || (t.bdAgentName && t.bdAgentName.toLowerCase().includes(safeAgent.name.toLowerCase()))) && isInFilteredPeriod(t))
-      .reduce((sum, t) => sum + t.amount, 0);
+    const commissionsEarned = agentTxs
+      .filter(t => t.type === 'expense' && (t.category === 'BD commissions' || t.category === 'Salaries'))
+      .reduce((sum, t) => sum + (t.amount || 0), 0);
 
     const commissionBonus = revenueGenerated * (safeAgent.commissionRate || 0.02);
     

@@ -32,6 +32,14 @@ const Reports = () => {
 
   useEffect(() => {
     if (activeTab === 'ml' && !mlData) {
+      const cached = sessionStorage.getItem('fintective_ml_insights');
+      if (cached) {
+        try {
+          setMlData(JSON.parse(cached));
+          setMlLoading(false);
+          return;
+        } catch (e) {}
+      }
       setMlLoading(true);
       fetchWithApiKey(`${API_BASE_URL}/ml/insights`)
         .then(res => {
@@ -40,6 +48,7 @@ const Reports = () => {
         })
         .then(data => {
           setMlData(data);
+          try { sessionStorage.setItem('fintective_ml_insights', JSON.stringify(data)); } catch(e){}
           setMlLoading(false);
         })
         .catch(err => {
@@ -66,65 +75,75 @@ const Reports = () => {
         'Other'
       ];
 
-  // Apply filters
-  const filteredTxs = transactions.filter(tx => {
-    // 1. Month filter (aligned with topbar selection)
-    if (selectedMonth !== 'All Months') {
-      const date = new Date(tx.date);
-      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-      const txMonthYear = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
-      if (txMonthYear !== selectedMonth) return false;
-    }
+  // Apply filters with useMemo for instantaneous searching and zero UI latency
+  const filteredTxs = useMemo(() => {
+    if (!Array.isArray(transactions)) return [];
+    const query = searchQuery.trim().toLowerCase();
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-    // 1B. Year filter
-    if (selectedYear !== 'All Years') {
-      if (tx.financialYear && tx.financialYear !== 'N/A') {
-        if (tx.financialYear !== selectedYear) return false;
-      } else {
-        const d = new Date(tx.date);
-        if (!isNaN(d.getTime())) {
-          const y = d.getFullYear();
-          const m = d.getMonth();
-          const fy = m >= 3 ? `${y}-${y+1}` : `${y-1}-${y}`;
-          if (fy !== selectedYear) return false;
+    return transactions.filter(tx => {
+      if (!tx) return false;
+
+      // 1. Month filter (aligned with topbar selection)
+      if (selectedMonth !== 'All Months') {
+        const date = new Date(tx.date);
+        const txMonthYear = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+        if (txMonthYear !== selectedMonth) return false;
+      }
+
+      // 1B. Year filter
+      if (selectedYear !== 'All Years') {
+        if (tx.financialYear && tx.financialYear !== 'N/A') {
+          if (tx.financialYear !== selectedYear) return false;
+        } else {
+          const d = new Date(tx.date);
+          if (!isNaN(d.getTime())) {
+            const y = d.getFullYear();
+            const m = d.getMonth();
+            const fy = m >= 3 ? `${y}-${y+1}` : `${y-1}-${y}`;
+            if (fy !== selectedYear) return false;
+          }
         }
       }
-    }
 
-    // 2. Search Query
-    const query = searchQuery.toLowerCase();
-    const titleMatch = tx.title.toLowerCase().includes(query);
-    const descMatch = (tx.description || '').toLowerCase().includes(query);
-    const subMatch = (tx.subCategory || '').toLowerCase().includes(query);
-    const refMatch = (tx.referenceId || '').toLowerCase().includes(query);
-    const companyMatch = (tx.companyName || '').toLowerCase().includes(query);
-    if (!titleMatch && !descMatch && !subMatch && !refMatch && !companyMatch) return false;
+      // 2. Search Query
+      if (query) {
+        const titleMatch = (tx.title || '').toLowerCase().includes(query);
+        const descMatch = (tx.description || '').toLowerCase().includes(query);
+        const subMatch = (tx.subCategory || '').toLowerCase().includes(query);
+        const refMatch = (tx.referenceId || '').toLowerCase().includes(query);
+        const companyMatch = (tx.companyName || '').toLowerCase().includes(query);
+        if (!titleMatch && !descMatch && !subMatch && !refMatch && !companyMatch) return false;
+      }
 
-    // 3. Filter Type
-    if (filterType !== 'all' && tx.type !== filterType) return false;
+      // 3. Filter Type
+      if (filterType !== 'all' && tx.type !== filterType) return false;
 
-    // 4. Filter Category
-    if (filterCategory !== 'all' && tx.category !== filterCategory) return false;
+      // 4. Filter Category
+      if (filterCategory !== 'all' && tx.category !== filterCategory) return false;
 
-    // 5. Filter Payment Mode
-    if (filterPayment !== 'all' && (tx.paymentMode || 'Cash') !== filterPayment) return false;
+      // 5. Filter Payment Mode
+      if (filterPayment !== 'all' && (tx.paymentMode || 'Cash') !== filterPayment) return false;
 
-    // 6. Filter Company Name
-    if (filterCompany !== 'all' && (tx.companyName || 'N/A') !== filterCompany) return false;
+      // 6. Filter Company Name
+      if (filterCompany !== 'all' && (tx.companyName || 'N/A') !== filterCompany) return false;
 
-    return true;
-  });
+      return true;
+    });
+  }, [transactions, selectedMonth, selectedYear, searchQuery, filterType, filterCategory, filterPayment, filterCompany]);
 
-  // Calculate dynamic filtered totals down to the rupee
-  const totalFilteredIncome = filteredTxs
-    .filter(t => t.type === 'income')
-    .reduce((sum, t) => sum + t.amount, 0);
+  // Calculate dynamic filtered totals with useMemo
+  const totalFilteredIncome = useMemo(() => {
+    return filteredTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
+  }, [filteredTxs]);
 
-  const totalFilteredExpense = filteredTxs
-    .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0);
+  const totalFilteredExpense = useMemo(() => {
+    return filteredTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
+  }, [filteredTxs]);
 
-  const filteredNet = totalFilteredIncome - totalFilteredExpense;
+  const filteredNet = useMemo(() => {
+    return totalFilteredIncome - totalFilteredExpense;
+  }, [totalFilteredIncome, totalFilteredExpense]);
 
   const handlePrint = () => {
     window.print();

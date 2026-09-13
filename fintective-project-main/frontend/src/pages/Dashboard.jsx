@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useMemo } from 'react';
 import { FinanceContext } from '../context/FinanceContext';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { DonutChart, BarChart } from '../components/CustomCharts';
@@ -19,82 +19,103 @@ const Dashboard = ({ setActivePage }) => {
     };
   };
 
-  // Filter transactions based on active role
-  const roleTxs = transactions.filter(tx => {
-    if (userRole === 'admin') return true;
-    if (userRole.startsWith('franchise_')) {
-      const fId = userRole.split('_')[1];
-      return tx.franchiseeId === fId;
-    }
-    if (userRole.startsWith('bd_')) {
-      const bdId = userRole.split('_')[1];
-      return tx.bdAgentId === bdId;
-    }
-    return true;
-  });
+  // Filter transactions based on active role (memoized)
+  const roleTxs = useMemo(() => {
+    if (!Array.isArray(transactions)) return [];
+    return transactions.filter(tx => {
+      if (!tx) return false;
+      if (userRole === 'admin') return true;
+      if (userRole.startsWith('franchise_')) {
+        const fId = userRole.split('_')[1];
+        return tx.franchiseeId === fId;
+      }
+      if (userRole.startsWith('bd_')) {
+        const bdId = userRole.split('_')[1];
+        return tx.bdAgentId === bdId;
+      }
+      return true;
+    });
+  }, [transactions, userRole]);
 
-  // Filter current selection by both Month and Year
-  const currentTxs = roleTxs.filter(tx => {
-    // 1. Month filter
-    let monthMatch = true;
-    if (selectedMonth !== 'All Months') {
-      monthMatch = getMonthAndYear(tx.date).monthYear === selectedMonth;
-    }
+  // Filter current selection by both Month and Year (memoized)
+  const currentTxs = useMemo(() => {
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    return roleTxs.filter(tx => {
+      // 1. Month filter
+      let monthMatch = true;
+      if (selectedMonth !== 'All Months') {
+        const date = new Date(tx.date);
+        const txMonthYear = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+        monthMatch = (txMonthYear === selectedMonth);
+      }
 
-    // 2. Year filter
-    let yearMatch = true;
-    if (selectedYear !== 'All Years') {
-      if (tx.financialYear && tx.financialYear !== 'N/A') {
-        yearMatch = (tx.financialYear === selectedYear);
-      } else {
-        const d = new Date(tx.date);
-        if (!isNaN(d.getTime())) {
-          const y = d.getFullYear();
-          const m = d.getMonth();
-          const fy = m >= 3 ? `${y}-${y+1}` : `${y-1}-${y}`;
-          yearMatch = (fy === selectedYear);
+      // 2. Year filter
+      let yearMatch = true;
+      if (selectedYear !== 'All Years') {
+        if (tx.financialYear && tx.financialYear !== 'N/A') {
+          yearMatch = (tx.financialYear === selectedYear);
+        } else {
+          const d = new Date(tx.date);
+          if (!isNaN(d.getTime())) {
+            const y = d.getFullYear();
+            const m = d.getMonth();
+            const fy = m >= 3 ? `${y}-${y+1}` : `${y-1}-${y}`;
+            yearMatch = (fy === selectedYear);
+          }
         }
       }
+      return monthMatch && yearMatch;
+    });
+  }, [roleTxs, selectedMonth, selectedYear]);
+
+  const displayTxs = useMemo(() => {
+    return (currentTxs.length > 0 || selectedMonth !== 'All Months' || selectedYear !== 'All Years') ? currentTxs : roleTxs;
+  }, [currentTxs, roleTxs, selectedMonth, selectedYear]);
+
+  const { revenue, expenses, profit, margin } = useMemo(() => {
+    const rev = displayTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
+    const exp = displayTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
+    const prof = rev - exp;
+    const marg = rev > 0 ? (prof / rev) * 100 : 0;
+    return { revenue: rev, expenses: exp, profit: prof, margin: marg };
+  }, [displayTxs]);
+
+  // Comparison metrics with previous month (memoized)
+  const { prevMonthLabel, prevRevenue, prevExpenses, prevProfit, prevMargin } = useMemo(() => {
+    let pLabel = '';
+    let pRev = 0;
+    let pExp = 0;
+    let pProf = 0;
+    let pMarg = 0;
+
+    if (selectedMonth !== 'All Months') {
+      const parts = selectedMonth.split(' ');
+      const mName = parts[0];
+      const yVal = parseInt(parts[1]);
+      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      const currIdx = monthNames.indexOf(mName);
+
+      let prevIdx = currIdx - 1;
+      let prevYear = yVal;
+      if (prevIdx < 0) {
+        prevIdx = 11;
+        prevYear -= 1;
+      }
+
+      pLabel = `${monthNames[prevIdx]} ${prevYear}`;
+      const prevTxs = roleTxs.filter(tx => {
+        const d = new Date(tx.date);
+        return `${monthNames[d.getMonth()]} ${d.getFullYear()}` === pLabel;
+      });
+
+      pRev = prevTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
+      pExp = prevTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
+      pProf = pRev - pExp;
+      pMarg = pRev > 0 ? (pProf / pRev) * 100 : 0;
     }
-    return monthMatch && yearMatch;
-  });
 
-  const displayTxs = (currentTxs.length > 0 || selectedMonth !== 'All Months' || selectedYear !== 'All Years') ? currentTxs : roleTxs;
-
-  const revenue = (displayTxs.length > 0 ? displayTxs : roleTxs).filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-  const expenses = (displayTxs.length > 0 ? displayTxs : roleTxs).filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-  const profit = revenue - expenses;
-  const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
-
-  // Comparison metrics with previous month
-  let prevMonthLabel = '';
-  let prevRevenue = 0;
-  let prevExpenses = 0;
-  let prevProfit = 0;
-  let prevMargin = 0;
-
-  if (selectedMonth !== 'All Months') {
-    const parts = selectedMonth.split(' ');
-    const mName = parts[0];
-    const yVal = parseInt(parts[1]);
-    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    const currIdx = monthNames.indexOf(mName);
-
-    let prevIdx = currIdx - 1;
-    let prevYear = yVal;
-    if (prevIdx < 0) {
-      prevIdx = 11;
-      prevYear -= 1;
-    }
-
-    prevMonthLabel = `${monthNames[prevIdx]} ${prevYear}`;
-    const prevTxs = roleTxs.filter(tx => getMonthAndYear(tx.date).monthYear === prevMonthLabel);
-
-    prevRevenue = prevTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-    prevExpenses = prevTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-    prevProfit = prevRevenue - prevExpenses;
-    prevMargin = prevRevenue > 0 ? (prevProfit / prevRevenue) * 100 : 0;
-  }
+    return { prevMonthLabel: pLabel, prevRevenue: pRev, prevExpenses: pExp, prevProfit: pProf, prevMargin: pMarg };
+  }, [roleTxs, selectedMonth]);
 
   const getChange = (curr, prev) => {
     if (prev === 0) return { val: 0, text: 'No prior data', positive: true };

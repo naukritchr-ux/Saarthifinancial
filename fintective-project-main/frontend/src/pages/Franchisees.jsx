@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
@@ -14,38 +14,47 @@ const Franchisees = () => {
   const [city, setCity] = useState('');
   const [owner, setOwner] = useState('');
 
-  const getFranchiseeFinancials = (franId) => {
-    const relatedTxs = transactions.filter(t => {
-      if (t.franchiseeId !== franId) return false;
-      
+  // Pre-indexed map of transactions per franchisee for instant zero-latency rendering
+  const franTxsMap = useMemo(() => {
+    const map = {};
+    if (!Array.isArray(transactions)) return map;
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+    transactions.forEach(t => {
+      if (!t || !t.franchiseeId) return;
+
       // 1. Month filter
-      let monthMatch = true;
       if (selectedMonth !== 'All Months') {
         const date = new Date(t.date);
-        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
         const txMonthYear = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
-        monthMatch = (txMonthYear === selectedMonth);
+        if (txMonthYear !== selectedMonth) return false;
       }
 
       // 2. Year filter
-      let yearMatch = true;
       if (selectedYear !== 'All Years') {
         if (t.financialYear && t.financialYear !== 'N/A') {
-          yearMatch = (t.financialYear === selectedYear);
+          if (t.financialYear !== selectedYear) return false;
         } else {
           const d = new Date(t.date);
           if (!isNaN(d.getTime())) {
             const y = d.getFullYear();
             const m = d.getMonth();
             const fy = m >= 3 ? `${y}-${y+1}` : `${y-1}-${y}`;
-            yearMatch = (fy === selectedYear);
+            if (fy !== selectedYear) return false;
           }
         }
       }
-      return monthMatch && yearMatch;
+
+      if (!map[t.franchiseeId]) map[t.franchiseeId] = [];
+      map[t.franchiseeId].push(t);
     });
+    return map;
+  }, [transactions, selectedMonth, selectedYear]);
+
+  const getFranchiseeFinancials = (franId) => {
+    const relatedTxs = franTxsMap[franId] || [];
     const revenuePaid = relatedTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.franchiseeShare || t.amount || 0), 0);
-    const costsIncurred = relatedTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+    const costsIncurred = relatedTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
     const netContribution = revenuePaid - costsIncurred;
     return {
       revenuePaid,
@@ -128,6 +137,16 @@ const Franchisees = () => {
   };
 
   useEffect(() => {
+    const cached = sessionStorage.getItem('fintective_ml_insights');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed?.franchise_clusters) {
+          setMlData(parsed.franchise_clusters);
+          return;
+        }
+      } catch (e) {}
+    }
     fetchWithApiKey(`${API_BASE_URL}/ml/insights`)
       .then(res => {
         if (res.ok) return res.json();
@@ -135,6 +154,7 @@ const Franchisees = () => {
       .then(data => {
         if (data && data.franchise_clusters) {
           setMlData(data.franchise_clusters);
+          try { sessionStorage.setItem('fintective_ml_insights', JSON.stringify(data)); } catch(e){}
         }
       })
       .catch(err => console.log("ML load bypassed in Franchisees page:", err));

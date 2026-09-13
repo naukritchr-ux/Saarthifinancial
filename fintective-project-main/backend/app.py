@@ -88,6 +88,39 @@ def ensure_exclusions_fresh():
 # Initial dynamic load on startup
 refresh_live_exclusions(force=True)
 
+import gzip
+
+# In-memory caches for high-frequency / heavy pipeline endpoints
+_tx_cache = {}
+_tx_cache_time = 0
+_tx_cache_lock = threading.Lock()
+TX_CACHE_TTL_SECONDS = 180  # 3 minutes
+
+_ml_insights_cache = None
+_ml_insights_cache_time = 0
+_ml_insights_lock = threading.Lock()
+ML_CACHE_TTL_SECONDS = 1800  # 30 minutes
+
+_clients_cache = None
+_clients_cache_time = 0
+_clients_lock = threading.Lock()
+CLIENTS_CACHE_TTL_SECONDS = 300  # 5 minutes
+
+def invalidate_all_caches():
+    global _tx_cache, _tx_cache_time, _ml_insights_cache, _ml_insights_cache_time, _clients_cache, _clients_cache_time
+    with _tx_cache_lock:
+        _tx_cache = {}
+        _tx_cache_time = 0
+    with _ml_insights_lock:
+        _ml_insights_cache = None
+        _ml_insights_cache_time = 0
+    with _clients_lock:
+        _clients_cache = None
+        _clients_cache_time = 0
+    refresh_live_exclusions(force=True)
+    print("[Cache Invalidation] All backend pipeline & ML caches cleared.")
+
+
 def get_enq_exclude_clause(table_prefix=""):
     ensure_exclusions_fresh()
     prefix = f"{table_prefix}." if table_prefix else ""
@@ -182,6 +215,26 @@ from enquiry_to_invoice_middleware import enquiry_to_invoice_after_request
 app.register_blueprint(invoice_bp)
 app.after_request(enquiry_to_invoice_after_request)
 
+@app.after_request
+def compress_response(response):
+    # Automatically compress responses >= 1KB with gzip if supported by client
+    accept_encoding = request.headers.get('Accept-Encoding', '')
+    if (
+        response.status_code == 200
+        and not response.direct_passthrough
+        and 'gzip' in accept_encoding.lower()
+        and 'Content-Encoding' not in response.headers
+    ):
+        data = response.get_data()
+        if len(data) >= 1024:
+            response.direct_passthrough = False
+            compressed_data = gzip.compress(data, compresslevel=6)
+            response.set_data(compressed_data)
+            response.headers['Content-Encoding'] = 'gzip'
+            response.headers['Content-Length'] = len(compressed_data)
+            response.headers['Vary'] = 'Accept-Encoding'
+    return response
+
 # Fallback/default seed lists to replicate backend behaviour
 initial_bd_agents = [
     { 'id': 'bd-1', 'name': 'Rohan Mehta', 'leadsBought': 30, 'leadsProgressed': 14, 'leadsCancelled': 10, 'baseSalary': 12000.00, 'payPerProgressed': 2500.00, 'payPerCancelled': 500.00, 'commissionRate': 0.10, 'status': 'Active' },
@@ -228,8 +281,15 @@ def map_category(crm_category, tx_type):
 
 @app.route('/api/transactions', methods=['GET'])
 def get_transactions():
+    global _tx_cache, _tx_cache_time
     bd_agent_id = request.args.get('bdAgentId')
     franchisee_id = request.args.get('franchiseeId')
+    cache_key = f"{bd_agent_id or 'all'}_{franchisee_id or 'all'}"
+    
+    with _tx_cache_lock:
+        now = time.time()
+        if cache_key in _tx_cache and (now - _tx_cache_time < TX_CACHE_TTL_SECONDS):
+            return jsonify(_tx_cache[cache_key])
     
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -714,6 +774,9 @@ def get_transactions():
 
             # Sort final combined list by date descending
             filtered_result.sort(key=lambda x: x.get('date', ''), reverse=True)
+            with _tx_cache_lock:
+                _tx_cache[cache_key] = filtered_result
+                _tx_cache_time = time.time()
             return jsonify(filtered_result)
 
     except Exception as e:
@@ -2483,6 +2546,14 @@ def update_budgets():
 
 @app.route('/api/ml/insights', methods=['GET'])
 def get_ml_insights():
+    global _ml_insights_cache, _ml_insights_cache_time
+    force_refresh = request.args.get('force', 'false').lower() in ('true', '1', 'yes')
+    
+    with _ml_insights_lock:
+        now = time.time()
+        if not force_refresh and _ml_insights_cache is not None and (now - _ml_insights_cache_time < ML_CACHE_TTL_SECONDS):
+            return jsonify(_ml_insights_cache)
+
     from sklearn.ensemble import IsolationForest
     from sklearn.cluster import KMeans
     from sklearn.preprocessing import StandardScaler
@@ -2758,6 +2829,10 @@ def get_ml_insights():
         except Exception as plot_err:
             print("Error generating ML plots inside app.py:", str(plot_err))
 
+        with _ml_insights_lock:
+            _ml_insights_cache = insights
+            _ml_insights_cache_time = time.time()
+
         return jsonify(insights)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2980,6 +3055,7 @@ def sync_saarthi_endpoint():
             }), 500
         # Partial success: sync ran but some endpoints had warnings
         err_list = result.get('errors', [])
+        invalidate_all_caches()
         return jsonify({
             'success': True,
             'message': 'Saarthi Live CRM sync completed successfully',

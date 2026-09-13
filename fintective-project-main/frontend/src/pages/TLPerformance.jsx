@@ -124,12 +124,17 @@ const TLPerformance = () => {
     // Also include any TL present in live transactions not yet in merged roster
     const existingNames = new Set(merged.map(t => (t.name || '').trim().toLowerCase()));
     if (Array.isArray(transactions)) {
-      transactions.forEach((tx, idx) => {
+      const tlCountMap = {};
+      transactions.forEach((tx) => {
         const tlName = (tx.teamLeaderName || '').trim();
-        if (tlName && tlName.toLowerCase() !== 'unknown' && !existingNames.has(tlName.toLowerCase())) {
+        if (tlName && tlName.toLowerCase() !== 'unknown') {
+          tlCountMap[tlName] = (tlCountMap[tlName] || 0) + (tx.type === 'income' ? 1 : 0);
+        }
+      });
+      Object.keys(tlCountMap).forEach((tlName, idx) => {
+        if (!existingNames.has(tlName.toLowerCase())) {
           existingNames.add(tlName.toLowerCase());
-          const tlTxs = transactions.filter(x => (x.teamLeaderName || '').trim().toLowerCase() === tlName.toLowerCase());
-          const closedCount = tlTxs.filter(x => x.type === 'income').length;
+          const closedCount = tlCountMap[tlName];
           merged.push({
             id: `tl-tx-${idx}`,
             name: tlName,
@@ -150,48 +155,69 @@ const TLPerformance = () => {
     return merged;
   }, [teamLeaders, leaderboard, transactions]);
 
-  // Process data locally if filters change
-  const processedLeaders = effectiveLeaders.map(tl => {
-    // If stats already computed from leaderboard
-    if (tl.grossRevenue !== undefined && tl.grossRevenue > 0) {
-      return tl;
-    }
-    // Look up this TL's stats in the fetched leaderboard
-    const lbMatch = (leaderboard || []).find(item => item.tl_name && item.tl_name.trim().toLowerCase() === tl.name.trim().toLowerCase());
-    
-    const tlFirstName = tl.name.trim().split(' ')[0].toLowerCase();
-    const tlTxs = transactions.filter(t => 
-      t.teamLeaderName && t.teamLeaderName.toLowerCase().includes(tlFirstName)
-    );
-    const contextGross = tlTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
-    const contextNet = contextGross * 0.4375;
+  // Pre-index transactions by TL first name for fast O(1) lookup
+  const tlTxsMap = useMemo(() => {
+    const map = {};
+    if (!Array.isArray(transactions)) return map;
+    transactions.forEach(t => {
+      if (!t.teamLeaderName) return;
+      const cleanTL = t.teamLeaderName.trim().toLowerCase();
+      if (!map[cleanTL]) map[cleanTL] = [];
+      map[cleanTL].push(t);
+      const first = cleanTL.split(' ')[0];
+      if (first && !map[first]) map[first] = [];
+      if (first) map[first].push(t);
+    });
+    return map;
+  }, [transactions]);
 
-    const grossRevenue = lbMatch ? lbMatch.gross_revenue : (contextGross > 0 ? contextGross : 0.0);
-    const netRevenue = lbMatch ? lbMatch.net_revenue : (contextNet > 0 ? contextNet : 0.0);
-    const lossAmount = lbMatch ? lbMatch.potential_loss : 0.0;
-    const totalEnquiries = lbMatch ? lbMatch.total_enquiries : Math.max(1, tlTxs.length);
-    const enquiriesProgressed = lbMatch ? lbMatch.invoices_closed : tlTxs.filter(t => t.type === 'income').length;
-    
-    // Estimate cancelled/internally closed mixes based on loss amount vs average fee
-    const enquiriesCancelled = lossAmount > 0 ? Math.ceil(lossAmount / 50000) : 0;
+  // Process data locally with useMemo
+  const processedLeaders = useMemo(() => {
+    return effectiveLeaders.map(tl => {
+      // If stats already computed from leaderboard
+      if (tl.grossRevenue !== undefined && tl.grossRevenue > 0) {
+        return tl;
+      }
+      // Look up this TL's stats in the fetched leaderboard
+      const lbMatch = (leaderboard || []).find(item => item.tl_name && item.tl_name.trim().toLowerCase() === tl.name.trim().toLowerCase());
+      
+      const tlClean = tl.name.trim().toLowerCase();
+      const tlFirstName = tlClean.split(' ')[0];
+      const tlTxs = tlTxsMap[tlClean] || tlTxsMap[tlFirstName] || [];
+      const contextGross = tlTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
+      const contextNet = contextGross * 0.4375;
 
+      const grossRevenue = lbMatch ? lbMatch.gross_revenue : (contextGross > 0 ? contextGross : 0.0);
+      const netRevenue = lbMatch ? lbMatch.net_revenue : (contextNet > 0 ? contextNet : 0.0);
+      const lossAmount = lbMatch ? lbMatch.potential_loss : 0.0;
+      const totalEnquiries = lbMatch ? lbMatch.total_enquiries : Math.max(1, tlTxs.length);
+      const enquiriesProgressed = lbMatch ? lbMatch.invoices_closed : tlTxs.filter(t => t.type === 'income').length;
+      
+      // Estimate cancelled/internally closed mixes based on loss amount vs average fee
+      const enquiriesCancelled = lossAmount > 0 ? Math.ceil(lossAmount / 50000) : 0;
+
+      return {
+        ...tl,
+        grossRevenue,
+        netRevenue,
+        lossAmount,
+        totalEnquiries,
+        enquiriesProgressed,
+        enquiriesCancelled,
+        enquiriesInternallyClosed: lossAmount > 0 ? Math.ceil(lossAmount / 75000) : 0
+      };
+    }).sort((a, b) => b.grossRevenue - a.grossRevenue);
+  }, [effectiveLeaders, leaderboard, tlTxsMap]);
+
+  // Overall aggregates (memoized)
+  const { overallGross, overallNet, overallLoss, overallEnquiries } = useMemo(() => {
     return {
-      ...tl,
-      grossRevenue,
-      netRevenue,
-      lossAmount,
-      totalEnquiries,
-      enquiriesProgressed,
-      enquiriesCancelled,
-      enquiriesInternallyClosed: lossAmount > 0 ? Math.ceil(lossAmount / 75000) : 0
+      overallGross: processedLeaders.reduce((sum, tl) => sum + (tl.grossRevenue || 0), 0),
+      overallNet: processedLeaders.reduce((sum, tl) => sum + (tl.netRevenue || 0), 0),
+      overallLoss: processedLeaders.reduce((sum, tl) => sum + (tl.lossAmount || 0), 0),
+      overallEnquiries: processedLeaders.reduce((sum, tl) => sum + (tl.totalEnquiries || 0), 0)
     };
-  }).sort((a, b) => b.grossRevenue - a.grossRevenue);
-
-  // Overall aggregates
-  const overallGross = processedLeaders.reduce((sum, tl) => sum + tl.grossRevenue, 0);
-  const overallNet = processedLeaders.reduce((sum, tl) => sum + tl.netRevenue, 0);
-  const overallLoss = processedLeaders.reduce((sum, tl) => sum + tl.lossAmount, 0);
-  const overallEnquiries = processedLeaders.reduce((sum, tl) => sum + tl.totalEnquiries, 0);
+  }, [processedLeaders]);
 
   const activePeriodLabel = selectedMonth !== 'All Months' 
     ? selectedMonth 

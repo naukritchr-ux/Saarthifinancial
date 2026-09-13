@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useState, useMemo } from 'react';
 import { FinanceContext } from '../context/FinanceContext';
 import { formatLakhs } from '../utils/formatters';
 import { Plus, Minus, CloudDownload, PanelLeft } from 'lucide-react';
@@ -23,57 +23,29 @@ const Topbar = ({ activePage, setActivePage }) => {
 
   const [isSyncOpen, setIsSyncOpen] = useState(false);
 
-  // Calculate quick metrics for the top badge using module-filtered data
-  const roleFilteredTxs = moduleFilteredTransactions.filter(tx => {
-    if (userRole === 'admin') return true;
-    if (userRole.startsWith('franchise_')) {
-      const fId = userRole.split('_')[1];
-      return tx.franchiseeId === fId;
-    }
-    if (userRole.startsWith('bd_')) {
-      const bdId = userRole.split('_')[1];
-      return tx.bdAgentId === bdId;
-    }
-    return true;
-  });
-
-  const filteredTransactions = roleFilteredTxs.filter(tx => {
-    // 1. Month filter
-    let monthMatch = true;
-    if (selectedMonth !== 'All Months') {
-      const date = new Date(tx.date);
-      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-      const txMonthYear = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
-      monthMatch = (txMonthYear === selectedMonth);
-    }
-
-    // 2. Year filter
-    let yearMatch = true;
-    if (selectedYear !== 'All Years') {
-      if (tx.financialYear) {
-        yearMatch = (tx.financialYear === selectedYear);
-      } else {
-        const d = new Date(tx.date);
-        if (!isNaN(d.getTime())) {
-          const y = d.getFullYear();
-          const m = d.getMonth();
-          const fy = m >= 3 ? `${y}-${y+1}` : `${y-1}-${y}`;
-          yearMatch = (fy === selectedYear);
-        }
+  // Calculate quick metrics for the top badge using module-filtered data (memoized)
+  const roleFilteredTxs = useMemo(() => {
+    if (!Array.isArray(moduleFilteredTransactions)) return [];
+    return moduleFilteredTransactions.filter(tx => {
+      if (!tx) return false;
+      if (userRole === 'admin') return true;
+      if (userRole.startsWith('franchise_')) {
+        const fId = userRole.split('_')[1];
+        return tx.franchiseeId === fId;
       }
-    }
-    return monthMatch && yearMatch;
-  });
+      if (userRole.startsWith('bd_')) {
+        const bdId = userRole.split('_')[1];
+        return tx.bdAgentId === bdId;
+      }
+      return true;
+    });
+  }, [moduleFilteredTransactions, userRole]);
 
-  const totalIncome = roleFilteredTxs
-    .filter(t => t.type === 'income')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const totalExpense = roleFilteredTxs
-    .filter(t => t.type === 'expense')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const netBalance = totalIncome - totalExpense;
+  const { totalIncome, totalExpense, netBalance } = useMemo(() => {
+    const inc = roleFilteredTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
+    const exp = roleFilteredTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
+    return { totalIncome: inc, totalExpense: exp, netBalance: inc - exp };
+  }, [roleFilteredTxs]);
 
   const getPageTitle = () => {
     switch (activePage) {

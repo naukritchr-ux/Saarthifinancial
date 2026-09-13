@@ -169,58 +169,74 @@ export const FinanceProvider = ({ children }) => {
     return `bd-${getStableStringHash(clean)}`;
   };
 
-  // Re-usable loader to fetch all data from backend (with live API fallback)
+  const [isLoadingData, setIsLoadingData] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('fintective_cached_txs');
+      return !cached;
+    } catch {
+      return true;
+    }
+  });
+  const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
+
+  // Re-usable loader to fetch all data from backend (with parallel async fetching)
   const fetchAllData = async () => {
+    setIsBackgroundSyncing(true);
     let loadedFromBackend = false;
     try {
-      const txRes = await fetchWithApiKey(`${API_BASE_URL}/transactions`);
-      if (txRes.ok) {
-        const txData = await txRes.json();
+      // Parallel async fetch for maximum loading speed
+      const [txRes, franRes, bdRes, tlRes, budgetRes] = await Promise.allSettled([
+        fetchWithApiKey(`${API_BASE_URL}/transactions`),
+        fetchWithApiKey(`${API_BASE_URL}/franchisees`),
+        fetchWithApiKey(`${API_BASE_URL}/bd-agents`),
+        fetchWithApiKey(`${API_BASE_URL}/team-leaders`),
+        fetchWithApiKey(`${API_BASE_URL}/budgets`)
+      ]);
+
+      if (txRes.status === 'fulfilled' && txRes.value.ok) {
+        const txData = await txRes.value.json();
         if (Array.isArray(txData) && txData.length > 0) {
           setTransactions(txData);
           loadedFromBackend = true;
           setDataSource('backend');
+          try {
+            sessionStorage.setItem('fintective_cached_txs', JSON.stringify(txData));
+          } catch (e) {}
         }
       }
-      
-      let finalFrans = [];
-      let finalBds = [];
-      let finalTls = [];
 
-      const franRes = await fetchWithApiKey(`${API_BASE_URL}/franchisees`);
-      if (franRes.ok) {
-        const franData = await franRes.json();
+      if (franRes.status === 'fulfilled' && franRes.value.ok) {
+        const franData = await franRes.value.json();
         if (Array.isArray(franData) && franData.length > 0) {
-          finalFrans = franData;
           setFranchisees(franData);
         }
       }
-      
-      const bdRes = await fetchWithApiKey(`${API_BASE_URL}/bd-agents`);
-      if (bdRes.ok) {
-        const bdData = await bdRes.json();
+
+      if (bdRes.status === 'fulfilled' && bdRes.value.ok) {
+        const bdData = await bdRes.value.json();
         if (Array.isArray(bdData) && bdData.length > 0) {
-          finalBds = bdData;
           setBdAgents(bdData);
         }
       }
 
-      const tlRes = await fetchWithApiKey(`${API_BASE_URL}/team-leaders`);
-      if (tlRes.ok) {
-        const tlData = await tlRes.json();
+      if (tlRes.status === 'fulfilled' && tlRes.value.ok) {
+        const tlData = await tlRes.value.json();
         if (Array.isArray(tlData) && tlData.length > 0) {
-          finalTls = tlData;
           setTeamLeaders(tlData);
         }
       }
 
-      const budgetRes = await fetchWithApiKey(`${API_BASE_URL}/budgets`);
-      if (budgetRes.ok) {
-        const budgetData = await budgetRes.json();
-        if (Object.keys(budgetData).length > 0) setBudgets(budgetData);
+      if (budgetRes.status === 'fulfilled' && budgetRes.value.ok) {
+        const budgetData = await budgetRes.value.json();
+        if (budgetData && Object.keys(budgetData).length > 0) {
+          setBudgets(budgetData);
+        }
       }
     } catch (err) {
-      console.warn('Backend server connection issue, attempting direct live API fetch fallback...', err.message);
+      console.warn('Backend connection issue, checking fallback...', err.message);
+    } finally {
+      setIsLoadingData(false);
+      setIsBackgroundSyncing(false);
     }
 
     // Direct live API fetch fallback if backend is unreachable
@@ -769,6 +785,8 @@ export const FinanceProvider = ({ children }) => {
         isSidebarOpen,
         setIsSidebarOpen,
         toggleSidebar,
+        isLoadingData,
+        isBackgroundSyncing,
         showToast
       }}
     >
