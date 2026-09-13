@@ -830,15 +830,15 @@ const RunwayRoiTracker = () => {
         <div className="card-header-flex">
           <div>
             <h3 className="card-title">Runway Projections (Historical vs Forecast)</h3>
-            <span className="flow-subtitle">Solid line = Historical Ledger â€¢ Dashed line = 3-Mo Moving Average Projection</span>
+            <span className="flow-subtitle">Solid line = Historical Ledger • Dashed line = 3-Mo Moving Average Projection</span>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-            <span style={{ color: '#10b981' }}>â— Inflow (Baseline)</span>
-            <span style={{ color: '#ef4444' }}>â— Outflow (Baseline)</span>
+            <span style={{ color: '#10b981' }}>● Inflow (Baseline)</span>
+            <span style={{ color: '#ef4444' }}>● Outflow (Baseline)</span>
             {isSimulatedActive && (
               <>
-                <span style={{ color: '#c084fc' }}>â•Œâ•Œ Inflow (Simulated)</span>
-                <span style={{ color: '#f472b6' }}>â•Œâ•Œ Outflow (Simulated)</span>
+                <span style={{ color: '#c084fc' }}>══ Inflow (Simulated)</span>
+                <span style={{ color: '#f472b6' }}>══ Outflow (Simulated)</span>
               </>
             )}
           </div>
@@ -891,7 +891,7 @@ const RunwayRoiTracker = () => {
               {formatLakhs(maxFlowVal / 2)}
             </text>
             <text x={paddingX - 10} y={svgHeight - paddingY + 4} textAnchor="end" fill="#64748b" fontSize="10" fontWeight="bold">
-              â‚¹0
+              ₹0
             </text>
 
             {/* Area Fills under curves */}

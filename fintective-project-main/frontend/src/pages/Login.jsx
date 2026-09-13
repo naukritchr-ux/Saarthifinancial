@@ -44,7 +44,7 @@ const Login = () => {
         </form>
 
         <div className="login-footer">
-          <span>Protected by Saarthi Identity Engine â€¢ Version 2.0</span>
+          <span>Protected by Saarthi Identity Engine • Version 2.0</span>
         </div>
       </div>
     </div>

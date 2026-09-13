@@ -476,7 +476,7 @@ const Dashboard = ({ setActivePage }) => {
                 if (flow.expense > 0 && expPercent < 15) expPercent = 15;
 
                 return (
-                  <div className="spike-column" key={i} title={`Day ${flow.day}: +â‚¹${flow.income.toLocaleString()} | -â‚¹${flow.expense.toLocaleString()}`}>
+                  <div className="spike-column" key={i} title={`Day ${flow.day}: +₹${flow.income.toLocaleString()} | -₹${flow.expense.toLocaleString()}`}>
                     <div className="spike-upper">
                       {flow.income > 0 && (
                         <div className="spike-bar positive" style={{ height: `${incPercent}%` }}></div>
@@ -661,7 +661,7 @@ const Dashboard = ({ setActivePage }) => {
                     <div className="entry-left">
                       <h4 className="entry-title">{tx.title}</h4>
                       <span className="entry-meta">
-                        {tx.category} â€¢ {tx.subCategory || 'General'} â€¢ {formatDate(tx.date)}
+                        {tx.category} • {tx.subCategory || 'General'} • {formatDate(tx.date)}
                       </span>
                     </div>
                     <div className={`entry-right ${tx.type}`}>

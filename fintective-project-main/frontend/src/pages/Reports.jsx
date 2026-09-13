@@ -595,7 +595,7 @@ const Reports = () => {
                               <tr>
                                 <th>Category</th>
                                 <th>Particulars</th>
-                                <th className="text-right">Amount (â‚¹)</th>
+                                <th className="text-right">Amount (₹)</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -603,7 +603,7 @@ const Reports = () => {
                                 <tr key={i}>
                                   <td>{anom.category}</td>
                                   <td>{anom.particulars}</td>
-                                  <td className="text-right font-bold text-red">â‚¹{anom.amount.toLocaleString()}</td>
+                                  <td className="text-right font-bold text-red">₹{anom.amount.toLocaleString()}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -623,7 +623,7 @@ const Reports = () => {
                               <tr>
                                 <th>Date</th>
                                 <th>Category</th>
-                                <th className="text-right">Amount (â‚¹)</th>
+                                <th className="text-right">Amount (₹)</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -631,7 +631,7 @@ const Reports = () => {
                                 <tr key={i}>
                                   <td>{dup.date}</td>
                                   <td>{dup.category}</td>
-                                  <td className="text-right font-bold" style={{ color: '#ea580c' }}>â‚¹{dup.amount.toLocaleString()}</td>
+                                  <td className="text-right font-bold" style={{ color: '#ea580c' }}>₹{dup.amount.toLocaleString()}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -677,7 +677,7 @@ const Reports = () => {
                           <tr key={i}>
                             <td className="font-bold">{fran.franchise}</td>
                             <td>{fran.placements} / {fran.enquiries}</td>
-                            <td className="font-bold text-teal">â‚¹{fran.revenue.toLocaleString()}</td>
+                            <td className="font-bold text-teal">₹{fran.revenue.toLocaleString()}</td>
                             <td>
                               <span className="status-badge" style={{
                                 backgroundColor: fran.cluster === 0 ? 'rgba(16, 185, 129, 0.1)' : (fran.cluster === 1 ? 'rgba(37, 99, 235, 0.1)' : 'rgba(239, 68, 68, 0.1)'),
@@ -722,7 +722,7 @@ const Reports = () => {
                           <tr key={i}>
                             <td className="font-bold">{cli.client}</td>
                             <td>{cli.placements} / {cli.jobs}</td>
-                            <td className="font-bold text-teal">â‚¹{cli.billing.toLocaleString()}</td>
+                            <td className="font-bold text-teal">₹{cli.billing.toLocaleString()}</td>
                             <td>
                               <span className="status-badge" style={{
                                 backgroundColor: cli.cluster === 0 ? 'rgba(16, 185, 129, 0.1)' : (cli.cluster === 1 ? 'rgba(37, 99, 235, 0.1)' : (cli.cluster === 2 ? 'rgba(192, 132, 252, 0.1)' : 'rgba(239, 68, 68, 0.1)')),

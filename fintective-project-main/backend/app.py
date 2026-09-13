@@ -5,7 +5,7 @@ warnings.filterwarnings('ignore', category=UserWarning)
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
-from invoice_helpers import get_share_split
+from invoice_helpers import get_share_split, calculate_shares
 
 # Import database module
 from db import init_db, get_db_connection, DB_NAME, DB_PORT
@@ -1716,70 +1716,6 @@ def get_action_items():
                             'bd_member': row.get('BD Member'),
                             'franchise_name': row.get('Franchise Name'),
                             'service_charges': float(row.get('Service Charges (INR)', 0.0) or 0.0),
-                            'reason': row.get('Leakage Reason')
-                        })
-            except Exception as e:
-                print("Failed to read ghost deals file:", str(e))
-                
-        # Read duplicates
-        if os.path.exists(dup_file):
-            try:
-                with open(dup_file, 'r', encoding='utf-8') as f:
-                    reader = csv.DictReader(f)
-                    for idx, row in enumerate(reader):
-                        duplicate_expenses.append({
-                            'id': f"dup-{idx}",
-                            'date': row.get('Date'),
-                            'category': row.get('Category'),
-                            'amount': float(row.get('Amount (INR)', 0.0) or 0.0),
-                            'vendors': row.get('Vendors Involved'),
-                            'reason': 'Potential duplicate expense double-entry'
-                        })
-            except Exception as e:
-                print("Failed to read duplicates file:", str(e))
-                
-        # Mock under-collection/over-collection items
-        outstanding_receivables = [
-            {
-                'id': 'inv-debt-mock-0',
-                'company_name': 'SKY INDUSTRIES LIMITED',
-                'invoice_no': 'INV-2026-0043',
-                'bill_date': '2026-01-15',
-                'bill_amount': 58310.0,
-                'amount_received': 30000.0,
-                'days_overdue': 45,
-                'reason': 'Unpaid balance of Rs. 28,310.00 outstanding for 45 days'
-            }
-        ]
-        over_collections = [
-            {
-                'id': 'inv-over-mock-0',
-                'company_name': 'PRIME ROLL BEARINGS',
-                'invoice_no': 'INV-2026-0048',
-                'bill_date': '2026-02-10',
-                'bill_amount': 29988.0,
-                'amount_received': 30500.0,
-                'reason': 'Over-collection detected: Received Rs. 30,500.00 for Rs. 29,988.00 bill'
-            }
-        ]
-    if DB_NAME == 'seed':
-        backend_dir = os.path.dirname(os.path.abspath(__file__))
-        ghost_file = os.path.join(backend_dir, 'revenue_leakage_ghost_deals.csv')
-        dup_file = os.path.join(backend_dir, 'duplicate_expenses_audit_report.csv')
-        
-        # Read ghost deals
-        if os.path.exists(ghost_file):
-            try:
-                with open(ghost_file, 'r', encoding='utf-8') as f:
-                    reader = csv.DictReader(f)
-                    for idx, row in enumerate(reader):
-                        ghost_deals.append({
-                            'id': f"ghost-{idx}",
-                            'company_name': row.get('Company Name'),
-                            'position_name': row.get('Position Name'),
-                            'bd_member': row.get('BD Member'),
-                            'franchise_name': row.get('Franchise Name'),
-                            'service_charges': float(row.get('Service Charges (INR)', 0.0) or 0.0),
                             'priority': 'High' if idx % 3 == 0 else ('Medium' if idx % 3 == 1 else 'Low'),
                             'age_days': 45 if idx % 3 == 0 else (20 if idx % 3 == 1 else 10),
                             'suggested_date': '2026-06-15',
@@ -1843,7 +1779,7 @@ def get_action_items():
             try:
                 import joblib
                 backend_dir = os.path.dirname(os.path.abspath(__file__))
-                models_path = os.path.join(models_path if 'models_path' in locals() else os.path.join(backend_dir, 'models'))
+                models_path = os.path.join(backend_dir, 'models')
                 pending_model = joblib.load(os.path.join(models_path, 'payment_pending_model.joblib'))
                 le_ind = joblib.load(os.path.join(models_path, 'le_industry.joblib'))
                 le_fee = joblib.load(os.path.join(models_path, 'le_feeband.joblib'))
@@ -1868,11 +1804,13 @@ def get_action_items():
                 print("Failed to query max allocation date in action-items:", str(date_err))
 
             # 1. Ghost Deals (Missing Bill Date) with priorities
-            cursor.execute("""
+            enq_clause = get_enq_exclude_clause()
+            cursor.execute(f"""
                 SELECT id, companyName, positionName, bdMemberName, franchiseeName, bill_amount, dateOfAllocation
                 FROM enquiries
                 WHERE bill_no IS NOT NULL AND bill_no != ''
                   AND bill_date IS NULL
+                  AND {enq_clause}
             """)
             ghost_rows = cursor.fetchall()
             today = datetime.date.today()
@@ -2191,20 +2129,48 @@ def resolve_action_item(id):
             
             cursor.execute("SELECT * FROM invoice WHERE enquiry_id = %s", [raw_id])
             inv_row = cursor.fetchone()
+            info_status = old_row.get('info') or old_row.get('enquiryStatus') or None
+            
             if inv_row:
-                cursor.execute("""
-                    UPDATE invoice 
-                    SET billDate = %s, billNumber = COALESCE(%s, billNumber)
-                    WHERE enquiry_id = %s
-                """, (bill_date, bill_no, raw_id))
+                inv_sc = float(inv_row.get('serviceCharges') or old_row.get('bill_amount') or 0.0)
+                inv_info = inv_row.get('info') or info_status
+                if inv_row.get('franchiseeShare') is None or float(inv_row.get('franchiseeShare') or 0.0) == 0.0:
+                    shares = calculate_shares(
+                        service_charges=inv_sc,
+                        info=inv_info,
+                        bill_date=bill_date,
+                        is_manual_override=False
+                    )
+                    cursor.execute("""
+                        UPDATE invoice 
+                        SET billDate = %s, billNumber = COALESCE(%s, billNumber),
+                            franchiseeShare = %s, ourShare = %s
+                        WHERE enquiry_id = %s
+                    """, (bill_date, bill_no, shares['franchisee_share'], shares['our_share'], raw_id))
+                else:
+                    cursor.execute("""
+                        UPDATE invoice 
+                        SET billDate = %s, billNumber = COALESCE(%s, billNumber)
+                        WHERE enquiry_id = %s
+                    """, (bill_date, bill_no, raw_id))
             else:
                 import random
                 inv_no = bill_no or f"INV-GEN-{random.randint(1000, 9999)}"
-                bill_amount = float(old_row['bill_amount'] or 0.0)
+                bill_amount = float(old_row.get('bill_amount') or old_row.get('placementFees') or 0.0)
+                
+                shares = calculate_shares(
+                    service_charges=bill_amount,
+                    info=info_status,
+                    bill_date=bill_date,
+                    is_manual_override=False
+                )
+                f_share = shares['franchisee_share']
+                o_share = shares['our_share']
+                
                 cursor.execute("""
-                    INSERT INTO invoice (enquiry_id, billNumber, billDate, serviceCharges, franchiseeShare, ourShare, amountReceived, nameOfBd, teamLeader, franchiseName)
-                    VALUES (%s, %s, %s, %s, 0.0, %s, 0.0, %s, %s, %s)
-                """, (raw_id, inv_no, bill_date, bill_amount, bill_amount, old_row['bdMemberName'], old_row['teamLeaderName'], old_row['franchiseeName']))
+                    INSERT INTO invoice (enquiry_id, billNumber, billDate, serviceCharges, franchiseeShare, ourShare, amountReceived, nameOfBd, teamLeader, franchiseName, info, companyName, postOfCandidate)
+                    VALUES (%s, %s, %s, %s, %s, %s, 0.0, %s, %s, %s, %s, %s, %s)
+                """, (raw_id, inv_no, bill_date, bill_amount, f_share, o_share, old_row.get('bdMemberName'), old_row.get('teamLeaderName'), old_row.get('franchiseeName'), info_status, old_row.get('companyName'), old_row.get('positionName')))
             conn.commit()
             
             cursor.execute("SELECT * FROM enquiries WHERE id = %s", [raw_id])
