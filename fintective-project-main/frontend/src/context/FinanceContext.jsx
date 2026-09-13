@@ -758,6 +758,7 @@ export const FinanceProvider = ({ children }) => {
         bdAgents,
         teamLeaders,
         budgets,
+        setBudgets,
         selectedMonth,
         setSelectedMonth,
         selectedYear,

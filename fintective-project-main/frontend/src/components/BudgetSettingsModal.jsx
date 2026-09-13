@@ -1,5 +1,6 @@
 import React, { useState, useContext, useEffect, useMemo } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
+import { fetchWithApiKey } from '../utils/apiClient';
 import {
   X,
   Settings,
@@ -50,7 +51,7 @@ const getCategoryTag = (category) => {
 };
 
 const BudgetSettingsModal = ({ isOpen, onClose }) => {
-  const { budgets, setBudgets, userRole, fetchWithApiKey } = useContext(FinanceContext);
+  const { budgets, setBudgets, userRole } = useContext(FinanceContext);
   
   const [localBudgets, setLocalBudgets] = useState({});
   const [initialBudgets, setInitialBudgets] = useState({});
@@ -130,8 +131,7 @@ const BudgetSettingsModal = ({ isOpen, onClose }) => {
       });
 
       if (res && res.ok) {
-        const updated = await res.json();
-        if (setBudgets) {
+        if (typeof setBudgets === 'function') {
           setBudgets(localBudgets);
         }
         setInitialBudgets({ ...localBudgets });
@@ -140,12 +140,12 @@ const BudgetSettingsModal = ({ isOpen, onClose }) => {
           setSaveSuccess(false);
         }, 4000);
       } else {
-        throw new Error('Server returned error while saving budget allocations.');
+        throw new Error('Failed to update budgets on server.');
       }
     } catch (err) {
       console.error('Error saving budgets:', err);
       // Fallback local update
-      if (setBudgets) {
+      if (typeof setBudgets === 'function') {
         setBudgets(localBudgets);
       }
       setInitialBudgets({ ...localBudgets });
