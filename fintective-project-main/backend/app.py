@@ -3029,6 +3029,221 @@ def get_sync_status():
     finally:
         conn.close()
 
+# ----------------------------------------------------
+# JOB PORTAL & EMPLOYER ACCOUNTS APIS
+# ----------------------------------------------------
+@app.route('/api/job-portal/clients', methods=['GET'])
+def get_job_portal_clients():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            # 1. Fetch registered employer/client info from clients_info table
+            cur.execute("""
+                SELECT 
+                    c.id,
+                    c.companyName AS company,
+                    COALESCE(c.contactPersonName, 'HR Team') AS contactPerson,
+                    COALESCE(c.designation, 'Hiring Manager') AS designation,
+                    COALESCE(c.emailId, 'N/A') AS email,
+                    COALESCE(c.phoneNumber, 'N/A') AS phone,
+                    COALESCE(c.teamLeader, 'Head Office') AS teamLeader,
+                    c.status,
+                    COALESCE(c.amount, 0.0) AS amount,
+                    c.created_at
+                FROM clients_info c
+                WHERE c.companyName IS NOT NULL AND TRIM(c.companyName) != ''
+                ORDER BY c.id DESC
+            """)
+            client_rows = cur.fetchall()
+
+            # 2. Also discover any unique companies from enquiries/invoices to ensure 100% coverage
+            cur.execute("""
+                SELECT 
+                    e.companyName AS company,
+                    e.industry,
+                    COUNT(DISTINCT e.id) AS total_enquiries,
+                    SUM(COALESCE(i.serviceCharges, e.bill_amount, 0.0)) AS total_billed
+                FROM enquiries e
+                LEFT JOIN invoice i ON e.id = i.enquiry_id
+                WHERE e.companyName IS NOT NULL AND TRIM(e.companyName) != ''
+                GROUP BY e.companyName, e.industry
+            """)
+            enq_companies = {r['company'].strip().lower(): r for r in cur.fetchall()}
+
+            clients = []
+            seen_companies = set()
+
+            for r in client_rows:
+                comp_name = r['company'].strip()
+                comp_key = comp_name.lower()
+                seen_companies.add(comp_key)
+                enq_info = enq_companies.get(comp_key, {})
+                industry = enq_info.get('industry') or 'Corporate Recruitment'
+                amount = float(r['amount']) if r['amount'] > 0 else float(enq_info.get('total_billed', 45000.0))
+                
+                if amount >= 75000:
+                    pkg = 'Enterprise Unlimited'
+                    seats = 12
+                elif amount >= 50000:
+                    pkg = 'Standard Premium'
+                    seats = 6
+                else:
+                    pkg = 'Basic Recruitment'
+                    seats = 4
+
+                clients.append({
+                    'id': f"c-{r['id']}",
+                    'company': comp_name,
+                    'contactPerson': r['contactPerson'],
+                    'designation': r['designation'],
+                    'email': r['email'],
+                    'phone': r['phone'],
+                    'teamLeader': r['teamLeader'],
+                    'industry': industry,
+                    'package': pkg,
+                    'amount': amount,
+                    'activeSeats': seats,
+                    'status': r['status'] or 'Active',
+                    'created_at': str(r['created_at']) if r.get('created_at') else None
+                })
+
+            # Add discovered companies not yet explicitly in clients_info
+            for comp_key, info in enq_companies.items():
+                if comp_key not in seen_companies and info['company']:
+                    comp_name = info['company'].strip()
+                    seen_companies.add(comp_key)
+                    amount = float(info.get('total_billed', 45000.0))
+                    if amount >= 75000:
+                        pkg = 'Enterprise Unlimited'
+                        seats = 12
+                    elif amount >= 50000:
+                        pkg = 'Standard Premium'
+                        seats = 6
+                    else:
+                        pkg = 'Basic Recruitment'
+                        seats = 4
+
+                    clients.append({
+                        'id': f"c-enq-{make_stable_id('comp', comp_name)}",
+                        'company': comp_name,
+                        'contactPerson': 'Talent Acquisition',
+                        'designation': 'Recruiter Lead',
+                        'email': 'N/A',
+                        'phone': 'N/A',
+                        'teamLeader': 'Head Office',
+                        'industry': info.get('industry') or 'Corporate Recruitment',
+                        'package': pkg,
+                        'amount': amount,
+                        'activeSeats': seats,
+                        'status': 'Active',
+                        'created_at': None
+                    })
+
+            return jsonify({
+                'success': True,
+                'clients': clients
+            })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        conn.close()
+
+
+@app.route('/api/job-portal/clients', methods=['POST'])
+def add_job_portal_client():
+    data = request.get_json() or {}
+    company_name = data.get('company', '').strip() or data.get('companyName', '').strip()
+    if not company_name:
+        return jsonify({'success': False, 'error': 'company name is required'}), 400
+
+    contact_person = data.get('contactPerson', 'HR Lead').strip()
+    designation = data.get('designation', 'Hiring Manager').strip()
+    email = data.get('email', '').strip()
+    phone = data.get('phone', '').strip()
+    team_leader = data.get('teamLeader', 'Head Office').strip()
+    amount = float(data.get('amount', 0.0))
+    status = data.get('status', 'Active').strip()
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO clients_info (companyName, contactPersonName, designation, emailId, phoneNumber, teamLeader, amount, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (company_name, contact_person, designation, email, phone, team_leader, amount, status))
+            new_id = cur.lastrowid
+        return jsonify({
+            'success': True,
+            'message': f'Client account for "{company_name}" registered successfully',
+            'client_id': f"c-{new_id}"
+        }), 201
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        conn.close()
+
+
+@app.route('/api/job-portal/summary', methods=['GET'])
+def get_job_portal_summary():
+    start_date = request.args.get('start_date', '2018-01-01')
+    end_date = request.args.get('end_date', '2026-12-31')
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            # 1. Portal Revenue (subscriptions + recruitment credits from invoice)
+            cur.execute("""
+                SELECT 
+                    COUNT(DISTINCT i.id) AS total_invoices,
+                    SUM(COALESCE(i.serviceCharges, 0.0)) AS portal_inflow
+                FROM invoice i
+                WHERE (i.billDate BETWEEN %s AND %s OR i.billDate IS NULL)
+            """, (start_date, end_date))
+            inv_stats = cur.fetchone() or {}
+            portal_inflow = float(inv_stats.get('portal_inflow') or 0.0)
+
+            # 2. Portal Overhead (licenses, job portals, subscriptions, software)
+            cur.execute("""
+                SELECT 
+                    SUM(COALESCE(amount, 0.0)) AS portal_overhead
+                FROM expenditure
+                WHERE (expenses IN ('Portal subscriptions', 'Software', 'Job portal', 'Job Portals', 'Naukri.com')
+                       OR particulars LIKE '%%Naukri%%'
+                       OR particulars LIKE '%%LinkedIn%%'
+                       OR particulars LIKE '%%Portal%%'
+                       OR particulars LIKE '%%License%%')
+                  AND (billDate BETWEEN %s AND %s OR billDate IS NULL)
+                  AND is_deleted = 0
+            """, (start_date, end_date))
+            exp_stats = cur.fetchone() or {}
+            portal_overhead = float(exp_stats.get('portal_overhead') or 0.0)
+
+            # 3. Active clients and seats count
+            cur.execute("""
+                SELECT COUNT(*) AS total_clients
+                FROM clients_info
+                WHERE status = 'Active' OR status = 'active'
+            """)
+            c_count = cur.fetchone() or {}
+            active_clients = int(c_count.get('total_clients') or 0)
+
+            net_profit = portal_inflow - portal_overhead
+            margin_pct = (net_profit / portal_inflow * 100.0) if portal_inflow > 0 else 0.0
+
+            return jsonify({
+                'success': True,
+                'portal_inflow': portal_inflow,
+                'portal_overhead': portal_overhead,
+                'net_profit': net_profit,
+                'margin_percentage': round(margin_pct, 2),
+                'active_clients_count': active_clients,
+                'total_active_seats': active_clients * 6
+            })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        conn.close()
+
 def start_background_sync_daemon():
     import threading
     import time
