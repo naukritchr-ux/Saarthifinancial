@@ -60,5 +60,9 @@ venv.bak/
 # Database dumps and CSV spreadsheets (excluding standard config files if needed)
 *.sql
 *.csv
-# If you want to keep tracking specific csv config templates, uncomment below:
-# !incentive_rules.csv
+*.docx
+*.doc
+*.xlsx
+*.xls
+Saarthi_Finance_Formulas_Guide.docx
+

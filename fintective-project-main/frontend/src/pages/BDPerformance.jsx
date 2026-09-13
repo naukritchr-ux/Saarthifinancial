@@ -153,23 +153,30 @@ const BDPerformance = () => {
     // Look up this agent's period-specific stats in the fetched leaderboard
     const lbMatch = leaderboard.find(item => item.bd_name.trim().toLowerCase() === safeAgent.name.trim().toLowerCase());
     
-    const grossRevenue = lbMatch ? lbMatch.gross_revenue : 0.0;
-    const netRevenue = lbMatch ? lbMatch.net_revenue : 0.0;
+    const agentTxs = transactions.filter(t => 
+      (t.bdAgentId === safeAgent.id || (t.bdAgentName && t.bdAgentName.toLowerCase().includes(safeAgent.name.toLowerCase()))) &&
+      isInFilteredPeriod(t)
+    );
+    const contextGross = agentTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
+    const contextNet = agentTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.rShare || t.amount * 0.4375 || t.amount), 0);
+
+    const grossRevenue = lbMatch ? lbMatch.gross_revenue : (contextGross > 0 ? contextGross : 0.0);
+    const netRevenue = lbMatch ? lbMatch.net_revenue : (contextNet > 0 ? contextNet : (contextGross * 0.4375));
     const lossAmount = lbMatch ? lbMatch.potential_loss : 0.0;
     const unverifiedAmount = lbMatch ? (lbMatch.unverified_amount || 0.0) : 0.0;
     
     // Revenue generated = net revenue (Our Share)
-    const revenueGenerated = netRevenue;
+    const revenueGenerated = netRevenue > 0 ? netRevenue : grossRevenue;
     
     // Actual payout is the sum of expense payments under 'BD commissions' or 'Salaries' linked to this agent
     const commissionsEarned = transactions
-      .filter(t => t.type === 'expense' && (t.category === 'BD commissions' || t.category === 'Salaries') && t.bdAgentId === safeAgent.id && isInFilteredPeriod(t))
+      .filter(t => t.type === 'expense' && (t.category === 'BD commissions' || t.category === 'Salaries') && (t.bdAgentId === safeAgent.id || (t.bdAgentName && t.bdAgentName.toLowerCase().includes(safeAgent.name.toLowerCase()))) && isInFilteredPeriod(t))
       .reduce((sum, t) => sum + t.amount, 0);
 
     const commissionBonus = revenueGenerated * (safeAgent.commissionRate || 0.02);
     
     // Calculate performance-based salary using period-specific closed/cancelled deal counts
-    const closedCount = lbMatch ? lbMatch.invoices_closed : 0;
+    const closedCount = lbMatch ? lbMatch.invoices_closed : agentTxs.filter(t => t.type === 'income').length;
     
     // Estimate period-specific cancelled deals count based on period lossAmount vs default fees
     const periodCancelled = lossAmount > 0 ? Math.ceil(lossAmount / 50000) : 0;

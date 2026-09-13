@@ -1,0 +1,11 @@
+# Root .gitignore
+.env
+.env.*
+node_modules/
+__pycache__/
+*.pyc
+*.docx
+*.doc
+*.xlsx
+*.xls
+Saarthi_Finance_Formulas_Guide.docx
