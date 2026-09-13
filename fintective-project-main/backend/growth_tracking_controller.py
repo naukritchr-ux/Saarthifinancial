@@ -404,6 +404,32 @@ def create_growth_target():
 
         now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
+        # Ensure table exists
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS growth_targets (
+                id VARCHAR(100) PRIMARY KEY,
+                entity_type VARCHAR(50) NOT NULL,
+                entity_id VARCHAR(100) NOT NULL,
+                growth_pct_target DECIMAL(10, 4) NOT NULL,
+                salary_target DECIMAL(15, 2) NULL,
+                period_start VARCHAR(100) NOT NULL,
+                period_end VARCHAR(100) NOT NULL,
+                guidelines TEXT NULL,
+                status VARCHAR(50) DEFAULT 'active',
+                actual_growth_pct DECIMAL(10, 4) NULL,
+                actual_value DECIMAL(15, 2) NULL,
+                kra_summary TEXT NULL,
+                target_letter_text MEDIUMTEXT NULL,
+                outcome_letter_text MEDIUMTEXT NULL,
+                target_letter_sent_at VARCHAR(100) NULL,
+                outcome_recorded_at VARCHAR(100) NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_gt_entity (entity_type, entity_id),
+                INDEX idx_gt_status (status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """)
+
         insert_sql = """
             INSERT INTO growth_targets (
                 id, entity_type, entity_id, growth_pct_target, salary_target,
@@ -426,6 +452,7 @@ def create_growth_target():
             now_str,
             now_str
         ])
+        conn.commit()
 
         return jsonify({
             'success': True,
@@ -585,6 +612,7 @@ def record_outcome(target_id):
             now_str,
             target_id
         ])
+        conn.commit()
 
         return jsonify({
             'success': True,
