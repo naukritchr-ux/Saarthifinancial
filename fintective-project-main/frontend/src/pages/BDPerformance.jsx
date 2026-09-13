@@ -245,24 +245,49 @@ const BDPerformance = () => {
     };
   };
 
-  const allAgentsList = (leaderboard && leaderboard.length > 0)
-    ? leaderboard.map((item, idx) => {
-        const found = (bdAgents || []).find(a => (a.name || '').trim().toLowerCase() === (item.bd_name || '').trim().toLowerCase());
+  const allAgentsList = React.useMemo(() => {
+    const baseRoster = bdAgents && bdAgents.length > 0 ? bdAgents : [];
+    const lbItems = leaderboard && leaderboard.length > 0 ? leaderboard : [];
+    const matchedLbIndices = new Set();
+
+    const merged = baseRoster.map((agent) => {
+      const cleanName = (agent.name || '').trim().toLowerCase();
+      const lbIdx = lbItems.findIndex(item => (item.bd_name || '').trim().toLowerCase() === cleanName);
+      if (lbIdx !== -1) {
+        matchedLbIndices.add(lbIdx);
+        const item = lbItems[lbIdx];
         return {
-          id: found?.id || `bd-lb-${idx}`,
-          name: item.bd_name,
-          role: found?.role || 'BD Specialist',
-          baseSalary: found?.baseSalary || 12000,
-          commissionRate: found?.commissionRate || 0.04,
-          payPerProgressed: found?.payPerProgressed || 2500,
-          payPerCancelled: found?.payPerCancelled || 500,
-          leadsBought: found?.leadsBought || (item.invoices_closed ? item.invoices_closed * 2 : 20),
-          leadsProgressed: item.invoices_closed || found?.leadsProgressed || 0,
-          leadsCancelled: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : (found?.leadsCancelled || 0),
-          status: 'Active'
+          ...agent,
+          leadsProgressed: item.invoices_closed ?? (agent.leadsProgressed || 0),
+          leadsCancelled: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : (agent.leadsCancelled || 0),
         };
-      })
-    : (bdAgents || []);
+      }
+      return {
+        ...agent,
+      };
+    });
+
+    // Also include any leaderboard BD not in base roster
+    lbItems.forEach((item, idx) => {
+      if (!matchedLbIndices.has(idx)) {
+        merged.push({
+          id: `bd-lb-${idx}`,
+          name: item.bd_name,
+          role: 'BD Specialist',
+          baseSalary: 12000,
+          commissionRate: 0.02,
+          payPerProgressed: 2500,
+          payPerCancelled: 500,
+          leadsBought: item.invoices_closed ? item.invoices_closed * 2 : 20,
+          leadsProgressed: item.invoices_closed || 0,
+          leadsCancelled: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : 0,
+          status: 'Active'
+        });
+      }
+    });
+
+    return merged;
+  }, [bdAgents, leaderboard]);
 
   const agentSummaries = allAgentsList.map(agent => {
     const safeAgent = getSafeAgent(agent);
@@ -356,7 +381,7 @@ const BDPerformance = () => {
       <section className="kpi-grid">
         <div className="kpi-card card-blue">
           <div className="kpi-header">
-            <span className="kpi-title">Gross Revenue (Service Amt) â€¢ {selectedMonth !== 'All Months' ? selectedMonth : (selectedYear !== 'All Years' ? selectedYear : 'All Years')}</span>
+            <span className="kpi-title">Gross Revenue (Service Amt) • {selectedMonth !== 'All Months' ? selectedMonth : (selectedYear !== 'All Years' ? selectedYear : 'All Years')}</span>
             <span className="kpi-icon"><TrendingUp size={18} /></span>
           </div>
           <h2 className="kpi-value">{formatLakhs(overallRevenue)}</h2>
@@ -498,7 +523,7 @@ const BDPerformance = () => {
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>Base Salary (â‚¹)</label>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>Base Salary (₹)</label>
                   <input 
                     type="number" 
                     value={baseSalary} 
@@ -526,7 +551,7 @@ const BDPerformance = () => {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '16px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>Pay per Progressed Enquiry (â‚¹)</label>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>Pay per Progressed Enquiry (₹)</label>
                   <input 
                     type="number" 
                     value={payPerProgressed} 
@@ -538,7 +563,7 @@ const BDPerformance = () => {
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>Pay per Cancelled Enquiry (â‚¹)</label>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>Pay per Cancelled Enquiry (₹)</label>
                   <input 
                     type="number" 
                     value={payPerCancelled} 
@@ -684,7 +709,7 @@ const BDPerformance = () => {
                     
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                       <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Base Salary (â‚¹)</label>
+                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Base Salary (₹)</label>
                         <input 
                           type="number" 
                           value={editBase} 
@@ -695,7 +720,7 @@ const BDPerformance = () => {
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Pay per Progressed Enquiry (â‚¹)</label>
+                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Pay per Progressed Enquiry (₹)</label>
                         <input 
                           type="number" 
                           value={editProgressedRate} 
@@ -706,7 +731,7 @@ const BDPerformance = () => {
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Pay per Cancelled Enquiry (â‚¹)</label>
+                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Pay per Cancelled Enquiry (₹)</label>
                         <input 
                           type="number" 
                           value={editCancelledRate} 
@@ -777,26 +802,94 @@ const BDPerformance = () => {
                     <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '1.5rem' }}>
                       <div style={{ display: 'flex', height: '24px', borderRadius: '6px', overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.05)' }}>
                         {progressedPct > 0 && (
-                          <div style={{ width: `${progressedPct}%`, backgroundColor: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.75rem', fontWeight: 'bold' }} title={`${currentAgent.leadsProgressed} Progressed`}>
-                            {currentAgent.leadsProgressed} Prog ({progressedPct.toFixed(0)}%)
+                          <div 
+                            style={{ 
+                              width: `${progressedPct}%`, 
+                              backgroundColor: '#10b981', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center', 
+                              color: '#fff', 
+                              fontSize: '0.75rem', 
+                              fontWeight: 'bold',
+                              overflow: 'hidden',
+                              whiteSpace: 'nowrap',
+                              textOverflow: 'ellipsis',
+                              padding: '0 4px',
+                              minWidth: 0
+                            }} 
+                            title={`${currentAgent.leadsProgressed} Progressed (${progressedPct.toFixed(1)}%)`}
+                          >
+                            {progressedPct >= 18 ? `${currentAgent.leadsProgressed} Prog (${progressedPct.toFixed(0)}%)` : (progressedPct >= 8 ? `${progressedPct.toFixed(0)}%` : '')}
                           </div>
                         )}
                         {cancelledPct > 0 && (
-                          <div style={{ width: `${cancelledPct}%`, backgroundColor: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.75rem', fontWeight: 'bold' }} title={`${currentAgent.leadsCancelled} Cancelled`}>
-                            {currentAgent.leadsCancelled} Cancel ({cancelledPct.toFixed(0)}%)
+                          <div 
+                            style={{ 
+                              width: `${cancelledPct}%`, 
+                              backgroundColor: '#ef4444', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center', 
+                              color: '#fff', 
+                              fontSize: '0.75rem', 
+                              fontWeight: 'bold',
+                              overflow: 'hidden',
+                              whiteSpace: 'nowrap',
+                              textOverflow: 'ellipsis',
+                              padding: '0 4px',
+                              minWidth: 0
+                            }} 
+                            title={`${currentAgent.leadsCancelled} Cancelled (${cancelledPct.toFixed(1)}%)`}
+                          >
+                            {cancelledPct >= 18 ? `${currentAgent.leadsCancelled} Cancel (${cancelledPct.toFixed(0)}%)` : (cancelledPct >= 8 ? `${cancelledPct.toFixed(0)}%` : '')}
                           </div>
                         )}
                         {(() => {
                           const intClosedPct = total > 0 ? ((currentAgent.leadsInternallyClosed || 0) / total) * 100 : 0;
                           return intClosedPct > 0 && (
-                            <div style={{ width: `${intClosedPct}%`, backgroundColor: '#ea580c', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.75rem', fontWeight: 'bold' }} title={`${currentAgent.leadsInternallyClosed} Internally Closed`}>
-                              {currentAgent.leadsInternallyClosed} Int. Close ({intClosedPct.toFixed(0)}%)
+                            <div 
+                              style={{ 
+                                width: `${intClosedPct}%`, 
+                                backgroundColor: '#ea580c', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center', 
+                                color: '#fff', 
+                                fontSize: '0.75rem', 
+                                fontWeight: 'bold',
+                                overflow: 'hidden',
+                                whiteSpace: 'nowrap',
+                                textOverflow: 'ellipsis',
+                                padding: '0 4px',
+                                minWidth: 0
+                              }} 
+                              title={`${currentAgent.leadsInternallyClosed} Internally Closed (${intClosedPct.toFixed(1)}%)`}
+                            >
+                              {intClosedPct >= 18 ? `${currentAgent.leadsInternallyClosed} Int. Close (${intClosedPct.toFixed(0)}%)` : (intClosedPct >= 8 ? `${intClosedPct.toFixed(0)}%` : '')}
                             </div>
                           );
                         })()}
                         {pendingPct > 0 && (
-                          <div style={{ width: `${pendingPct}%`, backgroundColor: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.75rem', fontWeight: 'bold' }} title={`${currentAgent.leadsBought - currentAgent.leadsProgressed - currentAgent.leadsCancelled - (currentAgent.leadsInternallyClosed || 0)} Pending`}>
-                            {currentAgent.leadsBought - currentAgent.leadsProgressed - currentAgent.leadsCancelled - (currentAgent.leadsInternallyClosed || 0)} Pending ({pendingPct.toFixed(0)}%)
+                          <div 
+                            style={{ 
+                              width: `${pendingPct}%`, 
+                              backgroundColor: '#64748b', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center', 
+                              color: '#fff', 
+                              fontSize: '0.75rem', 
+                              fontWeight: 'bold',
+                              overflow: 'hidden',
+                              whiteSpace: 'nowrap',
+                              textOverflow: 'ellipsis',
+                              padding: '0 4px',
+                              minWidth: 0
+                            }} 
+                            title={`${currentAgent.leadsBought - currentAgent.leadsProgressed - currentAgent.leadsCancelled - (currentAgent.leadsInternallyClosed || 0)} Pending (${pendingPct.toFixed(1)}%)`}
+                          >
+                            {pendingPct >= 18 ? `${currentAgent.leadsBought - currentAgent.leadsProgressed - currentAgent.leadsCancelled - (currentAgent.leadsInternallyClosed || 0)} Pending (${pendingPct.toFixed(0)}%)` : (pendingPct >= 8 ? `${pendingPct.toFixed(0)}%` : '')}
                           </div>
                         )}
                       </div>
@@ -837,7 +930,7 @@ const BDPerformance = () => {
                   </>
                 )}
 
-                <h4 style={{ color: '#f8fafc', marginBottom: '0.75rem', marginTop: '1.5rem' }}>Disbursed Payments & Transactions ({detailTxs.length}) â€¢ {selectedMonth}</h4>
+                <h4 style={{ color: '#f8fafc', marginBottom: '0.75rem', marginTop: '1.5rem' }}>Disbursed Payments & Transactions ({detailTxs.length}) • {selectedMonth}</h4>
                 {detailTxs.length === 0 ? (
                   <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>No ledger expense payments found for this business development agent for this month selection.</p>
                 ) : (() => {
@@ -863,7 +956,7 @@ const BDPerformance = () => {
                                 <td style={{ color: '#cbd5e1', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>{formatDate(t.date)}</td>
                                 <td style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
                                   <div className="font-bold" style={{ color: '#f8fafc' }}>{t.title}</div>
-                                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{t.category} â€¢ {t.subCategory || 'General'}</div>
+                                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{t.category} • {t.subCategory || 'General'}</div>
                                 </td>
                                 <td style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
                                   {t.type === 'income' && t.category === 'Recruitment' && t.info && t.info !== 'N/A' ? (

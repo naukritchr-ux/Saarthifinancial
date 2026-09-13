@@ -395,8 +395,11 @@ def delete_invoice(invoice_id):
         return jsonify({"error": "Deleter name is required."}), 400
 
     normalized_input = frontend_name.lower().strip()
+    if len(normalized_input) < 4:
+        return jsonify({"error": "Deleter name is too short to be valid."}), 400
+
     is_authorized = any(
-        normalized_input == auth or normalized_input in auth or auth in normalized_input
+        normalized_input == auth or auth in normalized_input
         for auth in AUTHORIZED_DELETERS
     )
 

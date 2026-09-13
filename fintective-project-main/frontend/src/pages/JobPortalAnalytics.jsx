@@ -73,7 +73,7 @@ const JobPortalAnalytics = () => {
       <section className="kpi-grid">
         <div className="kpi-card card-blue">
           <div className="kpi-header">
-            <span className="kpi-title">Portal Inflows (Sub/Credits) â€¢ {selectedMonth}</span>
+            <span className="kpi-title">Portal Inflows (Sub/Credits) • {selectedMonth}</span>
             <span className="kpi-icon"><Globe size={18} /></span>
           </div>
           <h2 className="kpi-value">{formatCurrency(revenue)}</h2>
@@ -145,11 +145,11 @@ const JobPortalAnalytics = () => {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.5rem' }}>
               <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
                 <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Average Order Value</span>
-                <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#f8fafc' }}>â‚¹61,200</span>
+                <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#f8fafc' }}>₹61,200</span>
               </div>
               <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
                 <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Customer LTV (Annual)</span>
-                <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#f8fafc' }}>â‚¹2,45,000</span>
+                <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#f8fafc' }}>₹2,45,000</span>
               </div>
             </div>
 
@@ -204,7 +204,7 @@ const JobPortalAnalytics = () => {
                   </select>
                 </div>
                 <div className="form-group flex-1">
-                  <label>Amount Paid (â‚¹)</label>
+                  <label>Amount Paid (₹)</label>
                   <input 
                     type="number" 
                     value={amountPaid} 

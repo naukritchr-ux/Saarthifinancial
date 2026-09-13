@@ -79,32 +79,70 @@ const TLPerformance = () => {
       .catch(err => console.error("TL Leaderboard load failed:", err));
   }, [selectedMonth, selectedYear]);
 
-  const effectiveLeaders = (leaderboard && leaderboard.length > 0)
-    ? leaderboard.map((item, idx) => {
-        const found = (teamLeaders || []).find(t => (t.name || '').trim().toLowerCase() === (item.tl_name || '').trim().toLowerCase());
+  const effectiveLeaders = React.useMemo(() => {
+    const baseRoster = (teamLeaders && teamLeaders.length > 0)
+      ? teamLeaders
+      : [
+          { id: 'tl-1', name: 'Avadai Esakki Muthu Sundaram Marthuvar', role: 'Team Leader', target: 500000 },
+          { id: 'tl-2', name: 'Surbhi Vinod Jain', role: 'Team Leader', target: 500000 },
+          { id: 'tl-3', name: 'Joyeeta Joydeb Khaskel', role: 'Team Leader', target: 500000 },
+          { id: 'tl-4', name: 'Vedika Girish Tolani', role: 'Team Leader', target: 500000 }
+        ];
+
+    const lbItems = leaderboard && leaderboard.length > 0 ? leaderboard : [];
+    const matchedLbIndices = new Set();
+
+    const merged = baseRoster.map((tl) => {
+      const cleanName = (tl.name || '').trim().toLowerCase();
+      const lbIdx = lbItems.findIndex(item => (item.name || item.tl_name || '').trim().toLowerCase() === cleanName);
+      if (lbIdx !== -1) {
+        matchedLbIndices.add(lbIdx);
+        const item = lbItems[lbIdx];
         return {
-          id: found?.id || `tl-lb-${idx}`,
-          name: item.tl_name,
-          role: found?.role || 'Team Leader',
-          target: found?.target || 500000,
-          grossRevenue: item.gross_revenue,
-          netRevenue: item.net_revenue,
-          lossAmount: item.potential_loss,
-          totalEnquiries: item.total_enquiries,
-          enquiriesProgressed: item.invoices_closed,
+          ...tl,
+          grossRevenue: item.gross_revenue || 0,
+          netRevenue: item.net_revenue || 0,
+          lossAmount: item.potential_loss || 0,
+          totalEnquiries: item.total_enquiries || tl.totalEnquiries || 0,
+          enquiriesProgressed: item.invoices_closed ?? (tl.enquiriesProgressed || 0),
+          enquiriesCancelled: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : (tl.enquiriesCancelled || 0),
+          enquiriesInternallyClosed: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 75000) : (tl.enquiriesInternallyClosed || 0)
+        };
+      }
+      return {
+        ...tl,
+        grossRevenue: tl.grossRevenue || 0,
+        netRevenue: tl.netRevenue || 0,
+        lossAmount: tl.lossAmount || 0,
+        totalEnquiries: tl.totalEnquiries || 0,
+        enquiriesProgressed: tl.enquiriesProgressed || 0,
+        enquiriesCancelled: tl.enquiriesCancelled || 0,
+        enquiriesInternallyClosed: tl.enquiriesInternallyClosed || 0
+      };
+    });
+
+    // Also include any leaderboard TL not in base roster
+    lbItems.forEach((item, idx) => {
+      if (!matchedLbIndices.has(idx)) {
+        const tlName = item.name || item.tl_name || `Team Leader ${idx + 1}`;
+        merged.push({
+          id: `tl-lb-${idx}`,
+          name: tlName,
+          role: 'Team Leader',
+          target: 500000,
+          grossRevenue: item.gross_revenue || 0,
+          netRevenue: item.net_revenue || 0,
+          lossAmount: item.potential_loss || 0,
+          totalEnquiries: item.total_enquiries || 0,
+          enquiriesProgressed: item.invoices_closed || 0,
           enquiriesCancelled: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : 0,
           enquiriesInternallyClosed: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 75000) : 0
-        };
-      })
-    : (teamLeaders && teamLeaders.length > 0
-        ? teamLeaders
-        : [
-            { id: 'tl-1', name: 'Avadai Esakki Muthu Sundaram Marthuvar', role: 'Team Leader', target: 500000 },
-            { id: 'tl-2', name: 'Surbhi Vinod Jain', role: 'Team Leader', target: 500000 },
-            { id: 'tl-3', name: 'Joyeeta Joydeb Khaskel', role: 'Team Leader', target: 500000 },
-            { id: 'tl-4', name: 'Vedika Girish Tolani', role: 'Team Leader', target: 500000 }
-          ]
-      );
+        });
+      }
+    });
+
+    return merged;
+  }, [teamLeaders, leaderboard]);
 
   // Process data locally if filters change
   const processedLeaders = effectiveLeaders.map(tl => {
@@ -160,7 +198,7 @@ const TLPerformance = () => {
       <section className="kpi-grid">
         <div className="kpi-card card-blue">
           <div className="kpi-header">
-            <span className="kpi-title">Gross Revenue (Service Amt) â€¢ {activePeriodLabel}</span>
+            <span className="kpi-title">Gross Revenue (Service Amt) • {activePeriodLabel}</span>
             <span className="kpi-icon"><TrendingUp size={18} /></span>
           </div>
           <h2 className="kpi-value">{formatLakhs(overallGross)}</h2>
@@ -372,7 +410,7 @@ const TLPerformance = () => {
                   </div>
                 </div>
 
-                <h4 style={{ color: '#f8fafc', marginBottom: '0.75rem', marginTop: '1.5rem' }}>Closed Placement Inflows ({detailTxs.length}) â€¢ {activePeriodLabel}</h4>
+                <h4 style={{ color: '#f8fafc', marginBottom: '0.75rem', marginTop: '1.5rem' }}>Closed Placement Inflows ({detailTxs.length}) • {activePeriodLabel}</h4>
                 {detailTxs.length === 0 ? (
                   <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>No closed placement income transactions linked to this team leader for this period.</p>
                 ) : (() => {
@@ -399,7 +437,7 @@ const TLPerformance = () => {
                                 <td style={{ color: '#cbd5e1', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>{formatDate(t.date)}</td>
                                 <td style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
                                   <div className="font-bold" style={{ color: '#f8fafc' }}>{t.title}</div>
-                                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Category: {t.category} â€¢ {t.subCategory || 'General'}</div>
+                                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Category: {t.category} • {t.subCategory || 'General'}</div>
                                 </td>
                                 <td style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
                                   {t.category === 'Recruitment' && t.info && t.info !== 'N/A' ? (

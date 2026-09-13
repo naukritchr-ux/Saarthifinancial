@@ -444,7 +444,7 @@ const Franchisees = () => {
               <div className="modal-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '20px 24px' }}>
                 <div className="modal-header-title">
                   <h3 style={{ color: '#f8fafc', fontSize: '1.2rem', fontWeight: 'bold', fontFamily: "'Outfit', sans-serif" }}>Franchise Audit: {activeFranchiseeDetails.name}</h3>
-                  <span className="modal-subtitle" style={{ color: '#94a3b8', fontSize: '0.8rem', display: 'block', marginTop: '2px' }}>{activeFranchiseeDetails.city} Hub â€¢ Owned by {activeFranchiseeDetails.owner}</span>
+                  <span className="modal-subtitle" style={{ color: '#94a3b8', fontSize: '0.8rem', display: 'block', marginTop: '2px' }}>{activeFranchiseeDetails.city} Hub • Owned by {activeFranchiseeDetails.owner}</span>
                 </div>
                 <button className="btn-close" onClick={() => setActiveFranchiseeDetails(null)} style={{ color: '#94a3b8' }}>
                   <X size={20} />
@@ -473,7 +473,7 @@ const Franchisees = () => {
                   </div>
                 </div>
 
-                <h4 style={{ color: '#f8fafc', marginBottom: '0.75rem' }}>Transaction History ({detailTxs.length}) â€¢ {selectedMonth}</h4>
+                <h4 style={{ color: '#f8fafc', marginBottom: '0.75rem' }}>Transaction History ({detailTxs.length}) • {selectedMonth}</h4>
                 {detailTxs.length === 0 ? (
                   <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>No transaction history found for this franchisee location.</p>
                 ) : (
@@ -493,7 +493,7 @@ const Franchisees = () => {
                             <td style={{ color: '#cbd5e1', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>{formatDate(t.date)}</td>
                             <td style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
                               <div className="font-bold" style={{ color: '#f8fafc' }}>{t.title}</div>
-                              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{t.category} â€¢ {t.subCategory || 'General'}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{t.category} • {t.subCategory || 'General'}</div>
                             </td>
                             <td style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
                               {t.type === 'income' && t.category === 'Recruitment' && t.info && t.info !== 'N/A' ? (
