@@ -130,7 +130,7 @@ def verify_api_key():
         if enforce_key:
             return jsonify({'success': False, 'error': 'Unauthorized: Invalid or missing X-API-Key header'}), 401
         else:
-            print(f"⚠️ [API-KEY WARNING] Missing or mismatched X-API-Key header on {request.method} {request.path}")
+            print(f"[API-KEY WARNING] Missing or mismatched X-API-Key header on {request.method} {request.path}")
     return None
 
 from invoice_controller import invoice_bp
@@ -290,7 +290,7 @@ def get_transactions():
                         DATE_FORMAT(COALESCE(i.billDate, e.bill_date, e.dateOfAllocation, e.created_at), '%%Y-%%m-%%d') AS date,
                         'Net Banking' AS paymentMode,
                         COALESCE(i.billNumber, e.bill_no, 'N/A') AS referenceId,
-                        CONCAT('Placed Candidate: ', e.candidateName) AS description,
+                        CONCAT('Placed Candidate: ', COALESCE(i.candidateName, 'Candidate')) AS description,
                         e.bdMemberName,
                         e.franchiseeName,
                         COALESCE(i.serviceCharges, e.bill_amount, 0) AS serviceAmt,
@@ -307,7 +307,8 @@ def get_transactions():
                             SUM(serviceCharges - COALESCE(franchiseeShare, 0)) AS ourShare,
                             MAX(billNumber) AS billNumber, 
                             MAX(billDate) AS billDate,
-                            MAX(financialYear) AS financialYear
+                            MAX(financialYear) AS financialYear,
+                            MAX(candidateName) AS candidateName
                         FROM invoice
                         WHERE billNumber IS NOT NULL AND billNumber != '' AND billDate IS NOT NULL
                           AND billNumber NOT IN ({placeholders})
@@ -498,7 +499,7 @@ def get_transactions():
                         expenseType AS subCategory,
                         DATE_FORMAT(billDate, '%Y-%m-%d') AS date,
                         'Net Banking' AS paymentMode,
-                        supplyBillNo AS referenceId,
+                        COALESCE(srNo, '') AS referenceId,
                         particulars AS description,
                         bdAgentId,
                         franchiseeId
@@ -986,27 +987,32 @@ def get_franchisee_summary():
         franchise_inflow = float(cursor.fetchone()['franchise_inflow'] or 0.0)
         
         # 2. Franchise Fees collected (one-time onboarding fees)
-        fees_query = """
-            SELECT COALESCE(SUM(franchiseeFees), 0.0) AS total_onboarding_fees
-            FROM franchisees_forms
-            WHERE receivedDetails = 'yes'
-              AND franchiseePaymentReceivedOn BETWEEN %s AND %s
-        """
-        cursor.execute(fees_query, [start_date, end_date])
-        total_onboarding_fees = float(cursor.fetchone()['total_onboarding_fees'] or 0.0)
+        total_onboarding_fees = 0.0
+        try:
+            fees_query = """
+                SELECT COALESCE(SUM(amount), 0.0) AS total_onboarding_fees
+                FROM franchisePayments
+                WHERE paymentDate BETWEEN %s AND %s
+            """
+            cursor.execute(fees_query, [start_date, end_date])
+            row = cursor.fetchone()
+            if row:
+                total_onboarding_fees = float(row.get('total_onboarding_fees') or 0.0)
+        except Exception:
+            total_onboarding_fees = 0.0
         
         # 3. Location Ledger rows
         ledger_query = f"""
             SELECT 
-                ff.id,
-                ff.nameAsPerAgreement AS name,
-                ff.nameOfFranchiseeOwner AS owner,
-                ff.city,
-                LOWER(TRIM(ff.status)) AS status,
-                ff.profitSharingPercentage,
+                f.id,
+                f.nameAsPerAgreement AS name,
+                COALESCE(f.teamLeaderName, 'Franchise Lead') AS owner,
+                'India' AS city,
+                LOWER(TRIM(COALESCE(f.status, 'active'))) AS status,
+                75.0 AS profitSharingPercentage,
                 COALESCE(rev.candidates_placed, 0) AS candidates_placed,
                 COALESCE(rev.inflow_revenue, 0.0) AS inflow_revenue
-            FROM franchisees_forms ff
+            FROM franchisees f
             LEFT JOIN (
                 SELECT 
                     e.franchiseeName,
@@ -1027,8 +1033,10 @@ def get_franchisee_summary():
                 WHERE ia.billDate BETWEEN %s AND %s
                   AND {enq_clause}
                 GROUP BY e.franchiseeName
-            ) rev ON TRIM(LOWER(rev.franchiseeName)) = TRIM(LOWER(ff.nameAsPerAgreement))
+            ) rev ON TRIM(LOWER(rev.franchiseeName)) = TRIM(LOWER(f.nameAsPerAgreement))
+            WHERE f.nameAsPerAgreement IS NOT NULL AND TRIM(f.nameAsPerAgreement) != '' AND TRIM(f.nameAsPerAgreement) != 'Unknown'
             ORDER BY inflow_revenue DESC
+            LIMIT 500
         """
         params_ledger = COLLIDING_BILL_NUMBERS + [start_date, end_date] + (ENQUIRY_IDS_TO_EXCLUDE if ENQUIRY_IDS_TO_EXCLUDE else [])
         cursor.execute(ledger_query, params_ledger)
@@ -2910,12 +2918,12 @@ def start_background_sync_daemon():
         time.sleep(3)
         while True:
             try:
-                print("🔄 [Auto-Pool Daemon] Running automated background Saarthi CRM sync...")
+                print("[Auto-Pool Daemon] Running automated background Saarthi CRM sync...")
                 from sync_service import sync_saarthi_all
                 res = sync_saarthi_all()
-                print(f"✅ [Auto-Pool Daemon] Auto sync complete: {res.get('invoices', 0)} invoices, {res.get('enquiries', 0)} enquiries, {res.get('franchisees', 0)} franchisees.")
+                print(f"[Auto-Pool Daemon] Auto sync complete: {res.get('invoices', 0)} invoices, {res.get('enquiries', 0)} enquiries, {res.get('franchisees', 0)} franchisees.")
             except Exception as e:
-                print(f"⚠️ [Auto-Pool Daemon] Background sync notice: {str(e)}")
+                print(f"[Auto-Pool Daemon] Background sync notice: {str(e)}")
             time.sleep(900)  # Auto-poll every 15 minutes (900 seconds)
 
     t = threading.Thread(target=sync_loop, daemon=True)

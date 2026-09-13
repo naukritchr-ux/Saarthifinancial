@@ -52,18 +52,16 @@ def parse_float(val, default=0.0):
     except (ValueError, TypeError):
         return default
 
-def fetch_saarthi_endpoint(endpoint_path, timeout=30):
+def fetch_saarthi_endpoint(endpoint_path, timeout=12):
     """
-    Tries multiple candidate URLs across Saarthi domains with fallbacks.
+    Tries verified Saarthi CRM endpoints.
     """
     clean_path = endpoint_path.lstrip('/')
     candidates = [
         f"https://api.sarthi360.in/api/{clean_path}",
-        f"https://api.sarthi360.in/{clean_path}",
         f"https://sarthi360.in/api/{clean_path}",
-        f"https://sarthi360.in/{clean_path}",
-        f"https://api.saarthi360.in/api/{clean_path}",
-        f"https://api.saarthi360.in/{clean_path}"
+        f"https://api.sarthi360.in/{clean_path}",
+        f"https://sarthi360.in/{clean_path}"
     ]
 
     for url in candidates:
@@ -115,62 +113,81 @@ def sync_saarthi_all():
     }
 
     try:
+        # Helper for batching
+        def chunked(iterable, size=500):
+            for i in range(0, len(iterable), size):
+                yield iterable[i:i + size]
+
         # 1. Sync Franchisees
-        print("🔄 Syncing Franchisees from Saarthi API...")
+        print("[SYNC] Syncing Franchisees from Saarthi API...")
         f_res = fetch_saarthi_endpoint("franchisees")
         if f_res["ok"] and f_res["data"]:
+            fran_rows = []
+            form_rows = []
+            for f in f_res["data"]:
+                name = str(f.get("nameAsPerAgreement") or f.get("franchiseName") or f.get("name") or "").strip()
+                tl = str(f.get("teamLeaderName") or f.get("teamLeader") or "").strip()
+                onboard = normalize_date(f.get("onboardingDate") or f.get("dateOfAgreement") or f.get("createdAt"))
+                if name:
+                    fran_rows.append((name, tl, onboard))
+                    form_rows.append((name, tl))
+
             with conn.cursor() as cur:
-                for f in f_res["data"]:
-                    name = str(f.get("nameAsPerAgreement") or f.get("franchiseName") or f.get("name") or "").strip()
-                    tl = str(f.get("teamLeaderName") or f.get("teamLeader") or "").strip()
-                    onboard = normalize_date(f.get("onboardingDate") or f.get("dateOfAgreement") or f.get("createdAt"))
-                    if name:
-                        cur.execute("""
-                            INSERT INTO franchisees (nameAsPerAgreement, teamLeaderName, onboardingDate, status)
-                            VALUES (%s, %s, %s, 'active')
-                            ON DUPLICATE KEY UPDATE
-                                teamLeaderName = VALUES(teamLeaderName),
-                                onboardingDate = COALESCE(VALUES(onboardingDate), onboardingDate)
-                        """, (name, tl, onboard))
-                        cur.execute("""
-                            INSERT INTO franchisees_forms (nameAsPerAgreement, teamLeaderName)
-                            VALUES (%s, %s)
-                            ON DUPLICATE KEY UPDATE teamLeaderName = VALUES(teamLeaderName)
-                        """, (name, tl))
-                        stats["franchisees"] += 1
-            print(f"✅ Synced {stats['franchisees']} Franchisees.")
+                for batch in chunked(fran_rows, 500):
+                    cur.executemany("""
+                        INSERT INTO franchisees (nameAsPerAgreement, teamLeaderName, onboardingDate, status)
+                        VALUES (%s, %s, %s, 'active')
+                        ON DUPLICATE KEY UPDATE
+                            teamLeaderName = VALUES(teamLeaderName),
+                            onboardingDate = COALESCE(VALUES(onboardingDate), onboardingDate)
+                    """, batch)
+                for batch in chunked(form_rows, 500):
+                    cur.executemany("""
+                        INSERT INTO franchisees_forms (nameAsPerAgreement, teamLeaderName)
+                        VALUES (%s, %s)
+                        ON DUPLICATE KEY UPDATE teamLeaderName = VALUES(teamLeaderName)
+                    """, batch)
+            stats["franchisees"] = len(fran_rows)
+            print(f"[SYNC OK] Synced {stats['franchisees']} Franchisees.")
         else:
             stats["errors"].append(f"Franchisees: {f_res.get('error', 'No data')}")
 
         # 2. Sync Enquiries
-        print("🔄 Syncing Enquiries from Saarthi API...")
+        print("[SYNC] Syncing Enquiries from Saarthi API...")
         enq_res = fetch_saarthi_endpoint("enquiries")
         if enq_res["ok"] and enq_res["data"]:
-            with conn.cursor() as cur:
-                for enq in enq_res["data"]:
-                    enq_id = enq.get("id")
-                    if not enq_id:
-                        continue
-                    company = str(enq.get("companyName") or "").strip()
-                    bd = str(enq.get("bdMemberName") or enq.get("bdName") or "").strip()
-                    tl = str(enq.get("teamLeaderName") or enq.get("tlName") or "").strip()
-                    fran = str(enq.get("franchiseeName") or enq.get("franchiseName") or "").strip()
-                    pos = str(enq.get("positionName") or "").strip()
-                    ind = str(enq.get("industry") or "").strip()
-                    st = str(enq.get("enquiryStatus") or "inprogress").strip().lower()
-                    fees = parse_float(enq.get("placementFees"))
-                    f_val = parse_float(enq.get("from"))
-                    t_val = parse_float(enq.get("to"))
-                    b_amt = parse_float(enq.get("bill_amount"))
-                    b_no = str(enq.get("bill_no") or "").strip() or None
-                    b_date = normalize_date(enq.get("bill_date"))
-                    alloc_d = normalize_date(enq.get("dateOfAllocation"))
-                    acq_d = normalize_date(enq.get("dateClientAcquired"))
-                    realloc_d = normalize_date(enq.get("dateOfReallocation"))
-                    info = str(enq.get("info") or "").strip() or None
-                    c_at = normalize_date(enq.get("created_at"))
+            enq_rows = []
+            for enq in enq_res["data"]:
+                enq_id = enq.get("id")
+                if not enq_id:
+                    continue
+                company = str(enq.get("companyName") or "").strip()
+                bd = str(enq.get("bdMemberName") or enq.get("bdName") or "").strip()
+                tl = str(enq.get("teamLeaderName") or enq.get("tlName") or "").strip()
+                fran = str(enq.get("franchiseeName") or enq.get("franchiseName") or "").strip()
+                pos = str(enq.get("positionName") or "").strip()
+                ind = str(enq.get("industry") or "").strip()
+                st = str(enq.get("enquiryStatus") or "inprogress").strip().lower()
+                fees = parse_float(enq.get("placementFees"))
+                f_val = parse_float(enq.get("from"))
+                t_val = parse_float(enq.get("to"))
+                b_amt = parse_float(enq.get("bill_amount"))
+                b_no = str(enq.get("bill_no") or "").strip() or None
+                b_date = normalize_date(enq.get("bill_date"))
+                alloc_d = normalize_date(enq.get("dateOfAllocation"))
+                acq_d = normalize_date(enq.get("dateClientAcquired"))
+                realloc_d = normalize_date(enq.get("dateOfReallocation"))
+                info = str(enq.get("info") or "").strip() or None
+                c_at = normalize_date(enq.get("created_at"))
 
-                    cur.execute("""
+                enq_rows.append((
+                    enq_id, company, bd, tl, fran, fees, pos, ind, f_val, t_val, st,
+                    alloc_d, acq_d, realloc_d, b_no, b_date, b_amt, info, c_at
+                ))
+
+            with conn.cursor() as cur:
+                for batch in chunked(enq_rows, 500):
+                    cur.executemany("""
                         INSERT INTO enquiries (
                             id, companyName, bdMemberName, teamLeaderName, franchiseeName,
                             placementFees, positionName, industry, `from`, `to`, enquiryStatus,
@@ -195,57 +212,63 @@ def sync_saarthi_all():
                             bill_date = VALUES(bill_date),
                             bill_amount = VALUES(bill_amount),
                             info = VALUES(info)
-                    """, (
-                        enq_id, company, bd, tl, fran, fees, pos, ind, f_val, t_val, st,
-                        alloc_d, acq_d, realloc_d, b_no, b_date, b_amt, info, c_at
-                    ))
-                    stats["enquiries"] += 1
-            print(f"✅ Synced {stats['enquiries']} Enquiries.")
+                    """, batch)
+            stats["enquiries"] = len(enq_rows)
+            print(f"[SYNC OK] Synced {stats['enquiries']} Enquiries.")
         else:
             stats["errors"].append(f"Enquiries: {enq_res.get('error', 'No data')}")
 
         # 3. Sync Invoices
-        print("🔄 Syncing Invoices from Saarthi API...")
+        print("[SYNC] Syncing Invoices from Saarthi API...")
         inv_res = fetch_saarthi_endpoint("Invoice")
         if not inv_res["ok"] or not inv_res["data"]:
             inv_res = fetch_saarthi_endpoint("invoice")
             
         if inv_res["ok"] and inv_res["data"]:
-            with conn.cursor() as cur:
-                for inv in inv_res["data"]:
-                    inv_id = inv.get("id")
-                    if not inv_id:
-                        continue
-                    enq_id = inv.get("enquiry_id") or None
-                    b_num = str(inv.get("billNumber") or inv.get("bill_no") or "").strip() or None
-                    b_date = normalize_date(inv.get("billDate") or inv.get("bill_date"))
-                    svc_chg = parse_float(inv.get("serviceCharges") or inv.get("serviceCharge"))
-                    svc_rate = parse_float(inv.get("serviceCharge"))
-                    gst = parse_float(inv.get("totalGST") or inv.get("gst"))
-                    tot_bill = parse_float(inv.get("totalBillAmt") or inv.get("bill_amount"))
-                    f_share = parse_float(inv.get("franchiseeShare") or inv.get("franchiseShare"))
-                    f_gst = parse_float(inv.get("franchiseeGST"))
-                    our_sh = parse_float(inv.get("ourShare"))
-                    amt_rec = parse_float(inv.get("amountReceived"))
-                    amt_due = parse_float(inv.get("amountDue"))
-                    tds_val = parse_float(inv.get("tds") or inv.get("tdsAmount"))
-                    tds_ff = parse_float(inv.get("tdsFF"))
-                    d_rec = normalize_date(inv.get("dateReceived"))
-                    d_paid = normalize_date(inv.get("paidOnDate"))
-                    pay_mode = str(inv.get("payment_mode") or "").strip() or None
-                    uid_tx = str(inv.get("uid_transaction_id") or "").strip() or None
-                    bd_name = str(inv.get("nameOfBd") or inv.get("bdMemberName") or "").strip() or None
-                    tl_name = str(inv.get("teamLeader") or inv.get("teamLeaderName") or "").strip() or None
-                    fran_name = str(inv.get("franchiseName") or inv.get("franchiseeName") or "").strip() or None
-                    fy_val = str(inv.get("financialYear") or calculate_fy(b_date)).strip()
-                    cand_name = str(inv.get("candidateName") or "").strip() or None
-                    comp_name = str(inv.get("companyName") or "").strip() or None
-                    post_name = str(inv.get("postOfCandidate") or inv.get("positionName") or "").strip() or None
-                    sal_offered = parse_float(inv.get("annualSalaryOffered") or inv.get("salary"))
-                    info_st = str(inv.get("info") or "").strip() or None
-                    status_st = str(inv.get("status") or "active").strip()
+            inv_rows = []
+            for inv in inv_res["data"]:
+                inv_id = inv.get("id")
+                if not inv_id:
+                    continue
+                enq_id = inv.get("enquiry_id") or None
+                b_num = str(inv.get("billNumber") or inv.get("bill_no") or "").strip() or None
+                b_date = normalize_date(inv.get("billDate") or inv.get("bill_date"))
+                svc_chg = parse_float(inv.get("serviceCharges") or inv.get("serviceCharge"))
+                svc_rate = parse_float(inv.get("serviceCharge"))
+                gst = parse_float(inv.get("totalGST") or inv.get("gst"))
+                tot_bill = parse_float(inv.get("totalBillAmt") or inv.get("bill_amount"))
+                f_share = parse_float(inv.get("franchiseeShare") or inv.get("franchiseShare"))
+                f_gst = parse_float(inv.get("franchiseeGST"))
+                our_sh = parse_float(inv.get("ourShare"))
+                amt_rec = parse_float(inv.get("amountReceived"))
+                amt_due = parse_float(inv.get("amountDue"))
+                tds_val = parse_float(inv.get("tds") or inv.get("tdsAmount"))
+                tds_ff = parse_float(inv.get("tdsFF"))
+                d_rec = normalize_date(inv.get("dateReceived"))
+                d_paid = normalize_date(inv.get("paidOnDate"))
+                pay_mode = str(inv.get("payment_mode") or "").strip() or None
+                uid_tx = str(inv.get("uid_transaction_id") or "").strip() or None
+                bd_name = str(inv.get("nameOfBd") or inv.get("bdMemberName") or "").strip() or None
+                tl_name = str(inv.get("teamLeader") or inv.get("teamLeaderName") or "").strip() or None
+                fran_name = str(inv.get("franchiseName") or inv.get("franchiseeName") or "").strip() or None
+                fy_val = str(inv.get("financialYear") or calculate_fy(b_date)).strip()
+                cand_name = str(inv.get("candidateName") or "").strip() or None
+                comp_name = str(inv.get("companyName") or "").strip() or None
+                post_name = str(inv.get("postOfCandidate") or inv.get("positionName") or "").strip() or None
+                sal_offered = parse_float(inv.get("annualSalaryOffered") or inv.get("salary"))
+                info_st = str(inv.get("info") or "").strip() or None
+                status_st = str(inv.get("status") or "active").strip()
 
-                    cur.execute("""
+                inv_rows.append((
+                    inv_id, enq_id, b_num, b_date, svc_chg, svc_rate, gst, tot_bill,
+                    f_share, f_gst, our_sh, amt_rec, amt_due, tds_val, tds_ff, d_rec, d_paid,
+                    pay_mode, uid_tx, bd_name, tl_name, fran_name, fy_val, cand_name, comp_name,
+                    post_name, sal_offered, info_st, status_st
+                ))
+
+            with conn.cursor() as cur:
+                for batch in chunked(inv_rows, 500):
+                    cur.executemany("""
                         INSERT INTO invoice (
                             id, enquiry_id, billNumber, billDate, serviceCharges, serviceCharge,
                             totalGST, totalBillAmt, franchiseeShare, franchiseeGST, ourShare,
@@ -276,65 +299,68 @@ def sync_saarthi_all():
                             postOfCandidate = VALUES(postOfCandidate),
                             info = VALUES(info),
                             status = VALUES(status)
-                    """, (
-                        inv_id, enq_id, b_num, b_date, svc_chg, svc_rate, gst, tot_bill,
-                        f_share, f_gst, our_sh, amt_rec, amt_due, tds_val, tds_ff, d_rec, d_paid,
-                        pay_mode, uid_tx, bd_name, tl_name, fran_name, fy_val, cand_name, comp_name,
-                        post_name, sal_offered, info_st, status_st
-                    ))
-                    stats["invoices"] += 1
-            print(f"✅ Synced {stats['invoices']} Invoices.")
+                    """, batch)
+            stats["invoices"] = len(inv_rows)
+            print(f"[SYNC OK] Synced {stats['invoices']} Invoices.")
         else:
             stats["errors"].append(f"Invoices: {inv_res.get('error', 'No data')}")
 
         # 4. Sync Expenses
-        print("🔄 Syncing Expenses from Saarthi API...")
+        print("[SYNC] Syncing Expenses from Saarthi API...")
         exp_res = fetch_saarthi_endpoint("expenses")
         if exp_res["ok"] and exp_res["data"]:
-            with conn.cursor() as cur:
-                for exp in exp_res["data"]:
-                    sr = str(exp.get("srNo") or exp.get("id") or "").strip() or None
-                    b_date = normalize_date(exp.get("billDate") or exp.get("date"))
-                    part = str(exp.get("particulars") or exp.get("title") or exp.get("description") or "").strip()
-                    exp_name = str(exp.get("expenses") or exp.get("category") or "Other").strip()
-                    amt = parse_float(exp.get("amount"))
-                    net = parse_float(exp.get("net") or exp.get("amount"))
-                    exp_type = str(exp.get("expenseType") or exp.get("type") or "expense").strip()
-                    bd_id = str(exp.get("bdAgentId") or "").strip() or None
-                    fran_id = str(exp.get("franchiseeId") or "").strip() or None
+            exp_rows = []
+            for exp in exp_res["data"]:
+                sr = str(exp.get("srNo") or exp.get("id") or "").strip() or None
+                b_date = normalize_date(exp.get("billDate") or exp.get("date"))
+                part = str(exp.get("particulars") or exp.get("title") or exp.get("description") or "").strip()
+                exp_name = str(exp.get("expenses") or exp.get("category") or "Other").strip()
+                amt = parse_float(exp.get("amount"))
+                net = parse_float(exp.get("net") or exp.get("amount"))
+                exp_type = str(exp.get("expenseType") or exp.get("type") or "expense").strip()
+                bd_id = str(exp.get("bdAgentId") or "").strip() or None
+                fran_id = str(exp.get("franchiseeId") or "").strip() or None
 
-                    if amt > 0 or part:
-                        cur.execute("""
-                            INSERT INTO expenditure (
-                                srNo, billDate, particulars, expenses, amount, net, expenseType, bdAgentId, franchiseeId, is_deleted
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0)
-                        """, (sr, b_date, part, exp_name, amt, net, exp_type, bd_id, fran_id))
-                        stats["expenses"] += 1
-            print(f"✅ Synced {stats['expenses']} Expenses.")
+                if amt > 0 or part:
+                    exp_rows.append((sr, b_date, part, exp_name, amt, net, exp_type, bd_id, fran_id))
+
+            with conn.cursor() as cur:
+                for batch in chunked(exp_rows, 500):
+                    cur.executemany("""
+                        INSERT INTO expenditure (
+                            srNo, billDate, particulars, expenses, amount, net, expenseType, bdAgentId, franchiseeId, is_deleted
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0)
+                    """, batch)
+            stats["expenses"] = len(exp_rows)
+            print(f"[SYNC OK] Synced {stats['expenses']} Expenses.")
 
         # 5. Sync Clients Info
-        print("🔄 Syncing Clients Info from Saarthi API...")
+        print("[SYNC] Syncing Clients Info from Saarthi API...")
         c_res = fetch_saarthi_endpoint("clients_info")
         if c_res["ok"] and c_res["data"]:
-            with conn.cursor() as cur:
-                for c in c_res["data"]:
-                    c_id = c.get("id")
-                    if not c_id:
-                        continue
-                    c_name = str(c.get("companyName") or "").strip()
-                    cp_name = str(c.get("contactPersonName") or c.get("contactPerson") or "").strip() or None
-                    desig = str(c.get("designation") or "").strip() or None
-                    phone = str(c.get("phoneNumber") or c.get("contactPhone") or c.get("mobileNo") or "").strip() or None
-                    email = str(c.get("emailId") or c.get("contactEmail") or "").strip() or None
-                    tl = str(c.get("teamLeader") or "").strip() or None
-                    gst = str(c.get("gstNumber") or c.get("gstNo") or "").strip() or None
-                    pan = str(c.get("panNumber") or c.get("panNo") or "").strip() or None
-                    tan = str(c.get("tanNumber") or c.get("tanNo") or "").strip() or None
-                    st = str(c.get("status") or "active").strip().lower()
-                    amt = parse_float(c.get("amount") or c.get("grossAmount"))
-                    tds = parse_float(c.get("tdsAmount") or c.get("tds"))
+            c_rows = []
+            for c in c_res["data"]:
+                c_id = c.get("id")
+                if not c_id:
+                    continue
+                c_name = str(c.get("companyName") or "").strip()
+                cp_name = str(c.get("contactPersonName") or c.get("contactPerson") or "").strip() or None
+                desig = str(c.get("designation") or "").strip() or None
+                phone = str(c.get("phoneNumber") or c.get("contactPhone") or c.get("mobileNo") or "").strip() or None
+                email = str(c.get("emailId") or c.get("contactEmail") or "").strip() or None
+                tl = str(c.get("teamLeader") or "").strip() or None
+                gst = str(c.get("gstNumber") or c.get("gstNo") or "").strip() or None
+                pan = str(c.get("panNumber") or c.get("panNo") or "").strip() or None
+                tan = str(c.get("tanNumber") or c.get("tanNo") or "").strip() or None
+                st = str(c.get("status") or "active").strip().lower()
+                amt = parse_float(c.get("amount") or c.get("grossAmount"))
+                tds = parse_float(c.get("tdsAmount") or c.get("tds"))
 
-                    cur.execute("""
+                c_rows.append((c_id, c_name, cp_name, desig, phone, email, tl, gst, pan, tan, st, amt, tds))
+
+            with conn.cursor() as cur:
+                for batch in chunked(c_rows, 500):
+                    cur.executemany("""
                         INSERT INTO clients_info (
                             id, companyName, contactPersonName, designation, phoneNumber,
                             emailId, teamLeader, gstNumber, panNumber, tanNumber, status, amount, tdsAmount
@@ -352,35 +378,39 @@ def sync_saarthi_all():
                             status = VALUES(status),
                             amount = VALUES(amount),
                             tdsAmount = VALUES(tdsAmount)
-                    """, (c_id, c_name, cp_name, desig, phone, email, tl, gst, pan, tan, st, amt, tds))
-                    stats["clients"] += 1
-            print(f"✅ Synced {stats['clients']} Clients.")
+                    """, batch)
+            stats["clients"] = len(c_rows)
+            print(f"[SYNC OK] Synced {stats['clients']} Clients.")
 
         # 6. Sync Legals Info
-        print("🔄 Syncing Legals Info from Saarthi API...")
+        print("[SYNC] Syncing Legals Info from Saarthi API...")
         l_res = fetch_saarthi_endpoint("legals_info")
         if l_res["ok"] and l_res["data"]:
-            with conn.cursor() as cur:
-                for l in l_res["data"]:
-                    l_id = l.get("id") or l.get("legal_id")
-                    c_name = str(l.get("companyName") or "").strip() or None
-                    p_name = str(l.get("partyName") or "").strip() or None
-                    gst = str(l.get("gstNo") or l.get("gstNumber") or "").strip() or None
-                    pan = str(l.get("panNo") or l.get("panNumber") or "").strip() or None
-                    tan = str(l.get("tanNo") or l.get("tanNumber") or "").strip() or None
-                    fy = str(l.get("financialYear") or l.get("fy") or "").strip() or None
-                    v_date = normalize_date(l.get("voucherDate") or l.get("invoiceDate"))
-                    l_amt = parse_float(l.get("legal_amount") or l.get("amount"))
-                    tds = parse_float(l.get("tdsAmount") or l.get("tds"))
+            l_rows = []
+            for l in l_res["data"]:
+                l_id = l.get("id") or l.get("legal_id")
+                c_name = str(l.get("companyName") or "").strip() or None
+                p_name = str(l.get("partyName") or "").strip() or None
+                gst = str(l.get("gstNo") or l.get("gstNumber") or "").strip() or None
+                pan = str(l.get("panNo") or l.get("panNumber") or "").strip() or None
+                tan = str(l.get("tanNo") or l.get("tanNumber") or "").strip() or None
+                fy = str(l.get("financialYear") or l.get("fy") or "").strip() or None
+                v_date = normalize_date(l.get("voucherDate") or l.get("invoiceDate"))
+                l_amt = parse_float(l.get("legal_amount") or l.get("amount"))
+                tds = parse_float(l.get("tdsAmount") or l.get("tds"))
 
-                    cur.execute("""
+                l_rows.append((l_id, c_name, p_name, gst, pan, tan, fy, v_date, l_amt, tds))
+
+            with conn.cursor() as cur:
+                for batch in chunked(l_rows, 500):
+                    cur.executemany("""
                         INSERT INTO legals_info (
                             legal_id, companyName, partyName, gstNo, panNo, tanNo,
                             financialYear, voucherDate, legal_amount, tdsAmount
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (l_id, c_name, p_name, gst, pan, tan, fy, v_date, l_amt, tds))
-                    stats["legals"] += 1
-            print(f"✅ Synced {stats['legals']} Legals.")
+                    """, batch)
+            stats["legals"] = len(l_rows)
+            print(f"[SYNC OK] Synced {stats['legals']} Legals.")
 
         # Finalize log entry
         duration = (datetime.datetime.now() - start_time).total_seconds()
@@ -405,7 +435,7 @@ def sync_saarthi_all():
                 ))
 
     except Exception as e:
-        print("💥 Error during Saarthi Live Sync:", str(e))
+        print("[SYNC ERROR] Error during Saarthi Live Sync:", str(e))
         stats["errors"].append(str(e))
         if log_id:
             try:

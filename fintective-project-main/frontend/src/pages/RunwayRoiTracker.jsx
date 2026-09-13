@@ -93,11 +93,17 @@ const RunwayRoiTracker = () => {
             const lastDay = new Date(yVal, mIdx + 1, 0).getDate();
             end = `${yVal}-${String(mIdx + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
           }
+        } else if (selectedYear && selectedYear !== 'All Years') {
+          const parts = selectedYear.split('-');
+          const yStart = parseInt(parts[0]);
+          const yEnd = parseInt(parts[1]);
+          start = `${yStart}-04-01`;
+          end = `${yEnd}-03-31`;
         }
         const res = await fetch(`${API_BASE_URL}/bd-revenue-leaderboard?start_date=${start}&end_date=${end}`);
         if (res.ok) {
           const data = await res.json();
-          setLeaderboard(data);
+          setLeaderboard(Array.isArray(data) ? data : []);
         }
       } catch (err) {
         console.error('Failed to load BD revenue leaderboard:', err.message);
@@ -106,7 +112,7 @@ const RunwayRoiTracker = () => {
       }
     };
     fetchLeaderboard();
-  }, [selectedMonth]);
+  }, [selectedMonth, selectedYear]);
 
   // Fetch Action Items
   const fetchActionItems = async () => {
