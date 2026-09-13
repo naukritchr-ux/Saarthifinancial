@@ -1818,10 +1818,8 @@ def get_action_items():
             ghost_rows = cursor.fetchall()
             today = datetime.date.today()
             for r in ghost_rows:
-                alloc_date = r['dateOfAllocation']
-                age_days = 0
-                if alloc_date:
-                    age_days = (today - alloc_date).days
+                alloc_date = safe_parse_date(r['dateOfAllocation'])
+                age_days = safe_date_diff_days(today, alloc_date) if alloc_date else 0
                 
                 # Priority
                 if age_days <= 30:
