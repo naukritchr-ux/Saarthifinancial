@@ -837,8 +837,8 @@ const RunwayRoiTracker = () => {
             <span style={{ color: '#ef4444' }}>● Outflow (Baseline)</span>
             {isSimulatedActive && (
               <>
-                <span style={{ color: '#c084fc' }}>══ Inflow (Simulated)</span>
-                <span style={{ color: '#f472b6' }}>══ Outflow (Simulated)</span>
+                <span style={{ color: 'var(--color-purple)' }}>══ Inflow (Simulated)</span>
+                <span style={{ color: 'var(--color-sim-pink)' }}>══ Outflow (Simulated)</span>
               </>
             )}
           </div>
@@ -856,27 +856,27 @@ const RunwayRoiTracker = () => {
                 <stop offset="100%" stopColor="#ef4444" stopOpacity="0.0" />
               </linearGradient>
               <linearGradient id="sim-inflow-grad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#c084fc" stopOpacity="0.2" />
-                <stop offset="100%" stopColor="#c084fc" stopOpacity="0.0" />
+                <stop offset="0%" stopColor="var(--color-purple)" stopOpacity="0.2" />
+                <stop offset="100%" stopColor="var(--color-purple)" stopOpacity="0.0" />
               </linearGradient>
               <linearGradient id="sim-outflow-grad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#f472b6" stopOpacity="0.2" />
-                <stop offset="100%" stopColor="#f472b6" stopOpacity="0.0" />
+                <stop offset="0%" stopColor="var(--color-sim-pink)" stopOpacity="0.2" />
+                <stop offset="100%" stopColor="var(--color-sim-pink)" stopOpacity="0.0" />
               </linearGradient>
             </defs>
 
             {/* Grid Lines */}
-            <line x1={paddingX} y1={paddingY} x2={svgWidth - paddingX} y2={paddingY} stroke="rgba(255, 255, 255, 0.04)" strokeWidth="1" strokeDasharray="3" />
-            <line x1={paddingX} y1={getY(maxFlowVal / 2)} x2={svgWidth - paddingX} y2={getY(maxFlowVal / 2)} stroke="rgba(255, 255, 255, 0.04)" strokeWidth="1" strokeDasharray="3" />
-            <line x1={paddingX} y1={svgHeight - paddingY} x2={svgWidth - paddingX} y2={svgHeight - paddingY} stroke="rgba(255, 255, 255, 0.15)" strokeWidth="1.5" />
+            <line x1={paddingX} y1={paddingY} x2={svgWidth - paddingX} y2={paddingY} stroke="rgba(0, 0, 0, 0.06)" strokeWidth="1" strokeDasharray="3" />
+            <line x1={paddingX} y1={getY(maxFlowVal / 2)} x2={svgWidth - paddingX} y2={getY(maxFlowVal / 2)} stroke="rgba(0, 0, 0, 0.06)" strokeWidth="1" strokeDasharray="3" />
+            <line x1={paddingX} y1={svgHeight - paddingY} x2={svgWidth - paddingX} y2={svgHeight - paddingY} stroke="var(--border-color)" strokeWidth="1.5" />
 
             {/* Vertical grid lines & labels */}
             {allFlows.map((f, idx) => {
               const x = getX(idx);
               return (
                 <g key={idx}>
-                  <line x1={x} y1={paddingY} x2={x} y2={svgHeight - paddingY} stroke="rgba(255, 255, 255, 0.04)" strokeWidth="1" />
-                  <text x={x} y={svgHeight - paddingY + 20} textAnchor="middle" fill="#64748b" fontSize="10" fontWeight="bold">
+                  <line x1={x} y1={paddingY} x2={x} y2={svgHeight - paddingY} stroke="rgba(0, 0, 0, 0.06)" strokeWidth="1" />
+                  <text x={x} y={svgHeight - paddingY + 20} textAnchor="middle" fill="var(--text-muted)" fontSize="10" fontWeight="bold">
                     {f.label}
                   </text>
                 </g>
@@ -884,13 +884,13 @@ const RunwayRoiTracker = () => {
             })}
 
             {/* Y Axis Labels */}
-            <text x={paddingX - 10} y={paddingY + 4} textAnchor="end" fill="#64748b" fontSize="10" fontWeight="bold">
+            <text x={paddingX - 10} y={paddingY + 4} textAnchor="end" fill="var(--text-muted)" fontSize="10" fontWeight="bold">
               {formatLakhs(maxFlowVal)}
             </text>
-            <text x={paddingX - 10} y={getY(maxFlowVal / 2) + 4} textAnchor="end" fill="#64748b" fontSize="10" fontWeight="bold">
+            <text x={paddingX - 10} y={getY(maxFlowVal / 2) + 4} textAnchor="end" fill="var(--text-muted)" fontSize="10" fontWeight="bold">
               {formatLakhs(maxFlowVal / 2)}
             </text>
-            <text x={paddingX - 10} y={svgHeight - paddingY + 4} textAnchor="end" fill="#64748b" fontSize="10" fontWeight="bold">
+            <text x={paddingX - 10} y={svgHeight - paddingY + 4} textAnchor="end" fill="var(--text-muted)" fontSize="10" fontWeight="bold">
               ₹0
             </text>
 
@@ -919,8 +919,8 @@ const RunwayRoiTracker = () => {
             {/* Simulated lines for projections */}
             {isSimulatedActive && (
               <>
-                <path d={`M ${projectedSimInflowPath}`} fill="none" stroke="#c084fc" strokeWidth="3" strokeDasharray="4,4" strokeLinecap="round" strokeLinejoin="round" />
-                <path d={`M ${projectedSimOutflowPath}`} fill="none" stroke="#f472b6" strokeWidth="3" strokeDasharray="4,4" strokeLinecap="round" strokeLinejoin="round" />
+                <path d={`M ${projectedSimInflowPath}`} fill="none" stroke="var(--color-purple)" strokeWidth="3" strokeDasharray="4,4" strokeLinecap="round" strokeLinejoin="round" />
+                <path d={`M ${projectedSimOutflowPath}`} fill="none" stroke="var(--color-sim-pink)" strokeWidth="3" strokeDasharray="4,4" strokeLinecap="round" strokeLinejoin="round" />
               </>
             )}
 
@@ -929,12 +929,12 @@ const RunwayRoiTracker = () => {
               const x = getX(idx);
               return (
                 <g key={idx}>
-                  <circle cx={x} cy={getY(f.inflow)} r="4" fill="#0b132b" stroke="#10b981" strokeWidth="2" opacity={isSimulatedActive && f.isProjected ? 0.35 : 1} />
-                  <circle cx={x} cy={getY(f.outflow)} r="4" fill="#0b132b" stroke="#ef4444" strokeWidth="2" opacity={isSimulatedActive && f.isProjected ? 0.35 : 1} />
+                  <circle cx={x} cy={getY(f.inflow)} r="4" fill="#ffffff" stroke="#10b981" strokeWidth="2" opacity={isSimulatedActive && f.isProjected ? 0.35 : 1} />
+                  <circle cx={x} cy={getY(f.outflow)} r="4" fill="#ffffff" stroke="#ef4444" strokeWidth="2" opacity={isSimulatedActive && f.isProjected ? 0.35 : 1} />
                   {isSimulatedActive && f.isProjected && (
                     <>
-                      <circle cx={x} cy={getY(f.simInflow)} r="4.5" fill="#0b132b" stroke="#c084fc" strokeWidth="2.5" />
-                      <circle cx={x} cy={getY(f.simOutflow)} r="4.5" fill="#0b132b" stroke="#f472b6" strokeWidth="2.5" />
+                      <circle cx={x} cy={getY(f.simInflow)} r="4.5" fill="#ffffff" stroke="var(--color-purple)" strokeWidth="2.5" />
+                      <circle cx={x} cy={getY(f.simOutflow)} r="4.5" fill="#ffffff" stroke="var(--color-sim-pink)" strokeWidth="2.5" />
                     </>
                   )}
                 </g>
@@ -945,7 +945,7 @@ const RunwayRoiTracker = () => {
       </div>
 
       {/* 3. ROBUST PERFORMANCE DATA TABLES */}
-      <div className="dashboard-card" style={{ border: '1px solid rgba(255, 255, 255, 0.05)', background: 'rgba(30, 41, 59, 0.15)', backdropFilter: 'blur(16px)' }}>
+      <div className="dashboard-card" style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}>
         {/* Navigation Tabs (Pill-Style Container) */}
         <div className="pill-tabs-container">
           {[
@@ -987,9 +987,9 @@ const RunwayRoiTracker = () => {
                   style={{
                     padding: '8px 14px',
                     borderRadius: '8px',
-                    background: 'rgba(15, 23, 42, 0.6)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    color: '#fff',
+                    background: 'var(--bg-main)',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--text-main)',
                     fontSize: '0.85rem',
                     minWidth: '260px'
                   }}
@@ -1000,9 +1000,9 @@ const RunwayRoiTracker = () => {
                   style={{
                     padding: '8px 14px',
                     borderRadius: '8px',
-                    background: 'rgba(15, 23, 42, 0.8)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    color: '#fff',
+                    background: 'var(--bg-main)',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--text-main)',
                     fontSize: '0.85rem'
                   }}
                 >
@@ -1052,14 +1052,14 @@ const RunwayRoiTracker = () => {
               <tbody>
                 {paginatedInvoices.map((inv, idx) => (
                   <tr key={inv.id || idx}>
-                    <td className="font-bold" style={{ color: '#38bdf8' }}>{inv.billNumber}</td>
-                    <td style={{ color: '#94a3b8' }}>{inv.billDate}</td>
+                    <td className="font-bold" style={{ color: 'var(--color-link)' }}>{inv.billNumber}</td>
+                    <td style={{ color: 'var(--text-muted)' }}>{inv.billDate}</td>
                     <td className="font-bold">{inv.companyName}</td>
                     <td>{inv.candidateName}</td>
                     <td>
                       <span
                         onClick={() => handleRecruiterClick(inv.nameOfBd)}
-                        style={{ cursor: 'pointer', color: '#38bdf8', textDecoration: 'underline' }}
+                        style={{ cursor: 'pointer', color: 'var(--color-link)', textDecoration: 'underline' }}
                       >
                         {inv.nameOfBd}
                       </span>
@@ -1067,7 +1067,7 @@ const RunwayRoiTracker = () => {
                     <td>{inv.teamLeader}</td>
                     <td>{inv.franchiseName}</td>
                     <td className="font-bold text-teal text-right">{formatCurrency(inv.serviceCharges)}</td>
-                    <td className="font-bold text-right" style={{ color: '#38bdf8' }}>{formatCurrency(inv.ourShare)}</td>
+                    <td className="font-bold text-right" style={{ color: 'var(--color-purple)' }}>{formatCurrency(inv.ourShare)}</td>
                     <td style={{ textAlign: 'center' }}>
                       <span className="status-badge" style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.2)', fontSize: '0.75rem', padding: '2px 8px' }}>
                         {inv.status || 'Verified'}
@@ -1087,8 +1087,8 @@ const RunwayRoiTracker = () => {
 
             {/* Pagination Controls */}
             {totalInvoicePages > 1 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '8px 0', borderTop: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '8px 0', borderTop: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                   Page {invoicePage} of {totalInvoicePages} ({filteredInvoices.length} items)
                 </span>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -1135,20 +1135,20 @@ const RunwayRoiTracker = () => {
                     <td className="font-bold">
                       <span 
                         onClick={() => handleRecruiterClick(agent.bd_name)} 
-                        style={{ cursor: 'pointer', color: '#38bdf8', textDecoration: 'underline' }}
-                        onMouseOver={(e) => e.target.style.color = '#7dd3fc'}
-                        onMouseOut={(e) => e.target.style.color = '#38bdf8'}
+                        style={{ cursor: 'pointer', color: 'var(--color-link)', textDecoration: 'underline' }}
+                        onMouseOver={(e) => e.target.style.color = '#1e40af'}
+                        onMouseOut={(e) => e.target.style.color = 'var(--color-link)'}
                       >
                         {agent.bd_name}
                       </span>
                     </td>
                     <td>
-                      <span className="status-badge" style={{ backgroundColor: 'rgba(56,189,248,0.1)', color: '#38bdf8', border: '1px solid rgba(56,189,248,0.2)' }}>
+                      <span className="status-badge" style={{ backgroundColor: 'rgba(29,78,216,0.08)', color: 'var(--color-link)', border: '1px solid rgba(29,78,216,0.2)' }}>
                         {agent.invoices_closed} Deals Closed
                       </span>
                     </td>
                     <td className="font-bold text-teal text-right">{formatCurrency(agent.gross_revenue)}</td>
-                    <td className="font-bold text-right" style={{ color: '#38bdf8' }}>{formatCurrency(agent.net_revenue)}</td>
+                    <td className="font-bold text-right" style={{ color: 'var(--color-purple)' }}>{formatCurrency(agent.net_revenue)}</td>
                     <td style={{ textAlign: 'center' }}>
                       <span 
                         onClick={() => handleRecruiterClick(agent.bd_name)}
@@ -1249,7 +1249,7 @@ const RunwayRoiTracker = () => {
                   <tr key={index}>
                     <td className="font-bold">{account.companyName}</td>
                     <td>
-                      <span className={`info-badge`} style={{ color: account.type === 'Franchise Hub' ? 'var(--accent-teal)' : '#8b5cf6', background: 'rgba(255,255,255,0.03)' }}>
+                      <span className={`info-badge`} style={{ color: account.type === 'Franchise Hub' ? 'var(--accent-teal)' : 'var(--color-purple)', background: 'var(--bg-main)' }}>
                         {account.type}
                       </span>
                     </td>
@@ -1260,7 +1260,7 @@ const RunwayRoiTracker = () => {
                       {formatCurrency(account.net)}
                     </td>
                     <td className="text-right font-bold">
-                      <span style={{ color: account.margin >= 50 ? 'var(--color-income)' : (account.margin >= 20 ? '#fbbf24' : '#ef4444') }}>
+                      <span style={{ color: account.margin >= 50 ? 'var(--color-income)' : (account.margin >= 20 ? 'var(--color-pending)' : 'var(--color-expense)') }}>
                         {account.margin.toFixed(1)}%
                       </span>
                     </td>
@@ -1283,7 +1283,7 @@ const RunwayRoiTracker = () => {
               
               {/* Sliders Control Panel */}
               <div className="simulator-panel">
-                <h5 style={{ color: '#f8fafc', fontSize: '1rem', fontWeight: 'bold', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '12px', marginBottom: '8px' }}>Simulation Controls</h5>
+                <h5 style={{ color: 'var(--text-main)', fontSize: '1rem', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '8px' }}>Simulation Controls</h5>
                 
                 {/* 1. Revenue Growth */}
                 <div className={`slider-group-container ${revGrowthPct !== 0 ? 'active-sim' : ''}`}>
@@ -1329,7 +1329,7 @@ const RunwayRoiTracker = () => {
                 <div className={`slider-group-container ${hiringSalary > 0 ? 'active-sim' : ''}`}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                     <span className="font-bold">Hiring Plan (Additional Salary Burden)</span>
-                    <span style={{ color: hiringSalary > 0 ? '#ef4444' : '#cbd5e1', fontWeight: 'bold' }}>
+                    <span style={{ color: hiringSalary > 0 ? 'var(--color-expense)' : 'var(--text-muted)', fontWeight: 'bold' }}>
                       +{formatCurrency(hiringSalary)} / mo
                     </span>
                   </div>
@@ -1354,16 +1354,16 @@ const RunwayRoiTracker = () => {
                       alignSelf: 'flex-end', 
                       padding: '8px 16px', 
                       fontSize: '0.8rem', 
-                      border: '1px solid rgba(255,255,255,0.08)',
+                      border: '1px solid var(--border-color)',
                       borderRadius: '8px',
-                      backgroundColor: 'rgba(255,255,255,0.02)',
-                      color: '#cbd5e1',
+                      backgroundColor: 'var(--bg-card)',
+                      color: 'var(--text-main)',
                       fontWeight: 'bold',
                       cursor: 'pointer',
                       transition: 'all 0.2s'
                     }}
-                    onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)'}
-                    onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.02)'}
+                    onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-main)'}
+                    onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-card)'}
                   >
                     Reset Simulator
                   </button>
@@ -1371,33 +1371,33 @@ const RunwayRoiTracker = () => {
               </div>
 
               {/* Simulation Impact Report Card */}
-              <div className="simulator-panel" style={{ background: 'rgba(15, 23, 42, 0.4)' }}>
-                <h5 style={{ color: '#f8fafc', fontSize: '1rem', fontWeight: 'bold', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '12px', marginBottom: '8px' }}>Simulation Impact Report</h5>
+              <div className="simulator-panel" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+                <h5 style={{ color: 'var(--text-main)', fontSize: '1rem', fontWeight: 'bold', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '8px' }}>Simulation Impact Report</h5>
 
                 {/* 1. Comparison Inflow/Outflow */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
-                    <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Simulated Monthly Inflow</span>
+                  <div style={{ background: 'var(--bg-main)', padding: '14px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Simulated Monthly Inflow</span>
                     <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#10b981', fontFamily: 'monospace' }}>{formatCurrency(simInflowValue)}</span>
                     <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>Baseline: {formatCurrency(avgHistoricalInflow)}</span>
                   </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
-                    <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Simulated Monthly Outflow</span>
+                  <div style={{ background: 'var(--bg-main)', padding: '14px', borderRadius: '10px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Simulated Monthly Outflow</span>
                     <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#ef4444', fontFamily: 'monospace' }}>{formatCurrency(simOutflowValue)}</span>
                     <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>Baseline: {formatCurrency(avgHistoricalOutflow)}</span>
                   </div>
                 </div>
 
                 {/* 2. Comparison Net Burn and Runway */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: 'rgba(0,0,0,0.25)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--bg-main)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', alignItems: 'center' }}>
-                    <span style={{ color: '#cbd5e1' }}>Simulated Net Flow:</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Simulated Net Flow:</span>
                     <strong style={{ color: simNetBurnRate >= 0 ? '#10b981' : '#ef4444', fontSize: '1rem', fontFamily: 'monospace' }}>
                       {simNetBurnRate >= 0 ? '+' : ''}{formatCurrency(simNetBurnRate)} / mo
                     </strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', alignItems: 'center' }}>
-                    <span style={{ color: '#cbd5e1' }}>Simulated Cash Runway:</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Simulated Cash Runway:</span>
                     <strong style={{ color: isSimCashExhaustionRisk ? '#ef4444' : '#10b981', fontSize: '1rem' }}>
                       {isSimCashExhaustionRisk 
                         ? `${simRunwayMonths ? simRunwayMonths.toFixed(1) : 0} Months`
@@ -1478,14 +1478,14 @@ const RunwayRoiTracker = () => {
               <h4 style={{ marginBottom: '8px' }}>AI Predictive Projections: Scale & Profit Simulator</h4>
               <p className="flow-subtitle" style={{ marginBottom: '24px' }}>
                 Simulate scaling your active franchise recruitment networks and billing revenue to see the impact of operating leverage.
-                <span style={{ display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px', fontStyle: 'italic' }}>
+                <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', fontStyle: 'italic' }}>
                   *Variable cost ratio based on franchisee royalty + BD/TL commission as % of revenue (3-mo avg: {(variableCostRatio * 100).toFixed(0)}%)
                 </span>
               </p>
 
               {/* Multiplier Toggle Selector */}
               <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', alignItems: 'center' }}>
-                <span className="font-bold" style={{ fontSize: '0.9rem', color: '#94a3b8' }}>Target Scale:</span>
+                <span className="font-bold" style={{ fontSize: '0.9rem', color: 'var(--text-main)' }}>Target Scale:</span>
                 {[1, 2, 3, 5].map(mult => (
                   <button
                     key={mult}
@@ -1493,9 +1493,9 @@ const RunwayRoiTracker = () => {
                     style={{
                       padding: '8px 16px',
                       borderRadius: '8px',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      backgroundColor: scaleMultiplier === mult ? 'var(--accent-teal, #2dd4bf)' : 'rgba(255,255,255,0.04)',
-                      color: scaleMultiplier === mult ? '#0b132b' : '#cbd5e1',
+                      border: scaleMultiplier === mult ? '1px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                      backgroundColor: scaleMultiplier === mult ? 'var(--accent-teal)' : 'var(--bg-card)',
+                      color: scaleMultiplier === mult ? '#ffffff' : 'var(--text-main)',
                       fontWeight: 'bold',
                       cursor: 'pointer',
                       transition: 'all 0.2s'
@@ -1508,24 +1508,24 @@ const RunwayRoiTracker = () => {
 
               {/* Metric Cards Grid */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '32px' }}>
-                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Projected Monthly Revenue</span>
+                <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>Projected Monthly Revenue</span>
                   <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#10b981' }}>{formatCurrency(currentScale.inflow)}</span>
                   <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>Baseline: {formatCurrency(avgHistoricalInflow)}</span>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Projected Monthly Expenses</span>
+                <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>Projected Monthly Expenses</span>
                   <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#ef4444' }}>{formatCurrency(currentScale.outflow)}</span>
                   <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>Overheads scaled to support operations.</span>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Projected Net Profit</span>
-                  <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#8b5cf6' }}>{currentScale.net >= 0 ? '+' : ''}{formatCurrency(currentScale.net)}</span>
+                <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>Projected Net Profit</span>
+                  <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: 'var(--color-purple)' }}>{currentScale.net >= 0 ? '+' : ''}{formatCurrency(currentScale.net)}</span>
                   <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>Estimated cash retention.</span>
                 </div>
-                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Operating Profit Margin</span>
-                  <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#cbd5e1' }}>{currentScale.margin.toFixed(1)}%</span>
+                <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>Operating Profit Margin</span>
+                  <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{currentScale.margin.toFixed(1)}%</span>
                   <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>Baseline Margin: {scale1x.margin.toFixed(1)}%</span>
                 </div>
               </div>
@@ -1556,7 +1556,7 @@ const RunwayRoiTracker = () => {
 
               {/* Side-by-Side Scaling Projections Table */}
               <div className="table-responsive">
-                <h5 style={{ marginBottom: '12px', color: '#cbd5e1' }}>Side-by-Side Scaling Comparative Reference Table</h5>
+                <h5 style={{ marginBottom: '12px', color: 'var(--text-main)' }}>Side-by-Side Scaling Comparative Reference Table</h5>
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -1570,12 +1570,12 @@ const RunwayRoiTracker = () => {
                   </thead>
                   <tbody>
                     {[
-                      { mult: '1x Scale (Baseline)', calc: scale1x, color: '#f8fafc' },
-                      { mult: '2x Scale', calc: scale2x, color: '#cbd5e1' },
-                      { mult: '3x Scale', calc: scale3x, color: '#94a3b8' },
-                      { mult: '5x Scale (Hyper-Scale)', calc: scale5x, color: 'var(--accent-teal)' }
+                      { mult: '1x Scale (Baseline)', calc: scale1x, color: 'var(--text-main)' },
+                      { mult: '2x Scale', calc: scale2x, color: 'var(--accent-teal)' },
+                      { mult: '3x Scale', calc: scale3x, color: 'var(--color-purple)' },
+                      { mult: '5x Scale (Hyper-Scale)', calc: scale5x, color: 'var(--color-income)' }
                     ].map((row, idx) => (
-                      <tr key={idx} style={{ backgroundColor: scaleMultiplier === (idx === 3 ? 5 : idx + 1) ? 'rgba(45,212,191,0.04)' : 'transparent' }}>
+                      <tr key={idx} style={{ backgroundColor: scaleMultiplier === (idx === 3 ? 5 : idx + 1) ? 'rgba(15,110,86,0.08)' : 'transparent' }}>
                         <td className="font-bold" style={{ color: row.color }}>{row.mult}</td>
                         <td className="text-right font-bold text-teal">{formatCurrency(row.calc.inflow)}</td>
                         <td className="text-right text-red">{formatCurrency(row.calc.outflow, true)}</td>
@@ -1583,7 +1583,7 @@ const RunwayRoiTracker = () => {
                           {row.calc.net >= 0 ? '+' : ''}{formatCurrency(row.calc.net)}
                         </td>
                         <td className="text-right font-bold">{row.calc.margin.toFixed(1)}%</td>
-                        <td className={`text-right font-bold ${row.calc.net >= 0 ? 'text-teal' : '#fbbf24'}`}>{row.calc.runwayVal}</td>
+                        <td className={`text-right font-bold ${row.calc.net >= 0 ? 'text-teal' : 'var(--color-pending)'}`}>{row.calc.runwayVal}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1641,7 +1641,7 @@ const RunwayRoiTracker = () => {
                       // Calculate MoM growth (June vs July)
                       let growthRate = 0;
                       let growthText = '0%';
-                      let growthColor = '#94a3b8';
+                      let growthColor = 'var(--text-muted)';
 
                       if (vJun > 0) {
                         growthRate = ((vJul - vJun) / vJun) * 100;
@@ -1652,7 +1652,7 @@ const RunwayRoiTracker = () => {
                         growthColor = cat.type === 'income' ? '#10b981' : '#ef4444';
                       } else if (vJun === 0 && vJul === 0) {
                         growthText = '0%';
-                        growthColor = '#94a3b8';
+                        growthColor = 'var(--text-muted)';
                       }
 
                       // Sparkline logic
@@ -1672,7 +1672,7 @@ const RunwayRoiTracker = () => {
                           <td className="text-right">{vApr > 0 ? formatCurrency(vApr) : '₹0'}</td>
                           <td className="text-right">{vMay > 0 ? formatCurrency(vMay) : '₹0'}</td>
                           <td className="text-right">{vJun > 0 ? formatCurrency(vJun) : '₹0'}</td>
-                          <td className="text-right font-bold" style={{ color: cat.type === 'income' ? 'var(--accent-teal)' : '#f8fafc' }}>
+                          <td className="text-right font-bold" style={{ color: cat.type === 'income' ? 'var(--accent-teal)' : 'var(--text-main)' }}>
                             {vJul > 0 ? formatCurrency(vJul) : '₹0'}
                           </td>
                           <td className="text-right font-bold" style={{ color: growthColor }}>
@@ -1879,7 +1879,7 @@ const RunwayRoiTracker = () => {
                 )}
 
                 {uploaderStatus === 'publishing' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#0284c7', fontSize: '0.9rem', fontWeight: 'bold' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--color-link)', fontSize: '0.9rem', fontWeight: 'bold' }}>
                     <Activity className="animate-spin" />
                     <span>Deduplicating entries against database, writing row-level hashes, and regenerating dashboard indexes...</span>
                   </div>
@@ -2199,7 +2199,7 @@ const RunwayRoiTracker = () => {
                               <span style={{ display: 'block', fontSize: '0.7rem', color: '#475569' }}>{pred.position_name}</span>
                             </td>
                             <td className="font-bold">{pred.bd_member}</td>
-                            <td className="text-center" style={{ color: '#0284c7', fontWeight: 'bold' }}>{pred.predicted_days} days</td>
+                            <td className="text-center" style={{ color: 'var(--color-link)', fontWeight: 'bold' }}>{pred.predicted_days} days</td>
                             <td style={{ textAlign: 'center' }}>
                               <span style={{
                                 padding: '4px 10px',
@@ -2291,24 +2291,24 @@ const RunwayRoiTracker = () => {
 
             {/* E. SESSION RECENTLY ARCHIVED LIST */}
             {recentlyArchived.length > 0 && (
-              <div className="dashboard-card" style={{ background: 'rgba(255,255,255,0.01)', border: '1px dashed rgba(255,255,255,0.1)', padding: '16px' }}>
-                <h6 style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#94a3b8', fontSize: '0.85rem', marginBottom: '12px', fontWeight: 'bold' }}>
+              <div className="dashboard-card" style={{ background: 'var(--bg-main)', border: '1px dashed var(--border-color)', padding: '16px' }}>
+                <h6 style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '12px', fontWeight: 'bold' }}>
                   <RotateCcw size={14} />
                   Recently Archived Transactions (Current Browser Session)
                 </h6>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
                   {recentlyArchived.map(item => (
-                    <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(15,23,42,0.6)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.75rem', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-card)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.75rem', border: '1px solid var(--border-color)', color: 'var(--text-main)' }}>
                       <div>
                         <strong>{item.category}</strong> - {formatCurrency(item.amount)}
-                        <span style={{ display: 'block', fontSize: '0.65rem', color: '#64748b' }}>Deleted at {item.archivedAt}</span>
+                        <span style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-muted)' }}>Deleted at {item.archivedAt}</span>
                       </div>
                       <button 
                         onClick={() => handleUndoSoftDelete(item.id)}
                         style={{
                           border: 'none',
-                          background: 'rgba(16,185,129,0.1)',
-                          color: '#10b981',
+                          background: 'rgba(15,110,86,0.1)',
+                          color: 'var(--color-income)',
                           padding: '4px 8px',
                           borderRadius: '4px',
                           fontWeight: 'bold',
@@ -2335,29 +2335,28 @@ const RunwayRoiTracker = () => {
           top: 0,
           width: '500px',
           height: '100vh',
-          backgroundColor: 'rgba(11, 19, 43, 0.95)',
-          backdropFilter: 'blur(20px)',
-          borderLeft: '1px solid rgba(255,255,255,0.1)',
-          boxShadow: '-10px 0 30px rgba(0,0,0,0.5)',
+          backgroundColor: 'var(--bg-card, #ffffff)',
+          borderLeft: '1px solid var(--border-color)',
+          boxShadow: '-10px 0 30px rgba(0,0,0,0.12)',
           zIndex: 1000,
           padding: '24px',
           display: 'flex',
           flexDirection: 'column',
-          color: '#cbd5e1',
+          color: 'var(--text-main)',
           transition: 'all 0.3s ease-in-out'
         }}>
           {/* Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
             <div>
-              <span style={{ fontSize: '0.75rem', color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold' }}>Recruiter Trust Layer</span>
-              <h4 style={{ color: '#fff', margin: '4px 0 0 0' }}>{selectedRecruiter}</h4>
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-link)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold' }}>Recruiter Trust Layer</span>
+              <h4 style={{ color: 'var(--text-main)', margin: '4px 0 0 0' }}>{selectedRecruiter}</h4>
             </div>
             <button 
               onClick={() => setSelectedRecruiter(null)}
               style={{
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                color: '#cbd5e1',
+                background: 'var(--bg-main)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text-main)',
                 borderRadius: '50%',
                 width: '32px',
                 height: '32px',
@@ -2371,38 +2370,38 @@ const RunwayRoiTracker = () => {
 
           {/* Placements detailed table */}
           <div style={{ flex: 1, overflowY: 'auto', marginBottom: '20px' }}>
-            <h5 style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '12px' }}>Audit Invoices Log</h5>
+            <h5 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>Audit Invoices Log</h5>
             {recruiterDetailsLoading ? (
-              <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+              <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                 <Activity className="animate-spin animate-spin-slow" style={{ margin: '0 auto 12px auto' }} />
                 <span>Fetching underlying ledger entries from MySQL...</span>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {recruiterDetails.map((row, idx) => (
-                  <div key={idx} style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', fontSize: '0.8rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}>
+                  <div key={idx} style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-main)', fontWeight: 'bold', marginBottom: '4px' }}>
                       <span>{row.company_name}</span>
-                      <span style={{ color: '#10b981' }}>{formatCurrency(row.gross_revenue)}</span>
+                      <span style={{ color: 'var(--color-income)' }}>{formatCurrency(row.gross_revenue)}</span>
                     </div>
-                    <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                       Invoice: {row.invoice_no} | Date: {row.bill_date}
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#38bdf8', marginTop: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--color-link)', marginTop: '4px' }}>
                       <span>Recruiter Net Share: {formatCurrency(row.net_revenue)}</span>
                       <span>Franchise: {row.franchise_name || 'None'}</span>
                     </div>
                   </div>
                 ))}
                 {recruiterDetails.length === 0 && (
-                  <div style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>No invoice attributions found for this agent.</div>
+                  <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>No invoice attributions found for this agent.</div>
                 )}
               </div>
             )}
           </div>
 
           {/* Footer Actions */}
-          <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '16px', display: 'flex', gap: '10px' }}>
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', display: 'flex', gap: '10px' }}>
             <button 
               onClick={() => {
                 const headers = 'Company Name,Invoice Number,Bill Date,Gross Revenue (INR),Net Share (INR),Franchisee Name\n';
@@ -2416,8 +2415,8 @@ const RunwayRoiTracker = () => {
               }}
               style={{
                 flex: 1,
-                backgroundColor: '#38bdf8',
-                color: '#0b132b',
+                backgroundColor: 'var(--accent-teal)',
+                color: '#ffffff',
                 fontWeight: 'bold',
                 padding: '10px',
                 borderRadius: '8px',
@@ -2435,9 +2434,9 @@ const RunwayRoiTracker = () => {
             <button 
               onClick={() => setSelectedRecruiter(null)}
               style={{
-                backgroundColor: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                color: '#cbd5e1',
+                backgroundColor: 'var(--bg-main)',
+                border: '1px solid var(--border-color)',
+                color: 'var(--text-main)',
                 padding: '10px 16px',
                 borderRadius: '8px',
                 cursor: 'pointer'
@@ -2455,10 +2454,10 @@ const RunwayRoiTracker = () => {
           position: 'fixed',
           bottom: '24px',
           left: '24px',
-          background: 'rgba(15, 23, 42, 0.9)',
-          color: '#cbd5e1',
-          border: '1.5px solid rgba(16, 185, 129, 0.3)',
-          boxShadow: '0 10px 25px rgba(0,0,0,0.4)',
+          background: 'var(--text-main, #1b2321)',
+          color: '#ffffff',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.25)',
           borderRadius: '8px',
           padding: '16px 20px',
           display: 'flex',
@@ -2474,9 +2473,9 @@ const RunwayRoiTracker = () => {
             <button 
               onClick={() => handleUndoSoftDelete(toastUndoId)}
               style={{
-                backgroundColor: 'rgba(16,185,129,0.1)',
-                color: '#10b981',
-                border: '1px solid rgba(16,185,129,0.2)',
+                backgroundColor: 'rgba(16,185,129,0.2)',
+                color: '#34d399',
+                border: '1px solid rgba(16,185,129,0.4)',
                 borderRadius: '4px',
                 padding: '4px 10px',
                 fontSize: '0.75rem',

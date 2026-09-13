@@ -22,6 +22,8 @@
   --color-pending: #b7791f;
   --color-revenue-blue: #22314f;
   --color-purple: #7c3aed;
+  --color-link: #1d4ed8;
+  --color-sim-pink: #db2777;
 
   /* Flat / Hairline System */
   --transition-smooth: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
