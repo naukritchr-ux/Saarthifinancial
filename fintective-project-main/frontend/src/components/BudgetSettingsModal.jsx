@@ -3,14 +3,11 @@ import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import {
   X,
-  Settings,
-  DollarSign,
+  Sliders,
   CheckCircle2,
   AlertTriangle,
   Save,
   Search,
-  Sliders,
-  TrendingUp,
   Layers,
   ShieldCheck,
   RotateCcw
@@ -61,7 +58,7 @@ const BudgetSettingsModal = ({ isOpen, onClose }) => {
   const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
-    if (budgets && Object.keys(budgets).length > 0) {
+    if (budgets && typeof budgets === 'object' && Object.keys(budgets).length > 0) {
       setLocalBudgets({ ...budgets });
       setInitialBudgets({ ...budgets });
     }
@@ -140,7 +137,7 @@ const BudgetSettingsModal = ({ isOpen, onClose }) => {
           setSaveSuccess(false);
         }, 4000);
       } else {
-        throw new Error('Failed to update budgets on server.');
+        throw new Error('Server returned error while saving budget allocations.');
       }
     } catch (err) {
       console.error('Error saving budgets:', err);
