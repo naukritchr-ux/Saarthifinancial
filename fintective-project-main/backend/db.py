@@ -217,6 +217,43 @@ def ensure_tables_exist():
                 ]
                 cur.executemany("INSERT INTO budgets (category, limit_amount) VALUES (%s, %s);", initial_budgets)
 
+            # Seed initial operational expenditures if empty
+            cur.execute("SELECT COUNT(*) as cnt FROM expenditure;")
+            if cur.fetchone()["cnt"] == 0:
+                exp_templates = [
+                    ('Salaries', 'Employee Base Salaries Batch', 450000.0, 'Salaries', 'Salaries'),
+                    ('Office & infra', 'Commercial Office Rent & Maintenance', 45000.0, 'Office & infra', 'Rent & Infrastructure'),
+                    ('Portal subscriptions', 'Naukri.com & LinkedIn Recruiter Suite', 85000.0, 'Portal subscriptions', 'Job Portal Access'),
+                    ('Marketing', 'Google Search Ads & Social Campaigns', 55000.0, 'Marketing', 'Performance Marketing'),
+                    ('Office & infra', 'AWS Cloud Server Infrastructure & DB', 28000.0, 'Office & infra', 'Cloud Infrastructure'),
+                    ('Other', 'Office Pantry, Tea & Refreshments', 15000.0, 'Other', 'Operational Supplies'),
+                    ('BD commissions', 'BD Agent Quarterly Performance Payouts', 95000.0, 'BD commissions', 'Commission Share')
+                ]
+                exp_rows = []
+                for yr in [2024, 2025, 2026]:
+                    for mo in range(1, 13):
+                        if yr == 2026 and mo > 8:
+                            continue
+                        mo_str = f"{mo:02d}"
+                        for idx, (exp_cat, part, amt, exp_type, desc) in enumerate(exp_templates):
+                            day_str = f"{(idx * 4 + 3) % 28 + 1:02d}"
+                            exp_rows.append((
+                                f"TX-{yr}{mo_str}-{idx}",
+                                f"{yr}-{mo_str}-{day_str}",
+                                f"{part} ({mo_str}/{yr})",
+                                exp_cat,
+                                amt,
+                                amt,
+                                exp_type,
+                                None,
+                                None,
+                                0
+                            ))
+                cur.executemany("""
+                    INSERT INTO expenditure (srNo, billDate, particulars, expenses, amount, net, expenseType, bdAgentId, franchiseeId, is_deleted)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                """, exp_rows)
+
             # 7. Audit Log
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS audit_log (

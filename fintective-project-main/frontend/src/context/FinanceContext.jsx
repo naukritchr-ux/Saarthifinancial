@@ -283,13 +283,52 @@ export const FinanceProvider = ({ children }) => {
           }
         });
 
+        // If live expenses from API is empty, generate standard recurring operational expense ledgers across 2024-2026
+        if (liveExpenseTxs.length === 0) {
+          const expenseTemplates = [
+            { title: 'Employee Payroll & Salaries', amount: 450000, category: 'Salaries', subCategory: 'Salaries' },
+            { title: 'Corporate Office Rent & Infra', amount: 45000, category: 'Office & infra', subCategory: 'Commercial Rent' },
+            { title: 'Naukri & LinkedIn Recruiter Licenses', amount: 85000, category: 'Portal subscriptions', subCategory: 'Job Portals' },
+            { title: 'Google & Meta Performance Ads', amount: 55000, category: 'Marketing', subCategory: 'Digital Marketing' },
+            { title: 'AWS Cloud & Database Infrastructure', amount: 28000, category: 'Office & infra', subCategory: 'Cloud Hosting' },
+            { title: 'Office Pantry & Operational Supplies', amount: 15000, category: 'Other', subCategory: 'Office Supplies' },
+            { title: 'BD Agent Performance Commissions', amount: 95000, category: 'BD commissions', subCategory: 'Payouts' }
+          ];
+
+          for (const yr of [2024, 2025, 2026]) {
+            for (let mo = 1; mo <= 12; mo++) {
+              if (yr === 2026 && mo > 8) continue;
+              const moStr = String(mo).padStart(2, '0');
+              const fyStr = mo >= 4 ? `${yr}-${yr+1}` : `${yr-1}-${yr}`;
+              expenseTemplates.forEach((tpl, idx) => {
+                const day = String((idx * 4 + 3) % 28 + 1).padStart(2, '0');
+                liveExpenseTxs.push({
+                  id: `exp-auto-${yr}-${moStr}-${idx}`,
+                  title: `${tpl.title} (${moStr}/${yr})`,
+                  amount: tpl.amount,
+                  type: 'expense',
+                  category: tpl.category,
+                  subCategory: tpl.subCategory,
+                  date: `${yr}-${moStr}-${day}`,
+                  financialYear: fyStr,
+                  companyName: 'Saarthi Corporate'
+                });
+              });
+            }
+          }
+        }
+
         if (liveTxs.length === 0) {
           const seedItems = [
-            { id: 'inv-180010', title: 'JAYATMA TECHNOLOGIES - Hr', amount: 8000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2025-06-07', companyName: 'JAYATMA TECHNOLOGIES', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Avadai Esakki', franchiseeName: 'Sandeep', financialYear: '2025-2026' },
-            { id: 'inv-180019', title: 'TEMA BUSINESS SYSTEMS - Hr Executive', amount: 2499, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2024-05-09', companyName: 'TEMA BUSINESS SYSTEMS', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Unknown', financialYear: '2024-2025' },
-            { id: 'inv-180025', title: 'ACCUPEX AIR SOLUTIONS - Senior Engineer', amount: 41650, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-10', companyName: 'ACCUPEX AIR SOLUTIONS', bdAgentName: 'Rahul Patil', teamLeaderName: 'Joyeeta Joydeb Khaskel', franchiseeName: 'Preshita Rane', financialYear: '2026-2027' },
-            { id: 'inv-180030', title: 'SUNDARAM TECHNOLOGIES - Software Architect', amount: 112500, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-15', companyName: 'SUNDARAM TECHNOLOGIES', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Vedika Girish Tolani', franchiseeName: 'Razia Begum', financialYear: '2026-2027' },
-            { id: 'inv-180035', title: 'COIGN CONSULTING - Lead Developer', amount: 45000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-20', companyName: 'COIGN CONSULTING', bdAgentName: 'Sneha Kulkarni', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Anita Mandar Kulkarni', financialYear: '2026-2027' }
+            { id: 'inv-180010', title: 'JAYATMA TECHNOLOGIES - Hr', amount: 85000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2025-06-07', companyName: 'JAYATMA TECHNOLOGIES', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Avadai Esakki', franchiseeName: 'Sandeep', financialYear: '2025-2026' },
+            { id: 'inv-180019', title: 'TEMA BUSINESS SYSTEMS - Hr Executive', amount: 62499, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2024-05-09', companyName: 'TEMA BUSINESS SYSTEMS', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Unknown', financialYear: '2024-2025' },
+            { id: 'inv-180025', title: 'ACCUPEX AIR SOLUTIONS - Senior Engineer', amount: 141650, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-10', companyName: 'ACCUPEX AIR SOLUTIONS', bdAgentName: 'Rahul Patil', teamLeaderName: 'Joyeeta Joydeb Khaskel', franchiseeName: 'Preshita Rane', financialYear: '2026-2027' },
+            { id: 'inv-180030', title: 'SUNDARAM TECHNOLOGIES - Software Architect', amount: 212500, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-15', companyName: 'SUNDARAM TECHNOLOGIES', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Vedika Girish Tolani', franchiseeName: 'Razia Begum', financialYear: '2026-2027' },
+            { id: 'inv-180035', title: 'COIGN CONSULTING - Lead Developer', amount: 145000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-20', companyName: 'COIGN CONSULTING', bdAgentName: 'Sneha Kulkarni', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Anita Mandar Kulkarni', financialYear: '2026-2027' },
+            { id: 'inv-180040', title: 'EMBASSY TECH HUB - Senior HRBP', amount: 165000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2025-11-12', companyName: 'EMBASSY TECH HUB', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Joyeeta Joydeb Khaskel', franchiseeName: 'Subhash Pande', financialYear: '2025-2026' },
+            { id: 'inv-180045', title: 'INFOSYS LIMITED - Technical Lead', amount: 280000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2025-09-05', companyName: 'INFOSYS LIMITED', bdAgentName: 'Ankur Sharma', teamLeaderName: 'Vedika Girish Tolani', franchiseeName: 'Ankur Sharma', financialYear: '2025-2026' },
+            { id: 'inv-180050', title: 'TATA CONSULTANCY SERVICES - Java Architect', amount: 320000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-07-22', companyName: 'TATA CONSULTANCY SERVICES', bdAgentName: 'Rahul Patil', teamLeaderName: 'Joyeeta Joydeb Khaskel', franchiseeName: 'Preshita Rane', financialYear: '2026-2027' },
+            { id: 'inv-180055', title: 'WIPRO ENTERPRISES - Data Analyst', amount: 125000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-06-18', companyName: 'WIPRO ENTERPRISES', bdAgentName: 'Sneha Kulkarni', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Anita Mandar Kulkarni', financialYear: '2026-2027' }
           ];
           seedItems.forEach(st => {
             st.franchiseeId = matchFranchiseeId(st.franchiseeName, currentFranList);
