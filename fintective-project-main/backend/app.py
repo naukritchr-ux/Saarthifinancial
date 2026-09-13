@@ -998,8 +998,10 @@ def get_franchisees():
                 placement_map = {r['fran_key']: r['placed'] for r in cursor.fetchall()}
 
                 franchisees = []
+                existing_names = set()
                 for r in rows:
                     clean_name = r['name'].strip()
+                    existing_names.add(clean_name.lower())
                     stable_id = make_stable_id('f', clean_name)
                     franchisees.append({
                         'id': stable_id,
@@ -1010,6 +1012,28 @@ def get_franchisees():
                         'status': r['status'] or 'Active',
                         'candidatesPlaced': placement_map.get(clean_name.lower(), 0)
                     })
+
+                # Discover and include any franchisee in enquiries not yet in franchisees table
+                cursor.execute(f"""
+                    SELECT DISTINCT TRIM(e.franchiseeName) AS name, TRIM(e.teamLeaderName) AS owner
+                    FROM enquiries e
+                    WHERE e.franchiseeName IS NOT NULL AND TRIM(e.franchiseeName) != '' AND LOWER(TRIM(e.franchiseeName)) != 'unknown'
+                """)
+                enq_frans = cursor.fetchall()
+                for ef in enq_frans:
+                    fname = (ef['name'] or '').strip()
+                    if fname and fname.lower() not in existing_names:
+                        existing_names.add(fname.lower())
+                        stable_id = make_stable_id('f', fname)
+                        franchisees.append({
+                            'id': stable_id,
+                            'name': fname,
+                            'city': 'India Hub',
+                            'owner': ef['owner'] or 'Franchise Lead',
+                            'onboardingDate': '2024-04-01',
+                            'status': 'Active',
+                            'candidatesPlaced': placement_map.get(fname.lower(), 0)
+                        })
                 return jsonify(franchisees)
             except Exception as err:
                 print('franchisees list error, returning static backup:', str(err))
@@ -1238,7 +1262,6 @@ def get_bd_agents():
                     WHERE e.bdMemberName IS NOT NULL AND e.bdMemberName != ''
                     GROUP BY e.bdMemberName, b.id, b.role, b.baseSalary, b.payPerProgressed, b.payPerCancelled, b.commissionRate, b.status
                     ORDER BY gross_revenue DESC
-                    LIMIT 50
                 """)
                 rows = cursor.fetchall()
                 if rows:
@@ -2272,7 +2295,6 @@ def get_team_leaders():
                     WHERE e.teamLeaderName IS NOT NULL AND e.teamLeaderName != ''
                     GROUP BY e.teamLeaderName
                     ORDER BY gross_revenue DESC
-                    LIMIT 50
                 """)
                 rows = cursor.fetchall()
                 team_leaders = []

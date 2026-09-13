@@ -1,17 +1,39 @@
 import os
 import pymysql
 import pymysql.cursors
+import urllib.parse
 import datetime
 from dotenv import load_dotenv
 
 # Load env file
 load_dotenv()
 
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_PORT = int(os.getenv("DB_PORT", 3306))
-DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-DB_NAME = os.getenv("DB_NAME", "crm_db")
+# Parse DATABASE_URL / MYSQL_URL / AIVEN_URL / DB_URI if provided
+database_url = os.getenv("DATABASE_URL") or os.getenv("MYSQL_URL") or os.getenv("AIVEN_URL") or os.getenv("DB_URI")
+
+parsed_host = ""
+parsed_port = 3306
+parsed_user = ""
+parsed_password = ""
+parsed_name = ""
+
+if database_url:
+    try:
+        parsed = urllib.parse.urlparse(database_url)
+        parsed_host = parsed.hostname or ""
+        parsed_port = parsed.port or 3306
+        parsed_user = parsed.username or ""
+        parsed_password = parsed.password or ""
+        if parsed.path and len(parsed.path) > 1:
+            parsed_name = parsed.path.lstrip('/')
+    except Exception as parse_err:
+        print("[DB WARN] Error parsing DATABASE_URL:", str(parse_err))
+
+DB_HOST = (os.getenv("DB_HOST", "").strip() or parsed_host or "localhost")
+DB_PORT = int(os.getenv("DB_PORT", str(parsed_port)))
+DB_USER = (os.getenv("DB_USER", "").strip() or parsed_user or "root")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "") or parsed_password
+DB_NAME = (os.getenv("DB_NAME", "").strip() or parsed_name or "crm_db")
 DB_SSL = os.getenv("DB_SSL", "false").lower() in ("true", "1", "yes")
 
 def get_db_connection(select_db=True):
