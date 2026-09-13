@@ -350,7 +350,7 @@ export const FinanceProvider = ({ children }) => {
 
           for (const yr of [2024, 2025, 2026]) {
             for (let mo = 1; mo <= 12; mo++) {
-              if (yr === 2026 && mo > 8) continue;
+              if (yr === 2026 && mo > 9) continue;
               const moStr = String(mo).padStart(2, '0');
               const fyStr = mo >= 4 ? `${yr}-${yr+1}` : `${yr-1}-${yr}`;
               expenseTemplates.forEach((tpl, idx) => {
@@ -381,13 +381,47 @@ export const FinanceProvider = ({ children }) => {
             { id: 'inv-180040', title: 'EMBASSY TECH HUB - Senior HRBP', amount: 165000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2025-11-12', companyName: 'EMBASSY TECH HUB', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Joyeeta Joydeb Khaskel', franchiseeName: 'Subhash Pande', financialYear: '2025-2026' },
             { id: 'inv-180045', title: 'INFOSYS LIMITED - Technical Lead', amount: 280000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2025-09-05', companyName: 'INFOSYS LIMITED', bdAgentName: 'Ankur Sharma', teamLeaderName: 'Vedika Girish Tolani', franchiseeName: 'Ankur Sharma', financialYear: '2025-2026' },
             { id: 'inv-180050', title: 'TATA CONSULTANCY SERVICES - Java Architect', amount: 320000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-07-22', companyName: 'TATA CONSULTANCY SERVICES', bdAgentName: 'Rahul Patil', teamLeaderName: 'Joyeeta Joydeb Khaskel', franchiseeName: 'Preshita Rane', financialYear: '2026-2027' },
-            { id: 'inv-180055', title: 'WIPRO ENTERPRISES - Data Analyst', amount: 125000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-06-18', companyName: 'WIPRO ENTERPRISES', bdAgentName: 'Sneha Kulkarni', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Anita Mandar Kulkarni', financialYear: '2026-2027' }
+            { id: 'inv-180055', title: 'WIPRO ENTERPRISES - Data Analyst', amount: 125000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-06-18', companyName: 'WIPRO ENTERPRISES', bdAgentName: 'Sneha Kulkarni', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Anita Mandar Kulkarni', financialYear: '2026-2027' },
+            { id: 'inv-180060', title: 'TECH MAHINDRA - Cloud Solutions Architect', amount: 245000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-09-04', companyName: 'TECH MAHINDRA', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Avadai Esakki', franchiseeName: 'Sandeep', financialYear: '2026-2027' }
           ];
           seedItems.forEach(st => {
             st.franchiseeId = matchFranchiseeId(st.franchiseeName, currentFranList);
             st.bdAgentId = matchBdAgentId(st.bdAgentName, bdAgents);
             liveTxs.push(st);
           });
+        }
+
+        // Add Recurring Job Portal Employer Package Subscriptions (Income)
+        const portalEmployers = [
+          { company: 'Wipro Technologies', amount: 83200, tier: 'Enterprise Unlimited' },
+          { company: 'TCS QA Hub', amount: 55000, tier: 'Standard Premium' },
+          { company: 'Cognizant Pune', amount: 67500, tier: 'Enterprise Unlimited' },
+          { company: 'Infosys Central', amount: 45000, tier: 'Basic Recruitment' }
+        ];
+        for (const yr of [2024, 2025, 2026]) {
+          for (let mo = 1; mo <= 12; mo++) {
+            if (yr === 2026 && mo > 9) continue;
+            const moStr = String(mo).padStart(2, '0');
+            const fyStr = mo >= 4 ? `${yr}-${yr+1}` : `${yr-1}-${yr}`;
+            portalEmployers.forEach((pe, pIdx) => {
+              liveTxs.push({
+                id: `portal-sub-${yr}-${moStr}-${pIdx}`,
+                title: `Employer Subscription - ${pe.company} (${pe.tier})`,
+                companyName: pe.company,
+                amount: pe.amount,
+                type: 'income',
+                category: 'Job portal',
+                subCategory: 'Employer Package',
+                date: `${yr}-${moStr}-15`,
+                paymentMode: 'Net Banking',
+                referenceId: `SUB-PORTAL-${yr}${moStr}-${pIdx}`,
+                description: `Active employer talent search package for ${pe.company}`,
+                bdAgentId: null,
+                franchiseeId: null,
+                financialYear: fyStr
+              });
+            });
+          }
         }
 
         const combined = [...liveTxs, ...liveExpenseTxs];
