@@ -68,35 +68,36 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
 
       <aside className="sidebar">
       <div className="sidebar-brand">
-        <div className="brand-logo" style={{ background: activeModule === 'job_portal' ? 'linear-gradient(135deg, #ea580c, #f97316)' : 'linear-gradient(135deg, var(--accent-teal), #06b6d4)', boxShadow: activeModule === 'job_portal' ? '0 0 15px rgba(234, 88, 12, 0.4)' : '0 0 15px rgba(13, 148, 136, 0.4)' }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <div className="brand-logo" style={{ background: 'linear-gradient(135deg, var(--accent-teal), #22314f)', boxShadow: '0 2px 8px rgba(15, 110, 86, 0.2)' }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="18" y1="20" x2="18" y2="10"></line>
             <line x1="12" y1="20" x2="12" y2="4"></line>
             <line x1="6" y1="20" x2="6" y2="14"></line>
           </svg>
         </div>
         <div className="brand-text">
-          <h2>Saarthi</h2>
-          <span>Finance</span>
+          <h2 style={{ color: 'var(--text-sidebar)', fontWeight: '700', fontSize: '18px', letterSpacing: '-0.02em', margin: 0 }}>Fintective</h2>
+          <span style={{ color: 'var(--text-sidebar-muted)', fontSize: '11px', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Intelligence</span>
         </div>
       </div>
 
       {/* High-Fidelity Module Switcher Selector */}
-      <div className="module-switcher-wrapper" style={{ padding: '8px 12px 14px 12px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-        <span className="section-title" style={{ paddingLeft: 0, marginBottom: '6px' }}>Active Module</span>
-        <div className="module-switcher-pill" style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', padding: '3px', border: '1px solid rgba(255,255,255,0.05)' }}>
+      <div className="module-switcher-wrapper" style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-color)' }}>
+        <span className="section-title" style={{ paddingLeft: 0, marginBottom: '6px', color: 'var(--text-sidebar-muted)', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Active Module</span>
+        <div className="module-switcher-pill" style={{ display: 'flex', background: 'var(--bg-sidebar-hover)', borderRadius: '6px', padding: '2px', border: '1px solid var(--border-color)' }}>
           <button 
             onClick={() => handleModuleChange('franchise_bd_revenue')}
             style={{
               flex: 1,
-              background: activeModule === 'franchise_bd_revenue' ? 'rgba(13, 148, 136, 0.2)' : 'transparent',
-              color: activeModule === 'franchise_bd_revenue' ? '#2dd4bf' : 'var(--text-sidebar-muted)',
+              background: activeModule === 'franchise_bd_revenue' ? '#ffffff' : 'transparent',
+              color: activeModule === 'franchise_bd_revenue' ? 'var(--accent-teal)' : 'var(--text-sidebar-muted)',
               border: 'none',
               padding: '6px 8px',
-              borderRadius: '6px',
+              borderRadius: '4px',
               fontSize: '11px',
-              fontWeight: 'bold',
+              fontWeight: '600',
               cursor: 'pointer',
+              boxShadow: activeModule === 'franchise_bd_revenue' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
               transition: 'var(--transition-smooth)'
             }}
           >
@@ -106,22 +107,21 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
             onClick={() => handleModuleChange('job_portal')}
             style={{
               flex: 1,
-              background: activeModule === 'job_portal' ? 'rgba(234, 88, 12, 0.2)' : 'transparent',
-              color: activeModule === 'job_portal' ? '#ff7849' : 'var(--text-sidebar-muted)',
+              background: activeModule === 'job_portal' ? '#ffffff' : 'transparent',
+              color: activeModule === 'job_portal' ? 'var(--accent-teal)' : 'var(--text-sidebar-muted)',
               border: 'none',
               padding: '6px 8px',
-              borderRadius: '6px',
+              borderRadius: '4px',
               fontSize: '11px',
-              fontWeight: 'bold',
+              fontWeight: '600',
               cursor: 'pointer',
+              boxShadow: activeModule === 'job_portal' ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
               transition: 'var(--transition-smooth)'
             }}
           >
             Job Portal
           </button>
         </div>
-
-
       </div>
 
       <div className="sidebar-menu-wrapper">
@@ -134,8 +134,6 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
                 .map(item => {
                   const Icon = item.icon;
                   const isActive = activePage === item.id;
-                  const activeColor = activeModule === 'job_portal' ? '#ff7849' : '#2dd4bf';
-                  const activeBg = activeModule === 'job_portal' ? 'rgba(234, 88, 12, 0.15)' : 'var(--accent-teal-glow)';
                   
                   return (
                     <li key={item.id}>
@@ -143,11 +141,14 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
                         className={`menu-item ${isActive ? 'active' : ''}`}
                         onClick={() => setActivePage(item.id)}
                         style={{
-                          backgroundColor: isActive ? activeBg : '',
-                          color: isActive ? activeColor : ''
+                          backgroundColor: isActive ? 'rgba(15, 110, 86, 0.08)' : 'transparent',
+                          color: isActive ? 'var(--accent-teal)' : 'var(--text-sidebar)',
+                          borderLeft: isActive ? '3px solid var(--accent-teal)' : '3px solid transparent',
+                          borderRadius: '0 6px 6px 0',
+                          fontWeight: isActive ? '600' : '500'
                         }}
                       >
-                        <Icon size={18} className="menu-icon" style={{ stroke: isActive ? activeColor : '' }} />
+                        <Icon size={18} className="menu-icon" style={{ stroke: isActive ? 'var(--accent-teal)' : 'var(--text-sidebar-muted)' }} />
                         <span>{item.name}</span>
                       </button>
                     </li>
@@ -160,17 +161,17 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
 
       <div className="sidebar-footer">
         <button className="menu-item settings-btn" onClick={() => setIsSettingsOpen(true)}>
-          <Settings size={18} className="menu-icon" />
+          <Settings size={18} className="menu-icon" style={{ stroke: 'var(--text-sidebar-muted)' }} />
           <span>Settings</span>
         </button>
 
-        <button className="menu-item settings-btn" onClick={logout} style={{ color: '#ef4444' }}>
-          <LogOut size={18} className="menu-icon" style={{ stroke: '#ef4444' }} />
-          <span style={{ color: '#ef4444' }}>Log Out</span>
+        <button className="menu-item settings-btn" onClick={logout} style={{ color: 'var(--color-expense)' }}>
+          <LogOut size={18} className="menu-icon" style={{ stroke: 'var(--color-expense)' }} />
+          <span style={{ color: 'var(--color-expense)' }}>Log Out</span>
         </button>
         
         <div className="user-profile">
-          <div className="avatar" style={{ background: activeModule === 'job_portal' ? 'linear-gradient(135deg, #ea580c, #f97316)' : 'linear-gradient(135deg, #3b82f6, #6366f1)' }}>
+          <div className="avatar" style={{ background: 'var(--accent-teal)', color: '#ffffff', fontWeight: '700' }}>
             {currentUser?.name ? currentUser.name.charAt(0) : 'U'}
           </div>
           <div className="user-info">

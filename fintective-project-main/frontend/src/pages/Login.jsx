@@ -1,4 +1,4 @@
-﻿import React, { useContext } from 'react';
+import React, { useContext } from 'react';
 import { FinanceContext } from '../context/FinanceContext';
 import { Key, ArrowRight } from 'lucide-react';
 
@@ -21,8 +21,8 @@ const Login = () => {
               <line x1="6" y1="20" x2="6" y2="14"></line>
             </svg>
           </div>
-          <h1>Saarthi Finance</h1>
-          <p className="login-subtitle">Central Operations & Auditing Portal Login</p>
+          <h1>Fintective</h1>
+          <p className="login-subtitle">Financial Intelligence & Auditing Portal</p>
         </div>
 
         <form onSubmit={handleLogin} className="login-form">
@@ -44,7 +44,7 @@ const Login = () => {
         </form>
 
         <div className="login-footer">
-          <span>Protected by Saarthi Identity Engine • Version 2.0</span>
+          <span>Protected by Fintective Identity Engine • Version 2.0</span>
         </div>
       </div>
     </div>

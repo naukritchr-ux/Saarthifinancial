@@ -160,7 +160,7 @@ const Reports = () => {
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
     const fileSuffix = selectedMonth.replace(' ', '_');
-    link.setAttribute("download", `Saarthi_Finance_Ledger_${fileSuffix}.csv`);
+    link.setAttribute("download", `Fintective_Finance_Ledger_${fileSuffix}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
