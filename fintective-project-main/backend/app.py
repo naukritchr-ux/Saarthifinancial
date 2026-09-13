@@ -109,6 +109,27 @@ def get_potential_loss(cursor, group_by_field=None, start_date=None, end_date=No
         row = cursor.fetchone()
         return float(row['potential_loss'] or 0.0) if row else 0.0
 
+def safe_parse_date(d):
+    if not d:
+        return None
+    if isinstance(d, datetime.datetime):
+        return d.date()
+    if isinstance(d, datetime.date):
+        return d
+    if isinstance(d, str):
+        try:
+            return datetime.datetime.strptime(d[:10], '%Y-%m-%d').date()
+        except:
+            return None
+    return None
+
+def safe_date_diff_days(d1, d2):
+    p1 = safe_parse_date(d1)
+    p2 = safe_parse_date(d2)
+    if p1 and p2:
+        return (p1 - p2).days
+    return 0
+
 app = Flask(__name__)
 
 # Configure CORS with origins check
@@ -909,12 +930,12 @@ def get_franchisees():
             try:
                 cursor.execute("""
                     SELECT 
+                        id,
                         nameAsPerAgreement AS name,
-                        nameOfFranchiseeOwner AS owner,
-                        city,
-                        dateOfAgreement AS onboardingDate,
+                        teamLeaderName AS owner,
+                        onboardingDate,
                         status
-                    FROM franchisees_forms 
+                    FROM franchisees 
                     WHERE nameAsPerAgreement IS NOT NULL AND nameAsPerAgreement != '' AND nameAsPerAgreement != 'Unknown'
                 """)
                 rows = cursor.fetchall()
@@ -937,15 +958,15 @@ def get_franchisees():
                     franchisees.append({
                         'id': stable_id,
                         'name': clean_name,
-                        'city': r['city'] or 'India',
-                        'owner': r['owner'] or clean_name,
+                        'city': 'India Hub',
+                        'owner': r['owner'] or 'Franchise Lead',
                         'onboardingDate': str(r['onboardingDate']) if r['onboardingDate'] else '2025-01-15',
                         'status': r['status'] or 'Active',
                         'candidatesPlaced': placement_map.get(clean_name.lower(), 0)
                     })
                 return jsonify(franchisees)
             except Exception as err:
-                print('franchisees_forms list error, returning static backup:', str(err))
+                print('franchisees list error, returning static backup:', str(err))
                 return jsonify(initial_franchisees)
     except Exception as e:
         return jsonify({ 'error': str(e) }), 500
@@ -1880,7 +1901,7 @@ def get_action_items():
                     })
                 elif amount_received < service_charges - 1.00:
                     if bill_date:
-                        days_old = (today - bill_date).days
+                        days_old = safe_date_diff_days(today, bill_date)
                         if days_old >= 30:
                             priority = 'Medium' if days_old <= 60 else 'High'
                             
@@ -1892,7 +1913,7 @@ def get_action_items():
                                     bd_name = r['nameOfBd'] or 'Unknown'
                                     fran_name = r['franchiseName'] or 'Unknown'
                                     tl_name = r['teamLeaderName'] or 'Unknown'
-                                    alloc_date = r['dateOfAllocation']
+                                    alloc_date = safe_parse_date(r['dateOfAllocation'])
                                     
                                     # Industry mapping preference
                                     if r.get('industry'):
@@ -1934,11 +1955,11 @@ def get_action_items():
                                     fran_freq = int(fran_freq_map.get(fran_name, 1))
                                     company_freq = int(comp_freq_map.get(r['companyName'], 1))
                                     
-                                    days_since_invoice = (as_of - bill_date).days
+                                    days_since_invoice = safe_date_diff_days(as_of, bill_date)
                                     
                                     # Client tenure days
-                                    date_acquired = r.get('dateClientAcquired')
-                                    client_tenure_days = (alloc_date - date_acquired).days if (alloc_date and date_acquired) else 0
+                                    date_acquired = safe_parse_date(r.get('dateClientAcquired'))
+                                    client_tenure_days = safe_date_diff_days(alloc_date, date_acquired)
                                     
                                     # features_pend = ['industry_encoded', 'feeband_encoded', 'bd_encoded', 'franchisee_freq', 'company_freq', 'teamlead_encoded', 'days_since_invoice', 'client_tenure_days']
                                     features = [[ind_enc, fee_enc, bd_enc, fran_freq, company_freq, tl_enc, days_since_invoice, client_tenure_days]]
@@ -2741,7 +2762,8 @@ def get_active_predictions():
             bill_amt = float(r['bill_amount'] or 0.0)
             fran_name = r['franchiseeName'] or 'Unknown'
             tl_name = r['teamLeaderName'] or 'Unknown'
-            alloc_date = r['dateOfAllocation']
+            alloc_date = safe_parse_date(r['dateOfAllocation'])
+            as_of_date = safe_parse_date(as_of) or datetime.date.today()
             
             # Feature extraction
             # 1. Industry — prefer the real column when populated; fall back to keyword guess.
@@ -2769,7 +2791,7 @@ def get_active_predictions():
                 fee_band = 'Premium-Fee'
 
             # 3. Calendar temporal features
-            alloc_month = alloc_date.month if alloc_date else as_of.month
+            alloc_month = alloc_date.month if alloc_date else as_of_date.month
             alloc_quarter = (alloc_month - 1) // 3 + 1
 
             # 4. Frequencies
@@ -2777,11 +2799,11 @@ def get_active_predictions():
             company_freq = int(comp_freq_map.get(r['companyName'], 1))
 
             # 5. Enquiry Age
-            enquiry_age_days = (as_of - alloc_date).days if alloc_date else 0
+            enquiry_age_days = safe_date_diff_days(as_of_date, alloc_date)
 
             # 6. Client tenure — how long this client has existed as of allocation.
-            date_acquired = r.get('dateClientAcquired')
-            client_tenure_days = (alloc_date - date_acquired).days if (alloc_date and date_acquired) else 0
+            date_acquired = safe_parse_date(r.get('dateClientAcquired'))
+            client_tenure_days = safe_date_diff_days(alloc_date, date_acquired)
 
             leakage_prob = 15.0
             days_to_close = 45

@@ -15,6 +15,36 @@ import Reports from './pages/Reports';
 import RunwayRoiTracker from './pages/RunwayRoiTracker';
 import Login from './pages/Login';
 
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("ErrorBoundary caught an error:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '40px', color: '#fff', background: 'rgba(15, 23, 42, 0.9)', borderRadius: '12px', margin: '20px', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+          <h2 style={{ color: '#ef4444', marginBottom: '12px' }}>Something went wrong loading this view</h2>
+          <p style={{ color: '#94a3b8', marginBottom: '20px' }}>{this.state.error?.message || 'An unexpected error occurred.'}</p>
+          <button 
+            className="btn btn-primary"
+            onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload(); }}
+          >
+            Reload Application
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function AppContent() {
   const { currentUser, isSidebarOpen } = useContext(FinanceContext);
   const [activePage, setActivePage] = useState('dashboard');
@@ -57,7 +87,9 @@ function AppContent() {
       {/* Primary Page Layout */}
       <main className="main-content">
         <Topbar activePage={activePage} setActivePage={setActivePage} />
-        {renderPage()}
+        <ErrorBoundary>
+          {renderPage()}
+        </ErrorBoundary>
       </main>
 
       {/* Budget Settings modal */}
