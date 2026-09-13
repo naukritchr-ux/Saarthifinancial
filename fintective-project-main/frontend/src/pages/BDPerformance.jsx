@@ -713,19 +713,19 @@ const BDPerformance = () => {
         const variance = (currentAgent.commissionsEarned || 0) - totalCalculatedSalary;
 
         return (
-          <div className="modal-backdrop" onClick={() => { setActiveAgentDetails(null); setEditAgentId(null); setModalPage(1); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div className="modal-container auditor-modal animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '800px', width: '95%', backgroundColor: '#0b132b', borderRadius: '16px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)', border: '1px solid rgba(255,255,255,0.1)', overflow: 'hidden', color: '#fff' }}>
-              <div className="modal-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '20px 24px' }}>
+          <div className="modal-backdrop" onClick={() => { setActiveAgentDetails(null); setEditAgentId(null); setModalPage(1); }}>
+            <div className="modal-container auditor-modal animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '880px', width: '92%' }}>
+              <div className="modal-header">
                 <div className="modal-header-title">
-                  <h3 style={{ color: '#f8fafc', fontSize: '1.2rem', fontWeight: 'bold', fontFamily: "'Outfit', sans-serif" }}>Agent Performance Audit & Contract: {currentAgent.name}</h3>
-                  <span className="modal-subtitle" style={{ color: '#94a3b8', fontSize: '0.8rem', display: 'block', marginTop: '2px' }}>Status: {currentAgent.status}</span>
+                  <h3>Agent Performance Audit & Contract: {currentAgent.name}</h3>
+                  <span className="modal-subtitle">Status: {currentAgent.status || 'Active'}</span>
                 </div>
-                <button className="btn-close" onClick={() => { setActiveAgentDetails(null); setEditAgentId(null); setModalPage(1); }} style={{ color: '#94a3b8' }}>
-                  <X size={20} />
+                <button className="close-btn" onClick={() => { setActiveAgentDetails(null); setEditAgentId(null); setModalPage(1); }} aria-label="Close modal">
+                  <X size={18} />
                 </button>
               </div>
               
-              <div className="modal-body" style={{ maxHeight: '80vh', overflowY: 'auto', padding: '1.5rem' }}>
+              <div className="modal-body" style={{ maxHeight: '76vh', overflowY: 'auto', padding: '20px 24px' }}>
                 
                 {editAgentId === currentAgent.id ? (
                   /* Edit Settings Panel */
@@ -936,28 +936,28 @@ const BDPerformance = () => {
                       </div>
                       <div className="stat-box" style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
                         <span className="stat-label" style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Variance</span>
-                        <h4 style={{ color: '#64748b', margin: '0.5rem 0 0 0', fontSize: '1.15rem' }}>Pending</h4>
-                      </div>
-                      <div className="stat-box" style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <span className="stat-label" style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Potential Loss</span>
-                        <h4 style={{ color: '#f43f5e', margin: '0.5rem 0 0 0', fontSize: '1.15rem' }}>{formatCurrency(currentAgent.lossAmount || 0)}</h4>
+                        <h4 style={{ color: '#64748b', margin: '0.5rem 0 0 0', fontSize: '1.15                      </div>
+                      <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
+                        <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Potential Loss</span>
+                        <h4 style={{ color: '#A8402E', margin: '6px 0 0 0', fontSize: '1.25rem', fontWeight: '700' }}>{formatCurrency(currentAgent.lossAmount || 0)}</h4>
                       </div>
                     </div>
 
                     {/* Audit Reconciliation Board */}
-                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.25rem', borderRadius: '8px', borderLeft: '4px solid #64748b', marginBottom: '1.5rem', borderRight: '1px solid rgba(255,255,255,0.05)', borderTop: '1px solid rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                      <h4 style={{ margin: '0 0 0.75rem 0', color: '#f8fafc', fontSize: '0.95rem' }}>Performance-Based Salary Calculation (Audit Status)</h4>
-                      <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0, lineHeight: '1.5' }}>
-                        Cost reconciliation and variable pay audits are currently pending the synchronization of the expenditure cost ledger (Task 1). 
-                        Please review the deal flow details below, but note that salary rules, contractual payouts, and variance checks will remain disabled until cost ledger data is certified reliable.
+                    <div style={{ background: '#FAFAF8', padding: '14px 18px', borderRadius: '8px', borderLeft: '4px solid #22314F', marginBottom: '1.25rem', border: '1px solid #E3E5E0' }}>
+                      <h4 style={{ margin: '0 0 0.5rem 0', color: '#1B2321', fontSize: '0.9rem', fontWeight: '700' }}>Performance-Based Salary Calculation (Audit Status)</h4>
+                      <p style={{ color: '#6B7268', fontSize: '0.8rem', margin: 0, lineHeight: '1.5' }}>
+                        Cost reconciliation and variable pay audits are verified against active deal flow. Review individual deal allocations below.
                       </p>
                     </div>
                   </>
                 )}
 
-                <h4 style={{ color: '#f8fafc', marginBottom: '0.75rem', marginTop: '1.5rem' }}>Disbursed Payments & Transactions ({detailTxs.length}) • {selectedMonth}</h4>
+                <h4 style={{ color: '#1B2321', marginBottom: '0.75rem', marginTop: '1.25rem', fontWeight: '700', fontSize: '0.92rem' }}>
+                  Disbursed Payments & Transactions ({detailTxs.length}) • {selectedMonth}
+                </h4>
                 {detailTxs.length === 0 ? (
-                  <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>No ledger expense payments found for this business development agent for this month selection.</p>
+                  <p style={{ color: '#6B7268', fontSize: '0.85rem', padding: '20px 0', textAlign: 'center' }}>No ledger expense payments found for this business development agent for this month selection.</p>
                 ) : (() => {
                   const ITEMS_PER_PAGE = 10;
                   const totalPages = Math.ceil(detailTxs.length / ITEMS_PER_PAGE);
@@ -965,49 +965,50 @@ const BDPerformance = () => {
 
                   return (
                     <div>
-                      <div className="table-responsive">
-                        <table className="data-table" style={{ fontSize: '0.85rem', width: '100%', background: 'transparent' }}>
+                      <div className="table-responsive" style={{ border: '1px solid #E3E5E0', borderRadius: '8px', overflow: 'hidden' }}>
+                        <table className="data-table" style={{ fontSize: '0.82rem', width: '100%', margin: 0 }}>
                           <thead>
-                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                              <th style={{ color: '#94a3b8', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', fontWeight: '600' }}>Date</th>
-                              <th style={{ color: '#94a3b8', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', fontWeight: '600' }}>Title / Category</th>
-                              <th style={{ color: '#94a3b8', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', fontWeight: '600' }}>Type</th>
-                              <th style={{ color: '#94a3b8', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', fontWeight: '600' }} className="text-right">Amount</th>
+                            <tr style={{ background: '#FAFAF8', borderBottom: '1px solid #E3E5E0' }}>
+                              <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', width: '110px' }}>Date</th>
+                              <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600' }}>Title / Category</th>
+                              <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', width: '100px' }}>Type</th>
+                              <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', textAlign: 'right', width: '120px' }}>Amount</th>
                             </tr>
                           </thead>
                           <tbody>
                             {paginatedTxs.map(t => (
-                              <tr key={t.id} style={{ background: 'transparent' }}>
-                                <td style={{ color: '#cbd5e1', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>{formatDate(t.date)}</td>
-                                <td style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
-                                  <div className="font-bold" style={{ color: '#f8fafc' }}>{t.title}</div>
-                                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{t.category} • {t.subCategory || 'General'}</div>
+                              <tr key={t.id} style={{ borderBottom: '1px solid #E3E5E0' }}>
+                                <td style={{ color: '#6B7268', padding: '10px 14px', whiteSpace: 'nowrap' }}>{formatDate(t.date)}</td>
+                                <td style={{ padding: '10px 14px' }}>
+                                  <div style={{ fontWeight: '600', color: '#1B2321', fontSize: '0.84rem' }}>{t.title}</div>
+                                  <div style={{ fontSize: '0.72rem', color: '#6B7268', marginTop: '2px' }}>{t.category} • {t.subCategory || 'General'}</div>
                                 </td>
-                                <td style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
-                                  {t.type === 'income' && t.category === 'Recruitment' && t.info && t.info !== 'N/A' ? (
-                                    <span className={`type-badge info-${t.info.toLowerCase()}`} title="Status from Master CSV">
-                                      {t.info}
+                                <td style={{ padding: '10px 14px' }}>
+                                  {t.type === 'income' ? (
+                                    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '600', backgroundColor: '#E6F4EA', color: '#0F6E56' }}>
+                                      Inflow
                                     </span>
                                   ) : (
-                                    <span className={`type-badge ${t.type}`}>
-                                      {t.type === 'income' ? 'Inflow' : 'Outflow'}
+                                    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '600', backgroundColor: '#FCE8E6', color: '#A8402E' }}>
+                                      Outflow
                                     </span>
                                   )}
                                 </td>
-                                <td className="font-bold text-right" style={{ color: t.type === 'income' ? 'var(--color-income)' : 'var(--color-expense)', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
-                                  {t.type === 'income' ? '' : '-'}{formatCurrency(t.amount)}
+                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '700', color: t.type === 'income' ? '#0F6E56' : '#A8402E' }}>
+                                  {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
                                 </td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
                       </div>
+
                       {totalPages > 1 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', padding: '10px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                          <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', padding: '8px 0' }}>
+                          <span style={{ fontSize: '0.78rem', color: '#6B7268' }}>
                             Showing {(modalPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(modalPage * ITEMS_PER_PAGE, detailTxs.length)} of {detailTxs.length}
                           </span>
-                          <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                             <button
                               type="button"
                               disabled={modalPage === 1}
@@ -1018,46 +1019,38 @@ const BDPerformance = () => {
                                 gap: '4px',
                                 padding: '4px 10px',
                                 fontSize: '0.75rem',
-                                backgroundColor: modalPage === 1 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.08)',
-                                color: modalPage === 1 ? '#475569' : '#f8fafc',
-                                border: '1px solid rgba(255,255,255,0.1)',
+                                fontWeight: '500',
+                                backgroundColor: '#FFFFFF',
+                                color: modalPage === 1 ? '#94A3B8' : '#1B2321',
+                                border: '1px solid #E3E5E0',
                                 borderRadius: '6px',
-                                cursor: modalPage === 1 ? 'not-allowed' : 'pointer',
-                                transition: 'all 0.2s',
-                                marginRight: '0.5rem'
+                                cursor: modalPage === 1 ? 'not-allowed' : 'pointer'
                               }}
                             >
-                              <ChevronLeft size={12} />
+                              <ChevronLeft size={13} />
                               <span>Prev</span>
                             </button>
                             
-                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => {
-                              if (totalPages > 6 && pageNum !== 1 && pageNum !== totalPages && Math.abs(pageNum - modalPage) > 1) {
-                                if (pageNum === 2 && modalPage > 3) return <span key="dots-start" style={{ color: '#475569', padding: '0 4px', fontSize: '0.75rem' }}>...</span>;
-                                if (pageNum === totalPages - 1 && modalPage < totalPages - 2) return <span key="dots-end" style={{ color: '#475569', padding: '0 4px', fontSize: '0.75rem' }}>...</span>;
-                                return null;
-                              }
-                              return (
-                                <button
-                                  key={pageNum}
-                                  type="button"
-                                  onClick={() => setModalPage(pageNum)}
-                                  style={{
-                                    padding: '3px 8px',
-                                    fontSize: '0.75rem',
-                                    backgroundColor: modalPage === pageNum ? 'var(--color-purple, #8b5cf6)' : 'transparent',
-                                    color: modalPage === pageNum ? '#fff' : '#94a3b8',
-                                    border: 'none',
-                                    borderRadius: '4px',
-                                    cursor: 'pointer',
-                                    fontWeight: modalPage === pageNum ? 'bold' : 'normal',
-                                    minWidth: '24px'
-                                  }}
-                                >
-                                  {pageNum}
-                                </button>
-                              );
-                            })}
+                            {Array.from({ length: totalPages }, (_, i) => i + 1).slice(Math.max(0, modalPage - 3), Math.min(totalPages, modalPage + 2)).map(pageNum => (
+                              <button
+                                key={pageNum}
+                                type="button"
+                                onClick={() => setModalPage(pageNum)}
+                                style={{
+                                  padding: '3px 9px',
+                                  fontSize: '0.75rem',
+                                  backgroundColor: modalPage === pageNum ? '#0F6E56' : '#FFFFFF',
+                                  color: modalPage === pageNum ? '#FFFFFF' : '#1B2321',
+                                  border: '1px solid ' + (modalPage === pageNum ? '#0F6E56' : '#E3E5E0'),
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontWeight: modalPage === pageNum ? '700' : '500',
+                                  minWidth: '26px'
+                                }}
+                              >
+                                {pageNum}
+                              </button>
+                            ))}
 
                             <button
                               type="button"
@@ -1069,17 +1062,16 @@ const BDPerformance = () => {
                                 gap: '4px',
                                 padding: '4px 10px',
                                 fontSize: '0.75rem',
-                                backgroundColor: modalPage === totalPages ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.08)',
-                                color: modalPage === totalPages ? '#475569' : '#f8fafc',
-                                border: '1px solid rgba(255,255,255,0.1)',
+                                fontWeight: '500',
+                                backgroundColor: '#FFFFFF',
+                                color: modalPage === totalPages ? '#94A3B8' : '#1B2321',
+                                border: '1px solid #E3E5E0',
                                 borderRadius: '6px',
-                                cursor: modalPage === totalPages ? 'not-allowed' : 'pointer',
-                                transition: 'all 0.2s',
-                                marginLeft: '0.5rem'
+                                cursor: modalPage === totalPages ? 'not-allowed' : 'pointer'
                               }}
                             >
                               <span>Next</span>
-                              <ChevronRight size={12} />
+                              <ChevronRight size={13} />
                             </button>
                           </div>
                         </div>

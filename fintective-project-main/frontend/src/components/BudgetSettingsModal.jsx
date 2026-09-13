@@ -53,21 +53,21 @@ const BudgetSettingsModal = ({ isOpen, onClose }) => {
 
   return (
     <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
-      <div className="modal-container budget-settings-modal animate-slide-up" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', width: '90%', backgroundColor: '#0b132b', border: '1px solid rgba(255, 255, 255, 0.1)', color: '#fff', borderRadius: '16px', overflow: 'hidden' }}>
+      <div className="modal-container budget-settings-modal animate-slide-up" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', width: '90%', backgroundColor: '#FFFFFF', border: '1px solid #E3E5E0', color: '#1B2321', borderRadius: '14px', boxShadow: '0 20px 45px -10px rgba(0,0,0,0.18)', overflow: 'hidden' }}>
         
         {/* Header */}
-        <div className="modal-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '20px 24px' }}>
+        <div className="modal-header" style={{ borderBottom: '1px solid #E3E5E0', padding: '18px 24px', backgroundColor: '#FAFBFA', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div className="modal-header-title">
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f8fafc', margin: 0 }}>
-              <Settings size={20} className="menu-icon" style={{ stroke: 'var(--accent-teal)' }} />
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#1B2321', margin: 0, fontSize: '1.05rem', fontWeight: '700' }}>
+              <Settings size={19} style={{ stroke: '#0F6E56' }} />
               <span>Budget Allocation Settings</span>
             </h3>
-            <span className="modal-subtitle" style={{ color: '#94a3b8', fontSize: '0.8rem', display: 'block', marginTop: '2px' }}>
+            <span className="modal-subtitle" style={{ color: '#6B7268', fontSize: '0.8rem', display: 'block', marginTop: '2px' }}>
               Set monthly overhead expenditure limits for warning triggers
             </span>
           </div>
-          <button className="modal-close-btn" onClick={onClose} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>
-            <X size={20} />
+          <button className="modal-close-btn" onClick={onClose} style={{ background: '#F1F3F0', border: 'none', color: '#1B2321', cursor: 'pointer', borderRadius: '6px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <X size={16} />
           </button>
         </div>
 
@@ -76,21 +76,21 @@ const BudgetSettingsModal = ({ isOpen, onClose }) => {
           <div className="modal-body" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             
             {!isAdmin ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', padding: '12px', borderRadius: '6px', color: '#ef4444', fontSize: '0.85rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#FDF2F2', border: '1px solid #F8D7DA', padding: '12px', borderRadius: '8px', color: '#A8402E', fontSize: '0.85rem' }}>
                 <AlertTriangle size={18} />
                 <span><strong>Access Restricted:</strong> Only administrators can edit the budget allocation thresholds. Log in as Admin to configure.</span>
               </div>
             ) : null}
 
             {Object.keys(localBudgets).length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#94a3b8', padding: '20px' }}>Loading budget configurations...</div>
+              <div style={{ textAlign: 'center', color: '#6B7268', padding: '20px' }}>Loading budget configurations...</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {Object.entries(localBudgets).map(([category, amount]) => (
-                  <div key={category} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#cbd5e1' }}>{category}</label>
+                  <div key={category} style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    <label style={{ fontSize: '0.82rem', fontWeight: '600', color: '#374151' }}>{category}</label>
                     <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                      <span style={{ position: 'absolute', left: '12px', color: '#94a3b8', fontSize: '0.9rem', fontWeight: 'bold' }}>₹</span>
+                      <span style={{ position: 'absolute', left: '12px', color: '#6B7268', fontSize: '0.9rem', fontWeight: '600' }}>₹</span>
                       <input
                         type="number"
                         value={amount === 0 ? '' : amount}
@@ -101,13 +101,14 @@ const BudgetSettingsModal = ({ isOpen, onClose }) => {
                         disabled={!isAdmin || isSaving}
                         style={{
                           width: '100%',
-                          background: 'rgba(255,255,255,0.03)',
-                          border: '1px solid rgba(255,255,255,0.08)',
+                          background: '#FFFFFF',
+                          border: '1px solid #D1D5DB',
                           borderRadius: '8px',
-                          padding: '10px 12px 10px 24px',
-                          color: '#f8fafc',
-                          fontSize: '0.9rem',
-                          outline: 'none'
+                          padding: '9px 12px 9px 26px',
+                          color: '#1B2321',
+                          fontSize: '0.88rem',
+                          outline: 'none',
+                          boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.03)'
                         }}
                       />
                     </div>
@@ -117,18 +118,18 @@ const BudgetSettingsModal = ({ isOpen, onClose }) => {
             )}
 
             {saveSuccess && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', padding: '10px 12px', borderRadius: '6px', marginTop: '8px' }}>
-                <CheckCircle2 color="#10b981" size={18} />
-                <div style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>
-                  <strong style={{ color: '#10b981' }}>Success!</strong> Budgets have been successfully saved to the database.
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#E6F4EA', border: '1px solid #CEEAD6', padding: '10px 12px', borderRadius: '8px', marginTop: '8px' }}>
+                <CheckCircle2 color="#0F6E56" size={18} />
+                <div style={{ fontSize: '0.85rem', color: '#0F6E56' }}>
+                  <strong>Success!</strong> Budgets have been successfully saved to the database.
                 </div>
               </div>
             )}
           </div>
 
           {/* Footer */}
-          <div className="modal-footer" style={{ padding: '16px 24px', background: 'rgba(255,255,255,0.01)', borderTop: '1px solid rgba(255,255,255,0.03)', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={isSaving}>
+          <div className="modal-footer" style={{ padding: '14px 24px', background: '#F8F9FA', borderTop: '1px solid #E3E5E0', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={isSaving} style={{ backgroundColor: '#FFFFFF', border: '1px solid #D1D5DB', color: '#374151', padding: '8px 16px', borderRadius: '8px', fontWeight: '500', cursor: 'pointer' }}>
               Close
             </button>
             {isAdmin && (
@@ -136,7 +137,7 @@ const BudgetSettingsModal = ({ isOpen, onClose }) => {
                 type="submit"
                 className="btn btn-primary"
                 disabled={isSaving}
-                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#0F6E56', color: '#FFFFFF', border: 'none', padding: '8px 18px', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}
               >
                 <Save size={16} />
                 <span>{isSaving ? 'Saving...' : 'Save Settings'}</span>

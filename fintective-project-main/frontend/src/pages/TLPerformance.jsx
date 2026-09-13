@@ -389,62 +389,80 @@ const TLPerformance = () => {
 
         return (
           <div className="modal-backdrop" onClick={() => setActiveTLDetails(null)}>
-            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '900px', width: '90%' }}>
+            <div className="modal-content animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '960px', width: '92%' }}>
               <div className="modal-header">
-                <h3>Performance Audit: {currentTL.name}</h3>
-                <button className="close-btn" onClick={() => setActiveTLDetails(null)}><X size={18} /></button>
+                <div className="modal-header-title">
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#1B2321', fontWeight: '700' }}>
+                    Performance Audit: {currentTL.name}
+                  </h3>
+                  <span className="modal-subtitle" style={{ color: '#6B7268', fontSize: '0.8rem', marginTop: '2px', display: 'block' }}>
+                    Team Leader Pipeline & Placement Realization • {activePeriodLabel}
+                  </span>
+                </div>
+                <button className="close-btn" onClick={() => setActiveTLDetails(null)} aria-label="Close modal">
+                  <X size={18} />
+                </button>
               </div>
-              <div className="modal-body" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
-                <h4 style={{ color: '#f8fafc', margin: '0 0 0.75rem 0' }}>Enquiry Pipeline & Realization</h4>
+
+              <div className="modal-body" style={{ maxHeight: '76vh', overflowY: 'auto', padding: '20px 24px', backgroundColor: '#FFFFFF' }}>
+                <h4 style={{ color: '#1B2321', margin: '0 0 0.75rem 0', fontWeight: '700', fontSize: '0.92rem' }}>
+                  Enquiry Pipeline & Realization
+                </h4>
                 
                 {/* Progress Bar */}
-                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '1.5rem' }}>
-                  <div style={{ display: 'flex', height: '24px', borderRadius: '6px', overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                <div style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0', marginBottom: '1.25rem' }}>
+                  <div style={{ display: 'flex', height: '22px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#E3E5E0' }}>
                     {progressedPct > 0 && (
-                      <div style={{ width: `${progressedPct}%`, backgroundColor: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.75rem', fontWeight: 'bold' }} title={`${currentTL.enquiriesProgressed} Progressed`}>
+                      <div style={{ width: `${progressedPct}%`, backgroundColor: '#0F6E56', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.72rem', fontWeight: '600' }} title={`${currentTL.enquiriesProgressed} Progressed`}>
                         {currentTL.enquiriesProgressed} Prog ({progressedPct.toFixed(0)}%)
                       </div>
                     )}
                     {cancelledPct > 0 && (
-                      <div style={{ width: `${cancelledPct}%`, backgroundColor: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.75rem', fontWeight: 'bold' }} title={`${currentTL.enquiriesCancelled} Cancelled`}>
+                      <div style={{ width: `${cancelledPct}%`, backgroundColor: '#A8402E', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.72rem', fontWeight: '600' }} title={`${currentTL.enquiriesCancelled} Cancelled`}>
                         {currentTL.enquiriesCancelled} Cancel ({cancelledPct.toFixed(0)}%)
                       </div>
                     )}
                     {internallyClosedPct > 0 && (
-                      <div style={{ width: `${internallyClosedPct}%`, backgroundColor: '#ea580c', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.75rem', fontWeight: 'bold' }} title={`${currentTL.enquiriesInternallyClosed} Internally Closed`}>
-                        {currentTL.enquiriesInternallyClosed} Int. Close ({internallyClosedPct.toFixed(0)}%)
+                      <div style={{ width: `${internallyClosedPct}%`, backgroundColor: '#B7791F', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.72rem', fontWeight: '600' }} title={`${currentTL.enquiriesInternallyClosed} Internally Closed`}>
+                        {currentTL.enquiriesInternallyClosed} Int. ({internallyClosedPct.toFixed(0)}%)
                       </div>
                     )}
                     {pendingPct > 0 && (
-                      <div style={{ width: `${pendingPct}%`, backgroundColor: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.75rem', fontWeight: 'bold' }} title={`${currentTL.totalEnquiries - currentTL.enquiriesProgressed - currentTL.enquiriesCancelled - currentTL.enquiriesInternallyClosed} Pending`}>
+                      <div style={{ width: `${pendingPct}%`, backgroundColor: '#94A3B8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.72rem', fontWeight: '600' }} title={`${currentTL.totalEnquiries - currentTL.enquiriesProgressed - currentTL.enquiriesCancelled - currentTL.enquiriesInternallyClosed} Pending`}>
                         Pending ({pendingPct.toFixed(0)}%)
                       </div>
                     )}
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.75rem', color: '#94a3b8' }}>
-                    <span>Total Enquiries: {currentTL.totalEnquiries}</span>
-                    <span>Pipeline Realization: {(((currentTL.enquiriesProgressed || 0) + (currentTL.enquiriesCancelled || 0) + (currentTL.enquiriesInternallyClosed || 0)) / total * 100).toFixed(0)}%</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.75rem', color: '#6B7268', fontWeight: '500' }}>
+                    <span>Total Enquiries: <strong style={{ color: '#1B2321' }}>{currentTL.totalEnquiries}</strong></span>
+                    <span>Pipeline Realization: <strong style={{ color: '#0F6E56' }}>{(((currentTL.enquiriesProgressed || 0) + (currentTL.enquiriesCancelled || 0) + (currentTL.enquiriesInternallyClosed || 0)) / total * 100).toFixed(0)}%</strong></span>
                   </div>
                 </div>
 
-                <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-                  <div className="stat-box" style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span className="stat-label" style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Gross Revenue (Service Amt)</span>
-                    <h4 style={{ color: 'var(--accent-teal)', margin: '0.5rem 0 0 0', fontSize: '1.25rem' }}>{formatCurrency(currentTL.grossRevenue)}</h4>
+                {/* KPI Metrics */}
+                <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '1.5rem' }}>
+                  <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
+                    <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Gross Revenue (Service Amt)</span>
+                    <h4 style={{ color: '#0F6E56', margin: '6px 0 0 0', fontSize: '1.25rem', fontWeight: '700' }}>{formatCurrency(currentTL.grossRevenue)}</h4>
                   </div>
-                  <div className="stat-box" style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span className="stat-label" style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Net Revenue (R Share)</span>
-                    <h4 style={{ color: '#38bdf8', margin: '0.5rem 0 0 0', fontSize: '1.25rem' }}>{formatCurrency(currentTL.netRevenue)}</h4>
+                  <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
+                    <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Net Revenue (R Share)</span>
+                    <h4 style={{ color: '#22314F', margin: '6px 0 0 0', fontSize: '1.25rem', fontWeight: '700' }}>{formatCurrency(currentTL.netRevenue)}</h4>
                   </div>
-                  <div className="stat-box" style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span className="stat-label" style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Potential Revenue Loss</span>
-                    <h4 style={{ color: '#ef4444', margin: '0.5rem 0 0 0', fontSize: '1.25rem' }}>{formatCurrency(currentTL.lossAmount)}</h4>
+                  <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
+                    <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Potential Revenue Loss</span>
+                    <h4 style={{ color: '#A8402E', margin: '6px 0 0 0', fontSize: '1.25rem', fontWeight: '700' }}>{formatCurrency(currentTL.lossAmount)}</h4>
                   </div>
                 </div>
 
-                <h4 style={{ color: '#f8fafc', marginBottom: '0.75rem', marginTop: '1.5rem' }}>Closed Placement Inflows ({detailTxs.length}) • {activePeriodLabel}</h4>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', marginTop: '1.25rem' }}>
+                  <h4 style={{ color: '#1B2321', margin: 0, fontWeight: '700', fontSize: '0.92rem' }}>
+                    Closed Placement Inflows ({detailTxs.length}) • {activePeriodLabel}
+                  </h4>
+                </div>
+
                 {detailTxs.length === 0 ? (
-                  <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>No closed placement income transactions linked to this team leader for this period.</p>
+                  <p style={{ color: '#6B7268', fontSize: '0.85rem', padding: '20px 0', textAlign: 'center' }}>No closed placement income transactions linked to this team leader for this period.</p>
                 ) : (() => {
                   const ITEMS_PER_PAGE = 10;
                   const totalPages = Math.ceil(detailTxs.length / ITEMS_PER_PAGE);
@@ -452,40 +470,42 @@ const TLPerformance = () => {
 
                   return (
                     <div>
-                      <div className="table-responsive">
-                        <table className="data-table" style={{ fontSize: '0.85rem', width: '100%', background: 'transparent' }}>
+                      <div className="table-responsive" style={{ border: '1px solid #E3E5E0', borderRadius: '8px', overflow: 'hidden' }}>
+                        <table className="data-table" style={{ fontSize: '0.82rem', width: '100%', margin: 0 }}>
                           <thead>
-                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                              <th style={{ color: '#94a3b8', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', fontWeight: '600' }}>Date</th>
-                              <th style={{ color: '#94a3b8', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', fontWeight: '600' }}>Inflow Detail / Position</th>
-                              <th style={{ color: '#94a3b8', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', fontWeight: '600' }}>Status</th>
-                              <th style={{ color: '#94a3b8', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', fontWeight: '600' }} className="text-right">Service Amt</th>
-                              <th style={{ color: '#94a3b8', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', fontWeight: '600' }} className="text-right">R Share</th>
+                            <tr style={{ background: '#FAFAF8', borderBottom: '1px solid #E3E5E0' }}>
+                              <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', width: '110px' }}>Date</th>
+                              <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600' }}>Inflow Detail / Position</th>
+                              <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', width: '100px' }}>Status</th>
+                              <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', textAlign: 'right', width: '120px' }}>Service Amt</th>
+                              <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', textAlign: 'right', width: '120px' }}>R Share</th>
                             </tr>
                           </thead>
                           <tbody>
                             {paginatedTxs.map(t => (
-                              <tr key={t.id} style={{ background: 'transparent' }}>
-                                <td style={{ color: '#cbd5e1', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>{formatDate(t.date)}</td>
-                                <td style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
-                                  <div className="font-bold" style={{ color: '#f8fafc' }}>{t.title}</div>
-                                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Category: {t.category} • {t.subCategory || 'General'}</div>
+                              <tr key={t.id} style={{ borderBottom: '1px solid #E3E5E0' }}>
+                                <td style={{ color: '#6B7268', padding: '10px 14px', whiteSpace: 'nowrap' }}>{formatDate(t.date)}</td>
+                                <td style={{ padding: '10px 14px' }}>
+                                  <div style={{ fontWeight: '600', color: '#1B2321', fontSize: '0.84rem' }}>{t.title}</div>
+                                  <div style={{ fontSize: '0.72rem', color: '#6B7268', marginTop: '2px' }}>Category: {t.category} • {t.subCategory || 'General'}</div>
                                 </td>
-                                <td style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
-                                  {t.category === 'Recruitment' && t.info && t.info !== 'N/A' ? (
-                                    <span className={`type-badge info-${t.info.toLowerCase()}`} title="Status from Master CSV">
-                                      {t.info}
-                                    </span>
-                                  ) : (
-                                    <span className={`type-badge income`} style={{ textTransform: 'capitalize' }}>
-                                      {t.enquiryStatus || 'closed'}
-                                    </span>
-                                  )}
+                                <td style={{ padding: '10px 14px' }}>
+                                  <span style={{
+                                    display: 'inline-block',
+                                    padding: '2px 8px',
+                                    borderRadius: '4px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: '600',
+                                    backgroundColor: '#E6F4EA',
+                                    color: '#0F6E56'
+                                  }}>
+                                    {t.enquiryStatus || 'Closed'}
+                                  </span>
                                 </td>
-                                <td className="font-bold text-right text-teal" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '700', color: '#1B2321' }}>
                                   {formatCurrency(t.serviceAmt || t.amount)}
                                 </td>
-                                <td className="font-bold text-right text-blue" style={{ color: '#38bdf8', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
+                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '700', color: '#0F6E56' }}>
                                   {formatCurrency(t.rShare)}
                                 </td>
                               </tr>
@@ -493,12 +513,13 @@ const TLPerformance = () => {
                           </tbody>
                         </table>
                       </div>
+
                       {totalPages > 1 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', padding: '10px 0', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-                          <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                            Showing {(modalPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(modalPage * ITEMS_PER_PAGE, detailTxs.length)} of {detailTxs.length}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', padding: '8px 0' }}>
+                          <span style={{ fontSize: '0.78rem', color: '#6B7268' }}>
+                            Showing {(modalPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(modalPage * ITEMS_PER_PAGE, detailTxs.length)} of {detailTxs.length} records
                           </span>
-                          <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                             <button
                               type="button"
                               disabled={modalPage === 1}
@@ -509,33 +530,33 @@ const TLPerformance = () => {
                                 gap: '4px',
                                 padding: '4px 10px',
                                 fontSize: '0.75rem',
-                                backgroundColor: modalPage === 1 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.08)',
-                                color: modalPage === 1 ? '#475569' : '#f8fafc',
-                                border: '1px solid rgba(255,255,255,0.1)',
+                                fontWeight: '500',
+                                backgroundColor: '#FFFFFF',
+                                color: modalPage === 1 ? '#94A3B8' : '#1B2321',
+                                border: '1px solid #E3E5E0',
                                 borderRadius: '6px',
-                                cursor: modalPage === 1 ? 'not-allowed' : 'pointer',
-                                marginRight: '0.5rem'
+                                cursor: modalPage === 1 ? 'not-allowed' : 'pointer'
                               }}
                             >
-                              <ChevronLeft size={12} />
+                              <ChevronLeft size={13} />
                               <span>Prev</span>
                             </button>
                             
-                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
+                            {Array.from({ length: totalPages }, (_, i) => i + 1).slice(Math.max(0, modalPage - 3), Math.min(totalPages, modalPage + 2)).map(pageNum => (
                               <button
                                 key={pageNum}
                                 type="button"
                                 onClick={() => setModalPage(pageNum)}
                                 style={{
-                                  padding: '3px 8px',
+                                  padding: '3px 9px',
                                   fontSize: '0.75rem',
-                                  backgroundColor: modalPage === pageNum ? 'var(--color-purple, #8b5cf6)' : 'transparent',
-                                  color: modalPage === pageNum ? '#fff' : '#94a3b8',
-                                  border: 'none',
-                                  borderRadius: '4px',
+                                  backgroundColor: modalPage === pageNum ? '#0F6E56' : '#FFFFFF',
+                                  color: modalPage === pageNum ? '#FFFFFF' : '#1B2321',
+                                  border: '1px solid ' + (modalPage === pageNum ? '#0F6E56' : '#E3E5E0'),
+                                  borderRadius: '6px',
                                   cursor: 'pointer',
-                                  fontWeight: modalPage === pageNum ? 'bold' : 'normal',
-                                  minWidth: '24px'
+                                  fontWeight: modalPage === pageNum ? '700' : '500',
+                                  minWidth: '26px'
                                 }}
                               >
                                 {pageNum}
@@ -552,16 +573,16 @@ const TLPerformance = () => {
                                 gap: '4px',
                                 padding: '4px 10px',
                                 fontSize: '0.75rem',
-                                backgroundColor: modalPage === totalPages ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.08)',
-                                color: modalPage === totalPages ? '#475569' : '#f8fafc',
-                                border: '1px solid rgba(255,255,255,0.1)',
+                                fontWeight: '500',
+                                backgroundColor: '#FFFFFF',
+                                color: modalPage === totalPages ? '#94A3B8' : '#1B2321',
+                                border: '1px solid #E3E5E0',
                                 borderRadius: '6px',
-                                cursor: modalPage === totalPages ? 'not-allowed' : 'pointer',
-                                marginLeft: '0.5rem'
+                                cursor: modalPage === totalPages ? 'not-allowed' : 'pointer'
                               }}
                             >
                               <span>Next</span>
-                              <ChevronRight size={12} />
+                              <ChevronRight size={13} />
                             </button>
                           </div>
                         </div>

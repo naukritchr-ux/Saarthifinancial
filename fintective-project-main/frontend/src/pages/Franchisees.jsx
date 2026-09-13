@@ -504,75 +504,75 @@ const Franchisees = () => {
           return txMonthYear === selectedMonth;
         });
         return (
-          <div className="modal-backdrop" onClick={() => setActiveFranchiseeDetails(null)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div className="modal-container auditor-modal animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '750px', width: '90%', backgroundColor: '#0b132b', borderRadius: '16px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)', border: '1px solid rgba(255,255,255,0.1)', overflow: 'hidden', color: '#fff' }}>
-              <div className="modal-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '20px 24px' }}>
+          <div className="modal-backdrop" onClick={() => setActiveFranchiseeDetails(null)}>
+            <div className="modal-container auditor-modal animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '820px', width: '92%' }}>
+              <div className="modal-header">
                 <div className="modal-header-title">
-                  <h3 style={{ color: '#f8fafc', fontSize: '1.2rem', fontWeight: 'bold', fontFamily: "'Outfit', sans-serif" }}>Franchise Audit: {activeFranchiseeDetails.name}</h3>
-                  <span className="modal-subtitle" style={{ color: '#94a3b8', fontSize: '0.8rem', display: 'block', marginTop: '2px' }}>{activeFranchiseeDetails.city} Hub • Owned by {activeFranchiseeDetails.owner}</span>
+                  <h3>Franchise Audit: {activeFranchiseeDetails.name}</h3>
+                  <span className="modal-subtitle">{activeFranchiseeDetails.city} Hub • Owned by {activeFranchiseeDetails.owner}</span>
                 </div>
-                <button className="btn-close" onClick={() => setActiveFranchiseeDetails(null)} style={{ color: '#94a3b8' }}>
-                  <X size={20} />
+                <button className="close-btn" onClick={() => setActiveFranchiseeDetails(null)} aria-label="Close modal">
+                  <X size={18} />
                 </button>
               </div>
               
-              <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto', padding: '1.5rem' }}>
-                <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-                  <div className="stat-box" style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span className="stat-label" style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Total Inflows (Revenue)</span>
-                    <h4 style={{ color: 'var(--accent-teal)', margin: '0.5rem 0 0 0', fontSize: '1.25rem' }}>{formatCurrency(activeFranchiseeDetails.revenuePaid)}</h4>
+              <div className="modal-body" style={{ maxHeight: '72vh', overflowY: 'auto', padding: '20px 24px' }}>
+                <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '1.5rem' }}>
+                  <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
+                    <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Total Inflows (Revenue)</span>
+                    <h4 style={{ color: '#0F6E56', margin: '6px 0 0 0', fontSize: '1.25rem', fontWeight: '700' }}>{formatCurrency(activeFranchiseeDetails.revenuePaid)}</h4>
                   </div>
-                  <div className="stat-box" style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span className="stat-label" style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Local Support Costs</span>
-                    <h4 style={{ color: '#ef4444', margin: '0.5rem 0 0 0', fontSize: '1.25rem' }}>
+                  <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
+                    <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Local Support Costs</span>
+                    <h4 style={{ color: '#A8402E', margin: '6px 0 0 0', fontSize: '1.25rem', fontWeight: '700' }}>
                       {activeFranchiseeDetails.costsIncurred === 0 ? (
-                        <span style={{ color: '#64748b', fontSize: '0.9rem', fontWeight: 'normal' }}>Not tracked per-location</span>
+                        <span style={{ color: '#6B7268', fontSize: '0.85rem', fontWeight: 'normal' }}>Not tracked per-location</span>
                       ) : (
                         formatCurrency(activeFranchiseeDetails.costsIncurred, true)
                       )}
                     </h4>
                   </div>
-                  <div className="stat-box" style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span className="stat-label" style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Net Contribution</span>
-                    <h4 style={{ color: activeFranchiseeDetails.netContribution >= 0 ? 'var(--accent-teal)' : '#ef4444', margin: '0.5rem 0 0 0', fontSize: '1.25rem' }}>{formatCurrency(activeFranchiseeDetails.netContribution)}</h4>
+                  <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
+                    <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Net Contribution</span>
+                    <h4 style={{ color: activeFranchiseeDetails.netContribution >= 0 ? '#0F6E56' : '#A8402E', margin: '6px 0 0 0', fontSize: '1.25rem', fontWeight: '700' }}>{formatCurrency(activeFranchiseeDetails.netContribution)}</h4>
                   </div>
                 </div>
 
-                <h4 style={{ color: '#f8fafc', marginBottom: '0.75rem' }}>Transaction History ({detailTxs.length}) • {selectedMonth}</h4>
+                <h4 style={{ color: '#1B2321', marginBottom: '0.75rem', fontWeight: '700', fontSize: '0.92rem' }}>Transaction History ({detailTxs.length}) • {selectedMonth}</h4>
                 {detailTxs.length === 0 ? (
-                  <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>No transaction history found for this franchisee location.</p>
+                  <p style={{ color: '#6B7268', fontSize: '0.85rem', padding: '20px 0', textAlign: 'center' }}>No transaction history found for this franchisee location.</p>
                 ) : (
-                  <div className="table-responsive">
-                    <table className="data-table" style={{ fontSize: '0.85rem', width: '100%', background: 'transparent' }}>
+                  <div className="table-responsive" style={{ border: '1px solid #E3E5E0', borderRadius: '8px', overflow: 'hidden' }}>
+                    <table className="data-table" style={{ fontSize: '0.82rem', width: '100%', margin: 0 }}>
                       <thead>
-                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                          <th style={{ color: '#94a3b8', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', fontWeight: '600' }}>Date</th>
-                          <th style={{ color: '#94a3b8', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', fontWeight: '600' }}>Title / Category</th>
-                          <th style={{ color: '#94a3b8', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', fontWeight: '600' }}>Type</th>
-                          <th style={{ color: '#94a3b8', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', fontWeight: '600' }} className="text-right">Amount</th>
+                        <tr style={{ background: '#FAFAF8', borderBottom: '1px solid #E3E5E0' }}>
+                          <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', width: '110px' }}>Date</th>
+                          <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600' }}>Title / Category</th>
+                          <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', width: '100px' }}>Type</th>
+                          <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', textAlign: 'right', width: '120px' }}>Amount</th>
                         </tr>
                       </thead>
                       <tbody>
                         {detailTxs.map(t => (
-                          <tr key={t.id} style={{ background: 'transparent' }}>
-                            <td style={{ color: '#cbd5e1', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>{formatDate(t.date)}</td>
-                            <td style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
-                              <div className="font-bold" style={{ color: '#f8fafc' }}>{t.title}</div>
-                              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{t.category} • {t.subCategory || 'General'}</div>
+                          <tr key={t.id} style={{ borderBottom: '1px solid #E3E5E0' }}>
+                            <td style={{ color: '#6B7268', padding: '10px 14px', whiteSpace: 'nowrap' }}>{formatDate(t.date)}</td>
+                            <td style={{ padding: '10px 14px' }}>
+                              <div style={{ fontWeight: '600', color: '#1B2321', fontSize: '0.84rem' }}>{t.title}</div>
+                              <div style={{ fontSize: '0.72rem', color: '#6B7268', marginTop: '2px' }}>{t.category} • {t.subCategory || 'General'}</div>
                             </td>
-                            <td style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
-                              {t.type === 'income' && t.category === 'Recruitment' && t.info && t.info !== 'N/A' ? (
-                                <span className={`type-badge info-${t.info.toLowerCase()}`} title="Status from Master CSV">
-                                  {t.info}
+                            <td style={{ padding: '10px 14px' }}>
+                              {t.type === 'income' ? (
+                                <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '600', backgroundColor: '#E6F4EA', color: '#0F6E56' }}>
+                                  Inflow
                                 </span>
                               ) : (
-                                <span className={`type-badge ${t.type}`}>
-                                  {t.type === 'income' ? 'Inflow' : 'Outflow'}
+                                <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '600', backgroundColor: '#FCE8E6', color: '#A8402E' }}>
+                                  Outflow
                                 </span>
                               )}
                             </td>
-                            <td className="font-bold text-right" style={{ color: t.type === 'income' ? 'var(--color-income)' : 'var(--color-expense)', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 16px' }}>
-                              {t.type === 'income' ? '' : '-'}{formatCurrency(t.amount)}
+                            <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '700', color: t.type === 'income' ? '#0F6E56' : '#A8402E' }}>
+                              {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
                             </td>
                           </tr>
                         ))}

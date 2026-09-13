@@ -2332,3 +2332,252 @@ button, input, select, textarea {
   font-weight: 500;
 }
 
+/* ==========================================================================
+   MODAL & AUDIT DIALOG SYSTEM (Light Theme / IBM Plex Precision)
+   ========================================================================== */
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(27, 35, 33, 0.52);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+  animation: modalFadeIn 0.2s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalSlideUp {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.modal-content,
+.modal-container,
+.modal-card {
+  background-color: #FFFFFF !important;
+  border: 1px solid #E3E5E0 !important;
+  border-radius: 14px !important;
+  box-shadow: 0 20px 48px -10px rgba(27, 35, 33, 0.22), 0 0 0 1px rgba(27, 35, 33, 0.05) !important;
+  width: 100%;
+  max-width: 920px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #1B2321 !important;
+  animation: modalSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-header {
+  padding: 16px 22px !important;
+  border-bottom: 1px solid #E3E5E0 !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #FAFAF8 !important;
+  flex-shrink: 0;
+}
+
+.modal-header h3,
+.modal-header-title h3 {
+  font-size: 1.12rem !important;
+  font-weight: 700 !important;
+  color: #1B2321 !important;
+  margin: 0 !important;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.modal-subtitle {
+  color: #6B7268 !important;
+  font-size: 0.8rem !important;
+  margin-top: 3px;
+  display: block;
+}
+
+.modal-header .close-btn,
+.modal-header .modal-close-btn,
+.modal-header .btn-close {
+  background: #F0F2ED !important;
+  border: 1px solid #E3E5E0 !important;
+  color: #6B7268 !important;
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 8px !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0 !important;
+}
+
+.modal-header .close-btn:hover,
+.modal-header .modal-close-btn:hover,
+.modal-header .btn-close:hover {
+  background: #E3E5E0 !important;
+  color: #1B2321 !important;
+}
+
+.modal-body {
+  padding: 20px 24px !important;
+  overflow-y: auto !important;
+  flex: 1;
+  background-color: #FFFFFF !important;
+  color: #1B2321 !important;
+}
+
+.modal-body::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+  background: #F6F7F4;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  background: #D1D5DB;
+  border-radius: 3px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: #9CA3AF;
+}
+
+.modal-body h4 {
+  color: #1B2321 !important;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.modal-footer {
+  padding: 14px 22px !important;
+  background-color: #FAFAF8 !important;
+  border-top: 1px solid #E3E5E0 !important;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   AUDIT LEDGER RECEIPT / SLIP (Light Theme)
+   ========================================================================== */
+.audit-ledger-receipt {
+  background-color: #FAFAF8;
+  border: 1px dashed #D1D5DB;
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.receipt-brand {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: #6B7268;
+  text-align: center;
+}
+
+.receipt-tx-number {
+  font-size: 12px;
+  font-family: monospace;
+  color: #1B2321;
+  text-align: center;
+  margin-top: 4px;
+}
+
+.receipt-divider {
+  border: none;
+  border-top: 1px dashed #E3E5E0;
+  margin: 16px 0;
+}
+
+.receipt-row.main-amount {
+  text-align: center;
+  padding: 8px 0;
+}
+
+.receipt-row.main-amount span {
+  font-size: 12px;
+  color: #6B7268;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.receipt-row.main-amount h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  margin: 6px 0 0 0;
+}
+
+.receipt-row.main-amount h1.income {
+  color: #0F6E56;
+}
+
+.receipt-row.main-amount h1.expense {
+  color: #A8402E;
+}
+
+.receipt-details {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+.receipt-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.receipt-detail-item .label {
+  font-size: 11.5px;
+  color: #6B7268;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.receipt-detail-item .value {
+  font-size: 13.5px;
+  color: #1B2321;
+}
+
+.receipt-code {
+  background: #E3E5E0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #1B2321;
+}
+
+.receipt-description h4 {
+  font-size: 12px;
+  color: #6B7268;
+  font-weight: 700;
+  margin: 0 0 6px 0;
+  text-transform: uppercase;
+}
+
+.receipt-description p {
+  font-size: 13px;
+  color: #1B2321;
+  margin: 0;
+  line-height: 1.5;
+}
+
+
+
