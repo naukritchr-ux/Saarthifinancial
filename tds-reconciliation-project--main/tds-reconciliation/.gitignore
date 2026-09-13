@@ -25,6 +25,15 @@ uploads/
 *.xlsm
 *.xlsb
 *.csv
+"Copy of TDS final  Reco.xlsx"
+"TDS Mearge Data 2019-2024.xlsx"
+
+# Certificates and secret keys
+*.pem
+ca.pem
+*.crt
+*.key
+*.cert
 
 # Editor configurations
 .vscode/

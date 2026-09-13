@@ -105,7 +105,7 @@ if (DB_TYPE === 'sqlite') {
 
   if ((process.env.DB_SSL || 'true').toLowerCase() === 'true') {
     const sslOpts = {
-      rejectUnauthorized: (process.env.DB_SSL_REJECT_UNAUTHORIZED || 'false').toLowerCase() === 'true'
+      rejectUnauthorized: (process.env.DB_SSL_REJECT_UNAUTHORIZED || 'true').toLowerCase() === 'true'
     };
 
     const caPaths = [
@@ -136,6 +136,9 @@ if (DB_TYPE === 'sqlite') {
     },
     query: async (query, params = []) => {
       return await pool.query(query, params);
+    },
+    getConnection: async () => {
+      return await pool.getConnection();
     },
     close: async () => {
       await pool.end();

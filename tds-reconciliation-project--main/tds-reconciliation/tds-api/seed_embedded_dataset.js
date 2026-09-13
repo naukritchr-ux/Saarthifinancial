@@ -26,24 +26,45 @@ const parseDateValue = (dateVal) => {
   return String(dateVal);
 };
 
+const safeExecuteMigration = async (query) => {
+  try {
+    await db.execute(query);
+  } catch (err) {
+    const isIgnorable = 
+      err.code === 'ER_DUP_FIELDNAME' || 
+      err.code === 'ER_DUP_KEYNAME' || 
+      err.code === 'ER_CANT_DROP_FIELD_OR_KEY' ||
+      err.errno === 1060 ||
+      err.errno === 1061 ||
+      err.message?.includes('duplicate column') ||
+      err.message?.includes('Duplicate column') ||
+      err.message?.includes('Duplicate key') ||
+      err.message?.includes('already exists');
+
+    if (!isIgnorable) {
+      console.error(`⚠️ [Migration Error] Failed executing [${query}]:`, err.message || err);
+    }
+  }
+};
+
 export async function ensureTablesExist() {
   if (process.env.DB_TYPE === 'mysql') {
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN designation VARCHAR(100)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN financial_year VARCHAR(50)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN contact_person_name VARCHAR(100)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN contact_number VARCHAR(50)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN email_id VARCHAR(255)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN teamleader VARCHAR(100)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN pan_no VARCHAR(20)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_dues ADD COLUMN gst_num VARCHAR(30)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year VARCHAR(50)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done BOOLEAN DEFAULT FALSE'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_dues ADD UNIQUE KEY uniq_due_tan_fy (tan_no, financial_year)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_reconciliation_results ADD UNIQUE KEY uniq_tan_fy (tan_no, financial_year)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_reconciliation_results MODIFY COLUMN tan_no VARCHAR(50)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_dues MODIFY COLUMN tan_no VARCHAR(50)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_26as_entries MODIFY COLUMN tan_no VARCHAR(50)'); } catch (err) { }
-    try { await db.execute('ALTER TABLE tds_tally_entries MODIFY COLUMN tan_no VARCHAR(50)'); } catch (err) { }
+    await safeExecuteMigration('ALTER TABLE tds_dues ADD COLUMN designation VARCHAR(100)');
+    await safeExecuteMigration('ALTER TABLE tds_dues ADD COLUMN financial_year VARCHAR(50)');
+    await safeExecuteMigration('ALTER TABLE tds_dues ADD COLUMN contact_person_name VARCHAR(100)');
+    await safeExecuteMigration('ALTER TABLE tds_dues ADD COLUMN contact_number VARCHAR(50)');
+    await safeExecuteMigration('ALTER TABLE tds_dues ADD COLUMN email_id VARCHAR(255)');
+    await safeExecuteMigration('ALTER TABLE tds_dues ADD COLUMN teamleader VARCHAR(100)');
+    await safeExecuteMigration('ALTER TABLE tds_dues ADD COLUMN pan_no VARCHAR(20)');
+    await safeExecuteMigration('ALTER TABLE tds_dues ADD COLUMN gst_num VARCHAR(30)');
+    await safeExecuteMigration('ALTER TABLE tds_reconciliation_results ADD COLUMN financial_year VARCHAR(50)');
+    await safeExecuteMigration('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done BOOLEAN DEFAULT FALSE');
+    await safeExecuteMigration('ALTER TABLE tds_dues ADD UNIQUE KEY uniq_due_tan_fy (tan_no, financial_year)');
+    await safeExecuteMigration('ALTER TABLE tds_reconciliation_results ADD UNIQUE KEY uniq_tan_fy (tan_no, financial_year)');
+    await safeExecuteMigration('ALTER TABLE tds_reconciliation_results MODIFY COLUMN tan_no VARCHAR(50)');
+    await safeExecuteMigration('ALTER TABLE tds_dues MODIFY COLUMN tan_no VARCHAR(50)');
+    await safeExecuteMigration('ALTER TABLE tds_26as_entries MODIFY COLUMN tan_no VARCHAR(50)');
+    await safeExecuteMigration('ALTER TABLE tds_tally_entries MODIFY COLUMN tan_no VARCHAR(50)');
 
     try {
       await db.execute("UPDATE tds_dues SET contact_person_name = NULL WHERE contact_person_name IN ('HR & Accounts Lead', 'Unknown', 'HR Manager')");
@@ -57,19 +78,9 @@ export async function ensureTablesExist() {
           WHERE d.financial_year IS NOT NULL AND d.financial_year != '' AND (tr.financial_year IS NULL OR tr.financial_year = '')
         `);
       } catch (syncErr) { }
-      // NOTE: this used to also blanket-fabricate financial_year = 'FY 2024-25'
-      // onto every NULL row here, on every server startup — same bug shape as
-      // the CRM sync's hardcoded default, just a different fake value and a
-      // different trigger. Removed: a genuinely unknown financial_year should
-      // stay NULL, not get overwritten with a guess each time the app boots.
     } catch (e) { }
 
-    // Composite uniqueness so one TAN can have (at most) one row per real
-    // financial_year — NULLs are exempt (MySQL treats each NULL as distinct),
-    // so untagged-year rows aren't affected. Wrapped in try/catch because
-    // this will fail harmlessly until any pre-existing duplicate (tan_no,
-    // financial_year) pairs are cleaned up.
-    try { await db.execute('ALTER TABLE tds_dues ADD UNIQUE KEY unique_tan_fy (tan_no, financial_year)'); } catch (err) { }
+    await safeExecuteMigration('ALTER TABLE tds_dues ADD UNIQUE KEY unique_tan_fy (tan_no, financial_year)');
 
     return;
   }

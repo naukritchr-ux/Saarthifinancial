@@ -6,6 +6,15 @@ __pycache__/
 *.pyc
 *.docx
 *.doc
+*.pem
+ca.pem
+**/ca.pem
 *.xlsx
 *.xls
+"Copy of TDS final  Reco.xlsx"
+"TDS Mearge Data 2019-2024.xlsx"
+*.key
+*.crt
+repo-cleanup/
 Saarthi_Finance_Formulas_Guide.docx
+

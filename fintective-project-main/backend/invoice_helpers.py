@@ -93,6 +93,8 @@ def get_share_split(bill_date) -> dict:
     return {"franchisee_pct": 0.75, "company_pct": 0.25}
 
 
+from decimal import Decimal, ROUND_HALF_UP
+
 def calculate_shares(service_charges, info, bill_date, is_manual_override=False, manual_franchisee_share=None, manual_our_share=None) -> dict:
     """Computes franchiseeShare and ourShare from serviceCharges, respecting
     the info-status overrides (cancelled/reversed/legal = 0 company share,
@@ -100,42 +102,46 @@ def calculate_shares(service_charges, info, bill_date, is_manual_override=False,
     franchiseeShare is always the full franchisee percentage regardless of
     info status — only the company (ourShare) side varies by status.
 
+    Uses standard accounting rounding (ROUND_HALF_UP) via decimal.Decimal.
     If is_manual_override is True, franchisee_share and our_share are taken directly
     from manual_franchisee_share and manual_our_share.
     """
     if is_manual_override:
         try:
-            f_share = float(manual_franchisee_share) if manual_franchisee_share is not None else 0
+            f_share = int(round(float(manual_franchisee_share))) if manual_franchisee_share is not None else 0
         except (TypeError, ValueError):
             f_share = 0
         try:
-            o_share = float(manual_our_share) if manual_our_share is not None else 0
+            o_share = int(round(float(manual_our_share))) if manual_our_share is not None else 0
         except (TypeError, ValueError):
             o_share = 0
         return {"franchisee_share": f_share, "our_share": o_share}
 
     try:
-        sc = float(service_charges)
-    except (TypeError, ValueError):
-        sc = 0
+        sc_dec = Decimal(str(service_charges or 0))
+    except Exception:
+        sc_dec = Decimal('0')
 
-    if not sc:
+    if sc_dec <= Decimal('0'):
         return {"franchisee_share": 0, "our_share": 0}
 
     split = get_share_split(bill_date)
-    franchisee_pct = split["franchisee_pct"]
-    company_pct = split["company_pct"]
+    franchisee_pct = Decimal(str(split["franchisee_pct"]))
+    company_pct = Decimal(str(split["company_pct"]))
 
-    franchisee_share = round(sc * franchisee_pct)
+    # Standard accounting rounding (round half up)
+    f_share_exact = sc_dec * franchisee_pct
+    franchisee_share = int(f_share_exact.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
     if info in ("CN", "RV", "LEGAL-CN", "LEGAL"):
         our_share = 0
     elif info == "PP":
-        our_share = round(sc * company_pct * 0.5)
+        o_share_exact = sc_dec * company_pct * Decimal('0.5')
+        our_share = int(o_share_exact.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
     else:
         # "0", "PR", "R", and any other/default status
-        # Remainder, not an independent round() — franchiseeShare + ourShare
-        # always sums to exactly `sc`, no +/-1 drift.
-        our_share = int(sc - franchisee_share)
+        # Remainder ensures franchiseeShare + ourShare always sums to exactly `sc`
+        sc_int = int(sc_dec.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+        our_share = int(sc_int - franchisee_share)
 
     return {"franchisee_share": franchisee_share, "our_share": our_share}

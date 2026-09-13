@@ -10,7 +10,7 @@ export const apiKeyMiddleware = (req, res, next) => {
     return next();
   }
 
-  const expectedKey = process.env.API_KEY || 'saarthi-secret-api-key-2026';
+  const expectedKey = process.env.API_KEY;
   if (!expectedKey) {
     return res.status(503).json({
       success: false,

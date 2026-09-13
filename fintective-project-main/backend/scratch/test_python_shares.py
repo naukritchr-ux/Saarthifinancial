@@ -23,6 +23,10 @@ test_cases = [
     # Remainder rounding check (penny-to-penny matching)
     { "service_charges": 10002, "info": "O", "bill_date": "2026-05-01", "expected_franchise": 7502, "expected_company": 2500, "label": "Remainder rounding split (10002 -> 7502 + 2500 = 10002)" },
 
+    # Exact .5 Rounding (ROUND_HALF_UP accounting standard)
+    { "service_charges": 6, "info": "O", "bill_date": "2026-05-01", "expected_franchise": 5, "expected_company": 1, "label": "Round-half-up (6 * 0.75 = 4.5 -> 5 franchise, 1 company)" },
+    { "service_charges": 2, "info": "O", "bill_date": "2026-05-01", "expected_franchise": 2, "expected_company": 0, "label": "Round-half-up (2 * 0.75 = 1.5 -> 2 franchise, 0 company)" },
+
     # Manual Overrides
     { "service_charges": 10000, "info": "O", "bill_date": "2026-05-01", "is_manual_override": True, "manual_franchise": 4500, "manual_company": 5500, "expected_franchise": 4500, "expected_company": 5500, "label": "Manual override split" }
 ]
@@ -44,14 +48,14 @@ for tc in test_cases:
     
     pass_check = result["franchisee_share"] == tc["expected_franchise"] and result["our_share"] == tc["expected_company"]
     if pass_check:
-        print(f"✅ PASS: {tc['label']} -> Franchise: {result['franchisee_share']}, Company: {result['our_share']}")
+        print(f"[PASS] {tc['label']} -> Franchise: {result['franchisee_share']}, Company: {result['our_share']}")
     else:
-        print(f"❌ FAIL: {tc['label']} -> Got: {{ Franchise: {result['franchisee_share']}, Company: {result['our_share']} }}, Expected: {{ Franchise: {tc['expected_franchise']}, Company: {tc['expected_company']} }}")
+        print(f"[FAIL] {tc['label']} -> Got: {{ Franchise: {result['franchisee_share']}, Company: {result['our_share']} }}, Expected: {{ Franchise: {tc['expected_franchise']}, Company: {tc['expected_company']} }}")
         failed += 1
 
 if failed == 0:
-    print("\n🎉 All Python functional test cases passed successfully!")
+    print("\n[SUCCESS] All Python functional test cases passed successfully!")
     sys.exit(0)
 else:
-    print(f"\n❌ {failed} test cases failed.")
+    print(f"\n[ERROR] {failed} test cases failed.")
     sys.exit(1)

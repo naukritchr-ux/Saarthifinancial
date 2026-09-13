@@ -14,7 +14,10 @@ const buildQuery = (params = {}) => {
   return query.toString();
 };
 
-const API_KEY = import.meta.env.VITE_API_KEY || 'saarthi-secret-api-key-2026';
+const API_KEY = import.meta.env.VITE_API_KEY || '';
+if (!API_KEY && import.meta.env.DEV) {
+  console.error('⚠️ [TDS API] VITE_API_KEY environment variable is not defined! API requests will fail authentication.');
+}
 
 // Fetch wrapper with 45s timeout to allow Render free tier cold-starts and heavy DB queries to wake up
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 45000) => {
