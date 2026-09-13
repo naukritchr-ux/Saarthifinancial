@@ -239,13 +239,13 @@ const JobPortalAnalytics = () => {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.5rem' }}>
-              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
-                <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Average Order Value</span>
-                <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#f8fafc' }}>₹61,200</span>
+              <div style={{ background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Average Order Value</span>
+                <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--text-main)' }}>₹61,200</span>
               </div>
-              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
-                <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Customer LTV (Annual)</span>
-                <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#f8fafc' }}>₹2,45,000</span>
+              <div style={{ background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Customer LTV (Annual)</span>
+                <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--text-main)' }}>₹2,45,000</span>
               </div>
             </div>
 
@@ -345,7 +345,7 @@ const JobPortalAnalytics = () => {
                   <tr key={c.id}>
                     <td className="font-bold">{c.company}</td>
                     <td>{c.industry}</td>
-                    <td style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{c.package}</td>
+                    <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{c.package}</td>
                     <td className="font-bold text-teal text-right">{formatCurrency(c.amount)}</td>
                     <td className="text-center">{c.activeSeats}</td>
                     <td>

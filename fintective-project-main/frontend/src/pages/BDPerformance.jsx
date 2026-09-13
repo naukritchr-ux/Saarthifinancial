@@ -495,12 +495,12 @@ const BDPerformance = () => {
                         {(agent.leadsCreditNotes || 0) > 0 && <span style={{color:'#f87171'}}> / {agent.leadsCreditNotes} Credit Notes</span>}
                         {' / '}{agent.leadsBought || 0} Total
                       </div>
-                      <div style={{ color: '#cbd5e1' }}>
+                      <div style={{ color: 'var(--text-muted)' }}>
                         Gross: {formatCurrency(agent.grossRevenue)} 
                         {' | '}Net Share: {formatCurrency(agent.netRevenue)} 
                         {' | '}Loss: {formatCurrency(agent.lossAmount)}
                         {agent.unverifiedAmount > 0 && (
-                          <span style={{ color: '#fbbf24', marginLeft: '6px', fontWeight: 'bold' }}>
+                          <span style={{ color: 'var(--color-pending)', marginLeft: '6px', fontWeight: 'bold' }}>
                             ⚠️ Unverified: {formatCurrency(agent.unverifiedAmount)}
                           </span>
                         )}
@@ -682,9 +682,9 @@ const BDPerformance = () => {
                       <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>+{formatCurrency(agent.payPerProgressed)}/P | +{formatCurrency(agent.payPerCancelled)}/C</div>
                     </td>
                     <td className="font-bold text-teal text-right">{formatCurrency(agent.grossRevenue)}</td>
-                    <td className="font-bold text-right text-blue" style={{ color: '#38bdf8' }}>{formatCurrency(agent.netRevenue)}</td>
+                    <td className="font-bold text-right text-blue" style={{ color: 'var(--color-link)' }}>{formatCurrency(agent.netRevenue)}</td>
                     <td style={{ textAlign: 'center' }}>
-                      <span className="status-badge inactive" style={{ backgroundColor: 'rgba(255,255,255,0.02)', color: '#64748b', fontSize: '0.8rem' }}>
+                      <span className="status-badge inactive" style={{ backgroundColor: 'var(--bg-main)', color: 'var(--text-muted)', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
                         Cost Audit Pending (Task 1)
                       </span>
                     </td>

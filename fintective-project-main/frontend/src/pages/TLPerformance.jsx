@@ -313,7 +313,7 @@ const TLPerformance = () => {
                         {(tl.enquiriesCreditNotes || 0) > 0 && <span style={{color:'#f87171'}}> / {tl.enquiriesCreditNotes} Credit Notes</span>}
                         {' / '}{tl.totalEnquiries || 0} Total
                       </div>
-                      <div style={{ color: '#cbd5e1' }}>Gross Billing: {formatCurrency(tl.grossRevenue)} | Net Share: {formatCurrency(tl.netRevenue)}{(tl.creditNoteReversals || 0) > 0 && <span style={{color:'#f87171'}}> | Reversals: -{formatCurrency(tl.creditNoteReversals)}</span>}</div>
+                      <div style={{ color: 'var(--text-muted)' }}>Gross Billing: {formatCurrency(tl.grossRevenue)} | Net Share: {formatCurrency(tl.netRevenue)}{(tl.creditNoteReversals || 0) > 0 && <span style={{color:'#f87171'}}> | Reversals: -{formatCurrency(tl.creditNoteReversals)}</span>}</div>
                     </div>
                   </div>
                 );
@@ -359,7 +359,7 @@ const TLPerformance = () => {
                       <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Total: {tl.totalEnquiries}</div>
                     </td>
                     <td className="font-bold text-teal text-right">{formatCurrency(tl.grossRevenue)}</td>
-                    <td className="font-bold text-right text-blue" style={{ color: '#38bdf8' }}>{formatCurrency(tl.netRevenue)}</td>
+                    <td className="font-bold text-right text-blue" style={{ color: 'var(--color-link)' }}>{formatCurrency(tl.netRevenue)}</td>
                     <td className="text-red font-bold text-right">{formatCurrency(tl.lossAmount)}</td>
                     <td>
                       <span className="status-badge active">{tl.status || 'Active'}</span>

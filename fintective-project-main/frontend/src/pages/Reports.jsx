@@ -196,7 +196,7 @@ const Reports = () => {
             borderBottom: activeTab === 'ledger' ? '3px solid var(--accent-teal, #2dd4bf)' : 'none',
             padding: '12px 20px',
             background: 'none',
-            color: activeTab === 'ledger' ? 'var(--accent-teal, #2dd4bf)' : '#94a3b8',
+            color: activeTab === 'ledger' ? 'var(--accent-teal)' : 'var(--text-muted)',
             fontWeight: 'bold',
             cursor: 'pointer',
             transition: 'all 0.2s'
@@ -209,10 +209,10 @@ const Reports = () => {
           style={{
             borderRadius: '0',
             border: 'none',
-            borderBottom: activeTab === 'ml' ? '3px solid var(--accent-teal, #2dd4bf)' : 'none',
+            borderBottom: activeTab === 'ml' ? '3px solid var(--accent-teal)' : 'none',
             padding: '12px 20px',
             background: 'none',
-            color: activeTab === 'ml' ? 'var(--accent-teal, #2dd4bf)' : '#94a3b8',
+            color: activeTab === 'ml' ? 'var(--accent-teal)' : 'var(--text-muted)',
             fontWeight: 'bold',
             cursor: 'pointer',
             transition: 'all 0.2s'
@@ -463,17 +463,17 @@ const Reports = () => {
                     height: '32px',
                     padding: '0 6px',
                     fontSize: '0.85rem',
-                    backgroundColor: active ? 'var(--color-purple, #8b5cf6)' : (disabled ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.08)'),
-                    color: active ? '#fff' : (disabled ? '#475569' : '#94a3b8'),
-                    border: active ? 'none' : '1px solid rgba(255,255,255,0.1)',
+                    backgroundColor: active ? 'var(--accent-teal)' : (disabled ? 'transparent' : 'var(--bg-main)'),
+                    color: active ? '#ffffff' : (disabled ? 'var(--text-muted)' : 'var(--text-main)'),
+                    border: active ? 'none' : '1px solid var(--border-color)',
                     borderRadius: '6px',
                     cursor: disabled ? 'not-allowed' : 'pointer',
                     transition: 'all 0.2s',
                   });
 
                   return (
-                    <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem', padding: '12px 16px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                      <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+                    <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem', padding: '12px 16px', backgroundColor: 'var(--bg-main)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                         Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, filteredTxs.length)} of {filteredTxs.length} transactions
                       </span>
                       <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
@@ -574,7 +574,7 @@ const Reports = () => {
           </div>
 
           {mlLoading && (
-            <div style={{ padding: '60px 0', textAlign: 'center', color: '#94a3b8', fontWeight: '600' }}>
+            <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--text-muted)', fontWeight: '600' }}>
               <div style={{ display: 'inline-block', marginBottom: '12px' }}>
                 <RefreshCw size={28} className="animate-spin" style={{ color: 'var(--accent-teal)' }} />
               </div>
