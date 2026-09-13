@@ -729,39 +729,39 @@ const BDPerformance = () => {
                 
                 {editAgentId === currentAgent.id ? (
                   /* Edit Settings Panel */
-                  <form onSubmit={handleSaveEdit} style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', marginBottom: '1.5rem' }}>
-                    <h4 style={{ color: '#f8fafc', marginBottom: '1.25rem' }}>Update Contract Settings & Active Lead Counts</h4>
+                  <form onSubmit={handleSaveEdit} style={{ background: '#F6F7F4', padding: '20px', borderRadius: '12px', border: '1px solid #E3E5E0', marginBottom: '1.5rem' }}>
+                    <h4 style={{ color: '#1B2321', marginBottom: '1.25rem', fontWeight: '700' }}>Update Contract Settings & Active Lead Counts</h4>
                     
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                       <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Base Salary (₹)</label>
+                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#6B7268', fontWeight: '600', marginBottom: '0.25rem' }}>Base Salary (₹)</label>
                         <input 
                           type="number" 
                           value={editBase} 
-                  onChange={e => setEditBase(e.target.value)} 
-                          style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: '#fff' }}
+                          onChange={e => setEditBase(e.target.value)} 
+                          style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #D1D5DB', background: '#FFFFFF', color: '#1B2321', fontSize: '0.88rem' }}
                           required
                           min="0"
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Pay per Progressed Enquiry (₹)</label>
+                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#6B7268', fontWeight: '600', marginBottom: '0.25rem' }}>Pay per Progressed Enquiry (₹)</label>
                         <input 
                           type="number" 
                           value={editProgressedRate} 
                           onChange={e => setEditProgressedRate(e.target.value)} 
-                          style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: '#fff' }}
+                          style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #D1D5DB', background: '#FFFFFF', color: '#1B2321', fontSize: '0.88rem' }}
                           required
                           min="0"
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Pay per Cancelled Enquiry (₹)</label>
+                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#6B7268', fontWeight: '600', marginBottom: '0.25rem' }}>Pay per Cancelled Enquiry (₹)</label>
                         <input 
                           type="number" 
                           value={editCancelledRate} 
                           onChange={e => setEditCancelledRate(e.target.value)} 
-                          style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: '#fff' }}
+                          style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #D1D5DB', background: '#FFFFFF', color: '#1B2321', fontSize: '0.88rem' }}
                           required
                           min="0"
                         />
@@ -770,34 +770,34 @@ const BDPerformance = () => {
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
                       <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Total Enquiries Allocated</label>
+                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#6B7268', fontWeight: '600', marginBottom: '0.25rem' }}>Total Enquiries Allocated</label>
                         <input 
                           type="number" 
                           value={editTotalLeads} 
                           onChange={e => setEditTotalLeads(e.target.value)} 
-                          style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: '#fff' }}
+                          style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #D1D5DB', background: '#FFFFFF', color: '#1B2321', fontSize: '0.88rem' }}
                           required
                           min="0"
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Progressed Enquiries</label>
+                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#6B7268', fontWeight: '600', marginBottom: '0.25rem' }}>Progressed Enquiries</label>
                         <input 
                           type="number" 
                           value={editProgressedLeads} 
                           onChange={e => setEditProgressedLeads(e.target.value)} 
-                          style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: '#fff' }}
+                          style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #D1D5DB', background: '#FFFFFF', color: '#1B2321', fontSize: '0.88rem' }}
                           required
                           min="0"
                         />
                       </div>
                       <div>
-                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '0.25rem' }}>Cancelled Enquiries</label>
+                        <label style={{ display: 'block', fontSize: '0.8rem', color: '#6B7268', fontWeight: '600', marginBottom: '0.25rem' }}>Cancelled Enquiries</label>
                         <input 
                           type="number" 
                           value={editCancelledLeads} 
                           onChange={e => setEditCancelledLeads(e.target.value)} 
-                          style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.2)', color: '#fff' }}
+                          style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #D1D5DB', background: '#FFFFFF', color: '#1B2321', fontSize: '0.88rem' }}
                           required
                           min="0"
                         />
@@ -805,38 +805,38 @@ const BDPerformance = () => {
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                      <button type="button" className="btn btn-secondary" onClick={() => setEditAgentId(null)}>Cancel</button>
-                      <button type="submit" className="btn btn-primary">Save Changes</button>
+                      <button type="button" className="btn btn-secondary" onClick={() => setEditAgentId(null)} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #D1D5DB', backgroundColor: '#FFFFFF', color: '#374151', fontWeight: '500', cursor: 'pointer' }}>Cancel</button>
+                      <button type="submit" className="btn btn-primary" style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', backgroundColor: '#0F6E56', color: '#FFFFFF', fontWeight: '600', cursor: 'pointer' }}>Save Changes</button>
                     </div>
                   </form>
                 ) : (
                   /* Standard Auditor Panels */
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                      <h4 style={{ color: '#f8fafc', margin: 0 }}>Active Performance & Enquiry Funnel</h4>
+                      <h4 style={{ color: '#1B2321', margin: 0, fontWeight: '700' }}>Active Performance & Enquiry Funnel</h4>
                       <button 
                         className="btn btn-primary" 
                         onClick={() => handleStartEdit(currentAgent)}
-                        style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                        style={{ padding: '6px 12px', fontSize: '0.78rem', backgroundColor: '#0F6E56', color: '#FFFFFF', borderRadius: '6px', border: 'none', fontWeight: '600', cursor: 'pointer' }}
                       >
                         Edit Contract & Enquiries
                       </button>
                     </div>
 
                     {/* Progress Bar */}
-                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '1.5rem' }}>
-                      <div style={{ display: 'flex', height: '24px', borderRadius: '6px', overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                    <div style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0', marginBottom: '1.25rem' }}>
+                      <div style={{ display: 'flex', height: '26px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#E3E5E0' }}>
                         {progressedPct > 0 && (
                           <div 
                             style={{ 
                               width: `${progressedPct}%`, 
-                              backgroundColor: '#10b981', 
+                              backgroundColor: '#0F6E56', 
                               display: 'flex', 
                               alignItems: 'center', 
                               justifyContent: 'center', 
-                              color: '#fff', 
+                              color: '#FFFFFF', 
                               fontSize: '0.75rem', 
-                              fontWeight: 'bold',
+                              fontWeight: '700',
                               overflow: 'hidden',
                               whiteSpace: 'nowrap',
                               textOverflow: 'ellipsis',
@@ -852,13 +852,13 @@ const BDPerformance = () => {
                           <div 
                             style={{ 
                               width: `${cancelledPct}%`, 
-                              backgroundColor: '#ef4444', 
+                              backgroundColor: '#A8402E', 
                               display: 'flex', 
                               alignItems: 'center', 
                               justifyContent: 'center', 
-                              color: '#fff', 
+                              color: '#FFFFFF', 
                               fontSize: '0.75rem', 
-                              fontWeight: 'bold',
+                              fontWeight: '700',
                               overflow: 'hidden',
                               whiteSpace: 'nowrap',
                               textOverflow: 'ellipsis',
@@ -876,13 +876,13 @@ const BDPerformance = () => {
                             <div 
                               style={{ 
                                 width: `${intClosedPct}%`, 
-                                backgroundColor: '#ea580c', 
+                                backgroundColor: '#B7791F', 
                                 display: 'flex', 
                                 alignItems: 'center', 
                                 justifyContent: 'center', 
-                                color: '#fff', 
+                                color: '#FFFFFF', 
                                 fontSize: '0.75rem', 
-                                fontWeight: 'bold',
+                                fontWeight: '700',
                                 overflow: 'hidden',
                                 whiteSpace: 'nowrap',
                                 textOverflow: 'ellipsis',
@@ -899,13 +899,13 @@ const BDPerformance = () => {
                           <div 
                             style={{ 
                               width: `${pendingPct}%`, 
-                              backgroundColor: '#64748b', 
+                              backgroundColor: '#94A3B8', 
                               display: 'flex', 
                               alignItems: 'center', 
                               justifyContent: 'center', 
-                              color: '#fff', 
+                              color: '#FFFFFF', 
                               fontSize: '0.75rem', 
-                              fontWeight: 'bold',
+                              fontWeight: '700',
                               overflow: 'hidden',
                               whiteSpace: 'nowrap',
                               textOverflow: 'ellipsis',
@@ -918,36 +918,39 @@ const BDPerformance = () => {
                           </div>
                         )}
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.75rem', color: '#94a3b8' }}>
-                        <span>Total Allocated Enquiries: {currentAgent.leadsBought}</span>
-                        <span>Pending Realization: {currentAgent.leadsBought - currentAgent.leadsProgressed - currentAgent.leadsCancelled - (currentAgent.leadsInternallyClosed || 0)} Enquiries</span>
-                        <span>Realization rate: {(((currentAgent.leadsProgressed || 0) + (currentAgent.leadsCancelled || 0) + (currentAgent.leadsInternallyClosed || 0)) / total * 100).toFixed(0)}%</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.75rem', color: '#6B7268' }}>
+                        <span>Total Allocated Enquiries: <strong>{currentAgent.leadsBought}</strong></span>
+                        <span>Pending Realization: <strong>{currentAgent.leadsBought - currentAgent.leadsProgressed - currentAgent.leadsCancelled - (currentAgent.leadsInternallyClosed || 0)} Enquiries</strong></span>
+                        <span>Realization rate: <strong>{(((currentAgent.leadsProgressed || 0) + (currentAgent.leadsCancelled || 0) + (currentAgent.leadsInternallyClosed || 0)) / total * 100).toFixed(0)}%</strong></span>
                       </div>
                     </div>
 
-                    <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem', marginTop: '1rem' }}>
-                      <div className="stat-box" style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <span className="stat-label" style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Calculated Pay</span>
-                        <h4 style={{ color: '#64748b', margin: '0.5rem 0 0 0', fontSize: '1.15rem' }}>Pending</h4>
+                    <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '1.25rem' }}>
+                      <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
+                        <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Calculated Pay</span>
+                        <h4 style={{ color: '#22314F', margin: '6px 0 0 0', fontSize: '1.2rem', fontWeight: '700' }}>{formatCurrency(totalCalculatedSalary)}</h4>
                       </div>
-                      <div className="stat-box" style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <span className="stat-label" style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Actual Paid</span>
-                        <h4 style={{ color: '#64748b', margin: '0.5rem 0 0 0', fontSize: '1.15rem' }}>Pending</h4>
+                      <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
+                        <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Actual Paid</span>
+                        <h4 style={{ color: '#0F6E56', margin: '6px 0 0 0', fontSize: '1.2rem', fontWeight: '700' }}>{formatCurrency(currentAgent.commissionsEarned || 0)}</h4>
                       </div>
-                      <div className="stat-box" style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <span className="stat-label" style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Variance</span>
-                        <h4 style={{ color: '#64748b', margin: '0.5rem 0 0 0', fontSize: '1.15                      </div>
+                      <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
+                        <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Variance</span>
+                        <h4 style={{ color: Math.abs(variance) < 1 ? '#0F6E56' : (variance > 0 ? '#A8402E' : '#22314F'), margin: '6px 0 0 0', fontSize: '1.2rem', fontWeight: '700' }}>
+                          {variance > 0 ? '+' : ''}{formatCurrency(variance)}
+                        </h4>
+                      </div>
                       <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
                         <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Potential Loss</span>
-                        <h4 style={{ color: '#A8402E', margin: '6px 0 0 0', fontSize: '1.25rem', fontWeight: '700' }}>{formatCurrency(currentAgent.lossAmount || 0)}</h4>
+                        <h4 style={{ color: '#A8402E', margin: '6px 0 0 0', fontSize: '1.2rem', fontWeight: '700' }}>{formatCurrency(currentAgent.lossAmount || 0)}</h4>
                       </div>
                     </div>
 
                     {/* Audit Reconciliation Board */}
-                    <div style={{ background: '#FAFAF8', padding: '14px 18px', borderRadius: '8px', borderLeft: '4px solid #22314F', marginBottom: '1.25rem', border: '1px solid #E3E5E0' }}>
-                      <h4 style={{ margin: '0 0 0.5rem 0', color: '#1B2321', fontSize: '0.9rem', fontWeight: '700' }}>Performance-Based Salary Calculation (Audit Status)</h4>
+                    <div style={{ background: '#FAFAF8', padding: '14px 18px', borderRadius: '10px', borderLeft: '4px solid #0F6E56', marginBottom: '1.25rem', border: '1px solid #E3E5E0' }}>
+                      <h4 style={{ margin: '0 0 0.4rem 0', color: '#1B2321', fontSize: '0.9rem', fontWeight: '700' }}>Performance-Based Contract Reconciliation</h4>
                       <p style={{ color: '#6B7268', fontSize: '0.8rem', margin: 0, lineHeight: '1.5' }}>
-                        Cost reconciliation and variable pay audits are verified against active deal flow. Review individual deal allocations below.
+                        Calculated Pay reflects Base Salary ({formatCurrency(currentAgent.baseSalary || 0)}) + Progressed Incentives ({currentAgent.leadsProgressed || 0} × {formatCurrency(currentAgent.payPerProgressed || 0)}) + Commission Bonus ({((currentAgent.commissionRate || 0.02)*100).toFixed(1)}%).
                       </p>
                     </div>
                   </>
