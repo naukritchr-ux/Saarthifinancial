@@ -137,15 +137,14 @@ const Topbar = ({ activePage, setActivePage }) => {
       </div>
 
       <div className="topbar-actions">
-        {/* Sync Data from site trigger */}
         <button 
           className="btn btn-secondary"
           onClick={() => setIsSyncOpen(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', border: '1px solid rgba(255,255,255,0.08)' }}
-          title="Fetch transaction data from main site"
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8' }}
+          title="Synchronize live CRM data from Saarthi 360"
         >
           <CloudDownload size={16} />
-          <span>Sync Site</span>
+          <span>Sync Saarthi CRM</span>
         </button>
 
         <div className="topbar-badge">

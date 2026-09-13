@@ -129,187 +129,208 @@ export const FinanceProvider = ({ children }) => {
     return `bd-${getStableStringHash(clean)}`;
   };
 
-  // Sync state with backend server or direct live URL APIs on mount
-  useEffect(() => {
-    const fetchData = async () => {
-      let loadedFromBackend = false;
-      try {
-        const txRes = await fetchWithApiKey(`${API_BASE_URL}/transactions`);
-        if (txRes.ok) {
-          const txData = await txRes.json();
-          if (Array.isArray(txData) && txData.length > 0) {
-            setTransactions(txData);
-            loadedFromBackend = true;
-            setDataSource('backend');
-          }
+  // Re-usable loader to fetch all data from backend (with live API fallback)
+  const fetchAllData = async () => {
+    let loadedFromBackend = false;
+    try {
+      const txRes = await fetchWithApiKey(`${API_BASE_URL}/transactions`);
+      if (txRes.ok) {
+        const txData = await txRes.json();
+        if (Array.isArray(txData) && txData.length > 0) {
+          setTransactions(txData);
+          loadedFromBackend = true;
+          setDataSource('backend');
         }
-        
-        const franRes = await fetchWithApiKey(`${API_BASE_URL}/franchisees`);
-        if (franRes.ok) {
-          const franData = await franRes.json();
-          if (Array.isArray(franData) && franData.length > 0) setFranchisees(franData);
-        }
-        
-        const bdRes = await fetchWithApiKey(`${API_BASE_URL}/bd-agents`);
-        if (bdRes.ok) {
-          const bdData = await bdRes.json();
-          if (Array.isArray(bdData) && bdData.length > 0) setBdAgents(bdData);
-        }
-
-        const tlRes = await fetchWithApiKey(`${API_BASE_URL}/team-leaders`);
-        if (tlRes.ok) {
-          const tlData = await tlRes.json();
-          if (Array.isArray(tlData) && tlData.length > 0) setTeamLeaders(tlData);
-        }
-
-        const budgetRes = await fetchWithApiKey(`${API_BASE_URL}/budgets`);
-        if (budgetRes.ok) {
-          const budgetData = await budgetRes.json();
-          if (Object.keys(budgetData).length > 0) setBudgets(budgetData);
-        }
-      } catch (err) {
-        console.warn('Backend server connection issue, attempting direct live API fetch fallback...', err.message);
+      }
+      
+      const franRes = await fetchWithApiKey(`${API_BASE_URL}/franchisees`);
+      if (franRes.ok) {
+        const franData = await franRes.json();
+        if (Array.isArray(franData) && franData.length > 0) setFranchisees(franData);
+      }
+      
+      const bdRes = await fetchWithApiKey(`${API_BASE_URL}/bd-agents`);
+      if (bdRes.ok) {
+        const bdData = await bdRes.json();
+        if (Array.isArray(bdData) && bdData.length > 0) setBdAgents(bdData);
       }
 
-      // If backend server was unreachable on deployed client, fetch live URL APIs directly in browser!
-      if (!loadedFromBackend) {
-        setDataSource('fallback');
-        try {
-          console.log('Fetching live recruitment & expense data directly from HTTPS URL APIs...');
-          const [enqRes, invRes, franRes, expRes] = await Promise.allSettled([
-            fetch('https://api.sarthi360.in/api/enquiries'),
-            fetch('https://api.sarthi360.in/api/Invoice'),
-            fetch('https://api.sarthi360.in/api/franchisees'),
-            fetch('https://api.sarthi360.in/api/expenses')
-          ]);
+      const tlRes = await fetchWithApiKey(`${API_BASE_URL}/team-leaders`);
+      if (tlRes.ok) {
+        const tlData = await tlRes.json();
+        if (Array.isArray(tlData) && tlData.length > 0) setTeamLeaders(tlData);
+      }
 
-          let enquiries = [];
-          if (enqRes.status === 'fulfilled' && enqRes.value.ok) {
-            const json = await enqRes.value.json();
-            enquiries = Array.isArray(json) ? json : (json.data || json.enquiries || []);
+      const budgetRes = await fetchWithApiKey(`${API_BASE_URL}/budgets`);
+      if (budgetRes.ok) {
+        const budgetData = await budgetRes.json();
+        if (Object.keys(budgetData).length > 0) setBudgets(budgetData);
+      }
+    } catch (err) {
+      console.warn('Backend server connection issue, attempting direct live API fetch fallback...', err.message);
+    }
+
+    // Direct live API fetch fallback if backend is unreachable
+    if (!loadedFromBackend) {
+      setDataSource('fallback');
+      try {
+        console.log('Fetching live recruitment & expense data directly from HTTPS URL APIs...');
+        const [enqRes, invRes, franRes, expRes] = await Promise.allSettled([
+          fetch('https://api.sarthi360.in/api/enquiries'),
+          fetch('https://api.sarthi360.in/api/Invoice'),
+          fetch('https://api.sarthi360.in/api/franchisees'),
+          fetch('https://api.sarthi360.in/api/expenses')
+        ]);
+
+        let enquiries = [];
+        if (enqRes.status === 'fulfilled' && enqRes.value.ok) {
+          const json = await enqRes.value.json();
+          enquiries = Array.isArray(json) ? json : (json.data || json.enquiries || []);
+        }
+
+        let invoices = [];
+        if (invRes.status === 'fulfilled' && invRes.value.ok) {
+          const json = await invRes.value.json();
+          invoices = Array.isArray(json) ? json : (json.data || json.invoices || []);
+        }
+
+        let currentFranList = franchisees;
+        if (franRes.status === 'fulfilled' && franRes.value.ok) {
+          const json = await franRes.value.json();
+          const fData = Array.isArray(json) ? json : (json.data || json.franchisees || []);
+          if (fData.length > 0) {
+            currentFranList = fData;
+            setFranchisees(fData);
           }
+        }
 
-          let invoices = [];
-          if (invRes.status === 'fulfilled' && invRes.value.ok) {
-            const json = await invRes.value.json();
-            invoices = Array.isArray(json) ? json : (json.data || json.invoices || []);
-          }
+        let liveExp = [];
+        if (expRes.status === 'fulfilled' && expRes.value.ok) {
+          const json = await expRes.value.json();
+          liveExp = Array.isArray(json) ? json : (json.data || json.expenses || []);
+        }
 
-          let currentFranList = franchisees;
-          if (franRes.status === 'fulfilled' && franRes.value.ok) {
-            const json = await franRes.value.json();
-            const fData = Array.isArray(json) ? json : (json.data || json.franchisees || []);
-            if (fData.length > 0) {
-              currentFranList = fData;
-              setFranchisees(fData);
-            }
-          }
+        const liveTxs = [];
 
-          let liveExp = [];
-          if (expRes.status === 'fulfilled' && expRes.value.ok) {
-            const json = await expRes.value.json();
-            liveExp = Array.isArray(json) ? json : (json.data || json.expenses || []);
-          }
-
-          const liveTxs = [];
-
-          // 1. Build income transactions from live Invoices
-          invoices.forEach(inv => {
-            if (!inv.id) return;
-            const amt = parseFloat(inv.serviceCharges || inv.totalBillAmt || inv.amountReceived || 0);
-            const dateStr = (inv.billDate || inv.dateReceived || inv.createdAt || '').split('T')[0];
-            if (amt > 0 && dateStr) {
-              const franName = inv.franchiseName || '';
-              const bdName = inv.nameOfBd || '';
-              liveTxs.push({
-                id: `inv-${inv.id}`,
-                title: `${inv.companyName || 'Client Placement'} - ${inv.postOfCandidate || 'Recruitment'}`,
-                amount: amt,
-                type: 'income',
-                category: 'Recruitment Fee',
-                subCategory: 'Placement Invoice',
-                date: dateStr,
-                companyName: inv.companyName || '',
-                bdAgentName: bdName,
-                teamLeaderName: inv.teamLeader || '',
-                franchiseeName: franName,
-                franchiseeId: matchFranchiseeId(franName, currentFranList),
-                bdAgentId: matchBdAgentId(bdName, bdAgents),
-                financialYear: inv.financialYear || 'N/A'
-              });
-            }
-          });
-
-          // 2. Build income transactions from Enquiries if missing in invoices
-          enquiries.forEach(enq => {
-            if (!enq.id) return;
-            const amt = parseFloat(enq.bill_amount || enq.placementFees || 0);
-            const dateStr = (enq.bill_date || enq.dateOfAllocation || enq.created_at || '').split('T')[0];
-            if (amt > 0 && dateStr && !invoices.some(i => i.enquiry_id === enq.id)) {
-              const franName = enq.franchiseeName || '';
-              const bdName = enq.bdMemberName || '';
-              liveTxs.push({
-                id: `enq-${enq.id}`,
-                title: `${enq.companyName || 'Client Placement'} - ${enq.positionName || 'Role'}`,
-                amount: amt,
-                type: 'income',
-                category: 'Recruitment Fee',
-                subCategory: 'Placement',
-                date: dateStr,
-                companyName: enq.companyName || '',
-                bdAgentName: bdName,
-                teamLeaderName: enq.teamLeaderName || '',
-                franchiseeName: franName,
-                franchiseeId: matchFranchiseeId(franName, currentFranList),
-                bdAgentId: matchBdAgentId(bdName, bdAgents)
-              });
-            }
-          });
-
-          // 3. Process live expenses (if liveExp is non-empty) — NO fake hardcoded operationalExpenses array!
-          const liveExpenseTxs = [];
-          liveExp.forEach(exp => {
-            const total = (parseFloat(exp.franchisee || 0) + parseFloat(exp.recruitment || 0)) * 1000;
-            if (total > 0) {
-              liveExpenseTxs.push({
-                id: `exp-api-${exp.id}`,
-                title: exp.head_component || 'Operating Expense',
-                amount: total,
-                type: 'expense',
-                category: exp.head_component?.includes('Rent') ? 'Office & infra' : (exp.head_component?.includes('Software') ? 'Portal subscriptions' : 'Marketing'),
-                subCategory: exp.head_component || 'Operations',
-                date: '2026-08-01',
-                companyName: 'Saarthi Corporate'
-              });
-            }
-          });
-
-          if (liveTxs.length === 0) {
-            console.warn('Live API response empty/blocked (403). Using backup seed placement ledger...');
-            const seedItems = [
-              { id: 'inv-180010', title: 'JAYATMA TECHNOLOGIES - Hr', amount: 8000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2025-06-07', companyName: 'JAYATMA TECHNOLOGIES', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Avadai Esakki', franchiseeName: 'Sandeep', financialYear: '2025-2026' },
-              { id: 'inv-180019', title: 'TEMA BUSINESS SYSTEMS - Hr Executive', amount: 2499, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2024-05-09', companyName: 'TEMA BUSINESS SYSTEMS', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Unknown', financialYear: '2024-2025' },
-              { id: 'inv-180025', title: 'ACCUPEX AIR SOLUTIONS - Senior Engineer', amount: 41650, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-10', companyName: 'ACCUPEX AIR SOLUTIONS', bdAgentName: 'Rahul Patil', teamLeaderName: 'Joyeeta Joydeb Khaskel', franchiseeName: 'Preshita Rane', financialYear: '2026-2027' },
-              { id: 'inv-180030', title: 'SUNDARAM TECHNOLOGIES - Software Architect', amount: 112500, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-15', companyName: 'SUNDARAM TECHNOLOGIES', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Vedika Girish Tolani', franchiseeName: 'Razia Begum', financialYear: '2026-2027' },
-              { id: 'inv-180035', title: 'COIGN CONSULTING - Lead Developer', amount: 45000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-20', companyName: 'COIGN CONSULTING', bdAgentName: 'Sneha Kulkarni', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Anita Mandar Kulkarni', financialYear: '2026-2027' }
-            ];
-            seedItems.forEach(st => {
-              st.franchiseeId = matchFranchiseeId(st.franchiseeName, currentFranList);
-              st.bdAgentId = matchBdAgentId(st.bdAgentName, bdAgents);
-              liveTxs.push(st);
+        // 1. Build income transactions from live Invoices
+        invoices.forEach(inv => {
+          if (!inv.id) return;
+          const amt = parseFloat(inv.serviceCharges || inv.totalBillAmt || inv.amountReceived || 0);
+          const dateStr = (inv.billDate || inv.dateReceived || inv.createdAt || '').split('T')[0];
+          if (amt > 0 && dateStr) {
+            const franName = inv.franchiseName || '';
+            const bdName = inv.nameOfBd || '';
+            liveTxs.push({
+              id: `inv-${inv.id}`,
+              title: `${inv.companyName || 'Client Placement'} - ${inv.postOfCandidate || 'Recruitment'}`,
+              amount: amt,
+              type: 'income',
+              category: 'Recruitment Fee',
+              subCategory: 'Placement Invoice',
+              date: dateStr,
+              companyName: inv.companyName || '',
+              bdAgentName: bdName,
+              teamLeaderName: inv.teamLeader || '',
+              franchiseeName: franName,
+              franchiseeId: matchFranchiseeId(franName, currentFranList),
+              bdAgentId: matchBdAgentId(bdName, bdAgents),
+              financialYear: inv.financialYear || 'N/A'
             });
           }
+        });
 
-          const combined = [...liveTxs, ...liveExpenseTxs];
-          if (combined.length > 0) {
-            setTransactions(combined);
+        // 2. Build income transactions from Enquiries if missing in invoices
+        enquiries.forEach(enq => {
+          if (!enq.id) return;
+          const amt = parseFloat(enq.bill_amount || enq.placementFees || 0);
+          const dateStr = (enq.bill_date || enq.dateOfAllocation || enq.created_at || '').split('T')[0];
+          if (amt > 0 && dateStr && !invoices.some(i => i.enquiry_id === enq.id)) {
+            const franName = enq.franchiseeName || '';
+            const bdName = enq.bdMemberName || '';
+            liveTxs.push({
+              id: `enq-${enq.id}`,
+              title: `${enq.companyName || 'Client Placement'} - ${enq.positionName || 'Role'}`,
+              amount: amt,
+              type: 'income',
+              category: 'Recruitment Fee',
+              subCategory: 'Placement',
+              date: dateStr,
+              companyName: enq.companyName || '',
+              bdAgentName: bdName,
+              teamLeaderName: enq.teamLeaderName || '',
+              franchiseeName: franName,
+              franchiseeId: matchFranchiseeId(franName, currentFranList),
+              bdAgentId: matchBdAgentId(bdName, bdAgents)
+            });
           }
-        } catch (liveErr) {
-          console.error('Direct HTTPS live API fetch failed:', liveErr);
+        });
+
+        // 3. Process live expenses
+        const liveExpenseTxs = [];
+        liveExp.forEach(exp => {
+          const total = (parseFloat(exp.franchisee || 0) + parseFloat(exp.recruitment || 0)) * 1000;
+          if (total > 0) {
+            liveExpenseTxs.push({
+              id: `exp-api-${exp.id}`,
+              title: exp.head_component || 'Operating Expense',
+              amount: total,
+              type: 'expense',
+              category: exp.head_component?.includes('Rent') ? 'Office & infra' : (exp.head_component?.includes('Software') ? 'Portal subscriptions' : 'Marketing'),
+              subCategory: exp.head_component || 'Operations',
+              date: '2026-08-01',
+              companyName: 'Saarthi Corporate'
+            });
+          }
+        });
+
+        if (liveTxs.length === 0) {
+          const seedItems = [
+            { id: 'inv-180010', title: 'JAYATMA TECHNOLOGIES - Hr', amount: 8000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2025-06-07', companyName: 'JAYATMA TECHNOLOGIES', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Avadai Esakki', franchiseeName: 'Sandeep', financialYear: '2025-2026' },
+            { id: 'inv-180019', title: 'TEMA BUSINESS SYSTEMS - Hr Executive', amount: 2499, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2024-05-09', companyName: 'TEMA BUSINESS SYSTEMS', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Unknown', financialYear: '2024-2025' },
+            { id: 'inv-180025', title: 'ACCUPEX AIR SOLUTIONS - Senior Engineer', amount: 41650, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-10', companyName: 'ACCUPEX AIR SOLUTIONS', bdAgentName: 'Rahul Patil', teamLeaderName: 'Joyeeta Joydeb Khaskel', franchiseeName: 'Preshita Rane', financialYear: '2026-2027' },
+            { id: 'inv-180030', title: 'SUNDARAM TECHNOLOGIES - Software Architect', amount: 112500, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-15', companyName: 'SUNDARAM TECHNOLOGIES', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Vedika Girish Tolani', franchiseeName: 'Razia Begum', financialYear: '2026-2027' },
+            { id: 'inv-180035', title: 'COIGN CONSULTING - Lead Developer', amount: 45000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-20', companyName: 'COIGN CONSULTING', bdAgentName: 'Sneha Kulkarni', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Anita Mandar Kulkarni', financialYear: '2026-2027' }
+          ];
+          seedItems.forEach(st => {
+            st.franchiseeId = matchFranchiseeId(st.franchiseeName, currentFranList);
+            st.bdAgentId = matchBdAgentId(st.bdAgentName, bdAgents);
+            liveTxs.push(st);
+          });
         }
+
+        const combined = [...liveTxs, ...liveExpenseTxs];
+        if (combined.length > 0) {
+          setTransactions(combined);
+        }
+      } catch (liveErr) {
+        console.error('Direct HTTPS live API fetch failed:', liveErr);
       }
-    };
-    fetchData();
+    }
+    return loadedFromBackend;
+  };
+
+  const syncWithSaarthi = async () => {
+    try {
+      const response = await fetchWithApiKey(`${API_BASE_URL}/finance/sync-saarthi`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await response.json();
+      if (data && data.success) {
+        await fetchAllData();
+        return { success: true, data: data.data };
+      } else {
+        return { success: false, error: data?.error || 'Sync returned non-success status' };
+      }
+    } catch (err) {
+      console.error('Error during Saarthi Live Sync:', err);
+      return { success: false, error: err.message };
+    }
+  };
+
+  // Sync state on mount
+  useEffect(() => {
+    fetchAllData();
   }, []);
 
   useEffect(() => {
@@ -533,6 +554,8 @@ export const FinanceProvider = ({ children }) => {
         addFranchisee,
         addBdAgent,
         updateBdAgent,
+        syncWithSaarthi,
+        fetchAllData,
         currentCashBalance,
         movingAvgBurn,
         isSidebarOpen,
