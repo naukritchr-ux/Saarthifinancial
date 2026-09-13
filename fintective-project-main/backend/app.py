@@ -2674,6 +2674,24 @@ def compute_ml_insights(force=False):
                     df_exp['id'] = df_exp.index
             except Exception:
                 pass
+
+        # Fallback to Live Saarthi CRM expenses endpoint if DB table and CSV are empty
+        if df_exp.empty:
+            try:
+                from sync_service import fetch_saarthi_endpoint
+                live_exp = fetch_saarthi_endpoint('expenses', timeout=8)
+                if live_exp and isinstance(live_exp, list) and len(live_exp) > 0:
+                    df_exp = pd.DataFrame(live_exp)
+                    if 'billDate' not in df_exp.columns and 'date' in df_exp.columns:
+                        df_exp['billDate'] = df_exp['date']
+                    if 'expenses' not in df_exp.columns and 'category' in df_exp.columns:
+                        df_exp['expenses'] = df_exp['category']
+                    if 'particulars' not in df_exp.columns and 'title' in df_exp.columns:
+                        df_exp['particulars'] = df_exp['title']
+                    if 'id' not in df_exp.columns:
+                        df_exp['id'] = df_exp.index
+            except Exception:
+                pass
                     
         anoms = []
         if not df_exp.empty:
