@@ -2544,15 +2544,94 @@ def update_budgets():
     finally:
         conn.close()
 
-@app.route('/api/ml/insights', methods=['GET'])
-def get_ml_insights():
+def _render_ml_plots_async(df_exp, anoms, df_fran, df_client):
+    """Render ML plots in a background thread to prevent blocking HTTP responses."""
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import pandas as pd
+
+        # Chart 1: Expense Outliers
+        if df_exp is not None and len(df_exp) > 0:
+            plt.figure(figsize=(10, 4))
+            plt.scatter(df_exp.index, df_exp['amount'], color='#2563eb', alpha=0.6, label='Normal Expense')
+            if anoms:
+                df_anoms = pd.concat(anoms)
+                plt.scatter(df_anoms.index, df_anoms['amount'], color='#ef4444', s=80, edgecolors='black', zorder=5, label='Anomaly Outlier')
+            plt.title('Expenditure Amount Outlier Analysis')
+            plt.ylabel('Amount (Rs.)')
+            plt.xlabel('Record Index')
+            plt.legend()
+            plt.grid(True, linestyle='--', alpha=0.3)
+            plt.tight_layout()
+            plt.savefig('expense_anomalies.png')
+            plt.close()
+
+        # Chart 2: Franchise Clusters
+        if df_fran is not None and not df_fran.empty and len(df_fran) >= 3:
+            plt.figure(figsize=(8, 5))
+            colors = {
+                "High-Value Leaders (Top Performers)": "#10b981",
+                "Steady Partners (Consistent Output)": "#2563eb",
+                "At-Risk / Low-Activity Hubs": "#ef4444"
+            }
+            for seg, group in df_fran.groupby('segment'):
+                plt.scatter(
+                    group['successful_placements'], 
+                    group['total_billing_revenue'] / 100000, 
+                    label=seg, 
+                    color=colors.get(seg, '#94a3b8'),
+                    s=100, 
+                    alpha=0.8, 
+                    edgecolors='black'
+                )
+            plt.title('Franchise Hub Segments (K-Means)')
+            plt.xlabel('Successful Placements Count')
+            plt.ylabel('Total Billing Revenue (in Lakhs)')
+            plt.legend()
+            plt.grid(True, linestyle='--', alpha=0.3)
+            plt.tight_layout()
+            plt.savefig('franchise_segments.png')
+            plt.close()
+
+        # Chart 3: Client Clusters
+        if df_client is not None and not df_client.empty and len(df_client) >= 4:
+            plt.figure(figsize=(8, 5))
+            colors_c = {
+                "Elite Clients (High-Volume Placements & Billings)": "#10b981",
+                "Mid-Tier Consistent Buyers": "#2563eb",
+                "Niche Premium (High Average Salaries, Moderate Volume)": "#c084fc",
+                "Low-Frequency / Inactive Accounts": "#ef4444"
+            }
+            for seg, group in df_client.groupby('segment'):
+                plt.scatter(
+                    group['total_jobs'], 
+                    group['total_billing'] / 100000, 
+                    label=seg, 
+                    color=colors_c.get(seg, '#94a3b8'),
+                    s=80, 
+                    alpha=0.7, 
+                    edgecolors='black'
+                )
+            plt.title('Corporate Client Segments (K-Means)')
+            plt.xlabel('Total Allocated Jobs Count')
+            plt.ylabel('Total Billing Contribution (in Lakhs)')
+            plt.legend()
+            plt.grid(True, linestyle='--', alpha=0.3)
+            plt.tight_layout()
+            plt.savefig('client_segments.png')
+            plt.close()
+    except Exception as plot_err:
+        print("[ML Plotting] Warning: async plot render skipped:", str(plot_err))
+
+def compute_ml_insights(force=False):
+    """Compute and cache ML predictive models (Isolation Forest + K-Means)."""
     global _ml_insights_cache, _ml_insights_cache_time
-    force_refresh = request.args.get('force', 'false').lower() in ('true', '1', 'yes')
-    
+    now = time.time()
     with _ml_insights_lock:
-        now = time.time()
-        if not force_refresh and _ml_insights_cache is not None and (now - _ml_insights_cache_time < ML_CACHE_TTL_SECONDS):
-            return jsonify(_ml_insights_cache)
+        if not force and _ml_insights_cache is not None and (now - _ml_insights_cache_time < ML_CACHE_TTL_SECONDS):
+            return _ml_insights_cache
 
     from sklearn.ensemble import IsolationForest
     from sklearn.cluster import KMeans
@@ -2560,8 +2639,13 @@ def get_ml_insights():
     import pandas as pd
     import numpy as np
     
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+    except Exception as db_init_err:
+        pass
     
     try:
         insights = {
@@ -2573,19 +2657,25 @@ def get_ml_insights():
         
         # 1. Expense Outliers (Isolation Forest)
         df_exp = pd.DataFrame()
-        try:
-            cursor.execute("SELECT id, billDate, particulars, expenses, amount FROM expenditure WHERE particulars != 'particulars' AND expenses != 'expenses'")
-            exp_rows = cursor.fetchall()
-            if exp_rows:
-                df_exp = pd.DataFrame(exp_rows)
-        except Exception as db_err:
-            print("DB expenditure query failed, falling back to CSV:", str(db_err))
-            if os.path.exists("expenditure.csv"):
+        if cursor:
+            try:
+                cursor.execute("SELECT id, billDate, particulars, expenses, amount FROM expenditure WHERE particulars != 'particulars' AND expenses != 'expenses'")
+                exp_rows = cursor.fetchall()
+                if exp_rows:
+                    df_exp = pd.DataFrame(exp_rows)
+            except Exception as db_err:
+                pass
+                
+        if df_exp.empty and os.path.exists("expenditure.csv"):
+            try:
                 df_exp = pd.read_csv("expenditure.csv")
                 df_exp = df_exp.rename(columns={'billDate': 'billDate', 'expenses': 'expenses', 'amount': 'amount', 'particulars': 'particulars'})
                 if 'id' not in df_exp.columns:
                     df_exp['id'] = df_exp.index
+            except Exception:
+                pass
                     
+        anoms = []
         if not df_exp.empty:
             df_exp['amount'] = pd.to_numeric(df_exp['amount'], errors='coerce').fillna(0.0)
             df_exp = df_exp[df_exp['particulars'] != 'particulars']
@@ -2602,13 +2692,12 @@ def get_ml_insights():
                 })
             
             # Run Isolation Forest on categories
-            anoms = []
             for cat in df_exp['expenses'].dropna().unique():
                 df_cat = df_exp[df_exp['expenses'] == cat].copy()
                 if len(df_cat) < 5:
                     continue
                 X = df_cat[['amount']].values
-                clf = IsolationForest(contamination=0.03, random_state=42)
+                clf = IsolationForest(contamination=0.03, random_state=42, n_estimators=50, n_jobs=-1)
                 preds = clf.fit_predict(X)
                 df_cat['is_anomaly'] = preds
                 df_anom = df_cat[df_cat['is_anomaly'] == -1]
@@ -2627,26 +2716,29 @@ def get_ml_insights():
 
         # 2. Franchise Clustering (K-Means)
         df_fran = pd.DataFrame()
-        try:
-            query_fran = """
-                SELECT 
-                    e.franchiseeName AS franchise,
-                    COUNT(e.id) AS total_enquiries,
-                    SUM(CASE WHEN e.enquiryStatus = 'closed' THEN 1 ELSE 0 END) AS successful_placements,
-                    SUM(COALESCE(i.serviceCharges, e.bill_amount, 0)) AS total_billing_revenue,
-                    SUM(COALESCE(i.franchiseeShare, 0)) AS franchisee_royalty_payout
-                FROM enquiries e
-                LEFT JOIN invoice i ON e.id = i.enquiry_id
-                WHERE e.franchiseeName IS NOT NULL AND e.franchiseeName != '' AND e.franchiseeName != 'Franchise Name'
-                GROUP BY e.franchiseeName
-            """
-            cursor.execute(query_fran)
-            fran_rows = cursor.fetchall()
-            if fran_rows:
-                df_fran = pd.DataFrame(fran_rows)
-        except Exception as db_err:
-            print("DB franchise query failed, falling back to CSV:", str(db_err))
-            if os.path.exists("master_final_enquiry_sheet_cleaned.csv"):
+        if cursor:
+            try:
+                query_fran = """
+                    SELECT 
+                        e.franchiseeName AS franchise,
+                        COUNT(e.id) AS total_enquiries,
+                        SUM(CASE WHEN e.enquiryStatus = 'closed' THEN 1 ELSE 0 END) AS successful_placements,
+                        SUM(COALESCE(i.serviceCharges, e.bill_amount, 0)) AS total_billing_revenue,
+                        SUM(COALESCE(i.franchiseeShare, 0)) AS franchisee_royalty_payout
+                    FROM enquiries e
+                    LEFT JOIN invoice i ON e.id = i.enquiry_id
+                    WHERE e.franchiseeName IS NOT NULL AND e.franchiseeName != '' AND e.franchiseeName != 'Franchise Name'
+                    GROUP BY e.franchiseeName
+                """
+                cursor.execute(query_fran)
+                fran_rows = cursor.fetchall()
+                if fran_rows:
+                    df_fran = pd.DataFrame(fran_rows)
+            except Exception as db_err:
+                pass
+                
+        if df_fran.empty and os.path.exists("master_final_enquiry_sheet_cleaned.csv"):
+            try:
                 df_raw = pd.read_csv("master_final_enquiry_sheet_cleaned.csv")
                 df_fran = df_raw.groupby('Franchise Name').agg(
                     total_enquiries=('Company Name', 'count'),
@@ -2654,6 +2746,8 @@ def get_ml_insights():
                     total_billing_revenue=('Service Charges', 'sum'),
                     franchisee_royalty_payout=('Franchisee Share', 'sum')
                 ).reset_index().rename(columns={'Franchise Name': 'franchise'})
+            except Exception:
+                pass
                 
         if not df_fran.empty and len(df_fran) >= 3:
             for col in ['total_enquiries', 'successful_placements', 'total_billing_revenue', 'franchisee_royalty_payout']:
@@ -2663,7 +2757,7 @@ def get_ml_insights():
             scaler = StandardScaler()
             X_scaled = scaler.fit_transform(X)
             
-            kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
+            kmeans = KMeans(n_clusters=3, random_state=42, n_init=5)
             df_fran['cluster'] = kmeans.fit_predict(X_scaled)
             
             cluster_revenue = df_fran.groupby('cluster')['total_billing_revenue'].mean().sort_values(ascending=False)
@@ -2690,25 +2784,28 @@ def get_ml_insights():
 
         # 3. Client Clustering (K-Means)
         df_client = pd.DataFrame()
-        try:
-            query_client = """
-                SELECT 
-                    companyName AS client,
-                    COUNT(id) AS total_jobs,
-                    SUM(CASE WHEN enquiryStatus = 'closed' THEN 1 ELSE 0 END) AS successful_placements,
-                    AVG(COALESCE(`to`, 0)) AS avg_salary_offered,
-                    SUM(COALESCE(bill_amount, 0)) AS total_billing
-                FROM enquiries
-                WHERE companyName IS NOT NULL AND companyName != '' AND companyName != 'Company Name'
-                GROUP BY companyName
-            """
-            cursor.execute(query_client)
-            client_rows = cursor.fetchall()
-            if client_rows:
-                df_client = pd.DataFrame(client_rows)
-        except Exception as db_err:
-            print("DB client query failed, falling back to CSV:", str(db_err))
-            if os.path.exists("master_final_enquiry_sheet_cleaned.csv"):
+        if cursor:
+            try:
+                query_client = """
+                    SELECT 
+                        companyName AS client,
+                        COUNT(id) AS total_jobs,
+                        SUM(CASE WHEN enquiryStatus = 'closed' THEN 1 ELSE 0 END) AS successful_placements,
+                        AVG(COALESCE(`to`, 0)) AS avg_salary_offered,
+                        SUM(COALESCE(bill_amount, 0)) AS total_billing
+                    FROM enquiries
+                    WHERE companyName IS NOT NULL AND companyName != '' AND companyName != 'Company Name'
+                    GROUP BY companyName
+                """
+                cursor.execute(query_client)
+                client_rows = cursor.fetchall()
+                if client_rows:
+                    df_client = pd.DataFrame(client_rows)
+            except Exception as db_err:
+                pass
+                
+        if df_client.empty and os.path.exists("master_final_enquiry_sheet_cleaned.csv"):
+            try:
                 df_raw = pd.read_csv("master_final_enquiry_sheet_cleaned.csv")
                 df_client = df_raw.groupby('Company Name').agg(
                     total_jobs=('Company Name', 'count'),
@@ -2716,6 +2813,8 @@ def get_ml_insights():
                     avg_salary_offered=('Salary Offered', 'mean'),
                     total_billing=('Service Charges', 'sum')
                 ).reset_index().rename(columns={'Company Name': 'client'})
+            except Exception:
+                pass
                 
         if not df_client.empty and len(df_client) >= 4:
             for col in ['total_jobs', 'successful_placements', 'avg_salary_offered', 'total_billing']:
@@ -2725,7 +2824,7 @@ def get_ml_insights():
             scaler_c = StandardScaler()
             X_scaled_c = scaler_c.fit_transform(X_c)
             
-            kmeans_c = KMeans(n_clusters=4, random_state=42, n_init=10)
+            kmeans_c = KMeans(n_clusters=4, random_state=42, n_init=5)
             df_client['cluster'] = kmeans_c.fit_predict(X_scaled_c)
             
             cluster_billing = df_client.groupby('cluster')['total_billing'].mean().sort_values(ascending=False)
@@ -2750,94 +2849,32 @@ def get_ml_insights():
                     'segment': row['segment'],
                     'cluster': int(row['cluster'])
                 })
-        # Generate Visual Charts on Disk in Headless Render Mode
-        try:
-            import matplotlib
-            matplotlib.use('Agg')
-            import matplotlib.pyplot as plt
-            
-            # Chart 1: Expense Outliers
-            if len(df_exp) > 0:
-                plt.figure(figsize=(10, 4))
-                plt.scatter(df_exp.index, df_exp['amount'], color='#2563eb', alpha=0.6, label='Normal Expense')
-                if anoms:
-                    df_anoms = pd.concat(anoms)
-                    plt.scatter(df_anoms.index, df_anoms['amount'], color='#ef4444', s=80, edgecolors='black', zorder=5, label='Anomaly Outlier')
-                plt.title('Expenditure Amount Outlier Analysis')
-                plt.ylabel('Amount (Rs.)')
-                plt.xlabel('Record Index')
-                plt.legend()
-                plt.grid(True, linestyle='--', alpha=0.3)
-                plt.tight_layout()
-                plt.savefig('expense_anomalies.png')
-                plt.close()
-                
-            # Chart 2: Franchise Clusters
-            if 'df_fran' in locals() and not df_fran.empty and len(df_fran) >= 3:
-                plt.figure(figsize=(8, 5))
-                colors = {
-                    "High-Value Leaders (Top Performers)": "#10b981",
-                    "Steady Partners (Consistent Output)": "#2563eb",
-                    "At-Risk / Low-Activity Hubs": "#ef4444"
-                }
-                for seg, group in df_fran.groupby('segment'):
-                    plt.scatter(
-                        group['successful_placements'], 
-                        group['total_billing_revenue'] / 100000, 
-                        label=seg, 
-                        color=colors.get(seg, '#94a3b8'),
-                        s=100, 
-                        alpha=0.8, 
-                        edgecolors='black'
-                    )
-                plt.title('Franchise Hub Segments (K-Means)')
-                plt.xlabel('Successful Placements Count')
-                plt.ylabel('Total Billing Revenue (in Lakhs)')
-                plt.legend()
-                plt.grid(True, linestyle='--', alpha=0.3)
-                plt.tight_layout()
-                plt.savefig('franchise_segments.png')
-                plt.close()
-                
-            # Chart 3: Client Clusters
-            if 'df_client' in locals() and not df_client.empty and len(df_client) >= 4:
-                plt.figure(figsize=(8, 5))
-                colors_c = {
-                    "Elite Clients (High-Volume Placements & Billings)": "#10b981",
-                    "Mid-Tier Consistent Buyers": "#2563eb",
-                    "Niche Premium (High Average Salaries, Moderate Volume)": "#c084fc",
-                    "Low-Frequency / Inactive Accounts": "#ef4444"
-                }
-                for seg, group in df_client.groupby('segment'):
-                    plt.scatter(
-                        group['total_jobs'], 
-                        group['total_billing'] / 100000, 
-                        label=seg, 
-                        color=colors_c.get(seg, '#94a3b8'),
-                        s=80, 
-                        alpha=0.7, 
-                        edgecolors='black'
-                    )
-                plt.title('Corporate Client Segments (K-Means)')
-                plt.xlabel('Total Allocated Jobs Count')
-                plt.ylabel('Total Billing Contribution (in Lakhs)')
-                plt.legend()
-                plt.grid(True, linestyle='--', alpha=0.3)
-                plt.tight_layout()
-                plt.savefig('client_segments.png')
-                plt.close()
-        except Exception as plot_err:
-            print("Error generating ML plots inside app.py:", str(plot_err))
+
+        # Render visual plots asynchronously in background thread so JSON returns immediately
+        threading.Thread(
+            target=_render_ml_plots_async,
+            args=(df_exp.copy() if not df_exp.empty else None, anoms, df_fran.copy() if not df_fran.empty else None, df_client.copy() if not df_client.empty else None),
+            daemon=True
+        ).start()
 
         with _ml_insights_lock:
             _ml_insights_cache = insights
             _ml_insights_cache_time = time.time()
 
+        return insights
+    finally:
+        if conn:
+            conn.close()
+
+@app.route('/api/ml/insights', methods=['GET'])
+def get_ml_insights():
+    force_refresh = request.args.get('force', 'false').lower() in ('true', '1', 'yes')
+    try:
+        insights = compute_ml_insights(force=force_refresh)
         return jsonify(insights)
     except Exception as e:
+        print("[ML Error]:", str(e))
         return jsonify({'error': str(e)}), 500
-    finally:
-        conn.close()
 
 @app.route('/api/ml/plots/<filename>', methods=['GET'])
 def get_ml_plot(filename):
@@ -3353,6 +3390,16 @@ def get_job_portal_summary():
 def start_background_sync_daemon():
     import threading
     import time
+    def warmup_ml():
+        try:
+            print("[ML Engine] Auto-warming ML Insights cache in background...")
+            compute_ml_insights(force=True)
+            print("[ML Engine] ML Insights cache warmed and ready!")
+        except Exception as e:
+            print("[ML Engine] Warmup note:", str(e))
+
+    threading.Thread(target=warmup_ml, daemon=True).start()
+
     def sync_loop():
         time.sleep(3)
         while True:
@@ -3375,5 +3422,6 @@ if __name__ == '__main__':
     port = int(os.getenv("PORT", 5000))
     print(f"Starting Python Flask server on port {port}...")
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
 

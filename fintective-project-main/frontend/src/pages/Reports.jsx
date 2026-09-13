@@ -2,10 +2,21 @@ import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatDate } from '../utils/formatters';
-import { Search, Trash2, Printer, Filter, X, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { Search, Trash2, Printer, Filter, X, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, RefreshCw } from 'lucide-react';
 
 const Reports = () => {
-  const { moduleFilteredTransactions: transactions, deleteTransaction, selectedMonth, selectedYear, activeModule, bdAgents, franchisees } = useContext(FinanceContext);
+  const { 
+    moduleFilteredTransactions: transactions, 
+    deleteTransaction, 
+    selectedMonth, 
+    selectedYear, 
+    activeModule, 
+    bdAgents, 
+    franchisees,
+    mlInsights,
+    isMlInsightsLoading,
+    fetchMlInsights
+  } = useContext(FinanceContext);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('all');
@@ -15,11 +26,12 @@ const Reports = () => {
   const [currentPage, setCurrentPage] = useState(1);
   
   const [activeTab, setActiveTab] = useState('ledger'); // 'ledger' or 'ml'
-  const [mlData, setMlData] = useState(null);
-  const [mlLoading, setMlLoading] = useState(false);
   const [mlError, setMlError] = useState(null);
 
-  const companyList = React.useMemo(() => {
+  const mlData = mlInsights;
+  const mlLoading = isMlInsightsLoading && !mlInsights;
+
+  const companyList = useMemo(() => {
     if (!Array.isArray(transactions)) return [];
     const companies = new Set();
     transactions.forEach(tx => {
@@ -31,32 +43,10 @@ const Reports = () => {
   }, [transactions]);
 
   useEffect(() => {
-    if (activeTab === 'ml' && !mlData) {
-      const cached = sessionStorage.getItem('fintective_ml_insights');
-      if (cached) {
-        try {
-          setMlData(JSON.parse(cached));
-          setMlLoading(false);
-          return;
-        } catch (e) {}
-      }
-      setMlLoading(true);
-      fetchWithApiKey(`${API_BASE_URL}/ml/insights`)
-        .then(res => {
-          if (!res.ok) throw new Error('Failed to load ML predictive insights. Make sure the backend Flask server is running.');
-          return res.json();
-        })
-        .then(data => {
-          setMlData(data);
-          try { sessionStorage.setItem('fintective_ml_insights', JSON.stringify(data)); } catch(e){}
-          setMlLoading(false);
-        })
-        .catch(err => {
-          setMlError(err.message);
-          setMlLoading(false);
-        });
+    if (activeTab === 'ml' && !mlInsights && !isMlInsightsLoading) {
+      fetchMlInsights().catch(err => setMlError(err.message));
     }
-  }, [activeTab, mlData]);
+  }, [activeTab, mlInsights, isMlInsightsLoading]);
 
   // Reset page to 1 when filters change
   useEffect(() => {
@@ -562,9 +552,32 @@ const Reports = () => {
 
       {activeTab === 'ml' && (
         <div className="ml-insights-wrapper animate-fade-in">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <div>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>
+                Machine Learning & Predictive Engine
+              </h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                Continuous algorithmic analysis for fraud detection, expense anomalies, and cluster segmentation.
+              </p>
+            </div>
+            <button 
+              className="btn btn-secondary"
+              onClick={() => { setMlError(null); fetchMlInsights(true); }}
+              disabled={isMlInsightsLoading}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem' }}
+            >
+              <RefreshCw size={14} className={isMlInsightsLoading ? "animate-spin" : ""} />
+              <span>{isMlInsightsLoading ? "Re-computing..." : "Re-run ML Models"}</span>
+            </button>
+          </div>
+
           {mlLoading && (
-            <div style={{ padding: '40px 0', textAlign: 'center', color: '#94a3b8', fontWeight: 'bold' }}>
-              Computing Machine Learning Models (K-Means & Isolation Forest)...
+            <div style={{ padding: '60px 0', textAlign: 'center', color: '#94a3b8', fontWeight: '600' }}>
+              <div style={{ display: 'inline-block', marginBottom: '12px' }}>
+                <RefreshCw size={28} className="animate-spin" style={{ color: 'var(--accent-teal)' }} />
+              </div>
+              <div>Computing Machine Learning Models (K-Means & Isolation Forest)...</div>
             </div>
           )}
           
@@ -573,7 +586,7 @@ const Reports = () => {
               <h4 style={{ fontWeight: 'bold', marginBottom: '8px' }}>Predictive Analytics Offline</h4>
               <p>{mlError}</p>
               <button 
-                onClick={() => { setMlError(null); setMlData(null); }} 
+                onClick={() => { setMlError(null); fetchMlInsights(true); }} 
                 className="btn btn-secondary" 
                 style={{ marginTop: '12px', border: '1px solid rgba(255,255,255,0.1)' }}
               >

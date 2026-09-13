@@ -169,6 +169,37 @@ export const FinanceProvider = ({ children }) => {
     return `bd-${getStableStringHash(clean)}`;
   };
 
+  const [mlInsights, setMlInsights] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('fintective_ml_insights');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [isMlInsightsLoading, setIsMlInsightsLoading] = useState(false);
+
+  // Standalone ML insights fetcher with optional force refresh
+  const fetchMlInsights = async (force = false) => {
+    setIsMlInsightsLoading(true);
+    try {
+      const res = await fetchWithApiKey(`${API_BASE_URL}/ml/insights${force ? '?force=true' : ''}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMlInsights(data);
+        try {
+          sessionStorage.setItem('fintective_ml_insights', JSON.stringify(data));
+        } catch (e) {}
+        return data;
+      }
+    } catch (err) {
+      console.warn('Failed to load ML insights:', err.message);
+    } finally {
+      setIsMlInsightsLoading(false);
+    }
+    return null;
+  };
+
   const [isLoadingData, setIsLoadingData] = useState(() => {
     try {
       const cached = sessionStorage.getItem('fintective_cached_txs');
@@ -184,13 +215,14 @@ export const FinanceProvider = ({ children }) => {
     setIsBackgroundSyncing(true);
     let loadedFromBackend = false;
     try {
-      // Parallel async fetch for maximum loading speed
-      const [txRes, franRes, bdRes, tlRes, budgetRes] = await Promise.allSettled([
+      // Parallel async fetch for maximum loading speed across all endpoints
+      const [txRes, franRes, bdRes, tlRes, budgetRes, mlRes] = await Promise.allSettled([
         fetchWithApiKey(`${API_BASE_URL}/transactions`),
         fetchWithApiKey(`${API_BASE_URL}/franchisees`),
         fetchWithApiKey(`${API_BASE_URL}/bd-agents`),
         fetchWithApiKey(`${API_BASE_URL}/team-leaders`),
-        fetchWithApiKey(`${API_BASE_URL}/budgets`)
+        fetchWithApiKey(`${API_BASE_URL}/budgets`),
+        fetchWithApiKey(`${API_BASE_URL}/ml/insights`)
       ]);
 
       if (txRes.status === 'fulfilled' && txRes.value.ok) {
@@ -230,6 +262,16 @@ export const FinanceProvider = ({ children }) => {
         const budgetData = await budgetRes.value.json();
         if (budgetData && Object.keys(budgetData).length > 0) {
           setBudgets(budgetData);
+        }
+      }
+
+      if (mlRes.status === 'fulfilled' && mlRes.value.ok) {
+        const mlData = await mlRes.value.json();
+        if (mlData && typeof mlData === 'object') {
+          setMlInsights(mlData);
+          try {
+            sessionStorage.setItem('fintective_ml_insights', JSON.stringify(mlData));
+          } catch (e) {}
         }
       }
     } catch (err) {
@@ -788,6 +830,10 @@ export const FinanceProvider = ({ children }) => {
         toggleSidebar,
         isLoadingData,
         isBackgroundSyncing,
+        mlInsights,
+        setMlInsights,
+        isMlInsightsLoading,
+        fetchMlInsights,
         showToast
       }}
     >
