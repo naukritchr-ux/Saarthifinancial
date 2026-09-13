@@ -339,7 +339,7 @@ const Dashboard = ({ setActivePage }) => {
       const actualComm = currentTxs.filter(t => t.type === 'expense' && t.category === 'BD commissions').reduce((sum, t) => sum + t.amount, 0);
       return `BD Agent ${agent?.name || 'This agent'} closed ${closedDeals} recruitment placement accounts, drawing ${formatCurrency(actualComm)} in payouts.`;
     }
-    return 'Welcome to Saarthi Finance Audit Board.';
+    return 'Welcome to Fintective Financial Audit Board.';
   };
 
   // Dynamically calculate timeline target month & available data periods
@@ -454,10 +454,10 @@ const Dashboard = ({ setActivePage }) => {
     <div className="dashboard-page animate-fade-in">
 
       {/* Narrative AI Insight Sentence */}
-      <div className="dashboard-insight-banner" style={{ background: 'rgba(37, 99, 235, 0.08)', border: '1px solid rgba(37, 99, 235, 0.15)', borderRadius: '8px', padding: '1rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        <span style={{ fontSize: '1.25rem' }}>💡</span>
-        <p style={{ margin: 0, fontSize: '0.9rem', color: '#1e3a8a', lineHeight: '1.4' }}>
-          <strong>Finance Insight:</strong> {getNarrativeSummary()}
+      <div className="dashboard-insight-banner" style={{ background: '#ffffff', border: '1px solid var(--border-color)', borderLeft: '3px solid var(--accent-teal)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: 'var(--shadow-sm)' }}>
+        <span style={{ fontSize: '1.1rem' }}>💡</span>
+        <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-main)', lineHeight: '1.45', fontWeight: '500' }}>
+          <strong style={{ color: 'var(--accent-teal)', fontWeight: '600' }}>Finance Insight:</strong> {getNarrativeSummary()}
         </p>
       </div>
 
@@ -735,7 +735,7 @@ const Dashboard = ({ setActivePage }) => {
 
             <div className="modal-body">
               <div className="audit-ledger-receipt">
-                <div className="receipt-brand">SAARTHI FINANCE</div>
+                <div className="receipt-brand">FINTECTIVE INTELLIGENCE</div>
                 <div className="receipt-tx-number">REF CODE: {selectedTx.referenceId}</div>
 
                 <hr className="receipt-divider" />

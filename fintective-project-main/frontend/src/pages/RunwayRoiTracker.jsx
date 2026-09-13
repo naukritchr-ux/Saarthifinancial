@@ -793,7 +793,7 @@ const RunwayRoiTracker = () => {
         <div className={`kpi-card ${isSimulatedActive ? (isSimCashExhaustionRisk ? 'card-red' : 'card-green') : (isCashExhaustionRisk ? 'card-red' : 'card-green')}`}>
           <div className="kpi-header">
             <span className="kpi-title">
-              {isSimulatedActive ? 'Simulated Cash Runway' : 'Saarthi Cash Runway'}
+              {isSimulatedActive ? 'Simulated Cash Runway' : 'Fintective Cash Runway'}
             </span>
             <span className="kpi-icon">
               {isSimulatedActive 
@@ -1016,21 +1016,21 @@ const RunwayRoiTracker = () => {
 
             {/* Quick KPI stats row for Invoices */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-              <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
-                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Total Invoices</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#38bdf8' }}>{filteredInvoices.length.toLocaleString()}</div>
+              <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Total Invoices</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--color-revenue-blue)', fontVariantNumeric: 'tabular-nums' }}>{filteredInvoices.length.toLocaleString()}</div>
               </div>
-              <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Total Gross Billed</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#10b981' }}>{formatCurrency(filteredInvoices.reduce((s, i) => s + (i.serviceCharges || 0), 0))}</div>
+              <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Total Gross Billed</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--color-income)', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(filteredInvoices.reduce((s, i) => s + (i.serviceCharges || 0), 0))}</div>
               </div>
-              <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
-                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Saarthi Net Share</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#c084fc' }}>{formatCurrency(filteredInvoices.reduce((s, i) => s + (i.ourShare || 0), 0))}</div>
+              <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Net Company Share</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--color-purple)', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(filteredInvoices.reduce((s, i) => s + (i.ourShare || 0), 0))}</div>
               </div>
-              <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '12px 16px', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
-                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase' }}>Franchisee Share</div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#fbbf24' }}>{formatCurrency(filteredInvoices.reduce((s, i) => s + (i.franchiseeShare || 0), 0))}</div>
+              <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600' }}>Franchisee Share</div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--color-pending)', fontVariantNumeric: 'tabular-nums' }}>{formatCurrency(filteredInvoices.reduce((s, i) => s + (i.franchiseeShare || 0), 0))}</div>
               </div>
             </div>
 
@@ -1045,7 +1045,7 @@ const RunwayRoiTracker = () => {
                   <th>Team Leader</th>
                   <th>Franchise Hub</th>
                   <th style={{ textAlign: 'right' }}>Gross Service Charges</th>
-                  <th style={{ textAlign: 'right' }}>Net Saarthi Share</th>
+                  <th style={{ textAlign: 'right' }}>Net Company Share</th>
                   <th style={{ textAlign: 'center' }}>Status</th>
                 </tr>
               </thead>

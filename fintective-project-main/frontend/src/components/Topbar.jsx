@@ -125,39 +125,39 @@ const Topbar = ({ activePage, setActivePage }) => {
           <h1 style={{ margin: 0 }}>{getPageTitle()}</h1>
           
           {/* Sarthi Financial Data - Top Header Badge */}
-          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', padding: '2px 10px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ display: 'flex', background: activeModule === 'job_portal' ? 'rgba(234, 88, 12, 0.1)' : 'rgba(13, 148, 136, 0.1)', padding: '3px 12px', borderRadius: '10px', border: activeModule === 'job_portal' ? '1px solid rgba(234, 88, 12, 0.25)' : '1px solid rgba(13, 148, 136, 0.25)' }}>
             <span 
-              style={{ color: activeModule === 'job_portal' ? '#ff7849' : 'var(--accent-teal)', fontSize: '11px', fontWeight: 'bold' }}
+              style={{ color: activeModule === 'job_portal' ? '#c2410c' : '#0f766e', fontSize: '11px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase' }}
             >
               Finance App
             </span>
           </div>
         </div>
-        <p className="subtitle">{getPageSubtitle()}</p>
+        <p className="subtitle" style={{ color: '#475569', fontWeight: '500', marginTop: '4px', fontSize: '14px' }}>{getPageSubtitle()}</p>
       </div>
 
       <div className="topbar-actions">
         <button 
           className="btn btn-secondary"
           onClick={() => setIsSyncOpen(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8' }}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', border: '1.5px solid #0284c7', color: '#0369a1', background: '#f0f9ff', fontWeight: '700' }}
           title="Synchronize live CRM data from Saarthi 360"
         >
           <CloudDownload size={16} />
           <span>Sync Saarthi CRM</span>
         </button>
 
-        <div className="topbar-badge">
-          <span className="badge-label">In hand:</span>
-          <span className={`badge-value ${netBalance >= 0 ? 'positive' : 'negative'}`}>
+        <div className="topbar-badge" style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <span className="badge-label" style={{ color: '#475569', fontWeight: '600' }}>In hand:</span>
+          <span className={`badge-value ${netBalance >= 0 ? 'positive' : 'negative'}`} style={{ fontWeight: '800' }}>
             {formatLakhs(netBalance)}
           </span>
         </div>
 
         {currentUser && (
-          <div className="topbar-badge" style={{ borderColor: accentColor }}>
-            <span className="badge-label">Active:</span>
-            <span className="badge-value" style={{ color: accentColor }}>
+          <div className="topbar-badge" style={{ background: '#ffffff', border: `1.5px solid ${accentColor}`, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+            <span className="badge-label" style={{ color: '#475569', fontWeight: '600' }}>Active:</span>
+            <span className="badge-value" style={{ color: accentColor, fontWeight: '800' }}>
               {currentUser.name}
             </span>
           </div>
