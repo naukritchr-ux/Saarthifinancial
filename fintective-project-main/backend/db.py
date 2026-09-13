@@ -70,7 +70,8 @@ def ensure_tables_exist():
                     teamLeaderName VARCHAR(255) NULL,
                     onboardingDate VARCHAR(100) NULL,
                     status VARCHAR(50) DEFAULT 'active',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_fran_name (nameAsPerAgreement)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
 
@@ -79,7 +80,8 @@ def ensure_tables_exist():
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     nameAsPerAgreement VARCHAR(255) NULL,
                     teamLeaderName VARCHAR(255) NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_fran_form_name (nameAsPerAgreement)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
 
@@ -148,6 +150,7 @@ def ensure_tables_exist():
                     status VARCHAR(100) NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     INDEX idx_inv_bill (billNumber),
+                    INDEX idx_inv_enq (enquiry_id),
                     INDEX idx_inv_bd (nameOfBd),
                     INDEX idx_inv_tl (teamLeader),
                     INDEX idx_inv_fran (franchiseName),
@@ -185,6 +188,7 @@ def ensure_tables_exist():
                     franchiseeId VARCHAR(100) NULL,
                     is_deleted TINYINT DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_exp_srno (srNo),
                     INDEX idx_exp_date (billDate),
                     INDEX idx_exp_type (expenseType)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -306,6 +310,7 @@ def ensure_tables_exist():
                     legal_amount DECIMAL(15, 2) DEFAULT 0.00,
                     tdsAmount DECIMAL(15, 2) DEFAULT 0.00,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_legal_id (legal_id),
                     INDEX idx_legal_comp (companyName),
                     INDEX idx_legal_tan (tanNo)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -328,6 +333,41 @@ def ensure_tables_exist():
                     completed_at TIMESTAMP NULL
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
+
+            # Migration: Ensure unique constraints exist on active existing database tables
+            def add_unique_key_if_missing(table_name, key_name, col_name):
+                try:
+                    cur.execute("""
+                        SELECT COUNT(*) as cnt 
+                        FROM information_schema.STATISTICS 
+                        WHERE TABLE_SCHEMA = %s 
+                          AND TABLE_NAME = %s 
+                          AND INDEX_NAME = %s
+                    """, (DB_NAME, table_name, key_name))
+                    res = cur.fetchone()
+                    if res and res["cnt"] == 0:
+                        # Clean up any existing duplicate rows before applying unique key
+                        try:
+                            cur.execute(f"""
+                                DELETE FROM `{table_name}` 
+                                WHERE id NOT IN (
+                                    SELECT min_id FROM (
+                                        SELECT MIN(id) as min_id FROM `{table_name}` WHERE `{col_name}` IS NOT NULL GROUP BY `{col_name}`
+                                    ) t
+                                ) AND `{col_name}` IS NOT NULL;
+                            """)
+                        except Exception as dedup_err:
+                            print(f"[DB DEDUP WARN] {table_name}: {dedup_err}")
+
+                        cur.execute(f"ALTER TABLE `{table_name}` ADD UNIQUE KEY `{key_name}` (`{col_name}`);")
+                        print(f"[DB] Added UNIQUE KEY `{key_name}` on `{table_name}`(`{col_name}`).")
+                except Exception as e:
+                    print(f"[DB WARN] Note adding unique key {key_name} on {table_name}: {str(e)}")
+
+            add_unique_key_if_missing("franchisees", "uq_fran_name", "nameAsPerAgreement")
+            add_unique_key_if_missing("franchisees_forms", "uq_fran_form_name", "nameAsPerAgreement")
+            add_unique_key_if_missing("expenditure", "uq_exp_srno", "srNo")
+            add_unique_key_if_missing("legals_info", "uq_legal_id", "legal_id")
 
         conn.close()
         print("[DB] MySQL schema verified and ready.")

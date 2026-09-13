@@ -41,6 +41,25 @@ def main():
         cursor.execute("SELECT COUNT(*) as count FROM expenditure WHERE franchiseeId IS NOT NULL AND franchiseeId != ''")
         linked_fran = cursor.fetchone()['count']
         
+        # Check orphaned/unresolvable franchiseeId
+        cursor.execute("""
+            SELECT COUNT(*) as count 
+            FROM expenditure e
+            LEFT JOIN franchisees f ON (e.franchiseeId = CAST(f.id AS CHAR) OR e.franchiseeId = f.nameAsPerAgreement)
+            WHERE e.franchiseeId IS NOT NULL AND e.franchiseeId != '' AND f.id IS NULL
+        """)
+        orphaned_fran = cursor.fetchone()['count']
+        
+        # Check orphaned/unresolvable bdAgentId
+        cursor.execute("""
+            SELECT COUNT(*) as count 
+            FROM expenditure e
+            LEFT JOIN (SELECT DISTINCT bdMemberName AS name FROM enquiries WHERE bdMemberName IS NOT NULL) b 
+                   ON (e.bdAgentId = b.name OR e.bdAgentId IN ('bd-1', 'bd-2', 'bd-3', 'bd-4'))
+            WHERE e.bdAgentId IS NOT NULL AND e.bdAgentId != '' AND b.name IS NULL
+        """)
+        orphaned_bd = cursor.fetchone()['count']
+        
         # Check rows with either linked
         cursor.execute("SELECT COUNT(*) as count FROM expenditure WHERE (bdAgentId IS NOT NULL AND bdAgentId != '') OR (franchiseeId IS NOT NULL AND franchiseeId != '')")
         linked_any = cursor.fetchone()['count']
@@ -56,8 +75,8 @@ def main():
         
         print("\nReconciliation Linkage Report:")
         print(f"  Total Expenditure rows:          {total_exp}")
-        print(f"  Linked to BD Agents:             {linked_bd}")
-        print(f"  Linked to Franchisee Hubs:       {linked_fran}")
+        print(f"  Linked to BD Agents:             {linked_bd} (Resolved: {linked_bd - orphaned_bd}, Orphaned: {orphaned_bd})")
+        print(f"  Linked to Franchisee Hubs:       {linked_fran} (Resolved: {linked_fran - orphaned_fran}, Orphaned: {orphaned_fran})")
         print(f"  Total Linked Expenditures:       {linked_any}")
         print(f"  Unlinked Expenditures (Legacy):  {total_exp - linked_any}")
         

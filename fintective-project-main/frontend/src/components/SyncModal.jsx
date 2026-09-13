@@ -24,7 +24,7 @@ const SyncModal = ({ isOpen, onClose }) => {
       addLog('Initiating multi-channel sync for Enquiries, Invoices, Franchisees, Expenses, Clients & Legals...', 'info');
       const result = await syncWithSaarthi();
       
-      if (result.success) {
+      if (result.success && result.data?.ok !== false) {
         const d = result.data || {};
         setSyncStats(d);
         addLog(`✅ Franchisees Synced: ${d.franchisees || 0} records`, 'success');
@@ -38,24 +38,16 @@ const SyncModal = ({ isOpen, onClose }) => {
         }
         addLog(`🎉 All Saarthi CRM records written to MySQL (crm_db) in ${(d.duration_seconds || 0).toFixed(2)}s!`, 'success');
         setStatus('success');
+        // Refresh dashboard data after successful sync
+        fetchAllData();
       } else {
-        addLog('⚠️ Backend server connecting. Running direct browser sync fallback...', 'warning');
-        await fetchAllData();
-        addLog('✅ Successfully pooled live Saarthi CRM records directly into dashboard!', 'success');
-        setSyncStats({ invoices: 'Live', enquiries: 'Live', franchisees: 'Live' });
-        setStatus('success');
-      }
-    } catch (err) {
-      addLog('⚠️ Running direct browser sync fallback...', 'warning');
-      try {
-        await fetchAllData();
-        addLog('✅ Successfully pooled live Saarthi CRM records directly into dashboard!', 'success');
-        setSyncStats({ invoices: 'Live', enquiries: 'Live', franchisees: 'Live' });
-        setStatus('success');
-      } catch (e) {
-        addLog(`💥 Connection Error: ${err.message}`, 'error');
+        const errMsg = result.error || result.data?.error || (result.data?.errors && result.data.errors.join(', ')) || 'Live sync failed or was rejected by backend.';
+        addLog(`❌ Sync Failed: ${errMsg}`, 'error');
         setStatus('error');
       }
+    } catch (err) {
+      addLog(`💥 Connection/Sync Error: ${err.message}`, 'error');
+      setStatus('error');
     }
   };
 

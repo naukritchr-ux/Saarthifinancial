@@ -8,3 +8,5 @@ pandas
 numpy
 scikit-learn
 joblib
+mysql-connector-python>=8.0.33
+matplotlib>=3.8.0

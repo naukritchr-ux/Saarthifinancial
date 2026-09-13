@@ -5,74 +5,66 @@ warnings.filterwarnings('ignore', category=UserWarning)
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
+from invoice_helpers import get_share_split
 
 # Import database module
 from db import init_db, get_db_connection, DB_NAME, DB_PORT
 
 load_dotenv()
 
-# Load colliding bill numbers dynamically (Fix 1/MoM Pivot)
+# Dynamic Exclusion and Collision Resolution from Live Database
 COLLIDING_BILL_NUMBERS = []
-try:
-    csv_path = os.path.join(os.path.dirname(__file__), 'finance_clean_byclaude', 'invoice_dup_collisions_detail.csv')
-    if os.path.exists(csv_path):
-        import csv
-        with open(csv_path, 'r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            COLLIDING_BILL_NUMBERS = list(set(row['billNumber'] for row in reader if row.get('billNumber')))
-except Exception as e:
-    print("Warning: could not load colliding bill numbers:", str(e))
-
-if not COLLIDING_BILL_NUMBERS:
-    # Fallback to hardcoded list if CSV is missing
-    COLLIDING_BILL_NUMBERS = [
-        '0029/G/22-23', '0161/G/22-23', '0586/G/22-23', '0630/G/22-23', '0820/G/22-23', 
-        '1161/G/22-23', '1643/G/22-23', '1815/G/22-23', '1856/G/22-23', '270006/G/24-25', 
-        '270045/G/23-24', '270086/G/23-24', '270088/G/23-24', '270212/G/25-26', '270274/G/25-26', 
-        '270391/G/23-24', '270415/G/24-25', '270480/G/23-24', '270524/G/24-25', '270533/G/24-25', 
-        '270534/G/24-25', '270663/G/25-26', '270732/G/24-25', '270872/G/24-25', '270965/G/23-24', 
-        '270966/G/23-24', '270967/G/23-24', '270989/G/23-24', '271005/G/23-24', '271010/G/24-25', 
-        '271019/G23-24', '271030/G/23-24', '271037/G/23-24', '271074/G/23-24', '271077/G/23-24', 
-        '271082/G/23-24', '271105/G/2324', '271130/G/23-24', '271143/G/23-24', '271183/G/23-24', 
-        '271192/G/23-24', '271197/G/23-24', '271241/G/23-24', '271247/G/23-24', '271253/G/23-24', 
-        '271259/G/23-24', '271320/G/23-24', '271366/G/23-24', '271378/G/23-24', '271420/G/23-24', 
-        '271436/G/24-25', '271466/G/23-24', '271471/G/23-24', '271485/G/25-26', '271487/G/23-24', 
-        '271497/G/23-24', '271524/G/23-24', '271525/G/23-24', '271553/G/23-24', '271565/G/23-24', 
-        '271585/G/23-24', '271621/G/23-24', '271630/G/23-24', '271634/G/23-24', '271635/G/23-24', 
-        '271640/G/23-24', '271645/G/23-24', '271653/G/23-24', '271717/G/23-24', '271718/G/23-24', 
-        '271718/G/25-26', '271719/G/25-26', '271720/G/25-26', '271734/G/23-24', '271778/G/23-24', 
-        '271779/G/23-24', '271783/G/25-26', '271784/G/25-26', '271795/G/23-24', '271852/G/23-24', 
-        '271915/G/25-26', '271923/G/24-25', '271924/G/24-25', '271939/G/25-26', '272054/G/24-25'
-    ]
-
-# Load duplicate enquiries to exclude (Fix 2/MoM Pivot)
 ENQUIRY_IDS_TO_EXCLUDE = []
-try:
-    csv_path_flagged = os.path.join(os.path.dirname(__file__), 'finance_clean_byclaude', 'enquiries_duplicate_flagged.csv')
-    if os.path.exists(csv_path_flagged):
-        import pandas as pd
-        flagged_df = pd.read_csv(csv_path_flagged)
-        # Replicate resolution logic: group by companyName, candidateName, bill_no
-        # Keep the first (most-recently-updated) row per group, drop the rest
-        flagged_df['candidateName_clean'] = flagged_df['candidateName'].fillna('')
-        flagged_df['bill_no_clean'] = flagged_df['bill_no'].fillna('')
-        flagged_df['companyName_clean'] = flagged_df['companyName'].fillna('')
-        flagged_df['created_at_dt'] = pd.to_datetime(flagged_df['created_at'])
-        flagged_df['updated_at_dt'] = pd.to_datetime(flagged_df['updated_at'])
-        
-        # Sort by updated_at desc, then created_at desc, then id desc
-        flagged_df = flagged_df.sort_values(by=['updated_at_dt', 'created_at_dt', 'id'], ascending=False)
-        groups = flagged_df.groupby(['companyName_clean', 'candidateName_clean', 'bill_no_clean'])
-        
-        ids_to_keep = set()
-        all_ids = set(flagged_df['id'])
-        for name, group in groups:
-            ids_to_keep.add(int(group.iloc[0]['id']))
-            
-        ENQUIRY_IDS_TO_EXCLUDE = list(all_ids - ids_to_keep)
-        print(f"Loaded {len(ENQUIRY_IDS_TO_EXCLUDE)} duplicate enquiry IDs to exclude.")
-except Exception as e:
-    print("Warning: could not load duplicate enquiries to exclude:", str(e))
+
+def refresh_live_exclusions():
+    global COLLIDING_BILL_NUMBERS, ENQUIRY_IDS_TO_EXCLUDE
+    try:
+        from collections import defaultdict
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT 
+                    e.id, 
+                    e.companyName, 
+                    i.candidateName, 
+                    e.bill_no, 
+                    e.bill_date, 
+                    e.created_at, 
+                    e.updated_at
+                FROM enquiries e
+                LEFT JOIN invoice i ON e.id = i.enquiry_id
+                WHERE e.bill_no IS NOT NULL AND TRIM(e.bill_no) != ''
+            """)
+            rows = cur.fetchall()
+        conn.close()
+
+        company_per_bill = defaultdict(set)
+        groups = defaultdict(list)
+
+        for r in rows:
+            b = (r['bill_no'] or '').strip()
+            c = (r['companyName'] or '').strip().lower()
+            cand = (r['candidateName'] or '').strip().lower()
+            if b and b.lower() not in ('null', 'none', 'n/a', '-'):
+                company_per_bill[b].add(c)
+                groups[(c, cand, b)].append(r)
+
+        COLLIDING_BILL_NUMBERS = [b for b, comps in company_per_bill.items() if len(comps) > 1]
+
+        ids_to_exclude = []
+        for (c, cand, b), grp in groups.items():
+            if len(grp) > 1:
+                grp.sort(key=lambda x: (str(x.get('updated_at') or ''), str(x.get('created_at') or ''), x['id']), reverse=True)
+                for x in grp[1:]:
+                    ids_to_exclude.append(x['id'])
+
+        ENQUIRY_IDS_TO_EXCLUDE = ids_to_exclude
+        print(f"[Live Pipeline] Computed {len(COLLIDING_BILL_NUMBERS)} colliding bill numbers and {len(ENQUIRY_IDS_TO_EXCLUDE)} duplicate enquiry IDs to exclude.")
+    except Exception as e:
+        print("Warning: Could not dynamically refresh live exclusions from database:", str(e))
+
+# Initial dynamic load on startup
+refresh_live_exclusions()
 
 def get_enq_exclude_clause(table_prefix=""):
     prefix = f"{table_prefix}." if table_prefix else ""
@@ -133,9 +125,21 @@ def safe_date_diff_days(d1, d2):
 app = Flask(__name__)
 
 # Configure CORS with origins check
-allowed_origins_env = os.environ.get('ALLOWED_ORIGINS', '*')
-allowed_origins = [o.strip() for o in allowed_origins_env.split(',')] if allowed_origins_env != '*' else '*'
+is_prod = os.environ.get('FLASK_ENV') == 'production' or not app.debug
+allowed_origins_env = os.environ.get('ALLOWED_ORIGINS')
+if not allowed_origins_env:
+    if is_prod:
+        allowed_origins = ['https://saarthi360.in', 'https://api.sarthi360.in', 'https://saarthifinancial-1.onrender.com']
+    else:
+        allowed_origins = '*'
+else:
+    allowed_origins = [o.strip() for o in allowed_origins_env.split(',') if o.strip()]
 CORS(app, origins=allowed_origins)
+
+API_KEY = os.environ.get('API_KEY')
+ENFORCE_API_KEY = os.environ.get('ENFORCE_API_KEY', 'true').lower() == 'true'
+if not API_KEY and is_prod and ENFORCE_API_KEY:
+    raise RuntimeError("CRITICAL SECURITY CONFIGURATION: API_KEY environment variable must be set in production.")
 
 @app.before_request
 def verify_api_key():
@@ -144,14 +148,11 @@ def verify_api_key():
         return None
 
     incoming_key = request.headers.get('X-API-Key')
-    expected_key = os.environ.get('API_KEY', 'saarthi-secret-api-key-2026')
-    enforce_key = os.environ.get('ENFORCE_API_KEY', 'false').lower() == 'true'
+    expected_key = os.environ.get('API_KEY')
 
-    if not incoming_key or incoming_key != expected_key:
-        if enforce_key:
+    if ENFORCE_API_KEY:
+        if not expected_key or not incoming_key or incoming_key != expected_key:
             return jsonify({'success': False, 'error': 'Unauthorized: Invalid or missing X-API-Key header'}), 401
-        else:
-            print(f"[API-KEY WARNING] Missing or mismatched X-API-Key header on {request.method} {request.path}")
     return None
 
 from invoice_controller import invoice_bp
@@ -315,7 +316,10 @@ def get_transactions():
                         e.bdMemberName,
                         e.franchiseeName,
                         COALESCE(i.serviceCharges, e.bill_amount, 0) AS serviceAmt,
-                        COALESCE(i.ourShare, e.bill_amount * 0.4375, 0) AS rShare,
+                        COALESCE(i.ourShare, e.bill_amount * CASE 
+                            WHEN COALESCE(i.billDate, e.bill_date, e.dateOfAllocation, e.created_at) < '2026-04-01' THEN 0.40 
+                            ELSE 0.25 
+                        END, 0) AS rShare,
                         COALESCE(i.financialYear, 'N/A') AS financialYear,
                         e.enquiryStatus,
                         e.teamLeaderName,
@@ -550,13 +554,32 @@ def get_transactions():
                     })
 
                 # A. Generate Accrued BD/TL Commissions from Inflows (Fix 5)
+                bd_comm_rate = 0.02
+                tl_comm_rate = 0.03
+                try:
+                    cursor.execute("SELECT percentage FROM incentive_rules WHERE role = 'BD' AND is_active = 1 LIMIT 1")
+                    r_bd = cursor.fetchone()
+                    if r_bd and r_bd.get('percentage') is not None:
+                        bd_comm_rate = float(r_bd['percentage']) / 100.0 if float(r_bd['percentage']) > 1 else float(r_bd['percentage'])
+                except Exception:
+                    pass
+
+                try:
+                    cursor.execute("SELECT percentage FROM incentive_rules WHERE role = 'TL' AND is_active = 1 LIMIT 1")
+                    r_tl = cursor.fetchone()
+                    if r_tl and r_tl.get('percentage') is not None:
+                        tl_comm_rate = float(r_tl['percentage']) / 100.0 if float(r_tl['percentage']) > 1 else float(r_tl['percentage'])
+                except Exception:
+                    pass
+
                 for row in enquiry_inflows:
                     service_charges_calc = float(row['serviceAmt'] or 0.0)
+                    company_pool = get_share_split(row.get('date'))["company_pct"]
                     
-                    # BD share = 2% of the 25% pool
-                    bd_comm = service_charges_calc * 0.25 * 0.02
-                    # TL share = 3% of the 25% pool
-                    tl_comm = service_charges_calc * 0.25 * 0.03
+                    # BD share dynamically calculated
+                    bd_comm = service_charges_calc * company_pool * bd_comm_rate
+                    # TL share dynamically calculated
+                    tl_comm = service_charges_calc * company_pool * tl_comm_rate
                     
                     # Map IDs safely
                     mapped_bd_agent_id = row.get('bdAgentId')
@@ -1267,7 +1290,7 @@ def get_bd_revenue(bd_name=None, start_date=None, end_date=None, aggregate=True)
                         aggregates[name] = {'invoices_closed': 0, 'gross_revenue': 0.0, 'net_revenue': 0.0}
                     aggregates[name]['invoices_closed'] += 1
                     aggregates[name]['gross_revenue'] += float(r['amount'] or 0.0)
-                    aggregates[name]['net_revenue'] += float(r['amount'] or 0.0) * 0.4375
+                    aggregates[name]['net_revenue'] += float(r['amount'] or 0.0) * get_share_split(r.get('date'))['company_pct']
                 
                 result = []
                 for name, vals in aggregates.items():
@@ -1298,7 +1321,7 @@ def get_bd_revenue(bd_name=None, start_date=None, end_date=None, aggregate=True)
                         'invoice_no': r['referenceId'],
                         'bill_date': r['date'],
                         'gross_revenue': float(r['amount'] or 0.0),
-                        'net_revenue': float(r['amount'] or 0.0) * 0.4375,
+                        'net_revenue': float(r['amount'] or 0.0) * get_share_split(r.get('date'))['company_pct'],
                         'payment_mode': r['paymentMode'],
                         'description': r['description']
                     })
@@ -2229,7 +2252,15 @@ def get_team_leaders():
                         SUM(CASE WHEN e.enquiryStatus = 'revised' THEN 1 ELSE 0 END) AS revised,
                         SUM(CASE WHEN e.enquiryStatus = 'credit_note' THEN 1 ELSE 0 END) AS credit_notes,
                         SUM(CASE WHEN e.enquiryStatus IN ('closed', 'offered_and_accepted') THEN COALESCE(i.serviceCharges, e.bill_amount, 0) ELSE 0 END) AS gross_revenue,
-                        SUM(CASE WHEN e.enquiryStatus IN ('closed', 'offered_and_accepted') THEN COALESCE(i.serviceCharges - i.franchiseeShare, i.ourShare, e.bill_amount * 0.4375, 0) ELSE 0 END) AS net_revenue,
+                        SUM(CASE WHEN e.enquiryStatus IN ('closed', 'offered_and_accepted') THEN COALESCE(
+                            i.serviceCharges - i.franchiseeShare, 
+                            i.ourShare, 
+                            e.bill_amount * CASE 
+                                WHEN COALESCE(i.billDate, e.bill_date, e.dateOfAllocation, e.created_at) < '2026-04-01' THEN 0.40 
+                                ELSE 0.25 
+                            END, 
+                            0
+                        ) ELSE 0 END) AS net_revenue,
                         SUM(CASE WHEN e.enquiryStatus IN ('cancelled', 'offered_and_rejected', 'internally_closed') THEN COALESCE(e.placementFees, 0) ELSE 0 END) AS loss_amount,
                         SUM(CASE WHEN e.enquiryStatus = 'credit_note' THEN COALESCE(i.serviceCharges, e.bill_amount, 0) ELSE 0 END) AS credit_note_reversals
                     FROM enquiries e
@@ -2891,6 +2922,12 @@ def sync_saarthi_endpoint():
     from sync_service import sync_saarthi_all
     try:
         result = sync_saarthi_all()
+        if result.get('status') == 'locked' or result.get('ok') is False:
+            return jsonify({
+                'success': False,
+                'message': result.get('error', 'Saarthi Live CRM sync is locked or failed'),
+                'data': result
+            }), 409 if result.get('status') == 'locked' else 500
         return jsonify({
             'success': True,
             'message': 'Saarthi Live CRM sync completed successfully',
