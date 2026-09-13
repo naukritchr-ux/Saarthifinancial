@@ -13,6 +13,7 @@ import JobPortalAnalytics from './pages/JobPortalAnalytics';
 import CashOutflow from './pages/CashOutflow';
 import Reports from './pages/Reports';
 import RunwayRoiTracker from './pages/RunwayRoiTracker';
+import GrowthTracking from './pages/GrowthTracking';
 import Login from './pages/Login';
 
 class ErrorBoundary extends React.Component {
@@ -73,6 +74,8 @@ function AppContent() {
         return <Reports />;
       case 'roi-tracker':
         return <RunwayRoiTracker />;
+      case 'growth-tracking':
+        return <GrowthTracking />;
       default:
         return <Dashboard setActivePage={setActivePage} />;
     }

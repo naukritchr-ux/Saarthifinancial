@@ -242,6 +242,32 @@ def ensure_tables_exist():
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
 
+            # 8. Growth Targets & Outcome Tracking
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS growth_targets (
+                    id VARCHAR(100) PRIMARY KEY,
+                    entity_type VARCHAR(50) NOT NULL,
+                    entity_id VARCHAR(100) NOT NULL,
+                    growth_pct_target DECIMAL(5, 4) NOT NULL,
+                    salary_target DECIMAL(15, 2) NULL,
+                    period_start VARCHAR(100) NOT NULL,
+                    period_end VARCHAR(100) NOT NULL,
+                    guidelines TEXT NULL,
+                    status VARCHAR(50) DEFAULT 'active',
+                    actual_growth_pct DECIMAL(5, 4) NULL,
+                    actual_value DECIMAL(15, 2) NULL,
+                    kra_summary TEXT NULL,
+                    target_letter_text MEDIUMTEXT NULL,
+                    outcome_letter_text MEDIUMTEXT NULL,
+                    target_letter_sent_at VARCHAR(100) NULL,
+                    outcome_recorded_at VARCHAR(100) NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_gt_entity (entity_type, entity_id),
+                    INDEX idx_gt_status (status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
             # Seed default budgets if empty
             cur.execute("SELECT COUNT(*) as cnt FROM budgets;")
             if cur.fetchone()["cnt"] == 0:

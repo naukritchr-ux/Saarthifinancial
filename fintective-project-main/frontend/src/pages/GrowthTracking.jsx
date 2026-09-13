@@ -1,0 +1,803 @@
+import React, { useContext, useState, useEffect, useMemo } from 'react';
+import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
+import { fetchWithApiKey } from '../utils/apiClient';
+import { formatCurrency, formatLakhs } from '../utils/formatters';
+import { 
+  TrendingUp, 
+  TrendingDown, 
+  Award, 
+  Users, 
+  Building2, 
+  Plus, 
+  Calendar, 
+  FileText, 
+  CheckCircle2, 
+  AlertCircle, 
+  Copy, 
+  Check, 
+  X, 
+  Sliders, 
+  RotateCcw,
+  Percent,
+  DollarSign,
+  ChevronRight,
+  Sparkles
+} from 'lucide-react';
+import Pagination from '../components/Pagination';
+import GoalSetterModal from '../components/GoalSetterModal';
+import OutcomeRecorderModal from '../components/OutcomeRecorderModal';
+
+const GrowthTracking = () => {
+  const { franchisees, bdAgents } = useContext(FinanceContext);
+
+  // Entity selection state
+  const [entityType, setEntityType] = useState('franchisee'); // 'franchisee' | 'bd_agent'
+  const [selectedEntityId, setSelectedEntityId] = useState('');
+  
+  // Prediction & Scenario state
+  const [predictionData, setPredictionData] = useState(null);
+  const [predictionLoading, setPredictionLoading] = useState(false);
+  const [overrideRate, setOverrideRate] = useState('');
+  const [activeScenarioMultiplier, setActiveScenarioMultiplier] = useState(2); // 1, 2, 3, 4
+
+  // Target History & Modals state
+  const [targetsList, setTargetsList] = useState([]);
+  const [targetsLoading, setTargetsLoading] = useState(false);
+  const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
+  const [activeOutcomeTarget, setActiveOutcomeTarget] = useState(null); // target to record outcome for
+  const [viewingLetter, setViewingLetter] = useState(null); // { title, content }
+  const [letterCopied, setLetterCopied] = useState(false);
+
+  // Pagination
+  const [historyPage, setHistoryPage] = useState(1);
+  const ITEMS_PER_PAGE = 6;
+
+  // Build entity rosters
+  const entityOptions = useMemo(() => {
+    if (entityType === 'franchisee') {
+      const base = (franchisees && franchisees.length > 0)
+        ? franchisees.map(f => ({ id: String(f.id), name: f.name || f.nameAsPerAgreement, type: 'franchisee', baseRevenue: f.revenue || 5500000 }))
+        : [
+            { id: 'f-1', name: 'Nagpur Central', type: 'franchisee', baseRevenue: 7200000 },
+            { id: 'f-2', name: 'Pune East', type: 'franchisee', baseRevenue: 5800000 },
+            { id: 'f-3', name: 'Mumbai South', type: 'franchisee', baseRevenue: 11500000 },
+            { id: 'f-4', name: 'Nashik Hub', type: 'franchisee', baseRevenue: 3900000 }
+          ];
+      return base;
+    } else {
+      const base = (bdAgents && bdAgents.length > 0)
+        ? bdAgents.map(b => ({ id: String(b.id), name: b.name, type: 'bd_agent', baseSalary: b.baseSalary || 12000, baseRevenue: b.grossRevenue || 11200000 }))
+        : [
+            { id: 'bd-1', name: 'Rohan Mehta', type: 'bd_agent', baseSalary: 12000, baseRevenue: 14800000 },
+            { id: 'bd-2', name: 'Neha Sharma', type: 'bd_agent', baseSalary: 10000, baseRevenue: 10900000 },
+            { id: 'bd-3', name: 'Karan Malhotra', type: 'bd_agent', baseSalary: 15000, baseRevenue: 21000000 },
+            { id: 'bd-4', name: 'Anjali Verma', type: 'bd_agent', baseSalary: 9000, baseRevenue: 6500000 }
+          ];
+      return base;
+    }
+  }, [entityType, franchisees, bdAgents]);
+
+  // Set default selected entity if empty
+  useEffect(() => {
+    if (entityOptions.length > 0) {
+      const exists = entityOptions.some(e => e.id === selectedEntityId || e.name === selectedEntityId);
+      if (!exists) {
+        setSelectedEntityId(entityOptions[0].id);
+      }
+    }
+  }, [entityType, entityOptions, selectedEntityId]);
+
+  const selectedEntity = useMemo(() => {
+    return entityOptions.find(e => e.id === selectedEntityId || e.name === selectedEntityId) || entityOptions[0] || null;
+  }, [entityOptions, selectedEntityId]);
+
+  // Fetch prediction data whenever entity or rate changes
+  const fetchPrediction = async (customRateVal) => {
+    if (!selectedEntity) return;
+    setPredictionLoading(true);
+    try {
+      const rateParam = (customRateVal !== undefined && customRateVal !== '') ? `&rate=${customRateVal}` : '';
+      const url = `${API_BASE_URL}/growth-targets/predict?entity_type=${entityType}&entity_id=${encodeURIComponent(selectedEntity.id || selectedEntity.name)}${rateParam}&periods=3`;
+      const res = await fetchWithApiKey(url);
+      if (res.ok) {
+        const data = await res.json();
+        setPredictionData(data);
+        if (customRateVal === undefined || customRateVal === '') {
+          setOverrideRate(String(data.applied_rate_pct || 15));
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load growth prediction:", err);
+    } finally {
+      setPredictionLoading(false);
+    }
+  };
+
+  // Fetch targets list
+  const fetchTargets = async () => {
+    if (!selectedEntity) return;
+    setTargetsLoading(true);
+    try {
+      const url = `${API_BASE_URL}/growth-targets?entity_type=${entityType}&entity_id=${encodeURIComponent(selectedEntity.id || selectedEntity.name)}`;
+      const res = await fetchWithApiKey(url);
+      if (res.ok) {
+        const data = await res.json();
+        setTargetsList(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error("Failed to load targets history:", err);
+    } finally {
+      setTargetsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedEntity) {
+      fetchPrediction();
+      fetchTargets();
+    }
+  }, [entityType, selectedEntityId]);
+
+  const handleRateChange = (newRate) => {
+    setOverrideRate(newRate);
+    fetchPrediction(newRate);
+  };
+
+  const handleResetRate = () => {
+    setOverrideRate('');
+    fetchPrediction('');
+  };
+
+  const handleCopyLetter = (text) => {
+    navigator.clipboard.writeText(text);
+    setLetterCopied(true);
+    setTimeout(() => setLetterCopied(false), 2500);
+  };
+
+  const activeTarget = useMemo(() => {
+    return targetsList.find(t => t.status === 'active') || null;
+  }, [targetsList]);
+
+  return (
+    <div className="bd-performance-page animate-fade-in" style={{ paddingBottom: '40px' }}>
+      
+      {/* Top Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: '1.45rem', fontWeight: '700', color: 'var(--text-main)', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Award size={26} color="var(--accent-teal)" />
+            Growth Target & Outcome Tracking
+          </h2>
+          <span style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+            Predict forward multi-period trajectories, simulate scale scenarios, formalize target memos, and audit outcomes.
+          </span>
+        </div>
+
+        <button
+          className="btn btn-primary"
+          onClick={() => setIsGoalModalOpen(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            backgroundColor: 'var(--accent-teal)',
+            color: '#FFFFFF',
+            padding: '9px 18px',
+            borderRadius: '8px',
+            border: 'none',
+            fontWeight: '600',
+            fontSize: '0.86rem',
+            cursor: 'pointer',
+            boxShadow: '0 2px 6px rgba(15, 110, 86, 0.25)'
+          }}
+        >
+          <Plus size={16} />
+          Set New Growth Target
+        </button>
+      </div>
+
+      {/* Entity Type & Selector Toolbar */}
+      <div style={{ background: 'var(--bg-card)', padding: '14px 18px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+        {/* Type Toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Entity Type:</span>
+          <div style={{ display: 'flex', background: 'var(--bg-main)', borderRadius: '8px', padding: '3px', border: '1px solid var(--border-color)' }}>
+            <button
+              onClick={() => { setEntityType('franchisee'); setSelectedEntityId(''); }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 14px',
+                borderRadius: '6px',
+                border: 'none',
+                background: entityType === 'franchisee' ? 'var(--bg-card)' : 'transparent',
+                color: entityType === 'franchisee' ? 'var(--accent-teal)' : 'var(--text-muted)',
+                fontWeight: entityType === 'franchisee' ? '700' : '500',
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                boxShadow: entityType === 'franchisee' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none'
+              }}
+            >
+              <Building2 size={15} />
+              Franchisees
+            </button>
+            <button
+              onClick={() => { setEntityType('bd_agent'); setSelectedEntityId(''); }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 14px',
+                borderRadius: '6px',
+                border: 'none',
+                background: entityType === 'bd_agent' ? 'var(--bg-card)' : 'transparent',
+                color: entityType === 'bd_agent' ? 'var(--accent-teal)' : 'var(--text-muted)',
+                fontWeight: entityType === 'bd_agent' ? '700' : '500',
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                boxShadow: entityType === 'bd_agent' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none'
+              }}
+            >
+              <Users size={15} />
+              BD Specialists
+            </button>
+          </div>
+        </div>
+
+        {/* Entity Selector Dropdown */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Selected Entity:</span>
+          <select
+            value={selectedEntityId}
+            onChange={(e) => setSelectedEntityId(e.target.value)}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-main)',
+              color: 'var(--text-main)',
+              fontSize: '0.88rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              minWidth: '220px'
+            }}
+          >
+            {entityOptions.map(ent => (
+              <option key={ent.id} value={ent.id}>
+                {ent.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* KPI Overview Grid */}
+      <section className="kpi-grid" style={{ marginBottom: '24px' }}>
+        <div className="kpi-card card-blue">
+          <div className="kpi-header">
+            <span className="kpi-title">Current Baseline Revenue</span>
+            <span className="kpi-icon"><DollarSign size={18} /></span>
+          </div>
+          <h2 className="kpi-value">{formatLakhs(predictionData?.base_revenue || selectedEntity?.baseRevenue || 0)}</h2>
+          <div className="kpi-change up">
+            <span>Latest 12-Month Audited Inflow ({selectedEntity?.name})</span>
+          </div>
+        </div>
+
+        <div className="kpi-card card-purple">
+          <div className="kpi-header">
+            <span className="kpi-title">Historical CAGR (Growth Rate)</span>
+            <span className="kpi-icon"><TrendingUp size={18} /></span>
+          </div>
+          <h2 className="kpi-value">
+            {predictionData ? `${predictionData.historical_cagr_pct >= 0 ? '+' : ''}${predictionData.historical_cagr_pct}%` : '+15.0%'}
+          </h2>
+          <div className="kpi-change up">
+            <span>Derived from multi-period financial trajectory</span>
+          </div>
+        </div>
+
+        <div className="kpi-card card-green">
+          <div className="kpi-header">
+            <span className="kpi-title">Projection Rate (R)</span>
+            <span className="kpi-icon"><Percent size={18} /></span>
+          </div>
+          <h2 className="kpi-value">
+            +{predictionData?.applied_rate_pct || 20}%
+          </h2>
+          <div className="kpi-change up">
+            <span>Applied compounding model factor</span>
+          </div>
+        </div>
+
+        <div className="kpi-card card-red" style={{ borderColor: activeTarget ? 'rgba(15, 110, 86, 0.3)' : 'var(--border-color)' }}>
+          <div className="kpi-header">
+            <span className="kpi-title">Active Milestone Target</span>
+            <span className="kpi-icon"><Award size={18} /></span>
+          </div>
+          <h2 className="kpi-value" style={{ color: activeTarget ? '#0F6E56' : 'var(--text-muted)', fontSize: '1.35rem' }}>
+            {activeTarget ? `+${activeTarget.growth_pct_target_pct}% Target` : 'No Active Goal'}
+          </h2>
+          <div className="kpi-change" style={{ color: 'var(--text-muted)' }}>
+            <span>{activeTarget ? `Due: ${activeTarget.period_end}` : 'Ready for target setting'}</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Interactive Growth Model & Scale Simulator */}
+      <div className="dashboard-card" style={{ marginBottom: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Sparkles size={18} color="var(--accent-teal)" />
+              Compounding Rate Projections & Scale Multiplier Scenarios
+            </h3>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              Formula: <code>Projected[t] = Base × (1 + R)^t</code> alongside flat multiplier scenarios (2x, 3x, 4x).
+            </span>
+          </div>
+
+          {/* Rate Override Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)' }}>Adjust Rate (R):</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <input
+                type="number"
+                step="1"
+                min="-20"
+                max="200"
+                value={overrideRate}
+                onChange={(e) => handleRateChange(e.target.value)}
+                style={{
+                  width: '74px',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  background: 'var(--bg-main)',
+                  color: 'var(--text-main)',
+                  fontWeight: '700',
+                  fontSize: '0.85rem',
+                  textAlign: 'center'
+                }}
+              />
+              <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-muted)' }}>%</span>
+              <button
+                onClick={handleResetRate}
+                title="Reset to Historical CAGR"
+                style={{
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  background: 'var(--bg-main)',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  fontSize: '0.75rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                <RotateCcw size={12} />
+                CAGR
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Rate-based Multi-Period Forward Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '24px' }}>
+          {(predictionData?.projections || [
+            { period_label: 'Year +1', projected_revenue: 6000000, growth_pct: 20, incremental_gain: 1000000 },
+            { period_label: 'Year +2', projected_revenue: 7200000, growth_pct: 44, incremental_gain: 2200000 },
+            { period_label: 'Year +3', projected_revenue: 8640000, growth_pct: 72.8, incremental_gain: 3640000 }
+          ]).map((proj, idx) => (
+            <div
+              key={idx}
+              style={{
+                background: 'var(--bg-main)',
+                padding: '16px',
+                borderRadius: '10px',
+                border: '1px solid var(--border-color)',
+                borderTop: '3px solid var(--accent-teal)'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)' }}>{proj.period_label} Projection</span>
+                <span style={{
+                  fontSize: '0.72rem',
+                  fontWeight: '700',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  backgroundColor: '#E6F4EA',
+                  color: '#0F6E56'
+                }}>
+                  +{proj.growth_pct}%
+                </span>
+              </div>
+              <div style={{ fontSize: '1.25rem', fontWeight: '700', color: '#0F6E56', marginBottom: '4px' }}>
+                {formatCurrency(proj.projected_revenue)}
+              </div>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                Incremental: +{formatCurrency(proj.incremental_gain)}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Scale Multiplier Scenarios (1x, 2x, 3x, 4x) */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h5 style={{ margin: 0, fontSize: '0.88rem', fontWeight: '700', color: 'var(--text-main)' }}>
+              Flat Scale Multiplier Scenarios (Reused from Runway Simulator)
+            </h5>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {[1, 2, 3, 4].map(mult => (
+                <button
+                  key={mult}
+                  onClick={() => setActiveScenarioMultiplier(mult)}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: activeScenarioMultiplier === mult ? '1px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                    background: activeScenarioMultiplier === mult ? 'var(--accent-teal)' : 'var(--bg-main)',
+                    color: activeScenarioMultiplier === mult ? '#ffffff' : 'var(--text-main)',
+                    fontSize: '0.74rem',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {mult}x Scale
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '12px' }}>
+            {['scale1x', 'scale2x', 'scale3x', 'scale4x'].map((key, index) => {
+              const sc = predictionData?.scenarios?.[key] || { multiplier: index + 1, label: `${index + 1}x Scale`, revenue: (selectedEntity?.baseRevenue || 5000000) * (index + 1), estimated_net: (selectedEntity?.baseRevenue || 5000000) * (index + 1) * 0.4375 };
+              const isSelected = activeScenarioMultiplier === sc.multiplier;
+
+              return (
+                <div
+                  key={key}
+                  onClick={() => setActiveScenarioMultiplier(sc.multiplier)}
+                  style={{
+                    padding: '14px',
+                    borderRadius: '8px',
+                    border: isSelected ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                    background: isSelected ? 'rgba(15, 110, 86, 0.04)' : 'var(--bg-main)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <span style={{ fontSize: '0.75rem', fontWeight: '700', color: isSelected ? 'var(--accent-teal)' : 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                    {sc.label}
+                  </span>
+                  <div style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '2px' }}>
+                    {formatCurrency(sc.revenue)}
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    Net Retention: {formatCurrency(sc.estimated_net)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Target History & Outcome Tracking Table */}
+      <div className="dashboard-card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+          <div>
+            <h3 className="card-title" style={{ margin: 0 }}>Target Milestones & Performance Registry</h3>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              Historical growth targets, official memos, and audited actuals for {selectedEntity?.name}.
+            </span>
+          </div>
+
+          <button
+            className="btn btn-secondary"
+            onClick={() => setIsGoalModalOpen(true)}
+            style={{
+              padding: '6px 14px',
+              borderRadius: '6px',
+              fontSize: '0.8rem',
+              fontWeight: '600',
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-card)',
+              color: 'var(--text-main)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <Plus size={14} />
+            Set New Target
+          </button>
+        </div>
+
+        {targetsLoading ? (
+          <div style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+            Loading targets registry...
+          </div>
+        ) : targetsList.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '36px 20px', background: 'var(--bg-main)', borderRadius: '10px', border: '1px dashed var(--border-color)' }}>
+            <Award size={32} color="var(--text-muted)" style={{ marginBottom: '8px' }} />
+            <h4 style={{ margin: '0 0 6px 0', color: 'var(--text-main)', fontSize: '0.95rem' }}>No Targets Established Yet</h4>
+            <p style={{ margin: '0 0 16px 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              Set the first annual growth milestone and generate an official performance memo for {selectedEntity?.name}.
+            </p>
+            <button
+              className="btn btn-primary"
+              onClick={() => setIsGoalModalOpen(true)}
+              style={{ padding: '7px 16px', borderRadius: '6px', border: 'none', background: 'var(--accent-teal)', color: '#ffffff', fontWeight: '600', fontSize: '0.82rem', cursor: 'pointer' }}
+            >
+              Establish Target Now
+            </button>
+          </div>
+        ) : (() => {
+          const safePage = Math.min(Math.max(1, historyPage), Math.max(1, Math.ceil(targetsList.length / ITEMS_PER_PAGE)));
+          const paginatedTargets = targetsList.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+
+          return (
+            <div>
+              <div className="table-responsive">
+                <table className="data-table" style={{ fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr>
+                      <th>Period Horizon</th>
+                      <th>Growth Target</th>
+                      {entityType === 'bd_agent' && <th>Target Salary</th>}
+                      <th>Status</th>
+                      <th>Actual Achieved</th>
+                      <th>Variance & Realization</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedTargets.map(t => {
+                      const isCompleted = t.status === 'completed';
+                      const variance = isCompleted && t.actual_growth_pct_pct !== null ? (t.actual_growth_pct_pct - t.growth_pct_target_pct) : null;
+                      const isOver = variance !== null && variance >= 0;
+
+                      return (
+                        <tr key={t.id}>
+                          <td className="font-bold">
+                            <div style={{ color: 'var(--text-main)' }}>{t.period_start} → {t.period_end}</div>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>ID: {t.id}</span>
+                          </td>
+                          <td style={{ fontWeight: '700', color: 'var(--accent-teal)' }}>
+                            +{t.growth_pct_target_pct}%
+                          </td>
+                          {entityType === 'bd_agent' && (
+                            <td style={{ fontWeight: '600', color: 'var(--text-main)' }}>
+                              {t.salary_target ? formatCurrency(t.salary_target) : '—'}
+                            </td>
+                          )}
+                          <td>
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontSize: '0.72rem',
+                              fontWeight: '600',
+                              backgroundColor: isCompleted ? '#E6F4EA' : 'rgba(15, 110, 86, 0.1)',
+                              color: isCompleted ? '#0F6E56' : 'var(--accent-teal)'
+                            }}>
+                              {isCompleted ? 'Completed & Audited' : 'Active Tracking'}
+                            </span>
+                          </td>
+                          <td>
+                            {isCompleted ? (
+                              <div>
+                                <strong style={{ color: isOver ? '#0F6E56' : '#A8402E', fontSize: '0.88rem' }}>
+                                  {t.actual_growth_pct_pct >= 0 ? '+' : ''}{t.actual_growth_pct_pct}%
+                                </strong>
+                                {t.actual_value && (
+                                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                    {formatCurrency(t.actual_value)}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Pending cycle end</span>
+                            )}
+                          </td>
+                          <td>
+                            {isCompleted && variance !== null ? (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '0.75rem',
+                                fontWeight: '700',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                backgroundColor: isOver ? '#E6F4EA' : '#FCE8E6',
+                                color: isOver ? '#0F6E56' : '#A8402E'
+                              }}>
+                                {isOver ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                                {variance >= 0 ? '+' : ''}{variance.toFixed(1)}% {isOver ? 'Over Goal' : 'Shortfall'}
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)' }}>—</span>
+                            )}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+                              {t.target_letter_text && (
+                                <button
+                                  onClick={() => setViewingLetter({ title: `Target Memo: ${t.entity_name}`, content: t.target_letter_text })}
+                                  style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '5px',
+                                    border: '1px solid var(--border-color)',
+                                    background: 'var(--bg-main)',
+                                    color: 'var(--text-main)',
+                                    fontSize: '0.72rem',
+                                    fontWeight: '600',
+                                    cursor: 'pointer'
+                                  }}
+                                  title="View Target Letter"
+                                >
+                                  Target Memo
+                                </button>
+                              )}
+
+                              {!isCompleted ? (
+                                <button
+                                  onClick={() => setActiveOutcomeTarget(t)}
+                                  style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '5px',
+                                    border: 'none',
+                                    background: 'var(--accent-teal)',
+                                    color: '#ffffff',
+                                    fontSize: '0.72rem',
+                                    fontWeight: '600',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  Record Outcome
+                                </button>
+                              ) : (
+                                t.outcome_letter_text && (
+                                  <button
+                                    onClick={() => setViewingLetter({ title: `Outcome Audit: ${t.entity_name}`, content: t.outcome_letter_text })}
+                                    style={{
+                                      padding: '4px 8px',
+                                      borderRadius: '5px',
+                                      border: '1px solid #0F6E56',
+                                      background: 'rgba(15, 110, 86, 0.08)',
+                                      color: '#0F6E56',
+                                      fontSize: '0.72rem',
+                                      fontWeight: '600',
+                                      cursor: 'pointer'
+                                    }}
+                                    title="View Outcome Audit Memo"
+                                  >
+                                    Audit Memo
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <Pagination
+                currentPage={safePage}
+                totalItems={targetsList.length}
+                pageSize={ITEMS_PER_PAGE}
+                onPageChange={setHistoryPage}
+                itemName="target milestones"
+              />
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* Goal Setter Modal */}
+      {isGoalModalOpen && (
+        <GoalSetterModal
+          isOpen={isGoalModalOpen}
+          onClose={() => setIsGoalModalOpen(false)}
+          entityType={entityType}
+          entity={selectedEntity}
+          onTargetCreated={(newTarget) => {
+            fetchTargets();
+            fetchPrediction();
+          }}
+        />
+      )}
+
+      {/* Outcome Recorder Modal */}
+      {activeOutcomeTarget && (
+        <OutcomeRecorderModal
+          isOpen={Boolean(activeOutcomeTarget)}
+          onClose={() => setActiveOutcomeTarget(null)}
+          target={activeOutcomeTarget}
+          onOutcomeRecorded={(updated) => {
+            fetchTargets();
+          }}
+        />
+      )}
+
+      {/* Letter Viewer Dialog */}
+      {viewingLetter && (
+        <div className="modal-backdrop" onClick={() => setViewingLetter(null)}>
+          <div
+            className="modal-content animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '720px', width: '92%', maxHeight: '82vh', display: 'flex', flexDirection: 'column' }}
+          >
+            <div className="modal-header" style={{ padding: '14px 18px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h4 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-main)', fontWeight: '700' }}>
+                {viewingLetter.title}
+              </h4>
+              <button className="close-btn" onClick={() => setViewingLetter(null)} aria-label="Close modal">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1, position: 'relative', backgroundColor: 'var(--bg-main)' }}>
+              <pre style={{
+                background: '#FFFFFF',
+                padding: '16px 18px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                fontSize: '0.8rem',
+                fontFamily: 'Consolas, Monaco, monospace',
+                whiteSpace: 'pre-wrap',
+                lineHeight: '1.55',
+                color: '#1B2321',
+                margin: 0
+              }}>
+                {viewingLetter.content}
+              </pre>
+            </div>
+
+            <div style={{ padding: '12px 18px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)' }}>
+              <button
+                onClick={() => handleCopyLetter(viewingLetter.content)}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  background: letterCopied ? '#E6F4EA' : '#FFFFFF',
+                  color: letterCopied ? '#0F6E56' : 'var(--text-main)',
+                  fontSize: '0.78rem',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px'
+                }}
+              >
+                {letterCopied ? <Check size={14} /> : <Copy size={14} />}
+                {letterCopied ? 'Copied to Clipboard!' : 'Copy Letter Text'}
+              </button>
+
+              <button
+                className="btn btn-primary"
+                onClick={() => setViewingLetter(null)}
+                style={{ padding: '7px 18px', borderRadius: '6px', border: 'none', background: 'var(--accent-teal)', color: '#ffffff', fontWeight: '600', fontSize: '0.8rem', cursor: 'pointer' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default GrowthTracking;
