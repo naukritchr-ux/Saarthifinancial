@@ -971,7 +971,7 @@ def get_franchisees():
                     WHERE e.franchiseeName IS NOT NULL AND e.franchiseeName != ''
                       AND {enq_clause}
                     GROUP BY TRIM(LOWER(e.franchiseeName))
-                """, ENQUIRY_IDS_TO_EXCLUDE if ENQUIRY_IDS_TO_EXCLUDE else [])
+                """, [])
                 placement_map = {r['fran_key']: r['placed'] for r in cursor.fetchall()}
 
                 franchisees = []
@@ -1026,7 +1026,7 @@ def get_franchisee_summary():
               AND ia.billDate BETWEEN %s AND %s
               AND {enq_clause}
         """
-        params_inflow = COLLIDING_BILL_NUMBERS + [start_date, end_date] + (ENQUIRY_IDS_TO_EXCLUDE if ENQUIRY_IDS_TO_EXCLUDE else [])
+        params_inflow = COLLIDING_BILL_NUMBERS + [start_date, end_date]
         cursor.execute(inflow_query, params_inflow)
         franchise_inflow = float(cursor.fetchone()['franchise_inflow'] or 0.0)
         
@@ -1082,7 +1082,7 @@ def get_franchisee_summary():
             ORDER BY inflow_revenue DESC
             LIMIT 500
         """
-        params_ledger = COLLIDING_BILL_NUMBERS + [start_date, end_date] + (ENQUIRY_IDS_TO_EXCLUDE if ENQUIRY_IDS_TO_EXCLUDE else [])
+        params_ledger = COLLIDING_BILL_NUMBERS + [start_date, end_date]
         cursor.execute(ledger_query, params_ledger)
         rows = cursor.fetchall()
         
@@ -1358,7 +1358,7 @@ def get_bd_revenue(bd_name=None, start_date=None, end_date=None, aggregate=True)
                       AND {enq_clause}
                     GROUP BY TRIM(e.bdMemberName)
                 """
-                params_rev = COLLIDING_BILL_NUMBERS + [start_date, end_date] + (ENQUIRY_IDS_TO_EXCLUDE if ENQUIRY_IDS_TO_EXCLUDE else [])
+                params_rev = COLLIDING_BILL_NUMBERS + [start_date, end_date]
                 cursor.execute(rev_query, params_rev)
                 rev_rows = cursor.fetchall()
                 
@@ -1376,7 +1376,7 @@ def get_bd_revenue(bd_name=None, start_date=None, end_date=None, aggregate=True)
                       AND {enq_clause_loss}
                     GROUP BY TRIM(bdMemberName)
                 """
-                params_loss = [start_date, end_date] + (ENQUIRY_IDS_TO_EXCLUDE if ENQUIRY_IDS_TO_EXCLUDE else [])
+                params_loss = [start_date, end_date]
                 cursor.execute(loss_query, params_loss)
                 loss_rows = cursor.fetchall()
                 
@@ -1437,7 +1437,7 @@ def get_bd_revenue(bd_name=None, start_date=None, end_date=None, aggregate=True)
                     WHERE COALESCE(e.bill_date, e.dateOfAllocation, e.created_at) BETWEEN %s AND %s
                       AND {enq_clause_detail}
                 """
-                params = [start_date, end_date] + (ENQUIRY_IDS_TO_EXCLUDE if ENQUIRY_IDS_TO_EXCLUDE else [])
+                params = [start_date, end_date]
                 if bd_name:
                     if bd_name.lower() == 'head office':
                         query += " AND (e.bdMemberName IS NULL OR TRIM(e.bdMemberName) = '' OR LOWER(TRIM(e.bdMemberName)) = 'unknown' OR LOWER(TRIM(e.bdMemberName)) = 'head office')"
@@ -1521,7 +1521,7 @@ def get_tl_revenue_leaderboard():
               AND {enq_clause}
             GROUP BY TRIM(e.teamLeaderName)
         """
-        params_rev = COLLIDING_BILL_NUMBERS + [start_date, end_date] + (ENQUIRY_IDS_TO_EXCLUDE if ENQUIRY_IDS_TO_EXCLUDE else [])
+        params_rev = COLLIDING_BILL_NUMBERS + [start_date, end_date]
         cursor.execute(rev_query, params_rev)
         rev_rows = cursor.fetchall()
         
@@ -1540,7 +1540,7 @@ def get_tl_revenue_leaderboard():
               AND {enq_clause_loss}
             GROUP BY TRIM(teamLeaderName)
         """
-        params_loss = [start_date, end_date] + (ENQUIRY_IDS_TO_EXCLUDE if ENQUIRY_IDS_TO_EXCLUDE else [])
+        params_loss = [start_date, end_date]
         cursor.execute(loss_query, params_loss)
         loss_rows = cursor.fetchall()
         
@@ -2780,7 +2780,7 @@ def get_active_predictions():
               AND bill_date IS NULL
               AND {enq_clause}
         """
-        params = ENQUIRY_IDS_TO_EXCLUDE if ENQUIRY_IDS_TO_EXCLUDE else []
+        params = []
         cursor.execute(query, params)
         active_rows = cursor.fetchall()
         predictions = []
