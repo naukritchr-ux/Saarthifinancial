@@ -1,5 +1,6 @@
 import React, { useContext, useState, useEffect } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
+import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { Search, Trash2, Printer, Filter, X, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 
@@ -32,7 +33,7 @@ const Reports = () => {
   useEffect(() => {
     if (activeTab === 'ml' && !mlData) {
       setMlLoading(true);
-      fetch(`${API_BASE_URL}/ml/insights`)
+      fetchWithApiKey(`${API_BASE_URL}/ml/insights`)
         .then(res => {
           if (!res.ok) throw new Error('Failed to load ML predictive insights. Make sure the backend Flask server is running.');
           return res.json();

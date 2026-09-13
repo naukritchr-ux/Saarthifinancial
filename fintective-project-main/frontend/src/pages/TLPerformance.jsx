@@ -1,5 +1,6 @@
 import { useContext, useState, useEffect } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
+import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { TrendingUp, Plus, Award, Briefcase, X, Percent, ChevronLeft, ChevronRight, Users } from 'lucide-react';
 
@@ -68,7 +69,7 @@ const TLPerformance = () => {
 
   useEffect(() => {
     const { start, end } = getPeriodDates(selectedMonth, selectedYear);
-    fetch(`${API_BASE_URL}/tl-revenue-leaderboard?start_date=${start}&end_date=${end}`)
+    fetchWithApiKey(`${API_BASE_URL}/tl-revenue-leaderboard?start_date=${start}&end_date=${end}`)
       .then(res => {
         if (res.ok) return res.json();
       })
