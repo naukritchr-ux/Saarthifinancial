@@ -6,18 +6,41 @@ export const FinanceContext = createContext();
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 
   (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://saarthifinancial-1.onrender.com/api');
 
+const DEFAULT_FRANCHISEES = [
+  { id: 'f-1', name: 'Sandeep', owner: 'Avadai Esakki', city: 'Nagpur', teamLeaderName: 'Avadai Esakki Muthu Sundaram Marthuvar', onboardingDate: '2024-04-01', status: 'Active', candidatesPlaced: 12 },
+  { id: 'f-2', name: 'Preshita Rane', owner: 'Joyeeta Joydeb Khaskel', city: 'Mumbai', teamLeaderName: 'Joyeeta Joydeb Khaskel', onboardingDate: '2024-05-15', status: 'Active', candidatesPlaced: 18 },
+  { id: 'f-3', name: 'Razia Begum', owner: 'Vedika Girish Tolani', city: 'Hyderabad', teamLeaderName: 'Vedika Girish Tolani', onboardingDate: '2024-06-10', status: 'Active', candidatesPlaced: 15 },
+  { id: 'f-4', name: 'Anita Mandar Kulkarni', owner: 'Surbhi Vinod Jain', city: 'Pune', teamLeaderName: 'Surbhi Vinod Jain', onboardingDate: '2024-04-20', status: 'Active', candidatesPlaced: 14 },
+  { id: 'f-5', name: 'Subhash Pande', owner: 'Joyeeta Joydeb Khaskel', city: 'Bengaluru', teamLeaderName: 'Joyeeta Joydeb Khaskel', onboardingDate: '2024-07-01', status: 'Active', candidatesPlaced: 9 },
+  { id: 'f-6', name: 'Ankur Sharma', owner: 'Vedika Girish Tolani', city: 'Delhi NCR', teamLeaderName: 'Vedika Girish Tolani', onboardingDate: '2024-05-01', status: 'Active', candidatesPlaced: 11 }
+];
+
+const DEFAULT_BD_AGENTS = [
+  { id: 'bd-1', name: 'Rahul Patil', role: 'Senior BD Specialist', baseSalary: 25000, commissionRate: 0.05, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 35, leadsProgressed: 16, leadsCancelled: 8, status: 'Active' },
+  { id: 'bd-2', name: 'Sneha Kulkarni', role: 'Enterprise Account Exec', baseSalary: 22000, commissionRate: 0.04, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 30, leadsProgressed: 14, leadsCancelled: 6, status: 'Active' },
+  { id: 'bd-3', name: 'Komal Suresh Bhanushali', role: 'Key Account Manager', baseSalary: 20000, commissionRate: 0.03, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 28, leadsProgressed: 12, leadsCancelled: 7, status: 'Active' },
+  { id: 'bd-4', name: 'Ankur Sharma', role: 'BD Manager', baseSalary: 24000, commissionRate: 0.04, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 32, leadsProgressed: 15, leadsCancelled: 5, status: 'Active' }
+];
+
+const DEFAULT_TEAM_LEADERS = [
+  { id: 'tl-1', name: 'Avadai Esakki Muthu Sundaram Marthuvar', role: 'Team Leader', target: 500000 },
+  { id: 'tl-2', name: 'Surbhi Vinod Jain', role: 'Team Leader', target: 500000 },
+  { id: 'tl-3', name: 'Joyeeta Joydeb Khaskel', role: 'Team Leader', target: 500000 },
+  { id: 'tl-4', name: 'Vedika Girish Tolani', role: 'Team Leader', target: 500000 }
+];
+
 export const FinanceProvider = ({ children }) => {
   const [transactions, setTransactions] = useState([]);
-  const [franchisees, setFranchisees] = useState([]);
-  const [bdAgents, setBdAgents] = useState([]);
-  const [teamLeaders, setTeamLeaders] = useState([]);
+  const [franchisees, setFranchisees] = useState(DEFAULT_FRANCHISEES);
+  const [bdAgents, setBdAgents] = useState(DEFAULT_BD_AGENTS);
+  const [teamLeaders, setTeamLeaders] = useState(DEFAULT_TEAM_LEADERS);
   const [budgets, setBudgets] = useState({
-    'Salaries': 0,
-    'BD commissions': 0,
-    'Marketing': 0,
-    'Office & infra': 0,
-    'Portal subscriptions': 0,
-    'Other': 0
+    'Salaries': 800000,
+    'BD commissions': 120000,
+    'Marketing': 50000,
+    'Office & infra': 55000,
+    'Portal subscriptions': 85000,
+    'Other': 50000
   });
 
   const [selectedMonth, setSelectedMonth] = useState('All Months');

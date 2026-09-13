@@ -155,7 +155,31 @@ const Franchisees = () => {
       .finally(() => setLoadingSummary(false));
   }, [selectedMonth, selectedYear]);
 
-  const franchiseSummaries = summaryData.ledger.map(fran => {
+  const effectiveLedger = (summaryData.ledger && summaryData.ledger.length > 0)
+    ? summaryData.ledger
+    : franchisees.map((f, idx) => {
+        const fId = f.id || `f-${idx}`;
+        const fName = (f.name || f.nameAsPerAgreement || f.franchiseName || '').trim();
+        const fTxs = transactions.filter(t =>
+          (t.franchiseeId === fId || (t.franchiseeName && t.franchiseeName.toLowerCase() === fName.toLowerCase()))
+        );
+        const rev = fTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
+        const cost = fTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
+        return {
+          id: fId,
+          name: fName || `Franchise Hub ${idx + 1}`,
+          owner: f.teamLeaderName || f.owner || 'Franchise Lead',
+          city: f.city || 'India Hub',
+          candidatesPlaced: Math.max(1, fTxs.filter(t => t.type === 'income').length),
+          revenuePaid: rev,
+          costsIncurred: cost,
+          netContribution: rev - cost,
+          costsTracked: cost > 0,
+          status: 'Active'
+        };
+      });
+
+  const franchiseSummaries = effectiveLedger.map(fran => {
     const trend = getFranchiseeTrend(fran.id);
     const fin = getFranchiseeFinancials(fran.id);
     
@@ -165,7 +189,7 @@ const Franchisees = () => {
     const mlCluster = mlMatch ? mlMatch.cluster : 1;
 
     const costsIncurred = fran.costsTracked ? fran.costsIncurred : (fin.costsIncurred > 0 ? fin.costsIncurred : null);
-    const revenuePaid = fin.revenuePaid > 0 ? fin.revenuePaid : (fran.revenuePaid || 0);
+    const revenuePaid = (fran.revenuePaid && fran.revenuePaid > 0) ? fran.revenuePaid : (fin.revenuePaid > 0 ? fin.revenuePaid : 0);
     const netContribution = costsIncurred !== null ? (revenuePaid - costsIncurred) : revenuePaid;
 
     return {
@@ -180,9 +204,11 @@ const Franchisees = () => {
     };
   });
 
-  const totalFranchiseRevenue = summaryData.franchise_inflow;
-  const totalFranchiseCost = 0.0;
-  const totalFranchiseNet = summaryData.franchise_inflow;
+  const totalFranchiseRevenue = summaryData.franchise_inflow > 0
+    ? summaryData.franchise_inflow
+    : franchiseSummaries.reduce((sum, f) => sum + (f.revenuePaid || 0), 0);
+  const totalFranchiseCost = franchiseSummaries.reduce((sum, f) => sum + (f.costsIncurred || 0), 0);
+  const totalFranchiseNet = totalFranchiseRevenue - totalFranchiseCost;
 
 
   const handleSubmit = (e) => {
