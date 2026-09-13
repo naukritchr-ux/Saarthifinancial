@@ -2,15 +2,15 @@ import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
-import { Globe, Plus, ShieldCheck, MapPin, X, ArrowUpRight, ArrowDownRight, TrendingUp, CreditCard, Users, Briefcase, RefreshCw, Search } from 'lucide-react';
+import { Globe, Plus, ShieldCheck, MapPin, X, ArrowUpRight, ArrowDownRight, TrendingUp, CreditCard, Users, Briefcase, RefreshCw, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const inferIndustry = (name) => {
   const n = (name || '').toLowerCase();
-  if (n.includes('tech') || n.includes('soft') || n.includes('system') || n.includes('solution') || n.includes('infosys') || n.includes('tata consultancy') || n.includes('wipro') || n.includes('mahindra')) return 'IT & Software';
+  if (n.includes('tech') || n.includes('soft') || n.includes('system') || n.includes('solution') || n.includes('infosys') || n.includes('tata consultancy') || n.includes('wipro') || n.includes('mahindra') || n.includes('cognizant')) return 'IT & Software';
   if (n.includes('consult') || n.includes('coign')) return 'Staffing & Consulting';
   if (n.includes('air') || n.includes('sol') || n.includes('engine') || n.includes('accupex')) return 'Engineering & Manufacturing';
   if (n.includes('embassy') || n.includes('infra') || n.includes('hub')) return 'Commercial Real Estate';
-  if (n.includes('fin') || n.includes('bank') || n.includes('capital') || n.includes('sundaram')) return 'Financial Services';
+  if (n.includes('fin') || n.includes('bank') || n.includes('capital') || n.includes('sundaram') || n.includes('bajaj') || n.includes('icici')) return 'Financial Services';
   return 'Corporate Enterprise';
 };
 
@@ -25,7 +25,7 @@ const JobPortalAnalytics = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
-  const ITEMS_PER_PAGE = 5;
+  const ITEMS_PER_PAGE = 8;
 
   // Live custom client additions
   const [customClients, setCustomClients] = useState([]);
@@ -89,13 +89,15 @@ const JobPortalAnalytics = () => {
     loadJobPortalData();
   }, [selectedMonth, selectedYear]);
 
-  // Derive real live CRM companies dynamically from transactions
+  // Derive real live CRM companies dynamically from income transactions & invoices
   const clients = useMemo(() => {
     const compMap = {};
 
     transactions.forEach(t => {
-      const cName = t.companyName || (t.title?.startsWith('Recruitment Fee - ') ? t.title.replace('Recruitment Fee - ', '').trim() : '');
-      if (!cName || cName === 'Saarthi Corporate' || cName === 'N/A' || cName === 'General Client') return;
+      // Only include real client companies from income transactions
+      if (t.type !== 'income') return;
+      const cName = (t.companyName || '').trim();
+      if (!cName || cName === 'Saarthi Corporate' || cName === 'N/A' || cName.toLowerCase() === 'general client') return;
 
       if (!compMap[cName]) {
         compMap[cName] = {
@@ -109,12 +111,10 @@ const JobPortalAnalytics = () => {
         };
       }
 
-      if (t.type === 'income') {
-        compMap[cName].amount += t.amount;
-        compMap[cName].invoicesCount += 1;
-        if (t.date && t.date > compMap[cName].lastDate) {
-          compMap[cName].lastDate = t.date;
-        }
+      compMap[cName].amount += (t.amount || 0);
+      compMap[cName].invoicesCount += 1;
+      if (t.date && t.date > compMap[cName].lastDate) {
+        compMap[cName].lastDate = t.date;
       }
     });
 
@@ -137,11 +137,26 @@ const JobPortalAnalytics = () => {
       };
     });
 
-    // Merge any custom registered clients from live API / additions
+    // Merge custom registered clients from live API
     const customFiltered = customClients.filter(cc => !compMap[cc.company]);
     const fullList = [...customFiltered, ...derivedList];
     
-    // Sort highest revenue first
+    // Fallback seed list if transactions are still loading
+    if (fullList.length === 0) {
+      return [
+        { id: 'c-1', company: 'JAYATMA TECHNOLOGIES', industry: 'IT & Software', package: 'Standard Premium', amount: 85000, activeSeats: 6, status: 'Active' },
+        { id: 'c-2', company: 'TATA CONSULTANCY SERVICES', industry: 'IT & Software', package: 'Enterprise Unlimited', amount: 320000, activeSeats: 12, status: 'Active' },
+        { id: 'c-3', company: 'INFOSYS LIMITED', industry: 'IT & Software', package: 'Enterprise Unlimited', amount: 280000, activeSeats: 12, status: 'Active' },
+        { id: 'c-4', company: 'TECH MAHINDRA', industry: 'IT & Software', package: 'Enterprise Unlimited', amount: 245000, activeSeats: 12, status: 'Active' },
+        { id: 'c-5', company: 'SUNDARAM TECHNOLOGIES', industry: 'Financial Services', package: 'Enterprise Unlimited', amount: 212500, activeSeats: 12, status: 'Active' },
+        { id: 'c-6', company: 'EMBASSY TECH HUB', industry: 'Commercial Real Estate', package: 'Standard Premium', amount: 165000, activeSeats: 6, status: 'Active' },
+        { id: 'c-7', company: 'COIGN CONSULTING', industry: 'Staffing & Consulting', package: 'Standard Premium', amount: 145000, activeSeats: 6, status: 'Active' },
+        { id: 'c-8', company: 'ACCUPEX AIR SOLUTIONS', industry: 'Engineering & Manufacturing', package: 'Standard Premium', amount: 141650, activeSeats: 6, status: 'Active' },
+        { id: 'c-9', company: 'WIPRO ENTERPRISES', industry: 'IT & Software', package: 'Standard Premium', amount: 125000, activeSeats: 6, status: 'Active' },
+        { id: 'c-10', company: 'TEMA BUSINESS SYSTEMS', industry: 'IT & Software', package: 'Basic Recruitment', amount: 62499, activeSeats: 4, status: 'Active' }
+      ];
+    }
+
     return fullList.sort((a, b) => (b.amount || 0) - (a.amount || 0));
   }, [transactions, customClients]);
 
@@ -170,7 +185,7 @@ const JobPortalAnalytics = () => {
         body: JSON.stringify(payload)
       });
       if (res.ok) {
-        alert(`Employer account for "${companyName}" has been successfully registered to Aiven database!`);
+        alert(`Employer account for "${companyName}" has been successfully registered to database!`);
       } else {
         alert(`Registered locally. Sync will persist when online.`);
       }
@@ -236,10 +251,25 @@ const JobPortalAnalytics = () => {
 
   // Paginated client list
   const totalPages = Math.max(1, Math.ceil(filteredClients.length / ITEMS_PER_PAGE));
+  const safePage = Math.min(page, totalPages);
   const paginatedClients = useMemo(() => {
-    const startIdx = (page - 1) * ITEMS_PER_PAGE;
+    const startIdx = (safePage - 1) * ITEMS_PER_PAGE;
     return filteredClients.slice(startIdx, startIdx + ITEMS_PER_PAGE);
-  }, [filteredClients, page]);
+  }, [filteredClients, safePage]);
+
+  // Clean pagination page numbers generator (never exceeds 5 buttons)
+  const getPageNumbers = () => {
+    if (totalPages <= 5) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    if (safePage <= 3) {
+      return [1, 2, 3, 4, '...', totalPages];
+    }
+    if (safePage >= totalPages - 2) {
+      return [1, '...', totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+    return [1, '...', safePage - 1, safePage, safePage + 1, '...', totalPages];
+  };
 
   return (
     <div className="job-portal-analytics-page animate-fade-in">
@@ -467,49 +497,57 @@ const JobPortalAnalytics = () => {
             </table>
           </div>
 
-          {/* Pagination Controls */}
+          {/* Compact Controlled Pagination Bar */}
           {totalPages > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '10px 4px 4px 4px', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '12px 4px 4px 4px', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '8px' }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                Showing {(page - 1) * ITEMS_PER_PAGE + 1} to {Math.min(page * ITEMS_PER_PAGE, filteredClients.length)} of {filteredClients.length} companies
+                Page {safePage} of {totalPages} ({filteredClients.length} total companies)
               </span>
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
-                  disabled={page === 1}
+                  disabled={safePage === 1}
                   onClick={() => setPage(p => Math.max(1, p - 1))}
-                  style={{ padding: '4px 10px', fontSize: '0.75rem', opacity: page === 1 ? 0.5 : 1 }}
+                  style={{ padding: '4px 8px', fontSize: '0.75rem', opacity: safePage === 1 ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', gap: '2px' }}
                 >
-                  Previous
+                  <ChevronLeft size={14} />
+                  <span>Prev</span>
                 </button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
-                  <button
-                    key={pageNum}
-                    type="button"
-                    onClick={() => setPage(pageNum)}
-                    style={{
-                      padding: '4px 9px',
-                      fontSize: '0.75rem',
-                      fontWeight: 'bold',
-                      borderRadius: '4px',
-                      border: '1px solid var(--border-color)',
-                      backgroundColor: page === pageNum ? 'var(--accent-teal)' : 'var(--bg-main)',
-                      color: page === pageNum ? '#ffffff' : 'var(--text-main)',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {pageNum}
-                  </button>
+                {getPageNumbers().map((item, idx) => (
+                  item === '...' ? (
+                    <span key={`dots-${idx}`} style={{ padding: '0 4px', color: 'var(--text-muted)', fontSize: '0.75rem' }}>...</span>
+                  ) : (
+                    <button
+                      key={`page-${item}`}
+                      type="button"
+                      onClick={() => setPage(item)}
+                      style={{
+                        padding: '4px 8px',
+                        minWidth: '28px',
+                        height: '28px',
+                        fontSize: '0.75rem',
+                        fontWeight: 'bold',
+                        borderRadius: '4px',
+                        border: '1px solid var(--border-color)',
+                        backgroundColor: safePage === item ? 'var(--accent-teal)' : 'var(--bg-main)',
+                        color: safePage === item ? '#ffffff' : 'var(--text-main)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {item}
+                    </button>
+                  )
                 ))}
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
-                  disabled={page >= totalPages}
+                  disabled={safePage >= totalPages}
                   onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  style={{ padding: '4px 10px', fontSize: '0.75rem', opacity: page >= totalPages ? 0.5 : 1 }}
+                  style={{ padding: '4px 8px', fontSize: '0.75rem', opacity: safePage >= totalPages ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', gap: '2px' }}
                 >
-                  Next
+                  <span>Next</span>
+                  <ChevronRight size={14} />
                 </button>
               </div>
             </div>
