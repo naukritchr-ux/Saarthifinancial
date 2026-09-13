@@ -78,19 +78,41 @@ const TLPerformance = () => {
       .catch(err => console.error("TL Leaderboard load failed:", err));
   }, [selectedMonth, selectedYear]);
 
-  const effectiveLeaders = (teamLeaders && teamLeaders.length > 0)
-    ? teamLeaders
-    : [
-        { id: 'tl-1', name: 'Avadai Esakki Muthu Sundaram Marthuvar', role: 'Team Leader', target: 500000 },
-        { id: 'tl-2', name: 'Surbhi Vinod Jain', role: 'Team Leader', target: 500000 },
-        { id: 'tl-3', name: 'Joyeeta Joydeb Khaskel', role: 'Team Leader', target: 500000 },
-        { id: 'tl-4', name: 'Vedika Girish Tolani', role: 'Team Leader', target: 500000 }
-      ];
+  const effectiveLeaders = (leaderboard && leaderboard.length > 0)
+    ? leaderboard.map((item, idx) => {
+        const found = (teamLeaders || []).find(t => (t.name || '').trim().toLowerCase() === (item.tl_name || '').trim().toLowerCase());
+        return {
+          id: found?.id || `tl-lb-${idx}`,
+          name: item.tl_name,
+          role: found?.role || 'Team Leader',
+          target: found?.target || 500000,
+          grossRevenue: item.gross_revenue,
+          netRevenue: item.net_revenue,
+          lossAmount: item.potential_loss,
+          totalEnquiries: item.total_enquiries,
+          enquiriesProgressed: item.invoices_closed,
+          enquiriesCancelled: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : 0,
+          enquiriesInternallyClosed: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 75000) : 0
+        };
+      })
+    : (teamLeaders && teamLeaders.length > 0
+        ? teamLeaders
+        : [
+            { id: 'tl-1', name: 'Avadai Esakki Muthu Sundaram Marthuvar', role: 'Team Leader', target: 500000 },
+            { id: 'tl-2', name: 'Surbhi Vinod Jain', role: 'Team Leader', target: 500000 },
+            { id: 'tl-3', name: 'Joyeeta Joydeb Khaskel', role: 'Team Leader', target: 500000 },
+            { id: 'tl-4', name: 'Vedika Girish Tolani', role: 'Team Leader', target: 500000 }
+          ]
+      );
 
   // Process data locally if filters change
   const processedLeaders = effectiveLeaders.map(tl => {
+    // If stats already computed from leaderboard
+    if (tl.grossRevenue !== undefined && tl.grossRevenue > 0) {
+      return tl;
+    }
     // Look up this TL's stats in the fetched leaderboard
-    const lbMatch = leaderboard.find(item => item.tl_name.trim().toLowerCase() === tl.name.trim().toLowerCase());
+    const lbMatch = (leaderboard || []).find(item => item.tl_name && item.tl_name.trim().toLowerCase() === tl.name.trim().toLowerCase());
     
     const tlFirstName = tl.name.trim().split(' ')[0].toLowerCase();
     const tlTxs = transactions.filter(t => 

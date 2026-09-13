@@ -330,10 +330,10 @@ def ensure_tables_exist():
             """)
 
         conn.close()
-        print("✅ MySQL schema verified and ready.")
+        print("[DB] MySQL schema verified and ready.")
         return True
     except Exception as e:
-        print(f"⚠️ Note during MySQL schema verification: {str(e)}")
+        print(f"[DB WARN] Note during MySQL schema verification: {str(e)}")
         return False
 
 def init_db():

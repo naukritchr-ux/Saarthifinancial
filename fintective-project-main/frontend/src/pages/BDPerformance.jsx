@@ -244,7 +244,26 @@ const BDPerformance = () => {
     };
   };
 
-  const agentSummaries = bdAgents.map(agent => {
+  const allAgentsList = (leaderboard && leaderboard.length > 0)
+    ? leaderboard.map((item, idx) => {
+        const found = (bdAgents || []).find(a => (a.name || '').trim().toLowerCase() === (item.bd_name || '').trim().toLowerCase());
+        return {
+          id: found?.id || `bd-lb-${idx}`,
+          name: item.bd_name,
+          role: found?.role || 'BD Specialist',
+          baseSalary: found?.baseSalary || 12000,
+          commissionRate: found?.commissionRate || 0.04,
+          payPerProgressed: found?.payPerProgressed || 2500,
+          payPerCancelled: found?.payPerCancelled || 500,
+          leadsBought: found?.leadsBought || (item.invoices_closed ? item.invoices_closed * 2 : 20),
+          leadsProgressed: item.invoices_closed || found?.leadsProgressed || 0,
+          leadsCancelled: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : (found?.leadsCancelled || 0),
+          status: 'Active'
+        };
+      })
+    : (bdAgents || []);
+
+  const agentSummaries = allAgentsList.map(agent => {
     const safeAgent = getSafeAgent(agent);
     const metrics = getAgentMetrics(safeAgent);
     const trend = getAgentTrend(safeAgent.id);
