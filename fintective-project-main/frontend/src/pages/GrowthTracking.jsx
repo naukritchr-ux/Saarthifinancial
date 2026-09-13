@@ -26,6 +26,7 @@ import {
 import Pagination from '../components/Pagination';
 import GoalSetterModal from '../components/GoalSetterModal';
 import OutcomeRecorderModal from '../components/OutcomeRecorderModal';
+import { TrajectoryLineChart, BarChart, Sparkline, TargetVsActualBar } from '../components/CustomCharts';
 
 const GrowthTracking = () => {
   const { franchisees, bdAgents } = useContext(FinanceContext);
@@ -157,6 +158,31 @@ const GrowthTracking = () => {
   const activeTarget = useMemo(() => {
     return targetsList.find(t => t.status === 'active') || null;
   }, [targetsList]);
+
+  // Scale chart data formatted for BarChart
+  const scaleChartData = useMemo(() => {
+    return ['scale1x', 'scale2x', 'scale3x', 'scale4x'].map((key, index) => {
+      const sc = predictionData?.scenarios?.[key];
+      const base = selectedEntity?.baseRevenue || 5000000;
+      return {
+        label: `${index + 1}x`,
+        revenue: sc ? sc.revenue : base * (index + 1),
+        netRetention: sc ? sc.estimated_net : base * (index + 1) * 0.4375
+      };
+    });
+  }, [predictionData, selectedEntity]);
+
+  // Trajectory Sparkline points for each target milestone
+  const getTargetSparklinePoints = (target) => {
+    const targetPct = Number(target.growth_pct_target_pct) || 15;
+    if (target.status === 'completed' && target.actual_growth_pct_pct !== null) {
+      const act = Number(target.actual_growth_pct_pct);
+      const start = 100;
+      return [start, start + act * 0.25, start + act * 0.55, start + act * 0.85, start + act];
+    }
+    // Active target: progression leading up
+    return [100, 100 + targetPct * 0.2, 100 + targetPct * 0.45, 100 + targetPct * 0.7];
+  };
 
   return (
     <div className="bd-performance-page animate-fade-in" style={{ paddingBottom: '40px' }}>
@@ -385,6 +411,12 @@ const GrowthTracking = () => {
           </div>
         </div>
 
+        {/* 1. Trajectory Line / Area Chart for Historical Baseline & Compounded Forward Path */}
+        <TrajectoryLineChart
+          historical={predictionData?.historical_series || []}
+          projected={predictionData?.projections || []}
+        />
+
         {/* Rate-based Multi-Period Forward Cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '24px' }}>
           {(predictionData?.projections || [
@@ -425,11 +457,11 @@ const GrowthTracking = () => {
           ))}
         </div>
 
-        {/* Scale Multiplier Scenarios (1x, 2x, 3x, 4x) */}
+        {/* 2. Flat Scale Multiplier Scenarios (1x, 2x, 3x, 4x) */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h5 style={{ margin: 0, fontSize: '0.88rem', fontWeight: '700', color: 'var(--text-main)' }}>
-              Flat Scale Multiplier Scenarios (Reused from Runway Simulator)
+              Flat Scale Multiplier Scenarios (Visual & Numerical Model)
             </h5>
             <div style={{ display: 'flex', gap: '6px' }}>
               {[1, 2, 3, 4].map(mult => (
@@ -451,6 +483,24 @@ const GrowthTracking = () => {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Scale Multiplier BarChart */}
+          <div style={{ background: 'var(--bg-main)', borderRadius: '10px', padding: '14px 16px', border: '1px solid var(--border-color)', marginBottom: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <span style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--text-main)' }}>Scale Level Comparison (1x → 4x)</span>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Gross Revenue vs Net Retention Margin</span>
+            </div>
+            <BarChart
+              data={scaleChartData}
+              series1Key="revenue"
+              series2Key="netRetention"
+              series1Label="Gross Revenue"
+              series2Label="Net Retention"
+              series1Color="#10b981"
+              series2Color="#0F6E56"
+              height={120}
+            />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '12px' }}>
@@ -549,7 +599,8 @@ const GrowthTracking = () => {
                   <thead>
                     <tr>
                       <th>Period Horizon</th>
-                      <th>Growth Target</th>
+                      <th>Growth Target & Progress</th>
+                      <th>Trajectory</th>
                       {entityType === 'bd_agent' && <th>Target Salary</th>}
                       <th>Status</th>
                       <th>Actual Achieved</th>
@@ -569,8 +620,31 @@ const GrowthTracking = () => {
                             <div style={{ color: 'var(--text-main)' }}>{t.period_start} → {t.period_end}</div>
                             <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>ID: {t.id}</span>
                           </td>
-                          <td style={{ fontWeight: '700', color: 'var(--accent-teal)' }}>
-                            +{t.growth_pct_target_pct}%
+                          <td>
+                            {isCompleted ? (
+                              <TargetVsActualBar
+                                targetPct={Number(t.growth_pct_target_pct) || 0}
+                                actualPct={t.actual_growth_pct_pct !== null ? Number(t.actual_growth_pct_pct) : 0}
+                                width={130}
+                              />
+                            ) : (
+                              <div>
+                                <span style={{ fontWeight: '700', color: 'var(--accent-teal)', fontSize: '0.88rem' }}>
+                                  +{t.growth_pct_target_pct}%
+                                </span>
+                                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block' }}>Target Rate</span>
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <Sparkline
+                                points={getTargetSparklinePoints(t)}
+                                width={85}
+                                height={22}
+                                positive={!isCompleted || isOver}
+                              />
+                            </div>
                           </td>
                           {entityType === 'bd_agent' && (
                             <td style={{ fontWeight: '600', color: 'var(--text-main)' }}>

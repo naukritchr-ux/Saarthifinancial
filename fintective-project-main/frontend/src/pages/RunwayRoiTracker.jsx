@@ -302,7 +302,6 @@ const RunwayRoiTracker = () => {
   const [revGrowthPct, setRevGrowthPct] = useState(0); // -30% to +50%
   const [expAdjustPct, setExpAdjustPct] = useState(0); // -40% to +40%
   const [hiringSalary, setHiringSalary] = useState(0); // 0 to 300000
-  const [scaleMultiplier, setScaleMultiplier] = useState(1); // 1x, 2x, 3x, 5x
 
   // ----------------------------------------------------
   // Month calculation helpers
@@ -967,7 +966,6 @@ const RunwayRoiTracker = () => {
             { id: 'companies', label: 'Company-wise P&L' },
             { id: 'scenario', label: 'Scenario Simulator' },
             { id: 'mom-pivot', label: 'MoM Pivot Analysis' },
-            { id: 'operating-leverage', label: 'Operating Leverage & Scale Simulator' },
             { id: 'leakage', label: 'Revenue Recovery Command Center' }
           ].map(tab => (
             <button 
@@ -1473,158 +1471,6 @@ const RunwayRoiTracker = () => {
 
           </div>
         )}
-
-        {/* Tab 6: Operating Leverage & Scaling Projections */}
-        {activeTab === 'operating-leverage' && (() => {
-          // Use realistic historical constants based on the full 24-month master final pipeline dataset:
-          // Baseline monthly revenue = ~₹27.5 Lakhs
-          // Variable cost % ≈ 45% (Franchisee share + incentives)
-          // Fixed cost base = ~₹7 Lakhs (HQ rent, core team, job portals)
-          const baseRevenue = avgHistoricalInflow;
-          const baseFixedCost = Math.max(avgHistoricalOutflow - monthlyVariableCostAvg, 0);
-
-          // Scale Calculations
-          const calcScale = (multiplier) => {
-            const inf = baseRevenue * multiplier;
-            const variableCosts = inf * variableCostRatio;
-            const fixedCosts = baseFixedCost * (1 + 0.15 * (multiplier - 1));
-            const out = variableCosts + fixedCosts;
-            const net = inf - out;
-            const margin = inf > 0 ? (net / inf) * 100 : 0;
-            
-            // Assume capital reserves is around ₹50 Lakhs baseline
-            const cashReserves = currentCashBalance > 0 ? currentCashBalance : 5000000;
-            const isInfinite = net >= 0;
-            const runwayVal = isInfinite ? 'Infinite Runway' : `${(cashReserves / Math.abs(net)).toFixed(1)} Months`;
-            return { inflow: inf, outflow: out, net, margin, runwayVal };
-          };
-
-          const scale1x = calcScale(1);
-          const scale2x = calcScale(2);
-          const scale3x = calcScale(3);
-          const scale5x = calcScale(5);
-
-          const currentScale = calcScale(scaleMultiplier);
-
-          return (
-            <div className="operating-leverage-wrapper animate-fade-in" style={{ padding: '8px 0' }}>
-              <h4 style={{ marginBottom: '8px' }}>AI Predictive Projections: Scale & Profit Simulator</h4>
-              <p className="flow-subtitle" style={{ marginBottom: '24px' }}>
-                Simulate scaling your active franchise recruitment networks and billing revenue to see the impact of operating leverage.
-                <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', fontStyle: 'italic' }}>
-                  *Variable cost ratio based on franchisee royalty + BD/TL commission as % of revenue (3-mo avg: {(variableCostRatio * 100).toFixed(0)}%)
-                </span>
-              </p>
-
-              {/* Multiplier Toggle Selector */}
-              <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', alignItems: 'center' }}>
-                <span className="font-bold" style={{ fontSize: '0.9rem', color: 'var(--text-main)' }}>Target Scale:</span>
-                {[1, 2, 3, 5].map(mult => (
-                  <button
-                    key={mult}
-                    onClick={() => setScaleMultiplier(mult)}
-                    style={{
-                      padding: '8px 16px',
-                      borderRadius: '8px',
-                      border: scaleMultiplier === mult ? '1px solid var(--accent-teal)' : '1px solid var(--border-color)',
-                      backgroundColor: scaleMultiplier === mult ? 'var(--accent-teal)' : 'var(--bg-card)',
-                      color: scaleMultiplier === mult ? '#ffffff' : 'var(--text-main)',
-                      fontWeight: 'bold',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    {mult}x Scale {mult === 1 ? '(Baseline)' : ''}
-                  </button>
-                ))}
-              </div>
-
-              {/* Metric Cards Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginBottom: '32px' }}>
-                <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>Projected Monthly Revenue</span>
-                  <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#10b981' }}>{formatCurrency(currentScale.inflow)}</span>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>Baseline: {formatCurrency(avgHistoricalInflow)}</span>
-                </div>
-                <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>Projected Monthly Expenses</span>
-                  <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#ef4444' }}>{formatCurrency(currentScale.outflow)}</span>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>Overheads scaled to support operations.</span>
-                </div>
-                <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>Projected Net Profit</span>
-                  <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: 'var(--color-purple)' }}>{currentScale.net >= 0 ? '+' : ''}{formatCurrency(currentScale.net)}</span>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>Estimated cash retention.</span>
-                </div>
-                <div style={{ background: 'var(--bg-card)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '6px' }}>Operating Profit Margin</span>
-                  <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{currentScale.margin.toFixed(1)}%</span>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block', marginTop: '4px' }}>Baseline Margin: {scale1x.margin.toFixed(1)}%</span>
-                </div>
-              </div>
-
-              {/* Dynamic Runway Outlook Box */}
-              <div style={{
-                display: 'flex',
-                gap: '12px',
-                alignItems: 'center',
-                background: currentScale.net >= 0 ? 'rgba(16,185,129,0.05)' : 'rgba(239,68,68,0.05)',
-                padding: '16px',
-                borderRadius: '8px',
-                border: '1px solid',
-                borderColor: currentScale.net >= 0 ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)',
-                color: currentScale.net >= 0 ? '#10b981' : '#ef4444',
-                marginBottom: '32px',
-                fontWeight: 'bold',
-                fontSize: '0.9rem'
-              }}>
-                {currentScale.net >= 0 ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
-                <span>
-                  {currentScale.net >= 0 
-                    ? `Infinite Cash Runway: Revenue has exceeded total expenses. HQ capital reserves will grow by ${formatCurrency(currentScale.net)} each month.`
-                    : `Caution: Current cash reserves will be exhausted in ${currentScale.runwayVal} under this scaling deficit.`
-                  }
-                </span>
-              </div>
-
-              {/* Side-by-Side Scaling Projections Table */}
-              <div className="table-responsive">
-                <h5 style={{ marginBottom: '12px', color: 'var(--text-main)' }}>Side-by-Side Scaling Comparative Reference Table</h5>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Scaling Multiplier</th>
-                      <th className="text-right">Monthly Revenue (Inflows)</th>
-                      <th className="text-right">Monthly Expenses (Outflows)</th>
-                      <th className="text-right">Net Monthly Surplus/Deficit</th>
-                      <th className="text-right">HQ Profit Margin</th>
-                      <th className="text-right">Cash Runway Duration</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[
-                      { mult: '1x Scale (Baseline)', calc: scale1x, color: 'var(--text-main)' },
-                      { mult: '2x Scale', calc: scale2x, color: 'var(--accent-teal)' },
-                      { mult: '3x Scale', calc: scale3x, color: 'var(--color-purple)' },
-                      { mult: '5x Scale (Hyper-Scale)', calc: scale5x, color: 'var(--color-income)' }
-                    ].map((row, idx) => (
-                      <tr key={idx} style={{ backgroundColor: scaleMultiplier === (idx === 3 ? 5 : idx + 1) ? 'rgba(15,110,86,0.08)' : 'transparent' }}>
-                        <td className="font-bold" style={{ color: row.color }}>{row.mult}</td>
-                        <td className="text-right font-bold text-teal">{formatCurrency(row.calc.inflow)}</td>
-                        <td className="text-right text-red">{formatCurrency(row.calc.outflow, true)}</td>
-                        <td className={`text-right font-bold ${row.calc.net >= 0 ? 'text-teal' : 'text-red'}`}>
-                          {row.calc.net >= 0 ? '+' : ''}{formatCurrency(row.calc.net)}
-                        </td>
-                        <td className="text-right font-bold">{row.calc.margin.toFixed(1)}%</td>
-                        <td className={`text-right font-bold ${row.calc.net >= 0 ? 'text-teal' : 'var(--color-pending)'}`}>{row.calc.runwayVal}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          );
-        })()}
 
         {/* Tab 5: Month-over-Month Comparative Pivot Table */}
         {activeTab === 'mom-pivot' && (
