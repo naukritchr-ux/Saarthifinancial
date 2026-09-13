@@ -491,7 +491,16 @@ export const FinanceProvider = ({ children }) => {
     return tx.category !== 'Job portal' && tx.category !== 'Portal subscriptions';
   }) : [];
 
-  // Actions
+  const [toast, setToast] = useState(null);
+
+  const showToast = (message, type = 'error') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(null);
+    }, 4500);
+  };
+
+  // Actions with optimistic updates, response verification, and automatic rollback on failure
   const addTransaction = async (transaction) => {
     const newTx = {
       ...transaction,
@@ -504,40 +513,76 @@ export const FinanceProvider = ({ children }) => {
     setTransactions((prev) => [newTx, ...prev]);
 
     try {
-      await fetchWithApiKey(`${API_BASE_URL}/transactions`, {
+      const res = await fetchWithApiKey(`${API_BASE_URL}/transactions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newTx)
       });
+      if (!res.ok) {
+        setTransactions((prev) => prev.filter((tx) => tx.id !== newTx.id));
+        const errorData = await res.json().catch(() => ({}));
+        showToast(`Failed to save transaction: ${errorData.error || `Server responded with ${res.status}`}`, 'error');
+      }
     } catch (err) {
+      setTransactions((prev) => prev.filter((tx) => tx.id !== newTx.id));
+      showToast(`Network error saving transaction: ${err.message}`, 'error');
       console.error('Failed to sync transaction with server:', err.message);
     }
   };
 
   const deleteTransaction = async (id) => {
-    setTransactions((prev) => prev.filter((tx) => tx.id !== id));
+    let deletedTx = null;
+    setTransactions((prev) => {
+      deletedTx = prev.find((tx) => tx.id === id);
+      return prev.filter((tx) => tx.id !== id);
+    });
     try {
-      await fetchWithApiKey(`${API_BASE_URL}/transactions/${id}`, {
+      const res = await fetchWithApiKey(`${API_BASE_URL}/transactions/${id}`, {
         method: 'DELETE'
       });
+      if (!res.ok) {
+        if (deletedTx) {
+          setTransactions((prev) => [deletedTx, ...prev]);
+        }
+        const errorData = await res.json().catch(() => ({}));
+        showToast(`Failed to delete transaction: ${errorData.error || `Server responded with ${res.status}`}`, 'error');
+      }
     } catch (err) {
+      if (deletedTx) {
+        setTransactions((prev) => [deletedTx, ...prev]);
+      }
+      showToast(`Network error deleting transaction: ${err.message}`, 'error');
       console.error('Failed to delete transaction from server:', err.message);
     }
   };
 
   const updateBudget = async (category, value) => {
     const updatedVal = parseFloat(value) || 0;
+    const oldVal = budgets[category];
     setBudgets((prev) => ({
       ...prev,
       [category]: updatedVal
     }));
     try {
-      await fetchWithApiKey(`${API_BASE_URL}/budgets`, {
+      const res = await fetchWithApiKey(`${API_BASE_URL}/budgets`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [category]: updatedVal })
       });
+      if (!res.ok) {
+        setBudgets((prev) => ({
+          ...prev,
+          [category]: oldVal
+        }));
+        const errorData = await res.json().catch(() => ({}));
+        showToast(`Failed to update budget: ${errorData.error || `Server responded with ${res.status}`}`, 'error');
+      }
     } catch (err) {
+      setBudgets((prev) => ({
+        ...prev,
+        [category]: oldVal
+      }));
+      showToast(`Network error updating budget: ${err.message}`, 'error');
       console.error('Failed to update budget on server:', err.message);
     }
   };
@@ -551,12 +596,19 @@ export const FinanceProvider = ({ children }) => {
     };
     setFranchisees((prev) => [...prev, newFran]);
     try {
-      await fetchWithApiKey(`${API_BASE_URL}/franchisees`, {
+      const res = await fetchWithApiKey(`${API_BASE_URL}/franchisees`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newFran)
       });
+      if (!res.ok) {
+        setFranchisees((prev) => prev.filter((f) => f.id !== newFran.id));
+        const errorData = await res.json().catch(() => ({}));
+        showToast(`Failed to save franchisee: ${errorData.error || `Server responded with ${res.status}`}`, 'error');
+      }
     } catch (err) {
+      setFranchisees((prev) => prev.filter((f) => f.id !== newFran.id));
+      showToast(`Network error saving franchisee: ${err.message}`, 'error');
       console.error('Failed to save franchisee to server:', err.message);
     }
   };
@@ -570,27 +622,47 @@ export const FinanceProvider = ({ children }) => {
     };
     setBdAgents((prev) => [...prev, newBd]);
     try {
-      await fetchWithApiKey(`${API_BASE_URL}/bd-agents`, {
+      const res = await fetchWithApiKey(`${API_BASE_URL}/bd-agents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newBd)
       });
+      if (!res.ok) {
+        setBdAgents((prev) => prev.filter((b) => b.id !== newBd.id));
+        const errorData = await res.json().catch(() => ({}));
+        showToast(`Failed to save BD agent: ${errorData.error || `Server responded with ${res.status}`}`, 'error');
+      }
     } catch (err) {
+      setBdAgents((prev) => prev.filter((b) => b.id !== newBd.id));
+      showToast(`Network error saving BD agent: ${err.message}`, 'error');
       console.error('Failed to save BD agent to server:', err.message);
     }
   };
 
   const updateBdAgent = async (id, updatedFields) => {
-    setBdAgents((prev) =>
-      prev.map((agent) => (agent.id === id ? { ...agent, ...updatedFields } : agent))
-    );
+    let oldAgent = null;
+    setBdAgents((prev) => {
+      oldAgent = prev.find((agent) => agent.id === id);
+      return prev.map((agent) => (agent.id === id ? { ...agent, ...updatedFields } : agent));
+    });
     try {
-      await fetchWithApiKey(`${API_BASE_URL}/bd-agents/${id}`, {
+      const res = await fetchWithApiKey(`${API_BASE_URL}/bd-agents/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedFields)
       });
+      if (!res.ok) {
+        if (oldAgent) {
+          setBdAgents((prev) => prev.map((agent) => (agent.id === id ? oldAgent : agent)));
+        }
+        const errorData = await res.json().catch(() => ({}));
+        showToast(`Failed to update BD agent: ${errorData.error || `Server responded with ${res.status}`}`, 'error');
+      }
     } catch (err) {
+      if (oldAgent) {
+        setBdAgents((prev) => prev.map((agent) => (agent.id === id ? oldAgent : agent)));
+      }
+      showToast(`Network error updating BD agent: ${err.message}`, 'error');
       console.error('Failed to update BD agent on server:', err.message);
     }
   };
@@ -643,10 +715,35 @@ export const FinanceProvider = ({ children }) => {
         movingAvgBurn,
         isSidebarOpen,
         setIsSidebarOpen,
-        toggleSidebar
+        toggleSidebar,
+        showToast
       }}
     >
       {children}
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: '24px',
+            backgroundColor: toast.type === 'error' ? '#1e1b1b' : '#13231b',
+            border: toast.type === 'error' ? '1.5px solid rgba(239, 68, 68, 0.4)' : '1.5px solid rgba(16, 185, 129, 0.4)',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+            borderRadius: '8px',
+            padding: '14px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            zIndex: 9999,
+            color: toast.type === 'error' ? '#fca5a5' : '#86efac',
+            fontSize: '0.875rem',
+            fontWeight: '500',
+            animation: 'fadeIn 0.2s ease-in-out'
+          }}
+        >
+          <span>{toast.message}</span>
+        </div>
+      )}
     </FinanceContext.Provider>
   );
 };

@@ -12,61 +12,84 @@ from db import init_db, get_db_connection, DB_NAME, DB_PORT
 
 load_dotenv()
 
-# Dynamic Exclusion and Collision Resolution from Live Database
+# Dynamic Exclusion and Collision Resolution from Live Database with TTL Caching
+import time
+import threading
+import hashlib
+
+def make_stable_id(prefix, name):
+    if not name:
+        return f"{prefix}-unknown"
+    clean = str(name).strip().lower().encode('utf-8')
+    return f"{prefix}-{hashlib.md5(clean).hexdigest()[:8]}"
+
 COLLIDING_BILL_NUMBERS = []
 ENQUIRY_IDS_TO_EXCLUDE = []
+_last_exclusions_refresh_time = 0
+_exclusions_lock = threading.Lock()
+EXCLUSION_CACHE_TTL_SECONDS = int(os.environ.get('EXCLUSION_CACHE_TTL_MINUTES', '15')) * 60
 
-def refresh_live_exclusions():
-    global COLLIDING_BILL_NUMBERS, ENQUIRY_IDS_TO_EXCLUDE
-    try:
-        from collections import defaultdict
-        conn = get_db_connection()
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT 
-                    e.id, 
-                    e.companyName, 
-                    i.candidateName, 
-                    e.bill_no, 
-                    e.bill_date, 
-                    e.created_at, 
-                    e.updated_at
-                FROM enquiries e
-                LEFT JOIN invoice i ON e.id = i.enquiry_id
-                WHERE e.bill_no IS NOT NULL AND TRIM(e.bill_no) != ''
-            """)
-            rows = cur.fetchall()
-        conn.close()
+def refresh_live_exclusions(force=False):
+    global COLLIDING_BILL_NUMBERS, ENQUIRY_IDS_TO_EXCLUDE, _last_exclusions_refresh_time
+    with _exclusions_lock:
+        now = time.time()
+        if not force and _last_exclusions_refresh_time and (now - _last_exclusions_refresh_time < EXCLUSION_CACHE_TTL_SECONDS):
+            return
+        try:
+            from collections import defaultdict
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 
+                        e.id, 
+                        e.companyName, 
+                        i.candidateName, 
+                        e.bill_no, 
+                        e.bill_date, 
+                        e.created_at, 
+                        e.updated_at
+                    FROM enquiries e
+                    LEFT JOIN invoice i ON e.id = i.enquiry_id
+                    WHERE e.bill_no IS NOT NULL AND TRIM(e.bill_no) != ''
+                """)
+                rows = cur.fetchall()
+            conn.close()
 
-        company_per_bill = defaultdict(set)
-        groups = defaultdict(list)
+            company_per_bill = defaultdict(set)
+            groups = defaultdict(list)
 
-        for r in rows:
-            b = (r['bill_no'] or '').strip()
-            c = (r['companyName'] or '').strip().lower()
-            cand = (r['candidateName'] or '').strip().lower()
-            if b and b.lower() not in ('null', 'none', 'n/a', '-'):
-                company_per_bill[b].add(c)
-                groups[(c, cand, b)].append(r)
+            for r in rows:
+                b = (r['bill_no'] or '').strip()
+                c = (r['companyName'] or '').strip().lower()
+                cand = (r['candidateName'] or '').strip().lower()
+                if b and b.lower() not in ('null', 'none', 'n/a', '-'):
+                    company_per_bill[b].add(c)
+                    groups[(c, cand, b)].append(r)
 
-        COLLIDING_BILL_NUMBERS = [b for b, comps in company_per_bill.items() if len(comps) > 1]
+            COLLIDING_BILL_NUMBERS = [b for b, comps in company_per_bill.items() if len(comps) > 1]
 
-        ids_to_exclude = []
-        for (c, cand, b), grp in groups.items():
-            if len(grp) > 1:
-                grp.sort(key=lambda x: (str(x.get('updated_at') or ''), str(x.get('created_at') or ''), x['id']), reverse=True)
-                for x in grp[1:]:
-                    ids_to_exclude.append(x['id'])
+            ids_to_exclude = []
+            for (c, cand, b), grp in groups.items():
+                if len(grp) > 1:
+                    grp.sort(key=lambda x: (str(x.get('updated_at') or ''), str(x.get('created_at') or ''), x['id']), reverse=True)
+                    for x in grp[1:]:
+                        ids_to_exclude.append(x['id'])
 
-        ENQUIRY_IDS_TO_EXCLUDE = ids_to_exclude
-        print(f"[Live Pipeline] Computed {len(COLLIDING_BILL_NUMBERS)} colliding bill numbers and {len(ENQUIRY_IDS_TO_EXCLUDE)} duplicate enquiry IDs to exclude.")
-    except Exception as e:
-        print("Warning: Could not dynamically refresh live exclusions from database:", str(e))
+            ENQUIRY_IDS_TO_EXCLUDE = ids_to_exclude
+            _last_exclusions_refresh_time = now
+            print(f"[Live Pipeline] Refreshed exclusions (TTL: {EXCLUSION_CACHE_TTL_SECONDS // 60}m): {len(COLLIDING_BILL_NUMBERS)} colliding bill numbers, {len(ENQUIRY_IDS_TO_EXCLUDE)} duplicate enquiry IDs excluded.")
+        except Exception as e:
+            print("Warning: Could not dynamically refresh live exclusions from database:", str(e))
+
+def ensure_exclusions_fresh():
+    if time.time() - _last_exclusions_refresh_time > EXCLUSION_CACHE_TTL_SECONDS:
+        refresh_live_exclusions(force=True)
 
 # Initial dynamic load on startup
-refresh_live_exclusions()
+refresh_live_exclusions(force=True)
 
 def get_enq_exclude_clause(table_prefix=""):
+    ensure_exclusions_fresh()
     prefix = f"{table_prefix}." if table_prefix else ""
     if ENQUIRY_IDS_TO_EXCLUDE:
         ids_str = ', '.join(str(int(x)) for x in ENQUIRY_IDS_TO_EXCLUDE)
@@ -248,8 +271,8 @@ def get_transactions():
                 bd_rows = cursor.fetchall()
                 for r in bd_rows:
                     clean_name = r['bdMemberName'].strip()
-                    # Stable ID: hash the cleaned name so it never changes between requests
-                    stable_id = 'bd-' + str(abs(hash(clean_name.lower())) % 100000)
+                    # Deterministic MD5-based stable ID
+                    stable_id = make_stable_id('bd', clean_name)
                     bd_agents_list.append({ 'id': stable_id, 'name': clean_name.lower() })
             except Exception as e:
                 print('Could not load BD agents for mapping:', str(e))
@@ -265,7 +288,7 @@ def get_transactions():
                 fran_rows = cursor.fetchall()
                 for r in fran_rows:
                     clean_name = r['name'].strip()
-                    stable_id = 'f-' + str(abs(hash(clean_name.lower())) % 100000)
+                    stable_id = make_stable_id('f', clean_name)
                     franchises_list.append({ 'id': stable_id, 'name': clean_name.lower() })
             except Exception as e:
                 print('Could not load franchises for mapping from franchisees_forms:', str(e))
@@ -977,7 +1000,7 @@ def get_franchisees():
                 franchisees = []
                 for r in rows:
                     clean_name = r['name'].strip()
-                    stable_id = 'f-' + str(abs(hash(clean_name.lower())) % 100000)
+                    stable_id = make_stable_id('f', clean_name)
                     franchisees.append({
                         'id': stable_id,
                         'name': clean_name,
@@ -1088,8 +1111,9 @@ def get_franchisee_summary():
         
         ledger = []
         for r in rows:
+            clean_name = (r['name'] or '').strip()
             ledger.append({
-                'id': 'f-' + str(abs(hash(r['name'].strip().lower())) % 100000) if r['name'] else r['id'],
+                'id': make_stable_id('f', clean_name) if clean_name else str(r['id']),
                 'name': r['name'] or 'N/A',
                 'owner': r['owner'] or 'N/A',
                 'city': r['city'] or 'India',
@@ -1098,9 +1122,8 @@ def get_franchisee_summary():
                 'candidatesPlaced': int(r['candidates_placed']),
                 'revenuePaid': float(r['inflow_revenue']),
                 # TODO: Once expenditure table gets a franchisee_id column, sum real expense transactions per franchisee here
-                'costsIncurred': None,
-                'netContribution': float(r['inflow_revenue']),
-                'costsTracked': False
+                'expenses': 0.0,
+                'netProfit': float(r['inflow_revenue'])
             })
             
         return jsonify({
@@ -1122,35 +1145,39 @@ def get_franchisee_summary():
 @app.route('/api/franchisees', methods=['POST'])
 def add_franchisee():
     data = request.json or {}
-    hub = {
-        'id': f"f-{int(datetime.datetime.now().timestamp() * 1000)}",
-        'name': data.get('name'),
-        'city': data.get('city'),
-        'owner': data.get('owner'),
-        'onboardingDate': data.get('onboardingDate') or datetime.date.today().isoformat(),
-        'status': data.get('status', 'Active'),
-        'candidatesPlaced': int(data.get('candidatesPlaced') or 0)
-    }
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({ 'error': 'Franchisee name is required' }), 400
+
+    owner = (data.get('owner') or data.get('teamLeaderName') or '').strip()
+    onboarding_date = data.get('onboardingDate') or datetime.date.today().isoformat()
+    status = (data.get('status') or 'Active').strip()
     
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        if DB_NAME == 'seed':
-            cursor.execute("""
-                INSERT INTO franchisees (id, name, city, owner, onboardingDate, status, candidatesPlaced)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """, [hub['id'], hub['name'], hub['city'], hub['owner'], hub['onboardingDate'], hub['status'], hub['candidatesPlaced']])
-            conn.commit()
-            return jsonify(hub), 201
-        else:
-            cursor.execute("""
-                INSERT INTO franchises (franchise_developer_name, leads_generated, leads_converted, average_deal_size, sales_growth)
-                VALUES (%s, %s, %s, %s, %s)
-            """, [hub['name'], 100, hub['candidatesPlaced'], 25000.00, 0.12])
-            conn.commit()
-            hub['id'] = str(cursor.lastrowid)
-            return jsonify(hub), 201
+        cursor.execute("""
+            INSERT INTO franchisees (nameAsPerAgreement, teamLeaderName, onboardingDate, status)
+            VALUES (%s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                teamLeaderName = VALUES(teamLeaderName),
+                onboardingDate = VALUES(onboardingDate),
+                status = VALUES(status)
+        """, [name, owner, onboarding_date, status])
+        conn.commit()
+        
+        hub = {
+            'id': make_stable_id('f', name),
+            'name': name,
+            'city': data.get('city', 'India Hub'),
+            'owner': owner or 'Franchise Lead',
+            'onboardingDate': str(onboarding_date),
+            'status': status,
+            'candidatesPlaced': int(data.get('candidatesPlaced') or 0)
+        }
+        return jsonify(hub), 201
     except Exception as e:
+        conn.rollback()
         return jsonify({ 'error': str(e) }), 500
     finally:
         conn.close()
@@ -1197,11 +1224,19 @@ def get_bd_agents():
                         SUM(CASE WHEN e.enquiryStatus = 'credit_note' THEN 1 ELSE 0 END) AS credit_notes,
                         SUM(CASE WHEN e.enquiryStatus IN ('cancelled', 'offered_and_rejected', 'internally_closed') THEN COALESCE(e.placementFees, 0) ELSE 0 END) AS loss_amount,
                         SUM(CASE WHEN e.enquiryStatus IN ('closed', 'offered_and_accepted') THEN COALESCE(i.serviceCharges, e.bill_amount, 0) ELSE 0 END) AS gross_revenue,
-                        SUM(CASE WHEN e.enquiryStatus = 'credit_note' THEN COALESCE(i.serviceCharges, e.bill_amount, 0) ELSE 0 END) AS credit_note_reversals
+                        SUM(CASE WHEN e.enquiryStatus = 'credit_note' THEN COALESCE(i.serviceCharges, e.bill_amount, 0) ELSE 0 END) AS credit_note_reversals,
+                        b.id AS stored_id,
+                        b.role AS stored_role,
+                        b.baseSalary,
+                        b.payPerProgressed,
+                        b.payPerCancelled,
+                        b.commissionRate,
+                        b.status AS stored_status
                     FROM enquiries e
                     LEFT JOIN invoice i ON e.id = i.enquiry_id
+                    LEFT JOIN bd_agents b ON TRIM(LOWER(b.name)) = TRIM(LOWER(e.bdMemberName))
                     WHERE e.bdMemberName IS NOT NULL AND e.bdMemberName != ''
-                    GROUP BY e.bdMemberName
+                    GROUP BY e.bdMemberName, b.id, b.role, b.baseSalary, b.payPerProgressed, b.payPerCancelled, b.commissionRate, b.status
                     ORDER BY gross_revenue DESC
                     LIMIT 50
                 """)
@@ -1210,10 +1245,11 @@ def get_bd_agents():
                     agents = []
                     for r in rows:
                         clean_name = r['name'].strip()
-                        stable_id = 'bd-' + str(abs(hash(clean_name.lower())) % 100000)
+                        stable_id = r['stored_id'] or make_stable_id('bd', clean_name)
                         agents.append({
                             'id': stable_id,
                             'name': clean_name,
+                            'role': r['stored_role'] or 'BD Specialist',
                             'leadsBought': int(r['total']),
                             'leadsProgressed': int(r['progressed']),
                             'leadsCancelled': int(r['cancelled']),
@@ -1226,11 +1262,11 @@ def get_bd_agents():
                             'lossAmount': float(r['loss_amount']),
                             'grossRevenueFromDB': float(r['gross_revenue']),
                             'creditNoteReversals': float(r['credit_note_reversals']),
-                            'baseSalary': 12000.0,
-                            'payPerProgressed': 2500.0,
-                            'payPerCancelled': 500.0,
-                            'commissionRate': bd_commission_rate,
-                            'status': 'Active'
+                            'baseSalary': float(r['baseSalary']) if r['baseSalary'] is not None else 12000.0,
+                            'payPerProgressed': float(r['payPerProgressed']) if r['payPerProgressed'] is not None else 2500.0,
+                            'payPerCancelled': float(r['payPerCancelled']) if r['payPerCancelled'] is not None else 500.0,
+                            'commissionRate': float(r['commissionRate']) if r['commissionRate'] is not None else bd_commission_rate,
+                            'status': r['stored_status'] or 'Active'
                         })
                     return jsonify(agents)
                 else:
@@ -2274,7 +2310,7 @@ def get_team_leaders():
                 team_leaders = []
                 for r in rows:
                     clean_name = r['name'].strip()
-                    stable_id = 'tl-' + str(abs(hash(clean_name.lower())) % 100000)
+                    stable_id = make_stable_id('tl', clean_name)
                     team_leaders.append({
                         'id': stable_id,
                         'name': clean_name,
@@ -2305,40 +2341,50 @@ def get_team_leaders():
 @app.route('/api/bd-agents', methods=['POST'])
 def add_bd_agent():
     data = request.json or {}
-    agent = {
-        'id': f"bd-{int(datetime.datetime.now().timestamp() * 1000)}",
-        'name': data.get('name'),
-        'leadsBought': int(data.get('leadsBought') or 30),
-        'leadsProgressed': int(data.get('leadsProgressed') or 14),
-        'leadsCancelled': int(data.get('leadsCancelled') or 10),
-        'baseSalary': float(data.get('baseSalary') or 12000.00),
-        'payPerProgressed': float(data.get('payPerProgressed') or 2500.00),
-        'payPerCancelled': float(data.get('payPerCancelled') or 500.00),
-        'commissionRate': float(data.get('commissionRate') or 0.1000),
-        'status': data.get('status', 'Active')
-    }
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({ 'error': 'BD Agent name is required' }), 400
+        
+    stable_id = data.get('id') or make_stable_id('bd', name)
+    role = data.get('role', 'BD Specialist')
+    base_salary = float(data.get('baseSalary') or 12000.00)
+    pay_progressed = float(data.get('payPerProgressed') or 2500.00)
+    pay_cancelled = float(data.get('payPerCancelled') or 500.00)
+    commission_rate = float(data.get('commissionRate') or 0.0200)
+    status = data.get('status', 'Active')
     
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        if DB_NAME == 'seed':
-            cursor.execute("""
-                INSERT INTO bd_agents (id, name, leadsBought, leadsProgressed, leadsCancelled, baseSalary, payPerProgressed, payPerCancelled, commissionRate, status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, [agent['id'], agent['name'], agent['leadsBought'], agent['leadsProgressed'], agent['leadsCancelled'], agent['baseSalary'], agent['payPerProgressed'], agent['payPerCancelled'], agent['commissionRate'], agent['status']])
-            conn.commit()
-            return jsonify(agent), 201
-        else:
-            try:
-                cursor.execute("""
-                    INSERT INTO bd_agents (id, name, leadsBought, leadsProgressed, leadsCancelled, baseSalary, payPerProgressed, payPerCancelled, commissionRate, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, [agent['id'], agent['name'], agent['leadsBought'], agent['leadsProgressed'], agent['leadsCancelled'], agent['baseSalary'], agent['payPerProgressed'], agent['payPerCancelled'], agent['commissionRate'], agent['status']])
-                conn.commit()
-            except Exception as err:
-                print('Bypassing BD agent database write (table missing):', str(err))
-            return jsonify(agent), 201
+        cursor.execute("""
+            INSERT INTO bd_agents (id, name, role, baseSalary, payPerProgressed, payPerCancelled, commissionRate, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                role = VALUES(role),
+                baseSalary = VALUES(baseSalary),
+                payPerProgressed = VALUES(payPerProgressed),
+                payPerCancelled = VALUES(payPerCancelled),
+                commissionRate = VALUES(commissionRate),
+                status = VALUES(status)
+        """, [stable_id, name, role, base_salary, pay_progressed, pay_cancelled, commission_rate, status])
+        conn.commit()
+
+        agent = {
+            'id': stable_id,
+            'name': name,
+            'role': role,
+            'leadsBought': int(data.get('leadsBought') or 0),
+            'leadsProgressed': int(data.get('leadsProgressed') or 0),
+            'leadsCancelled': int(data.get('leadsCancelled') or 0),
+            'baseSalary': base_salary,
+            'payPerProgressed': pay_progressed,
+            'payPerCancelled': pay_cancelled,
+            'commissionRate': commission_rate,
+            'status': status
+        }
+        return jsonify(agent), 201
     except Exception as e:
+        conn.rollback()
         return jsonify({ 'error': str(e) }), 500
     finally:
         conn.close()
@@ -2349,31 +2395,58 @@ def update_bd_agent(id):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        if DB_NAME == 'seed':
-            cursor.execute('SELECT * FROM bd_agents WHERE id = %s', [id])
-            row = cursor.fetchone()
-            if not row:
-                return jsonify({ 'error': 'BD Agent not found' }), 404
-            
-            # Map database decimal fields correctly
-            row['baseSalary'] = float(row['baseSalary'])
-            row['payPerProgressed'] = float(row['payPerProgressed'])
-            row['payPerCancelled'] = float(row['payPerCancelled'])
-            row['commissionRate'] = float(row['commissionRate'])
-            
-            updated = { **row, **data }
-            cursor.execute("""
-                UPDATE bd_agents SET name=%s, leadsBought=%s, leadsProgressed=%s, leadsCancelled=%s, baseSalary=%s, payPerProgressed=%s, payPerCancelled=%s, commissionRate=%s, status=%s
-                WHERE id=%s
-            """, [updated['name'], updated['leadsBought'], updated['leadsProgressed'], updated['leadsCancelled'], updated['baseSalary'], updated['payPerProgressed'], updated['payPerCancelled'], updated['commissionRate'], updated['status'], id])
-            conn.commit()
-            return jsonify(updated)
-        else:
-            # Mock update payload success
-            payload = { 'id': id }
-            payload.update(data)
-            return jsonify(payload)
+        # Search by id or by name
+        name = (data.get('name') or '').strip()
+        cursor.execute("SELECT * FROM bd_agents WHERE id = %s OR TRIM(LOWER(name)) = TRIM(LOWER(%s))", [id, name])
+        existing = cursor.fetchone()
+        
+        effective_name = name or (existing['name'] if existing else '')
+        if not effective_name and not existing:
+            # Check enquiries to see if name exists
+            cursor.execute("SELECT DISTINCT bdMemberName FROM enquiries WHERE bdMemberName IS NOT NULL")
+            for enq_r in cursor.fetchall():
+                e_name = enq_r['bdMemberName'].strip()
+                if make_stable_id('bd', e_name) == id:
+                    effective_name = e_name
+                    break
+                    
+        if not effective_name:
+            effective_name = f"BD Agent {id}"
+
+        stable_id = id if id.startswith('bd-') else make_stable_id('bd', effective_name)
+        role = data.get('role') or (existing['role'] if existing else 'BD Specialist')
+        base_salary = float(data.get('baseSalary') if data.get('baseSalary') is not None else (existing['baseSalary'] if existing else 12000.0))
+        pay_progressed = float(data.get('payPerProgressed') if data.get('payPerProgressed') is not None else (existing['payPerProgressed'] if existing else 2500.0))
+        pay_cancelled = float(data.get('payPerCancelled') if data.get('payPerCancelled') is not None else (existing['payPerCancelled'] if existing else 500.0))
+        commission_rate = float(data.get('commissionRate') if data.get('commissionRate') is not None else (existing['commissionRate'] if existing else 0.0200))
+        status = data.get('status') or (existing['status'] if existing else 'Active')
+
+        cursor.execute("""
+            INSERT INTO bd_agents (id, name, role, baseSalary, payPerProgressed, payPerCancelled, commissionRate, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                role = VALUES(role),
+                baseSalary = VALUES(baseSalary),
+                payPerProgressed = VALUES(payPerProgressed),
+                payPerCancelled = VALUES(payPerCancelled),
+                commissionRate = VALUES(commissionRate),
+                status = VALUES(status)
+        """, [stable_id, effective_name, role, base_salary, pay_progressed, pay_cancelled, commission_rate, status])
+        conn.commit()
+
+        updated_agent = {
+            'id': stable_id,
+            'name': effective_name,
+            'role': role,
+            'baseSalary': base_salary,
+            'payPerProgressed': pay_progressed,
+            'payPerCancelled': pay_cancelled,
+            'commissionRate': commission_rate,
+            'status': status
+        }
+        return jsonify(updated_agent), 200
     except Exception as e:
+        conn.rollback()
         return jsonify({ 'error': str(e) }), 500
     finally:
         conn.close()

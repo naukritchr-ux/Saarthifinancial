@@ -203,6 +203,23 @@ def ensure_tables_exist():
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
 
+            # 7. BD Agents (Configured base salaries, compensation rates, status)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS bd_agents (
+                    id VARCHAR(100) PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    role VARCHAR(100) DEFAULT 'BD Specialist',
+                    baseSalary DECIMAL(15, 2) DEFAULT 12000.00,
+                    payPerProgressed DECIMAL(15, 2) DEFAULT 2500.00,
+                    payPerCancelled DECIMAL(15, 2) DEFAULT 500.00,
+                    commissionRate DECIMAL(5, 4) DEFAULT 0.0200,
+                    status VARCHAR(50) DEFAULT 'Active',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_bd_name (name)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
             # Seed default budgets if empty
             cur.execute("SELECT COUNT(*) as cnt FROM budgets;")
             if cur.fetchone()["cnt"] == 0:
