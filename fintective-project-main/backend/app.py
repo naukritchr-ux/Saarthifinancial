@@ -2903,10 +2903,30 @@ def get_sync_status():
     finally:
         conn.close()
 
+def start_background_sync_daemon():
+    import threading
+    import time
+    def sync_loop():
+        time.sleep(3)
+        while True:
+            try:
+                print("🔄 [Auto-Pool Daemon] Running automated background Saarthi CRM sync...")
+                from sync_service import sync_saarthi_all
+                res = sync_saarthi_all()
+                print(f"✅ [Auto-Pool Daemon] Auto sync complete: {res.get('invoices', 0)} invoices, {res.get('enquiries', 0)} enquiries, {res.get('franchisees', 0)} franchisees.")
+            except Exception as e:
+                print(f"⚠️ [Auto-Pool Daemon] Background sync notice: {str(e)}")
+            time.sleep(900)  # Auto-poll every 15 minutes (900 seconds)
+
+    t = threading.Thread(target=sync_loop, daemon=True)
+    t.start()
+
 if __name__ == '__main__':
     init_db()
+    start_background_sync_daemon()
     
     port = int(os.getenv("PORT", 5000))
     print(f"Starting Python Flask server on port {port}...")
     app.run(host='0.0.0.0', port=port, debug=False)
+
 

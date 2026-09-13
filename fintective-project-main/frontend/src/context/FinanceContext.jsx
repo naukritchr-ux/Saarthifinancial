@@ -328,9 +328,13 @@ export const FinanceProvider = ({ children }) => {
     }
   };
 
-  // Sync state on mount
+  // Auto-pool state on mount and periodically every 60 seconds (no manual button click needed)
   useEffect(() => {
     fetchAllData();
+    const interval = setInterval(() => {
+      fetchAllData();
+    }, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
