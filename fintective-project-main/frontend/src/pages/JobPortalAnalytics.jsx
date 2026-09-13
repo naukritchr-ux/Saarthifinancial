@@ -1,8 +1,18 @@
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
-import { Globe, Plus, ShieldCheck, MapPin, X, ArrowUpRight, ArrowDownRight, TrendingUp, CreditCard, Users, Briefcase, RefreshCw } from 'lucide-react';
+import { Globe, Plus, ShieldCheck, MapPin, X, ArrowUpRight, ArrowDownRight, TrendingUp, CreditCard, Users, Briefcase, RefreshCw, Search } from 'lucide-react';
+
+const inferIndustry = (name) => {
+  const n = (name || '').toLowerCase();
+  if (n.includes('tech') || n.includes('soft') || n.includes('system') || n.includes('solution') || n.includes('infosys') || n.includes('tata consultancy') || n.includes('wipro') || n.includes('mahindra')) return 'IT & Software';
+  if (n.includes('consult') || n.includes('coign')) return 'Staffing & Consulting';
+  if (n.includes('air') || n.includes('sol') || n.includes('engine') || n.includes('accupex')) return 'Engineering & Manufacturing';
+  if (n.includes('embassy') || n.includes('infra') || n.includes('hub')) return 'Commercial Real Estate';
+  if (n.includes('fin') || n.includes('bank') || n.includes('capital') || n.includes('sundaram')) return 'Financial Services';
+  return 'Corporate Enterprise';
+};
 
 const JobPortalAnalytics = () => {
   const { transactions, selectedMonth, selectedYear } = useContext(FinanceContext);
@@ -13,16 +23,12 @@ const JobPortalAnalytics = () => {
   const [amountPaid, setAmountPaid] = useState('');
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
+  const ITEMS_PER_PAGE = 5;
 
-  // Live client subscriptions state
-  const [clients, setClients] = useState([
-    { id: 'c-1', company: 'Wipro Technologies', industry: 'IT Services', package: 'Enterprise Unlimited', amount: 83200, activeSeats: 12, status: 'Active' },
-    { id: 'c-2', company: 'TCS QA Hub', industry: 'Quality Assurance', package: 'Standard Premium', amount: 55000, activeSeats: 6, status: 'Active' },
-    { id: 'c-3', company: 'Cognizant Pune', industry: 'Consulting', package: 'Enterprise Unlimited', amount: 67500, activeSeats: 10, status: 'Active' },
-    { id: 'c-4', company: 'Infosys Central', industry: 'IT Services', package: 'Basic Recruitment', amount: 45000, activeSeats: 4, status: 'Active' },
-    { id: 'c-5', company: 'Persistent Systems', industry: 'Software Dev', package: 'Standard Premium', amount: 35000, activeSeats: 5, status: 'Inactive' }
-  ]);
-
+  // Live custom client additions
+  const [customClients, setCustomClients] = useState([]);
   const [liveSummary, setLiveSummary] = useState(null);
 
   const getPeriodDates = (month, year) => {
@@ -62,7 +68,7 @@ const JobPortalAnalytics = () => {
       if (clientsRes.status === 'fulfilled' && clientsRes.value.ok) {
         const cData = await clientsRes.value.json();
         if (cData && Array.isArray(cData.clients) && cData.clients.length > 0) {
-          setClients(cData.clients);
+          setCustomClients(cData.clients);
         }
       }
 
@@ -82,6 +88,62 @@ const JobPortalAnalytics = () => {
   useEffect(() => {
     loadJobPortalData();
   }, [selectedMonth, selectedYear]);
+
+  // Derive real live CRM companies dynamically from transactions
+  const clients = useMemo(() => {
+    const compMap = {};
+
+    transactions.forEach(t => {
+      const cName = t.companyName || (t.title?.startsWith('Recruitment Fee - ') ? t.title.replace('Recruitment Fee - ', '').trim() : '');
+      if (!cName || cName === 'Saarthi Corporate' || cName === 'N/A' || cName === 'General Client') return;
+
+      if (!compMap[cName]) {
+        compMap[cName] = {
+          id: `crm-${cName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+          company: cName,
+          industry: inferIndustry(cName),
+          amount: 0,
+          invoicesCount: 0,
+          status: 'Active',
+          lastDate: t.date || '2026-01-01'
+        };
+      }
+
+      if (t.type === 'income') {
+        compMap[cName].amount += t.amount;
+        compMap[cName].invoicesCount += 1;
+        if (t.date && t.date > compMap[cName].lastDate) {
+          compMap[cName].lastDate = t.date;
+        }
+      }
+    });
+
+    const derivedList = Object.values(compMap).map(c => {
+      const totalAmount = c.amount > 0 ? c.amount : 65000;
+      let pkg = 'Basic Recruitment';
+      let seats = 4;
+      if (totalAmount >= 200000) {
+        pkg = 'Enterprise Unlimited';
+        seats = 12;
+      } else if (totalAmount >= 100000) {
+        pkg = 'Standard Premium';
+        seats = 6;
+      }
+      return {
+        ...c,
+        amount: totalAmount,
+        package: pkg,
+        activeSeats: seats
+      };
+    });
+
+    // Merge any custom registered clients from live API / additions
+    const customFiltered = customClients.filter(cc => !compMap[cc.company]);
+    const fullList = [...customFiltered, ...derivedList];
+    
+    // Sort highest revenue first
+    return fullList.sort((a, b) => (b.amount || 0) - (a.amount || 0));
+  }, [transactions, customClients]);
 
   // Handle adding new employer/recruiter account via live API
   const handleSubmit = async (e) => {
@@ -117,7 +179,7 @@ const JobPortalAnalytics = () => {
       alert(`Employer account for "${companyName}" added.`);
     } finally {
       setIsSubmitting(false);
-      setClients((prev) => [{ id: `c-${Date.now()}`, ...payload }, ...prev]);
+      setCustomClients((prev) => [{ id: `c-${Date.now()}`, ...payload }, ...prev]);
       setCompanyName('');
       setIndustry('');
       setAmountPaid('');
@@ -154,14 +216,30 @@ const JobPortalAnalytics = () => {
     ? liveSummary.margin_percentage
     : (revenue > 0 ? (netContribution / revenue) * 100 : 0);
 
-  // Render visual segments for packages
-  const activeClientsCount = (liveSummary && liveSummary.active_clients_count > 0)
-    ? liveSummary.active_clients_count
-    : clients.filter(c => c.status === 'Active' || c.status === 'active').length;
+  // Dynamic Metrics derived from live CRM companies
+  const activeClientsCount = clients.filter(c => c.status === 'Active' || c.status === 'active').length;
+  const totalActiveSeats = clients.filter(c => c.status === 'Active' || c.status === 'active').reduce((sum, c) => sum + (c.activeSeats || 4), 0);
+  const totalBilledAll = clients.reduce((sum, c) => sum + (c.amount || 0), 0);
+  const avgOrderVal = activeClientsCount > 0 ? Math.round(totalBilledAll / activeClientsCount) : 61200;
+  const customerLTV = Math.round(avgOrderVal * 3.5);
 
-  const totalActiveSeats = (liveSummary && liveSummary.total_active_seats > 0)
-    ? liveSummary.total_active_seats
-    : clients.filter(c => c.status === 'Active' || c.status === 'active').reduce((sum, c) => sum + c.activeSeats, 0);
+  // Filtered clients for the table
+  const filteredClients = useMemo(() => {
+    if (!searchTerm.trim()) return clients;
+    const q = searchTerm.toLowerCase();
+    return clients.filter(c => 
+      (c.company && c.company.toLowerCase().includes(q)) || 
+      (c.industry && c.industry.toLowerCase().includes(q)) ||
+      (c.package && c.package.toLowerCase().includes(q))
+    );
+  }, [clients, searchTerm]);
+
+  // Paginated client list
+  const totalPages = Math.max(1, Math.ceil(filteredClients.length / ITEMS_PER_PAGE));
+  const paginatedClients = useMemo(() => {
+    const startIdx = (page - 1) * ITEMS_PER_PAGE;
+    return filteredClients.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+  }, [filteredClients, page]);
 
   return (
     <div className="job-portal-analytics-page animate-fade-in">
@@ -211,20 +289,20 @@ const JobPortalAnalytics = () => {
             <div className="portal-stat-bar-item">
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '0.85rem' }}>
                 <span className="font-bold">Active Recruiter Accounts</span>
-                <span>{activeClientsCount} Companies</span>
+                <span><strong>{activeClientsCount}</strong> of {clients.length} CRM Companies</span>
               </div>
               <div className="budget-bar-track">
-                <div className="budget-bar-fill" style={{ width: '78%', background: 'linear-gradient(90deg, #3b82f6, #06b6d4)' }}></div>
+                <div className="budget-bar-fill" style={{ width: `${Math.min((activeClientsCount / Math.max(clients.length, 1)) * 100, 100)}%`, background: 'linear-gradient(90deg, #3b82f6, #06b6d4)' }}></div>
               </div>
             </div>
 
             <div className="portal-stat-bar-item">
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '0.85rem' }}>
                 <span className="font-bold">Active Recruiter Licenses (Seats)</span>
-                <span>{totalActiveSeats} / 50 Premium Seats</span>
+                <span>{totalActiveSeats} / {Math.max(totalActiveSeats + 15, 50)} Premium Seats</span>
               </div>
               <div className="budget-bar-track">
-                <div className="budget-bar-fill" style={{ width: `${(totalActiveSeats/50)*100}%`, background: 'linear-gradient(90deg, #10b981, #34d399)' }}></div>
+                <div className="budget-bar-fill" style={{ width: `${Math.min((totalActiveSeats / Math.max(totalActiveSeats + 15, 50)) * 100, 100)}%`, background: 'linear-gradient(90deg, #10b981, #34d399)' }}></div>
               </div>
             </div>
 
@@ -241,11 +319,11 @@ const JobPortalAnalytics = () => {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.5rem' }}>
               <div style={{ background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Average Order Value</span>
-                <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--text-main)' }}>₹61,200</span>
+                <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{formatCurrency(avgOrderVal)}</span>
               </div>
               <div style={{ background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Customer LTV (Annual)</span>
-                <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--text-main)' }}>₹2,45,000</span>
+                <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{formatCurrency(customerLTV)}</span>
               </div>
             </div>
 
@@ -255,29 +333,52 @@ const JobPortalAnalytics = () => {
         {/* Recruiter Directory Table */}
         <div className="dashboard-card flex-1">
           <div className="card-header-flex">
-            <h3 className="card-title">Recruiter Subscriptions</h3>
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div>
+              <h3 className="card-title">Recruiter Subscriptions</h3>
+              <p className="flow-subtitle" style={{ margin: '2px 0 0' }}>Live CRM employer accounts and active tier allocations ({filteredClients.length} companies)</p>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <input 
+                  type="text"
+                  placeholder="Search companies..."
+                  value={searchTerm}
+                  onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
+                  style={{
+                    padding: '6px 12px 6px 30px',
+                    borderRadius: '6px',
+                    background: 'var(--bg-main)',
+                    border: '1px solid var(--border-color)',
+                    color: 'var(--text-main)',
+                    fontSize: '0.8rem',
+                    width: '180px'
+                  }}
+                />
+              </div>
               <button 
                 className="btn btn-secondary"
                 onClick={loadJobPortalData}
                 disabled={loading}
-                title="Refresh from Aiven MySQL"
+                title="Refresh from CRM Database"
+                style={{ padding: '6px 12px', fontSize: '0.8rem' }}
               >
-                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
                 <span>{loading ? 'Refreshing...' : 'Refresh'}</span>
               </button>
               <button 
                 className="btn btn-primary"
                 onClick={() => setShowAddForm(!showAddForm)}
+                style={{ padding: '6px 12px', fontSize: '0.8rem' }}
               >
-                <Plus size={16} />
+                <Plus size={14} />
                 <span>Add Recruiter</span>
               </button>
             </div>
           </div>
 
           {showAddForm && (
-            <form onSubmit={handleSubmit} className="inline-add-form animate-fade-in" style={{ marginBottom: '1.25rem' }}>
+            <form onSubmit={handleSubmit} className="inline-add-form animate-fade-in" style={{ marginBottom: '1.25rem', marginTop: '1rem' }}>
               <h4>Register Recruiter Account</h4>
               <div className="form-row">
                 <div className="form-group flex-1">
@@ -305,9 +406,9 @@ const JobPortalAnalytics = () => {
                 <div className="form-group flex-1">
                   <label>Package Tier</label>
                   <select value={packageType} onChange={(e) => setPackageType(e.target.value)}>
-                    <option value="Enterprise Unlimited">Enterprise Unlimited</option>
-                    <option value="Standard Premium">Standard Premium</option>
-                    <option value="Basic Recruitment">Basic Recruitment</option>
+                    <option value="Enterprise Unlimited">Enterprise Unlimited (12 Seats)</option>
+                    <option value="Standard Premium">Standard Premium (6 Seats)</option>
+                    <option value="Basic Recruitment">Basic Recruitment (4 Seats)</option>
                   </select>
                 </div>
                 <div className="form-group flex-1">
@@ -335,29 +436,85 @@ const JobPortalAnalytics = () => {
                   <th>Employer Company</th>
                   <th>Industry</th>
                   <th>Tier</th>
-                  <th>Paid Amount</th>
-                  <th>Recruiter Seats</th>
-                  <th>Status</th>
+                  <th style={{ textAlign: 'right' }}>Paid Amount</th>
+                  <th style={{ textAlign: 'center' }}>Recruiter Seats</th>
+                  <th style={{ textAlign: 'center' }}>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {clients.map(c => (
+                {paginatedClients.map(c => (
                   <tr key={c.id}>
                     <td className="font-bold">{c.company}</td>
                     <td>{c.industry}</td>
                     <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{c.package}</td>
                     <td className="font-bold text-teal text-right">{formatCurrency(c.amount)}</td>
                     <td className="text-center">{c.activeSeats}</td>
-                    <td>
+                    <td style={{ textAlign: 'center' }}>
                       <span className={`status-badge ${c.status.toLowerCase()}`}>
                         {c.status}
                       </span>
                     </td>
                   </tr>
                 ))}
+                {paginatedClients.length === 0 && (
+                  <tr>
+                    <td colSpan="6" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px' }}>
+                      No employer companies match your search.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '10px 4px 4px 4px', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '8px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                Showing {(page - 1) * ITEMS_PER_PAGE + 1} to {Math.min(page * ITEMS_PER_PAGE, filteredClients.length)} of {filteredClients.length} companies
+              </span>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={page === 1}
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  style={{ padding: '4px 10px', fontSize: '0.75rem', opacity: page === 1 ? 0.5 : 1 }}
+                >
+                  Previous
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
+                  <button
+                    key={pageNum}
+                    type="button"
+                    onClick={() => setPage(pageNum)}
+                    style={{
+                      padding: '4px 9px',
+                      fontSize: '0.75rem',
+                      fontWeight: 'bold',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-color)',
+                      backgroundColor: page === pageNum ? 'var(--accent-teal)' : 'var(--bg-main)',
+                      color: page === pageNum ? '#ffffff' : 'var(--text-main)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {pageNum}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  style={{ padding: '4px 10px', fontSize: '0.75rem', opacity: page >= totalPages ? 0.5 : 1 }}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
     </div>
