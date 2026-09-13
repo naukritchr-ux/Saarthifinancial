@@ -336,14 +336,27 @@ export const deleteFollowup = async (req, res) => {
  * Purge / Clear All Follow-up Entries (Dedicated Action)
  */
 export const purgeFollowups = async (req, res) => {
+  const { confirm } = req.body || {};
+  if (confirm !== 'PURGE' && confirm !== 'true' && confirm !== true) {
+    return res.status(400).json({
+      success: false,
+      error: 'Refusing to purge follow-ups: explicit { confirm: "PURGE" } is required in request body.'
+    });
+  }
+
   try {
+    const [[countRow]] = await db.execute('SELECT COUNT(*) as count FROM tds_followups').catch(() => [[{ count: 0 }]]);
+    const deletedCount = countRow ? countRow.count : 'all';
+
     // WHERE id > 0 bypasses MySQL safe updates mode
     await db.execute('DELETE FROM tds_followups WHERE id > 0');
-    res.json({ success: true, message: 'Follow-up history log purged successfully' });
+    console.log(`🧹 [AUDIT LOG] Purged follow-ups history: ${deletedCount} records deleted at ${new Date().toISOString()}`);
+    res.json({ success: true, message: 'Follow-up history log purged successfully', deletedRecords: deletedCount });
   } catch (error) {
     console.error('💥 Error in purgeFollowups:', error);
     try {
       await db.execute('DELETE FROM tds_followups');
+      console.log(`🧹 [AUDIT LOG] Purged follow-ups history fallback at ${new Date().toISOString()}`);
       return res.json({ success: true, message: 'Follow-up history log purged successfully' });
     } catch (err2) {
       res.status(500).json({ success: false, error: 'Failed to purge follow-up history log', details: error.message });

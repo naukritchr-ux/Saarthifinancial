@@ -2134,7 +2134,9 @@ def resolve_action_item(id):
             if inv_row:
                 inv_sc = float(inv_row.get('serviceCharges') or old_row.get('bill_amount') or 0.0)
                 inv_info = inv_row.get('info') or info_status
-                if inv_row.get('franchiseeShare') is None or float(inv_row.get('franchiseeShare') or 0.0) == 0.0:
+                is_manual_override = bool(inv_row.get('isManualShareOverride') or inv_row.get('is_manually_edited') or False)
+                
+                if not is_manual_override:
                     shares = calculate_shares(
                         service_charges=inv_sc,
                         info=inv_info,

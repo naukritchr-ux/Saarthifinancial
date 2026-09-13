@@ -5,7 +5,11 @@ from flask import Blueprint, request, jsonify, Response
 from db import get_db_connection
 from invoice_helpers import calculate_shares
 
-JWT_SECRET = os.getenv("JWT_SECRET", "fallback_secret")
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    if os.getenv("FLASK_ENV") == "production" or os.getenv("ENV") == "production":
+        raise RuntimeError("FATAL: JWT_SECRET environment variable must be configured in production.")
+    JWT_SECRET = "fallback_secret"
 
 invoice_bp = Blueprint("invoice", __name__)
 
@@ -43,7 +47,11 @@ def _dict_insert(cursor, table, data: dict):
 # --------------------------------------------------------------------------
 # GET /api/franchise-payments
 # --------------------------------------------------------------------------
-
+# NOTE (Security Scope Assumption): This endpoint is currently accessed solely
+# by the internal central admin/finance dashboard with API-Key authentication.
+# Unscoped results are returned when no Authorization Bearer JWT is present.
+# If external multi-tenant access (e.g., individual franchisee portals) is
+# ever enabled, this route must enforce default-deny (return 401 when _current_user() is None).
 @invoice_bp.route("/api/franchise-payments", methods=["GET"])
 def get_franchise_payments():
     user = _current_user()
@@ -106,7 +114,8 @@ def get_franchise_payments():
 # --------------------------------------------------------------------------
 # GET /api/invoices
 # --------------------------------------------------------------------------
-
+# NOTE (Security Scope Assumption): Internal admin auditing portal access.
+# If multi-tenant direct client/franchisee access is enabled, enforce 401 on missing JWT.
 @invoice_bp.route("/api/invoices", methods=["GET"])
 def get_all_invoices():
     user = _current_user()
@@ -385,49 +394,27 @@ BACKUP_COLUMNS = [
 
 @invoice_bp.route("/api/invoices/<int:invoice_id>", methods=["DELETE"])
 def delete_invoice(invoice_id):
-    frontend_name = (
-        (request.get_json(silent=True) or {}).get("deletedBy")
-        or request.headers.get("x-deleted-by")
-        or ""
-    ).strip()
+    user = _current_user()
+    if not user:
+        return jsonify({"error": "Unauthorized: A valid Authorization Bearer token is required to delete invoices."}), 401
 
-    if not frontend_name:
-        return jsonify({"error": "Deleter name is required."}), 400
-
-    normalized_input = frontend_name.lower().strip()
-    if len(normalized_input) < 4:
-        return jsonify({"error": "Deleter name is too short to be valid."}), 400
+    # Extract verified identity from decoded JWT claims (not client body)
+    user_email = (user.get("email") or "").lower().strip()
+    user_name = (user.get("name") or "").lower().strip()
+    user_id = str(user.get("id") or user.get("userId") or "").strip()
 
     is_authorized = any(
-        normalized_input == auth or auth in normalized_input
+        (user_email and (user_email == auth or auth in user_email))
+        or (user_name and (user_name == auth or auth in user_name))
         for auth in AUTHORIZED_DELETERS
-    )
+    ) or user.get("role") in ("superadmin", "admin")
 
     if not is_authorized:
-        return jsonify({"error": "You are not authorized to delete invoices."}), 403
+        return jsonify({"error": "Forbidden: You are not authorized to delete invoices."}), 403
+
+    deleted_by = user.get("name") or user.get("email") or f"user-{user_id}"
 
     conn = get_db_connection()
-    deleted_by = frontend_name
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                "SELECT name FROM crm_db.users3 WHERE LOWER(TRIM(name)) = LOWER(TRIM(%s)) LIMIT 1",
-                [frontend_name],
-            )
-            user_row = cursor.fetchone()
-
-            if user_row:
-                deleted_by = user_row["name"]
-            else:
-                cursor.execute(
-                    "SELECT name FROM crm_db.users3 WHERE LOWER(name) LIKE LOWER(%s) LIMIT 1",
-                    [f"%{frontend_name}%"],
-                )
-                partial_row = cursor.fetchone()
-                if partial_row:
-                    deleted_by = partial_row["name"]
-    except Exception as err:
-        print("Error validating deleter name:", err)
 
     try:
         conn.begin()

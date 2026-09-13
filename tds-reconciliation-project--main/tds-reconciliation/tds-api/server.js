@@ -8,6 +8,16 @@ import { fileURLToPath } from 'url';
 // Load environment variables first so everything below picks them up
 dotenv.config();
 
+// Validate critical environment variables before proceeding
+if (!process.env.API_KEY) {
+  console.error('❌ FATAL: API_KEY environment variable is not defined. The server cannot start without an API_KEY.');
+  process.exit(1);
+}
+
+// Security & rate-limiting middleware
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+
 // Routes
 import tds26asRoutes from './routes/tds26asRoutes.js';
 import followupRoutes from './routes/followupRoutes.js';
@@ -26,6 +36,11 @@ const __dirname  = path.dirname(__filename);
 const app  = express();
 const PORT = process.env.PORT || 5000;
 
+// ── Security Headers ─────────────────────────────────────────────────────────
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
+}));
+
 // ── CORS ──────────────────────────────────────────────────────────────────────
 const allowedOriginsEnv = process.env.ALLOWED_ORIGINS || '*';
 const allowedOrigins    = allowedOriginsEnv !== '*'
@@ -37,6 +52,36 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key']
 }));
+
+// ── Rate Limiting ─────────────────────────────────────────────────────────────
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300, // Limit each IP to 300 requests per 15 mins
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'Too many requests from this IP, please try again after 15 minutes.'
+  }
+});
+
+const strictLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30, // Limit each IP to 30 sync/purge requests per 15 mins
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'Too many sync/purge requests, please try again later.'
+  }
+});
+
+app.use('/api', generalLimiter);
+app.use('/api/tds-26as/sync', strictLimiter);
+app.use('/api/tds-26as/sync-saarthi', strictLimiter);
+app.use('/api/tds-26as/sync-sarthi', strictLimiter);
+app.use('/api/tds-26as/purge', strictLimiter);
+app.use('/api/followups/purge', strictLimiter);
 
 // ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '50mb' }));
