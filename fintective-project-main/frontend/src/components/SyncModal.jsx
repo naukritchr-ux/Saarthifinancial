@@ -204,7 +204,7 @@ const SyncModal = ({ isOpen, onClose }) => {
           {status === 'error' && (
             <div style={{
               display: 'flex',
-              alignItems: 'center',
+              alignItems: 'flex-start',
               gap: '10px',
               marginTop: '1rem',
               background: 'rgba(239,68,68,0.08)',
@@ -212,10 +212,17 @@ const SyncModal = ({ isOpen, onClose }) => {
               padding: '10px 14px',
               borderRadius: '8px'
             }}>
-              <AlertTriangle color="#f87171" size={22} />
-              <div style={{ fontSize: '0.85rem', color: '#e2e8f0' }}>
-                <strong style={{ color: '#f87171' }}>Sync Failed.</strong> Please check backend server connection or Aiven database connectivity.
+              <AlertTriangle color="#f87171" size={22} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div style={{ fontSize: '0.85rem', color: '#e2e8f0', flex: 1 }}>
+                <strong style={{ color: '#f87171' }}>Sync Failed.</strong>{' '}
+                {syncLogs.filter(l => l.type === 'error').map(l => l.message.replace('❌ Sync Failed: ', '')).join(' ')||'Please check backend server connection or Aiven database connectivity.'}
               </div>
+              <button
+                onClick={handleSaarthiLiveSync}
+                style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '5px', color: '#f87171', padding: '4px 10px', fontSize: '0.78rem', cursor: 'pointer', flexShrink: 0 }}
+              >
+                Retry
+              </button>
             </div>
           )}
         </div>
