@@ -170,6 +170,7 @@ def ensure_tables_exist():
                     annualSalaryOffered DECIMAL(15, 2) DEFAULT 0.00,
                     info VARCHAR(100) NULL,
                     status VARCHAR(100) NULL,
+                    isManualShareOverride BOOLEAN DEFAULT FALSE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     INDEX idx_inv_bill (billNumber),
                     INDEX idx_inv_enq (enquiry_id),
@@ -180,6 +181,23 @@ def ensure_tables_exist():
                     INDEX idx_inv_company (companyName)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
+
+            # Ensure isManualShareOverride column exists on existing invoice table (idempotent migration)
+            try:
+                cur.execute("""
+                    SELECT COUNT(*) AS cnt 
+                    FROM information_schema.COLUMNS 
+                    WHERE TABLE_SCHEMA = %s 
+                      AND TABLE_NAME = 'invoice' 
+                      AND COLUMN_NAME = 'isManualShareOverride'
+                """, [DB_NAME])
+                col_exists = cur.fetchone()
+                if not col_exists or col_exists.get('cnt', 0) == 0:
+                    print("[Schema Migration] Adding isManualShareOverride column to invoice table...")
+                    cur.execute("ALTER TABLE invoice ADD COLUMN isManualShareOverride BOOLEAN DEFAULT FALSE;")
+            except Exception as mig_err:
+                if "1060" not in str(mig_err) and "Duplicate column" not in str(mig_err):
+                    print(f"[Schema Migration Warning] Could not check/add isManualShareOverride column: {mig_err}")
 
             # 4. Franchise Payments
             cur.execute("""

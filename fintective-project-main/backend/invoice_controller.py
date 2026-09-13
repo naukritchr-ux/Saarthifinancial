@@ -273,8 +273,11 @@ def update_invoice(invoice_id):
             )
             current_row = cursor.fetchone()
 
+        if not current_row:
+            return jsonify({"error": "Invoice not found"}), 404
+
         is_manual_override = update_fields.get(
-            "isManualShareOverride", (current_row or {}).get("isManualShareOverride", False)
+            "isManualShareOverride", current_row.get("isManualShareOverride", False)
         )
         
         # Ensure is_manual_override is interpreted properly as a boolean
@@ -288,17 +291,17 @@ def update_invoice(invoice_id):
             or any(k in update_fields for k in ("serviceCharges", "info", "billDate"))
         ):
             effective_service_charges = update_fields.get(
-                "serviceCharges", (current_row or {}).get("serviceCharges")
+                "serviceCharges", current_row.get("serviceCharges")
             )
-            effective_info = update_fields.get("info", (current_row or {}).get("info"))
+            effective_info = update_fields.get("info", current_row.get("info"))
             effective_bill_date = update_fields.get(
-                "billDate", (current_row or {}).get("billDate")
+                "billDate", current_row.get("billDate")
             )
             effective_franchisee_share = update_fields.get(
-                "franchiseeShare", (current_row or {}).get("franchiseeShare")
+                "franchiseeShare", current_row.get("franchiseeShare")
             )
             effective_our_share = update_fields.get(
-                "ourShare", (current_row or {}).get("ourShare")
+                "ourShare", current_row.get("ourShare")
             )
 
             shares = calculate_shares(
@@ -334,11 +337,6 @@ def update_invoice(invoice_id):
                 f"UPDATE invoice SET {set_clause} WHERE id = %s",
                 [*field_values, invoice_id],
             )
-            affected_rows = cursor.rowcount
-
-            if affected_rows == 0:
-                return jsonify({"error": "Invoice not found"}), 404
-
             cursor.execute("SELECT * FROM invoice WHERE id = %s", [invoice_id])
             updated_invoice = cursor.fetchone()
 

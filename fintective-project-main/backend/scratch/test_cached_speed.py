@@ -3,8 +3,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import app
 
-client = app.test_client()
-headers = {'X-API-Key': 'saarthi-secret-api-key-2026', 'Accept-Encoding': 'gzip'}
+api_key = os.environ.get('API_KEY', '')
+headers = {'X-API-Key': api_key, 'Accept-Encoding': 'gzip'}
 
 # First call (populates cache)
 client.get('/api/transactions', headers=headers)

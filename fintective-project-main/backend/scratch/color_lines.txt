@@ -1,0 +1,136 @@
+L840: <span style={{ color: '#c084fc' }}>══ Inflow (Simulated)</span>
+L841: <span style={{ color: '#f472b6' }}>══ Outflow (Simulated)</span>
+L859: <stop offset="0%" stopColor="#c084fc" stopOpacity="0.2" />
+L860: <stop offset="100%" stopColor="#c084fc" stopOpacity="0.0" />
+L863: <stop offset="0%" stopColor="#f472b6" stopOpacity="0.2" />
+L864: <stop offset="100%" stopColor="#f472b6" stopOpacity="0.0" />
+L922: <path d={`M ${projectedSimInflowPath}`} fill="none" stroke="#c084fc" strokeWidth="3" strokeDasharray="4,4" strokeLinecap="round" strokeLinejoin="round" />
+L923: <path d={`M ${projectedSimOutflowPath}`} fill="none" stroke="#f472b6" strokeWidth="3" strokeDasharray="4,4" strokeLinecap="round" strokeLinejoin="round" />
+L932: <circle cx={x} cy={getY(f.inflow)} r="4" fill="#0b132b" stroke="#10b981" strokeWidth="2" opacity={isSimulatedActive && f.isProjected ? 0.35 : 1} />
+L933: <circle cx={x} cy={getY(f.outflow)} r="4" fill="#0b132b" stroke="#ef4444" strokeWidth="2" opacity={isSimulatedActive && f.isProjected ? 0.35 : 1} />
+L936: <circle cx={x} cy={getY(f.simInflow)} r="4.5" fill="#0b132b" stroke="#c084fc" strokeWidth="2.5" />
+L937: <circle cx={x} cy={getY(f.simOutflow)} r="4.5" fill="#0b132b" stroke="#f472b6" strokeWidth="2.5" />
+L948: <div className="dashboard-card" style={{ border: '1px solid rgba(255, 255, 255, 0.05)', background: 'rgba(30, 41, 59, 0.15)', backdropFilter: 'blur(16px)' }}>
+L990: background: 'rgba(15, 23, 42, 0.6)',
+L992: color: '#fff',
+L1003: background: 'rgba(15, 23, 42, 0.8)',
+L1005: color: '#fff',
+L1019: <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+L1023: <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+L1027: <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+L1031: <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+L1055: <td className="font-bold" style={{ color: '#38bdf8' }}>{inv.billNumber}</td>
+L1056: <td style={{ color: '#94a3b8' }}>{inv.billDate}</td>
+L1062: style={{ cursor: 'pointer', color: '#38bdf8', textDecoration: 'underline' }}
+L1070: <td className="font-bold text-right" style={{ color: '#38bdf8' }}>{formatCurrency(inv.ourShare)}</td>
+L1091: <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+L1138: style={{ cursor: 'pointer', color: '#38bdf8', textDecoration: 'underline' }}
+L1139: onMouseOver={(e) => e.target.style.color = '#7dd3fc'}
+L1140: onMouseOut={(e) => e.target.style.color = '#38bdf8'}
+L1146: <span className="status-badge" style={{ backgroundColor: 'rgba(56,189,248,0.1)', color: '#38bdf8', border: '1px solid rgba(56,189,248,0.2)' }}>
+L1151: <td className="font-bold text-right" style={{ color: '#38bdf8' }}>{formatCurrency(agent.net_revenue)}</td>
+L1252: <span className={`info-badge`} style={{ color: account.type === 'Franchise Hub' ? 'var(--accent-teal)' : '#8b5cf6', background: 'rgba(255,255,255,0.03)' }}>
+L1286: <h5 style={{ color: '#f8fafc', fontSize: '1rem', fontWeight: 'bold', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '12px', marginBottom: '8px' }}>Simulation Controls</h5>
+L1332: <span style={{ color: hiringSalary > 0 ? '#ef4444' : '#cbd5e1', fontWeight: 'bold' }}>
+L1357: border: '1px solid rgba(255,255,255,0.08)',
+L1359: backgroundColor: 'rgba(255,255,255,0.02)',
+L1360: color: '#cbd5e1',
+L1365: onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)'}
+L1366: onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.02)'}
+L1374: <div className="simulator-panel" style={{ background: 'rgba(15, 23, 42, 0.4)' }}>
+L1375: <h5 style={{ color: '#f8fafc', fontSize: '1rem', fontWeight: 'bold', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '12px', marginBottom: '8px' }}>Simulation Impact Report</h5>
+L1379: <div style={{ background: 'rgba(255,255,255,0.02)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
+L1380: <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Simulated Monthly Inflow</span>
+L1384: <div style={{ background: 'rgba(255,255,255,0.02)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}>
+L1385: <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Simulated Monthly Outflow</span>
+L1392: <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: 'rgba(0,0,0,0.25)', padding: '16px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)' }}>
+L1394: <span style={{ color: '#cbd5e1' }}>Simulated Net Flow:</span>
+L1400: <span style={{ color: '#cbd5e1' }}>Simulated Cash Runway:</span>
+L1481: <span style={{ display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px', fontStyle: 'italic' }}>
+L1488: <span className="font-bold" style={{ fontSize: '0.9rem', color: '#94a3b8' }}>Target Scale:</span>
+L1496: border: '1px solid rgba(255,255,255,0.1)',
+L1497: backgroundColor: scaleMultiplier === mult ? 'var(--accent-teal, #2dd4bf)' : 'rgba(255,255,255,0.04)',
+L1498: color: scaleMultiplier === mult ? '#0b132b' : '#cbd5e1',
+L1511: <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+L1512: <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Projected Monthly Revenue</span>
+L1516: <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+L1517: <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Projected Monthly Expenses</span>
+L1521: <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+L1522: <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Projected Net Profit</span>
+L1526: <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+L1527: <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Operating Profit Margin</span>
+L1528: <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#cbd5e1' }}>{currentScale.margin.toFixed(1)}%</span>
+L1559: <h5 style={{ marginBottom: '12px', color: '#cbd5e1' }}>Side-by-Side Scaling Comparative Reference Table</h5>
+L1573: { mult: '1x Scale (Baseline)', calc: scale1x, color: '#f8fafc' },
+L1574: { mult: '2x Scale', calc: scale2x, color: '#cbd5e1' },
+L1575: { mult: '3x Scale', calc: scale3x, color: '#94a3b8' },
+L1644: let growthColor = '#94a3b8';
+L1655: growthColor = '#94a3b8';
+L1675: <td className="text-right font-bold" style={{ color: cat.type === 'income' ? 'var(--accent-teal)' : '#f8fafc' }}>
+L1726: background: '#fff7ed',
+L1729: border: '1.5px solid #fed7aa',
+L1748: background: '#fef2f2',
+L1778: <div style={{ position: 'absolute', right: '-10px', top: '-10px', opacity: 0.08, color: '#2563eb' }}>
+L1781: <span style={{ fontSize: '0.85rem', color: '#1e40af', display: 'block', marginBottom: '6px', fontWeight: '700' }}>Outstanding Receivables (&gt;30d)</span>
+L1782: <span style={{ fontSize: '2.2rem', fontWeight: '800', color: '#2563eb' }}>
+L1785: <span style={{ fontSize: '0.75rem', color: '#1e40af', display: 'block', marginTop: '6px', fontWeight: '600' }}>
+L1793: <div className="dashboard-card" style={{ marginBottom: '32px', border: '1.5px solid #99f6e4', background: '#ffffff', padding: '24px', boxShadow: 'var(--shadow-md)' }}>
+L1794: <h5 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: '#0d9488', fontSize: '1.05rem', fontWeight: '700' }}>
+L1804: border: '2px dashed #cbd5e1',
+L1808: background: '#f8fafc',
+L1819: <UploadCloud size={44} style={{ color: '#0d9488', marginBottom: '12px' }} />
+L1853: color: '#ffffff',
+L1866: backgroundColor: '#ffffff',
+L1870: border: '1px solid #cbd5e1',
+L1882: <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#0284c7', fontSize: '0.9rem', fontWeight: 'bold' }}>
+L1909: const priorityBg = deal.priority === 'High' ? '#fef2f2' : (deal.priority === 'Medium' ? '#fff7ed' : '#fefce8');
+L1910: const priorityBorder = deal.priority === 'High' ? '#fca5a5' : (deal.priority === 'Medium' ? '#fed7aa' : '#fef08a');
+L1916: background: '#ffffff',
+L1964: backgroundColor: '#f8fafc',
+L1966: border: '1px solid #cbd5e1',
+L1981: backgroundColor: '#f8fafc',
+L1983: border: '1px solid #cbd5e1',
+L1994: backgroundColor: '#f8fafc',
+L1996: border: '1px solid #cbd5e1',
+L2014: color: '#fff',
+L2030: <div style={{ padding: '24px', textAlign: 'center', color: '#059669', background: '#ecfdf5', borderRadius: '12px', border: '1px solid #a7f3d0', fontWeight: 'bold' }}>
+L2067: background: '#fef2f2',
+L2086: <td colSpan="4" style={{ textAlign: 'center', color: '#059669', padding: '20px', backgroundColor: '#ecfdf5', fontWeight: 'bold' }}>
+L2099: <div className="dashboard-card" style={{ background: '#ffffff', padding: '20px', border: '1px solid var(--border-color)', marginBottom: '32px', boxShadow: 'var(--shadow-md)' }}>
+L2105: <h6 style={{ color: '#2563eb', marginBottom: '10px', fontSize: '0.85rem', fontWeight: 'bold' }}>Unpaid Receivables (&gt;30 days) ({outstandingReceivables.length})</h6>
+L2108: <div key={item.id} style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #bfdbfe', fontSize: '0.75rem' }}>
+L2132: <div key={item.id} style={{ background: '#fef2f2', padding: '12px', borderRadius: '8px', border: '1px solid #fca5a5', fontSize: '0.75rem' }}>
+L2158: <div className="dashboard-card" style={{ background: '#ffffff', padding: '24px', border: '1.5px solid #ddd6fe', boxShadow: 'var(--shadow-md)' }}>
+L2169: backgroundColor: isMlActive ? '#ecfdf5' : '#fff7ed',
+L2171: border: isMlActive ? '1px solid #a7f3d0' : '1px solid #fed7aa'
+L2192: const riskBg = pred.leakage_risk > 60 ? '#fef2f2' : (pred.leakage_risk > 30 ? '#fff7ed' : '#ecfdf5');
+L2193: const riskBorder = pred.leakage_risk > 60 ? '#fca5a5' : (pred.leakage_risk > 30 ? '#fed7aa' : '#a7f3d0');
+L2202: <td className="text-center" style={{ color: '#0284c7', fontWeight: 'bold' }}>{pred.predicted_days} days</td>
+L2232: <div className="dashboard-card" style={{ background: '#ffffff', padding: '24px', border: '1.5px solid #fecaca', boxShadow: 'var(--shadow-md)' }}>
+L2294: <div className="dashboard-card" style={{ background: 'rgba(255,255,255,0.01)', border: '1px dashed rgba(255,255,255,0.1)', padding: '16px' }}>
+L2295: <h6 style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#94a3b8', fontSize: '0.85rem', marginBottom: '12px', fontWeight: 'bold' }}>
+L2301: <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(15,23,42,0.6)', padding: '8px 12px', borderRadius: '6px', fontSize: '0.75rem', border: '1px solid rgba(255,255,255,0.05)' }}>
+L2340: borderLeft: '1px solid rgba(255,255,255,0.1)',
+L2341: boxShadow: '-10px 0 30px rgba(0,0,0,0.5)',
+L2346: color: '#cbd5e1',
+L2350: <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '12px' }}>
+L2352: <span style={{ fontSize: '0.75rem', color: '#38bdf8', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold' }}>Recruiter Trust Layer</span>
+L2353: <h4 style={{ color: '#fff', margin: '4px 0 0 0' }}>{selectedRecruiter}</h4>
+L2358: background: 'rgba(255,255,255,0.04)',
+L2359: border: '1px solid rgba(255,255,255,0.1)',
+L2360: color: '#cbd5e1',
+L2374: <h5 style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '12px' }}>Audit Invoices Log</h5>
+L2376: <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+L2383: <div key={idx} style={{ background: 'rgba(255,255,255,0.02)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', fontSize: '0.8rem' }}>
+L2384: <div style={{ display: 'flex', justifyContent: 'space-between', color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}>
+L2388: <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+L2391: <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#38bdf8', marginTop: '4px' }}>
+L2405: <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '16px', display: 'flex', gap: '10px' }}>
+L2419: backgroundColor: '#38bdf8',
+L2420: color: '#0b132b',
+L2438: backgroundColor: 'rgba(255,255,255,0.04)',
+L2439: border: '1px solid rgba(255,255,255,0.1)',
+L2440: color: '#cbd5e1',
+L2458: background: 'rgba(15, 23, 42, 0.9)',
+L2459: color: '#cbd5e1',
+L2461: boxShadow: '0 10px 25px rgba(0,0,0,0.4)',

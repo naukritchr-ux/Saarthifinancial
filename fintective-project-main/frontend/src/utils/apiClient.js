@@ -1,17 +1,20 @@
 const rawApiKey = import.meta.env.VITE_API_KEY;
 
-// Production fallback: key is the same as backend default (app.py line ~162)
-// Set VITE_API_KEY in Render env vars to override this.
-const FALLBACK_API_KEY = 'saarthi-secret-api-key-2026';
-
 if (!rawApiKey) {
-  console.warn(
-    '[apiClient] VITE_API_KEY not set — using built-in fallback key. ' +
-    'Set VITE_API_KEY in Render environment variables to suppress this warning.'
-  );
+  if (import.meta.env.PROD) {
+    throw new Error(
+      'CRITICAL SECURITY CONFIGURATION: VITE_API_KEY environment variable is required in production builds. ' +
+      'Configure VITE_API_KEY in your deployment environment variables.'
+    );
+  } else {
+    console.warn(
+      '[apiClient] VITE_API_KEY not configured in development mode. ' +
+      'Ensure VITE_API_KEY is defined in .env for local requests.'
+    );
+  }
 }
 
-export const API_KEY = rawApiKey || FALLBACK_API_KEY;
+export const API_KEY = rawApiKey || '';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 
   (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://saarthifinancial-1.onrender.com/api');

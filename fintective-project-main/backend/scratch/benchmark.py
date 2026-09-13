@@ -3,8 +3,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import app
 
-client = app.test_client()
-headers = {'X-API-Key': 'saarthi-secret-api-key-2026'}
+api_key = os.environ.get('API_KEY', '')
+headers = {'X-API-Key': api_key}
 endpoints = [
     '/api/transactions',
     '/api/franchisees',

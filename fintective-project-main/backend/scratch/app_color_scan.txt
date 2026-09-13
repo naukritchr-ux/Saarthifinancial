@@ -1,0 +1,79 @@
+=== frontend/src\App.jsx (2 matches) ===
+  L32: [rgba(15, 23, 42] <div style={{ padding: '40px', color: '#fff', background: 'rgba(15, 23, 42, 0.9)', borderRadius: '12px', margin: '20px', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+  L34: [#94a3b8] <p style={{ color: '#94a3b8', marginBottom: '20px' }}>{this.state.error?.message || 'An unexpected error occurred.'}</p>
+=== frontend/src\components\BudgetSettingsModal.jsx (1 matches) ===
+  L164: [rgba(15, 23, 42] backgroundColor: 'rgba(15, 23, 42, 0.55)',
+=== frontend/src\components\CustomCharts.jsx (1 matches) ===
+  L64: [#94a3b8] <text x="50" y="47" textAnchor="middle" fill="#94a3b8" fontSize="6" fontWeight="bold">
+=== frontend/src\components\DynamicMLCharts.jsx (27 matches) ===
+  L192: [#94a3b8] <text x={padL - 8} y={y + 3} textAnchor="end" fontSize="9" fill="var(--text-secondary, #94a3b8)">
+  L200: [#94a3b8] <line x1={padL} y1={padT + plotH} x2={padL + plotW} y2={padT + plotH} stroke="var(--text-secondary, #94a3b8)" strokeWidth="1.2" />
+  L253: [rgba(15, 23, 42] background: 'rgba(15, 23, 42, 0.95)',
+  L262: [rgba(255,255,255] border: hoveredPoint.is_anomaly ? '1px solid #ef4444' : '1px solid rgba(255,255,255,0.1)'
+  L264: [#38bdf8] <div style={{ fontWeight: '700', color: hoveredPoint.is_anomaly ? '#fca5a5' : '#38bdf8', marginBottom: '2px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+  L268: [#94a3b8] <div style={{ color: '#94a3b8', fontSize: '0.72rem', marginBottom: '4px' }}>{hoveredPoint.date}</div>
+  L386: [#94a3b8] <Search size={12} style={{ position: 'absolute', left: '8px', top: '7px', color: '#94a3b8' }} />
+  L415: [#94a3b8] <text x={padL - 8} y={y + 3} textAnchor="end" fontSize="9" fill="var(--text-secondary, #94a3b8)">
+  L423: [#94a3b8] <line x1={padL} y1={padT + plotH} x2={padL + plotW} y2={padT + plotH} stroke="var(--text-secondary, #94a3b8)" strokeWidth="1.2" />
+  L475: [rgba(15, 23, 42] background: 'rgba(15, 23, 42, 0.95)',
+  L484: [#38bdf8] border: `1px solid ${colors[hoveredFran.segment] || '#38bdf8'}`
+  L486: [#38bdf8] <div style={{ fontWeight: '700', color: colors[hoveredFran.segment] || '#38bdf8', marginBottom: '2px' }}>
+  L489: [#94a3b8] <div style={{ color: '#94a3b8', fontSize: '0.7rem', marginBottom: '6px' }}>{hoveredFran.segment}</div>
+  L491: [#cbd5e1] <span style={{ color: '#cbd5e1' }}>Placements:</span>
+  L495: [#cbd5e1] <span style={{ color: '#cbd5e1' }}>Total Revenue:</span>
+  L499: [#cbd5e1] <span style={{ color: '#cbd5e1' }}>Royalty Share:</span>
+  L615: [#94a3b8] <Search size={12} style={{ position: 'absolute', left: '8px', top: '7px', color: '#94a3b8' }} />
+  L644: [#94a3b8] <text x={padL - 8} y={y + 3} textAnchor="end" fontSize="9" fill="var(--text-secondary, #94a3b8)">
+  L652: [#94a3b8] <line x1={padL} y1={padT + plotH} x2={padL + plotW} y2={padT + plotH} stroke="var(--text-secondary, #94a3b8)" strokeWidth="1.2" />
+  L704: [rgba(15, 23, 42] background: 'rgba(15, 23, 42, 0.95)',
+  L713: [#38bdf8] border: `1px solid ${colors[hoveredClient.segment] || '#38bdf8'}`
+  L715: [#38bdf8] <div style={{ fontWeight: '700', color: colors[hoveredClient.segment] || '#38bdf8', marginBottom: '2px' }}>
+  L718: [#94a3b8] <div style={{ color: '#94a3b8', fontSize: '0.7rem', marginBottom: '6px' }}>{hoveredClient.segment}</div>
+  L720: [#cbd5e1] <span style={{ color: '#cbd5e1' }}>Total Jobs:</span>
+  L724: [#cbd5e1] <span style={{ color: '#cbd5e1' }}>Placements:</span>
+  L728: [#cbd5e1] <span style={{ color: '#cbd5e1' }}>Total Billing:</span>
+  L733: [#cbd5e1] <span style={{ color: '#cbd5e1' }}>Avg Salary:</span>
+=== frontend/src\pages\BDPerformance.jsx (4 matches) ===
+  L498: [#cbd5e1] <div style={{ color: '#cbd5e1' }}>
+  L535: [rgba(255,255,255] <form onSubmit={handleSubmit} className="inline-add-form animate-fade-in" style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '20px', marginBottom: '24px' }}>
+  L685: [#38bdf8] <td className="font-bold text-right text-blue" style={{ color: '#38bdf8' }}>{formatCurrency(agent.netRevenue)}</td>
+  L687: [rgba(255,255,255] <span className="status-badge inactive" style={{ backgroundColor: 'rgba(255,255,255,0.02)', color: '#64748b', fontSize: '0.8rem' }}>
+=== frontend/src\pages\CashOutflow.jsx (1 matches) ===
+  L43: [#94a3b8] 'Other': '#94a3b8'
+=== frontend/src\pages\Dashboard.jsx (1 matches) ===
+  L530: [#94a3b8] {isAllMonths && <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontStyle: 'italic', marginTop: '2px' }}>*Showing {timelineTargetMonth} (the current active period) for All Months view</span>}
+=== frontend/src\pages\Franchisees.jsx (1 matches) ===
+  L322: [#94a3b8] <h2 className="kpi-value" style={{ fontSize: '1.15rem', color: '#94a3b8', padding: '6px 0' }}>Not tracked per-location</h2>
+=== frontend/src\pages\JobPortalAnalytics.jsx (7 matches) ===
+  L242: [rgba(255,255,255] <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+  L243: [#94a3b8] <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Average Order Value</span>
+  L244: [#f8fafc] <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#f8fafc' }}>₹61,200</span>
+  L246: [rgba(255,255,255] <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', padding: '12px', textAlign: 'center' }}>
+  L247: [#94a3b8] <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Customer LTV (Annual)</span>
+  L248: [#f8fafc] <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#f8fafc' }}>₹2,45,000</span>
+  L348: [#94a3b8] <td style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{c.package}</td>
+=== frontend/src\pages\Reports.jsx (9 matches) ===
+  L199: [#94a3b8] color: activeTab === 'ledger' ? 'var(--accent-teal, #2dd4bf)' : '#94a3b8',
+  L215: [#94a3b8] color: activeTab === 'ml' ? 'var(--accent-teal, #2dd4bf)' : '#94a3b8',
+  L466: [rgba(255,255,255] backgroundColor: active ? 'var(--color-purple, #8b5cf6)' : (disabled ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.08)'),
+  L467: [#94a3b8] color: active ? '#fff' : (disabled ? '#475569' : '#94a3b8'),
+  L468: [rgba(255,255,255] border: active ? 'none' : '1px solid rgba(255,255,255,0.1)',
+  L475: [rgba(255,255,255] <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem', padding: '12px 16px', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+  L476: [#94a3b8] <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
+  L577: [#94a3b8] <div style={{ padding: '60px 0', textAlign: 'center', color: '#94a3b8', fontWeight: '600' }}>
+  L592: [rgba(255,255,255] style={{ marginTop: '12px', border: '1px solid rgba(255,255,255,0.1)' }}
+=== frontend/src\pages\RunwayRoiTracker.jsx (11 matches) ===
+  L1804: [#cbd5e1] border: '2px dashed #cbd5e1',
+  L1808: [#f8fafc] background: '#f8fafc',
+  L1870: [#cbd5e1] border: '1px solid #cbd5e1',
+  L1964: [#f8fafc] backgroundColor: '#f8fafc',
+  L1966: [#cbd5e1] border: '1px solid #cbd5e1',
+  L1981: [#f8fafc] backgroundColor: '#f8fafc',
+  L1983: [#cbd5e1] border: '1px solid #cbd5e1',
+  L1994: [#f8fafc] backgroundColor: '#f8fafc',
+  L1996: [#cbd5e1] border: '1px solid #cbd5e1',
+  L2108: [#f8fafc] <div key={item.id} style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #bfdbfe', fontSize: '0.75rem' }}>
+  L2459: [rgba(255, 255, 255] border: '1px solid rgba(255, 255, 255, 0.1)',
+=== frontend/src\pages\TLPerformance.jsx (2 matches) ===
+  L316: [#cbd5e1] <div style={{ color: '#cbd5e1' }}>Gross Billing: {formatCurrency(tl.grossRevenue)} | Net Share: {formatCurrency(tl.netRevenue)}{(tl.creditNoteReversals || 0) > 0 && <span style={{color:'#f87171'}}> | Reversals: -{formatCurrency(tl.creditNoteReversals)}</span>}</div>
+  L362: [#38bdf8] <td className="font-bold text-right text-blue" style={{ color: '#38bdf8' }}>{formatCurrency(tl.netRevenue)}</td>

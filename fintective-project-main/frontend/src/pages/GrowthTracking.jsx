@@ -38,6 +38,7 @@ const GrowthTracking = () => {
   // Prediction & Scenario state
   const [predictionData, setPredictionData] = useState(null);
   const [predictionLoading, setPredictionLoading] = useState(false);
+  const [predictionError, setPredictionError] = useState(null);
   const [overrideRate, setOverrideRate] = useState('');
   const [activeScenarioMultiplier, setActiveScenarioMultiplier] = useState(2); // 1, 2, 3, 4
 
@@ -57,22 +58,22 @@ const GrowthTracking = () => {
   const entityOptions = useMemo(() => {
     if (entityType === 'franchisee') {
       const base = (franchisees && franchisees.length > 0)
-        ? franchisees.map(f => ({ id: String(f.id), name: f.name || f.nameAsPerAgreement, type: 'franchisee', baseRevenue: f.revenue || 5500000 }))
+        ? franchisees.map(f => ({ id: String(f.id), name: f.name || f.nameAsPerAgreement, type: 'franchisee', baseRevenue: f.revenue || 0 }))
         : [
-            { id: 'f-1', name: 'Nagpur Central', type: 'franchisee', baseRevenue: 7200000 },
-            { id: 'f-2', name: 'Pune East', type: 'franchisee', baseRevenue: 5800000 },
-            { id: 'f-3', name: 'Mumbai South', type: 'franchisee', baseRevenue: 11500000 },
-            { id: 'f-4', name: 'Nashik Hub', type: 'franchisee', baseRevenue: 3900000 }
+            { id: 'f-1', name: 'Nagpur Central', type: 'franchisee', baseRevenue: 0 },
+            { id: 'f-2', name: 'Pune East', type: 'franchisee', baseRevenue: 0 },
+            { id: 'f-3', name: 'Mumbai South', type: 'franchisee', baseRevenue: 0 },
+            { id: 'f-4', name: 'Nashik Hub', type: 'franchisee', baseRevenue: 0 }
           ];
       return base;
     } else {
       const base = (bdAgents && bdAgents.length > 0)
-        ? bdAgents.map(b => ({ id: String(b.id), name: b.name, type: 'bd_agent', baseSalary: b.baseSalary || 12000, baseRevenue: b.grossRevenue || 11200000 }))
+        ? bdAgents.map(b => ({ id: String(b.id), name: b.name, type: 'bd_agent', baseSalary: b.baseSalary || 12000, baseRevenue: b.grossRevenue || 0 }))
         : [
-            { id: 'bd-1', name: 'Rohan Mehta', type: 'bd_agent', baseSalary: 12000, baseRevenue: 14800000 },
-            { id: 'bd-2', name: 'Neha Sharma', type: 'bd_agent', baseSalary: 10000, baseRevenue: 10900000 },
-            { id: 'bd-3', name: 'Karan Malhotra', type: 'bd_agent', baseSalary: 15000, baseRevenue: 21000000 },
-            { id: 'bd-4', name: 'Anjali Verma', type: 'bd_agent', baseSalary: 9000, baseRevenue: 6500000 }
+            { id: 'bd-1', name: 'Rohan Mehta', type: 'bd_agent', baseSalary: 12000, baseRevenue: 0 },
+            { id: 'bd-2', name: 'Neha Sharma', type: 'bd_agent', baseSalary: 10000, baseRevenue: 0 },
+            { id: 'bd-3', name: 'Karan Malhotra', type: 'bd_agent', baseSalary: 15000, baseRevenue: 0 },
+            { id: 'bd-4', name: 'Anjali Verma', type: 'bd_agent', baseSalary: 9000, baseRevenue: 0 }
           ];
       return base;
     }
@@ -96,6 +97,7 @@ const GrowthTracking = () => {
   const fetchPrediction = async (customRateVal) => {
     if (!selectedEntity) return;
     setPredictionLoading(true);
+    setPredictionError(null);
     try {
       const rateParam = (customRateVal !== undefined && customRateVal !== '') ? `&rate=${customRateVal}` : '';
       const url = `${API_BASE_URL}/growth-targets/predict?entity_type=${entityType}&entity_id=${encodeURIComponent(selectedEntity.id || selectedEntity.name)}${rateParam}&periods=3`;
@@ -103,12 +105,20 @@ const GrowthTracking = () => {
       if (res.ok) {
         const data = await res.json();
         setPredictionData(data);
-        if (customRateVal === undefined || customRateVal === '') {
-          setOverrideRate(String(data.applied_rate_pct || 15));
+        if (data.insufficient_data) {
+          setOverrideRate('');
+        } else if (customRateVal === undefined || customRateVal === '') {
+          setOverrideRate(String(data.applied_rate_pct || (data.historical_cagr_pct ?? 15)));
         }
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        setPredictionError(errJson.message || 'Could not load historical revenue data for this entity.');
+        setPredictionData(null);
       }
     } catch (err) {
       console.error("Failed to load growth prediction:", err);
+      setPredictionError('Network error while connecting to server. Please try again.');
+      setPredictionData(null);
     } finally {
       setPredictionLoading(false);
     }
@@ -158,34 +168,34 @@ const GrowthTracking = () => {
     return targetsList.find(t => t.status === 'active') || null;
   }, [targetsList]);
 
-  // Effective base revenue from historical or fallback
+  // Effective base revenue strictly from real database historical inflow
   const effectiveBaseRevenue = useMemo(() => {
-    return predictionData?.base_revenue || selectedEntity?.baseRevenue || 5000000;
-  }, [predictionData, selectedEntity]);
+    if (predictionData?.insufficient_data) return 0;
+    return predictionData?.base_revenue || 0;
+  }, [predictionData]);
 
-  // Current rate (R) in percentage (e.g. 20) with instant client reactivity
+  // Current rate (R) in percentage
   const currentRatePct = useMemo(() => {
+    if (predictionData?.insufficient_data) return null;
     if (overrideRate !== '' && overrideRate !== null && overrideRate !== undefined) {
       return parseFloat(overrideRate) || 0;
     }
-    return predictionData?.applied_rate_pct ?? predictionData?.historical_cagr_pct ?? 20;
+    return predictionData?.applied_rate_pct ?? predictionData?.historical_cagr_pct ?? 15;
   }, [overrideRate, predictionData]);
 
-  // Robust historical series for TrajectoryLineChart
+  // Historical series for TrajectoryLineChart (no fabricated baseline)
   const chartHistorical = useMemo(() => {
     if (predictionData?.historical_series && predictionData.historical_series.length > 0) {
       return predictionData.historical_series;
     }
-    const base = effectiveBaseRevenue;
-    return [
-      { period: 'FY 2021-22', revenue: Math.round(base * 0.72) },
-      { period: 'FY 2022-23', revenue: Math.round(base * 0.86) },
-      { period: 'FY 2023-24 (Base)', revenue: base }
-    ];
-  }, [predictionData, effectiveBaseRevenue]);
+    return [];
+  }, [predictionData]);
 
-  // ZERO-LATENCY Instant multi-period projections for TrajectoryLineChart and Cards
+  // Instant multi-period projections computed only when real baseline data exists
   const chartProjections = useMemo(() => {
+    if (predictionData?.insufficient_data || effectiveBaseRevenue <= 0 || currentRatePct === null) {
+      return [];
+    }
     const base = effectiveBaseRevenue;
     const r = currentRatePct / 100;
     return [1, 2, 3].map(t => {
@@ -199,10 +209,13 @@ const GrowthTracking = () => {
         incremental_gain: Math.round(projVal - base)
       };
     });
-  }, [effectiveBaseRevenue, currentRatePct]);
+  }, [effectiveBaseRevenue, currentRatePct, predictionData]);
 
   // Scale chart data formatted for BarChart
   const scaleChartData = useMemo(() => {
+    if (predictionData?.insufficient_data || effectiveBaseRevenue <= 0) {
+      return [];
+    }
     return ['scale1x', 'scale2x', 'scale3x', 'scale4x'].map((key, index) => {
       const base = effectiveBaseRevenue;
       return {
@@ -211,7 +224,7 @@ const GrowthTracking = () => {
         netRetention: Math.round(base * (index + 1) * 0.4375)
       };
     });
-  }, [effectiveBaseRevenue]);
+  }, [effectiveBaseRevenue, predictionData]);
 
   // Trajectory Sparkline points for each target milestone
   const getTargetSparklinePoints = (target) => {
@@ -346,9 +359,15 @@ const GrowthTracking = () => {
             <span className="kpi-title">Current Baseline Revenue</span>
             <span className="kpi-icon"><DollarSign size={18} /></span>
           </div>
-          <h2 className="kpi-value">{formatLakhs(predictionData?.base_revenue || selectedEntity?.baseRevenue || 0)}</h2>
+          <h2 className="kpi-value">
+            {predictionData?.insufficient_data ? '₹0.00' : formatLakhs(effectiveBaseRevenue)}
+          </h2>
           <div className="kpi-change up">
-            <span>Latest 12-Month Audited Inflow ({selectedEntity?.name})</span>
+            <span>
+              {predictionData?.insufficient_data
+                ? `No invoice records for ${selectedEntity?.name}`
+                : `Audited Inflow History (${selectedEntity?.name})`}
+            </span>
           </div>
         </div>
 
@@ -358,10 +377,16 @@ const GrowthTracking = () => {
             <span className="kpi-icon"><TrendingUp size={18} /></span>
           </div>
           <h2 className="kpi-value">
-            {predictionData ? `${predictionData.historical_cagr_pct >= 0 ? '+' : ''}${predictionData.historical_cagr_pct}%` : '+15.0%'}
+            {predictionData?.insufficient_data || predictionData?.historical_cagr_pct === null || predictionData?.historical_cagr_pct === undefined
+              ? 'N/A'
+              : `${predictionData.historical_cagr_pct >= 0 ? '+' : ''}${predictionData.historical_cagr_pct}%`}
           </h2>
           <div className="kpi-change up">
-            <span>Derived from multi-period financial trajectory</span>
+            <span>
+              {predictionData?.insufficient_data
+                ? 'Requires ≥ 2 historical periods'
+                : 'Derived from multi-period financial trajectory'}
+            </span>
           </div>
         </div>
 
@@ -371,10 +396,14 @@ const GrowthTracking = () => {
             <span className="kpi-icon"><Percent size={18} /></span>
           </div>
           <h2 className="kpi-value">
-            +{currentRatePct}%
+            {predictionData?.insufficient_data || currentRatePct === null ? '—' : `+${currentRatePct}%`}
           </h2>
           <div className="kpi-change up">
-            <span>Applied compounding model factor</span>
+            <span>
+              {predictionData?.insufficient_data
+                ? 'Awaiting baseline revenue history'
+                : 'Applied compounding model factor'}
+            </span>
           </div>
         </div>
 
@@ -405,173 +434,220 @@ const GrowthTracking = () => {
             </span>
           </div>
 
-          {/* Rate Override Controls */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)' }}>Adjust Rate (R):</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <input
-                type="number"
-                step="1"
-                min="-20"
-                max="200"
-                value={overrideRate}
-                onChange={(e) => handleRateChange(e.target.value)}
-                style={{
-                  width: '74px',
-                  padding: '6px 10px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  background: 'var(--bg-main)',
-                  color: 'var(--text-main)',
-                  fontWeight: '700',
-                  fontSize: '0.85rem',
-                  textAlign: 'center'
-                }}
-              />
-              <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-muted)' }}>%</span>
-              <button
-                onClick={handleResetRate}
-                title="Reset to Historical CAGR"
-                style={{
-                  padding: '6px 10px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  background: 'var(--bg-main)',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  fontSize: '0.75rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                <RotateCcw size={12} />
-                CAGR
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* 1. Trajectory Line / Area Chart for Historical Baseline & Compounded Forward Path */}
-        <TrajectoryLineChart
-          historical={chartHistorical}
-          projected={chartProjections}
-        />
-
-        {/* Rate-based Multi-Period Forward Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '24px' }}>
-          {chartProjections.map((proj, idx) => (
-            <div
-              key={idx}
-              style={{
-                background: 'var(--bg-main)',
-                padding: '16px',
-                borderRadius: '10px',
-                border: '1px solid var(--border-color)',
-                borderTop: '3px solid var(--accent-teal)'
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)' }}>{proj.period_label} Projection</span>
-                <span style={{
-                  fontSize: '0.72rem',
-                  fontWeight: '700',
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  backgroundColor: '#E6F4EA',
-                  color: '#0F6E56'
-                }}>
-                  +{proj.growth_pct}%
-                </span>
-              </div>
-              <div style={{ fontSize: '1.25rem', fontWeight: '700', color: '#0F6E56', marginBottom: '4px' }}>
-                {formatCurrency(proj.projected_revenue)}
-              </div>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                Incremental: +{formatCurrency(proj.incremental_gain)}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {/* 2. Flat Scale Multiplier Scenarios (1x, 2x, 3x, 4x) */}
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h5 style={{ margin: 0, fontSize: '0.88rem', fontWeight: '700', color: 'var(--text-main)' }}>
-              Flat Scale Multiplier Scenarios (Visual & Numerical Model)
-            </h5>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              {[1, 2, 3, 4].map(mult => (
-                <button
-                  key={mult}
-                  onClick={() => setActiveScenarioMultiplier(mult)}
+          {/* Rate Override Controls (only active when real baseline data exists) */}
+          {!predictionData?.insufficient_data && !predictionLoading && !predictionError && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)' }}>Adjust Rate (R):</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <input
+                  type="number"
+                  step="1"
+                  min="-20"
+                  max="200"
+                  value={overrideRate}
+                  onChange={(e) => handleRateChange(e.target.value)}
                   style={{
-                    padding: '4px 10px',
+                    width: '74px',
+                    padding: '6px 10px',
                     borderRadius: '6px',
-                    border: activeScenarioMultiplier === mult ? '1px solid var(--accent-teal)' : '1px solid var(--border-color)',
-                    background: activeScenarioMultiplier === mult ? 'var(--accent-teal)' : 'var(--bg-main)',
-                    color: activeScenarioMultiplier === mult ? '#ffffff' : 'var(--text-main)',
-                    fontSize: '0.74rem',
-                    fontWeight: '600',
-                    cursor: 'pointer'
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-main)',
+                    color: 'var(--text-main)',
+                    fontWeight: '700',
+                    fontSize: '0.85rem',
+                    textAlign: 'center'
                   }}
-                >
-                  {mult}x Scale
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Scale Multiplier BarChart */}
-          <div style={{ background: 'var(--bg-main)', borderRadius: '10px', padding: '14px 16px', border: '1px solid var(--border-color)', marginBottom: '14px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-              <span style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--text-main)' }}>Scale Level Comparison (1x → 4x)</span>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Gross Revenue vs Net Retention Margin</span>
-            </div>
-            <BarChart
-              data={scaleChartData}
-              series1Key="revenue"
-              series2Key="netRetention"
-              series1Label="Gross Revenue"
-              series2Label="Net Retention"
-              series1Color="#10b981"
-              series2Color="#0F6E56"
-              height={120}
-            />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '12px' }}>
-            {['scale1x', 'scale2x', 'scale3x', 'scale4x'].map((key, index) => {
-              const sc = predictionData?.scenarios?.[key] || { multiplier: index + 1, label: `${index + 1}x Scale`, revenue: (selectedEntity?.baseRevenue || 5000000) * (index + 1), estimated_net: (selectedEntity?.baseRevenue || 5000000) * (index + 1) * 0.4375 };
-              const isSelected = activeScenarioMultiplier === sc.multiplier;
-
-              return (
-                <div
-                  key={key}
-                  onClick={() => setActiveScenarioMultiplier(sc.multiplier)}
+                />
+                <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-muted)' }}>%</span>
+                <button
+                  onClick={handleResetRate}
+                  title="Reset to Historical CAGR"
                   style={{
-                    padding: '14px',
-                    borderRadius: '8px',
-                    border: isSelected ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
-                    background: isSelected ? 'rgba(15, 110, 86, 0.04)' : 'var(--bg-main)',
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-main)',
+                    color: 'var(--text-muted)',
                     cursor: 'pointer',
-                    transition: 'all 0.2s'
+                    fontSize: '0.75rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
                   }}
                 >
-                  <span style={{ fontSize: '0.75rem', fontWeight: '700', color: isSelected ? 'var(--accent-teal)' : 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                    {sc.label}
-                  </span>
-                  <div style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '2px' }}>
-                    {formatCurrency(sc.revenue)}
+                  <RotateCcw size={12} />
+                  CAGR
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {predictionLoading ? (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+            Loading historical data and analytics for {selectedEntity?.name}...
+          </div>
+        ) : predictionError ? (
+          <div style={{ padding: '24px 20px', background: '#FDF2F2', border: '1px solid #F8B4B4', borderRadius: '10px', textAlign: 'center' }}>
+            <AlertCircle size={28} color="#E02424" style={{ marginBottom: '8px' }} />
+            <h4 style={{ margin: '0 0 6px 0', color: '#9B1C1C', fontSize: '0.95rem' }}>Could Not Load Historical Revenue Data</h4>
+            <p style={{ margin: '0 0 14px 0', fontSize: '0.82rem', color: '#9B1C1C' }}>
+              {predictionError}
+            </p>
+            <button
+              onClick={() => fetchPrediction(overrideRate)}
+              style={{ padding: '6px 14px', borderRadius: '6px', border: '1px solid #E02424', background: '#FFFFFF', color: '#9B1C1C', fontWeight: '600', fontSize: '0.8rem', cursor: 'pointer' }}
+            >
+              Retry
+            </button>
+          </div>
+        ) : predictionData?.insufficient_data ? (
+          <div style={{ padding: '36px 20px', background: 'var(--bg-main)', borderRadius: '10px', border: '1px dashed var(--border-color)', textAlign: 'center' }}>
+            <AlertCircle size={32} color="var(--accent-teal)" style={{ marginBottom: '8px', opacity: 0.8 }} />
+            <h4 style={{ margin: '0 0 6px 0', color: 'var(--text-main)', fontSize: '0.95rem' }}>
+              Not Enough Historical Data Yet
+            </h4>
+            <p style={{ margin: '0 auto 18px auto', fontSize: '0.82rem', color: 'var(--text-muted)', maxWidth: '520px', lineHeight: '1.5' }}>
+              No closed invoice billing records exist for <strong>{selectedEntity?.name}</strong> in the system. Multi-period trajectory curves, CAGR analytics, and scale scenarios will automatically generate once invoice data is recorded.
+            </p>
+            <button
+              className="btn btn-primary"
+              onClick={() => setIsGoalModalOpen(true)}
+              style={{ padding: '7px 16px', borderRadius: '6px', border: 'none', background: 'var(--accent-teal)', color: '#ffffff', fontWeight: '600', fontSize: '0.82rem', cursor: 'pointer' }}
+            >
+              <Plus size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+              Set Annual Target Manually
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* 1. Trajectory Line / Area Chart for Historical Baseline & Compounded Forward Path */}
+            <TrajectoryLineChart
+              historical={chartHistorical}
+              projected={chartProjections}
+            />
+
+            {/* Rate-based Multi-Period Forward Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '24px' }}>
+              {chartProjections.map((proj, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    background: 'var(--bg-main)',
+                    padding: '16px',
+                    borderRadius: '10px',
+                    border: '1px solid var(--border-color)',
+                    borderTop: '3px solid var(--accent-teal)'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)' }}>{proj.period_label} Projection</span>
+                    <span style={{
+                      fontSize: '0.72rem',
+                      fontWeight: '700',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      backgroundColor: '#E6F4EA',
+                      color: '#0F6E56'
+                    }}>
+                      +{proj.growth_pct}%
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: '700', color: '#0F6E56', marginBottom: '4px' }}>
+                    {formatCurrency(proj.projected_revenue)}
                   </div>
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    Net Retention: {formatCurrency(sc.estimated_net)}
+                    Incremental: +{formatCurrency(proj.incremental_gain)}
                   </span>
                 </div>
-              );
-            })}
-          </div>
-        </div>
+              ))}
+            </div>
+
+            {/* 2. Flat Scale Multiplier Scenarios (1x, 2x, 3x, 4x) */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h5 style={{ margin: 0, fontSize: '0.88rem', fontWeight: '700', color: 'var(--text-main)' }}>
+                  Flat Scale Multiplier Scenarios (Visual & Numerical Model)
+                </h5>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  {[1, 2, 3, 4].map(mult => (
+                    <button
+                      key={mult}
+                      onClick={() => setActiveScenarioMultiplier(mult)}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        border: activeScenarioMultiplier === mult ? '1px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                        background: activeScenarioMultiplier === mult ? 'var(--accent-teal)' : 'var(--bg-main)',
+                        color: activeScenarioMultiplier === mult ? '#ffffff' : 'var(--text-main)',
+                        fontSize: '0.74rem',
+                        fontWeight: '600',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {mult}x Scale
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Scale Multiplier BarChart */}
+              <div style={{ background: 'var(--bg-main)', borderRadius: '10px', padding: '14px 16px', border: '1px solid var(--border-color)', marginBottom: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--text-main)' }}>Scale Level Comparison (1x → 4x)</span>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Gross Revenue vs Net Retention Margin</span>
+                </div>
+                <BarChart
+                  data={scaleChartData}
+                  series1Key="revenue"
+                  series2Key="netRetention"
+                  series1Label="Gross Revenue"
+                  series2Label="Net Retention"
+                  series1Color="#10b981"
+                  series2Color="#0F6E56"
+                  height={120}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '12px' }}>
+                {['scale1x', 'scale2x', 'scale3x', 'scale4x'].map((key, index) => {
+                  const sc = predictionData?.scenarios?.[key] || {
+                    multiplier: index + 1,
+                    label: `${index + 1}x Scale`,
+                    revenue: effectiveBaseRevenue * (index + 1),
+                    estimated_net: effectiveBaseRevenue * (index + 1) * 0.4375
+                  };
+                  const isSelected = activeScenarioMultiplier === sc.multiplier;
+
+                  return (
+                    <div
+                      key={key}
+                      onClick={() => setActiveScenarioMultiplier(sc.multiplier)}
+                      style={{
+                        padding: '14px',
+                        borderRadius: '8px',
+                        border: isSelected ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                        background: isSelected ? 'rgba(15, 110, 86, 0.04)' : 'var(--bg-main)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <span style={{ fontSize: '0.75rem', fontWeight: '700', color: isSelected ? 'var(--accent-teal)' : 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
+                        {sc.label}
+                      </span>
+                      <div style={{ fontSize: '1.1rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '2px' }}>
+                        {formatCurrency(sc.revenue)}
+                      </div>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        Net Retention: {formatCurrency(sc.estimated_net)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Target History & Outcome Tracking Table */}

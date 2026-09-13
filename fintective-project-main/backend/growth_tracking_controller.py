@@ -55,6 +55,9 @@ FALLBACK_BD_HISTORICAL = {
 }
 
 
+USE_DEMO_FALLBACK_DATA = os.environ.get('USE_DEMO_FALLBACK_DATA', 'false').lower() in ('true', '1', 'yes')
+
+
 def _resolve_entity_info(cursor, entity_type, entity_id):
     """Resolves human-readable entity name and details."""
     entity_name = entity_id
@@ -80,8 +83,13 @@ def _resolve_entity_info(cursor, entity_type, entity_id):
 def _fetch_historical_revenue(cursor, entity_type, entity_id, entity_name):
     """
     Pulls historical yearly and monthly revenue metrics for the entity from invoice / enquiries.
+    Raises RuntimeError if the database query fails.
+    Returns an empty list if the entity genuinely has no historical invoice records.
+    Never silently substitutes another entity's data.
     """
     historical_series = []
+    
+    # 1. Execute DB Query - distinguish query errors from genuine empty results
     try:
         if entity_type == 'franchisee':
             query = """
@@ -100,7 +108,7 @@ def _fetch_historical_revenue(cursor, entity_type, entity_id, entity_name):
             cursor.execute(query, [entity_name.lower().strip(), entity_id])
             rows = cursor.fetchall()
             for r in rows:
-                if r['period']:
+                if r.get('period'):
                     historical_series.append({
                         'period': str(r['period']),
                         'revenue': float(r['gross_revenue'] or 0.0),
@@ -123,7 +131,7 @@ def _fetch_historical_revenue(cursor, entity_type, entity_id, entity_name):
             cursor.execute(query, [entity_name.lower().strip(), entity_id])
             rows = cursor.fetchall()
             for r in rows:
-                if r['period']:
+                if r.get('period'):
                     historical_series.append({
                         'period': str(r['period']),
                         'revenue': float(r['gross_revenue'] or 0.0),
@@ -131,38 +139,47 @@ def _fetch_historical_revenue(cursor, entity_type, entity_id, entity_name):
                         'deals_count': int(r['deals_count'] or 0)
                     })
     except Exception as e:
-        print(f"[_fetch_historical_revenue] DB query failed: {e}")
+        # Re-raise so the caller can distinguish a query failure from genuinely empty records
+        raise RuntimeError(f"Database query failed while fetching historical revenue for {entity_type} '{entity_name}': {e}")
 
-    # Fallback to seed historical series if no records in DB
-    if not historical_series:
+    # 2. Demo seed data is strictly opt-in via USE_DEMO_FALLBACK_DATA=true and ONLY matches exact entity name
+    if not historical_series and USE_DEMO_FALLBACK_DATA:
         if entity_type == 'franchisee':
-            match = FALLBACK_FRANCHISEE_HISTORICAL.get(entity_name) or FALLBACK_FRANCHISEE_HISTORICAL.get('Nagpur Central')
-            historical_series = [{'period': item['period'], 'revenue': item['revenue'], 'net_revenue': item['revenue'] * 0.4375, 'deals_count': max(5, int(item['revenue'] / 150000))} for item in match]
+            match = FALLBACK_FRANCHISEE_HISTORICAL.get(entity_name)
+            if match:
+                historical_series = [
+                    {'period': item['period'], 'revenue': item['revenue'], 'net_revenue': item['revenue'] * 0.4375, 'deals_count': max(5, int(item['revenue'] / 150000))}
+                    for item in match
+                ]
         else:
-            match = FALLBACK_BD_HISTORICAL.get(entity_name) or FALLBACK_BD_HISTORICAL.get('Rohan Mehta')
-            historical_series = [{'period': item['period'], 'revenue': item['revenue'], 'net_revenue': item['revenue'] * 0.4375, 'deals_count': max(8, int(item['revenue'] / 180000))} for item in match]
+            match = FALLBACK_BD_HISTORICAL.get(entity_name)
+            if match:
+                historical_series = [
+                    {'period': item['period'], 'revenue': item['revenue'], 'net_revenue': item['revenue'] * 0.4375, 'deals_count': max(8, int(item['revenue'] / 180000))}
+                    for item in match
+                ]
 
     return historical_series
 
 
 def _calculate_cagr(historical_series):
-    """Calculates Compound Annual Growth Rate from series."""
+    """Calculates Compound Annual Growth Rate from series. Returns None if series is insufficient."""
     if not historical_series or len(historical_series) < 2:
-        return 0.15  # Default baseline 15% growth rate
+        return None
 
-    first_val = historical_series[0]['revenue']
-    last_val = historical_series[-1]['revenue']
+    first_val = historical_series[0].get('revenue', 0.0)
+    last_val = historical_series[-1].get('revenue', 0.0)
     periods = len(historical_series) - 1
 
     if first_val <= 0 or last_val <= 0 or periods <= 0:
-        return 0.15
+        return None
 
     try:
         cagr = math.pow(last_val / first_val, 1.0 / periods) - 1.0
         # Bound CAGR to reasonable business range (-50% to +200%)
         return max(-0.50, min(2.0, cagr))
     except Exception:
-        return 0.15
+        return None
 
 
 def generate_target_letter(entity_name, entity_type, growth_pct_target, base_value, target_value, salary_target, period_start, period_end, guidelines):
@@ -285,20 +302,39 @@ def predict_growth():
         entity_name = _resolve_entity_info(cursor, entity_type, entity_id)
         historical_series = _fetch_historical_revenue(cursor, entity_type, entity_id, entity_name)
         
-        # Calculate Base and CAGR
-        base_revenue = historical_series[-1]['revenue'] if historical_series else 5000000.0
+        # When entity genuinely has no historical invoice records, return explicit insufficient_data state
+        if not historical_series:
+            return jsonify({
+                'entity_type': entity_type,
+                'entity_id': entity_id,
+                'entity_name': entity_name,
+                'insufficient_data': True,
+                'reason': 'no_invoice_history',
+                'message': f"No historical invoice records found for {entity_name}.",
+                'base_revenue': 0.0,
+                'historical_cagr': None,
+                'historical_cagr_pct': None,
+                'applied_rate': None,
+                'applied_rate_pct': None,
+                'historical_series': [],
+                'projections': [],
+                'scenarios': {}
+            })
+
+        # Calculate Base and CAGR from genuine invoice data
+        base_revenue = historical_series[-1]['revenue']
         historical_cagr = _calculate_cagr(historical_series)
 
-        # Selected growth rate R (custom override or CAGR)
+        # Selected growth rate R (custom override or CAGR, fallback to 0.15 only if user overrides/CAGR is single period)
         if custom_rate is not None and custom_rate != "":
             try:
                 selected_r = float(custom_rate)
                 if selected_r > 1.0 and selected_r <= 100.0:
                     selected_r = selected_r / 100.0  # Normalize percentage input like 15 -> 0.15
             except ValueError:
-                selected_r = historical_cagr
+                selected_r = historical_cagr if historical_cagr is not None else 0.15
         else:
-            selected_r = historical_cagr
+            selected_r = historical_cagr if historical_cagr is not None else 0.15
 
         # Rate-based multi-period forward projections: projected[year] = base * (1 + R)^year
         projections = []
@@ -344,18 +380,22 @@ def predict_growth():
             'entity_type': entity_type,
             'entity_id': entity_id,
             'entity_name': entity_name,
+            'insufficient_data': False,
             'base_revenue': round(base_revenue, 2),
-            'historical_cagr': round(historical_cagr, 4),
-            'historical_cagr_pct': round(historical_cagr * 100, 2),
+            'historical_cagr': round(historical_cagr, 4) if historical_cagr is not None else None,
+            'historical_cagr_pct': round(historical_cagr * 100, 2) if historical_cagr is not None else None,
             'applied_rate': round(selected_r, 4),
             'applied_rate_pct': round(selected_r * 100, 2),
             'historical_series': historical_series,
             'projections': projections,
             'scenarios': scenarios
         })
+    except RuntimeError as re:
+        print(f"[predict_growth] Query failure: {re}")
+        return jsonify({'error': 'database_query_failed', 'message': str(re)}), 500
     except Exception as e:
         print(f"[predict_growth] Exception: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'server_error', 'message': str(e)}), 500
     finally:
         conn.close()
 
@@ -386,8 +426,8 @@ def create_growth_target():
     try:
         entity_name = _resolve_entity_info(cursor, entity_type, entity_id)
         historical_series = _fetch_historical_revenue(cursor, entity_type, entity_id, entity_name)
-        base_value = historical_series[-1]['revenue'] if historical_series else 5000000.0
-        target_value = base_value * (1.0 + normalized_growth)
+        base_value = historical_series[-1]['revenue'] if historical_series else 0.0
+        target_value = base_value * (1.0 + normalized_growth) if base_value > 0 else 0.0
 
         # Generate Target Letter text
         letter_text = generate_target_letter(
@@ -573,8 +613,8 @@ def record_outcome(target_id):
 
         # Reconstruct baseline to estimate target value
         historical_series = _fetch_historical_revenue(cursor, entity_type, entity_id, entity_name)
-        base_value = historical_series[-1]['revenue'] if historical_series else (actual_value / (1.0 + normalized_actual_growth) if normalized_actual_growth != -1 else 5000000.0)
-        target_value = base_value * (1.0 + growth_pct_target)
+        base_value = historical_series[-1]['revenue'] if historical_series else (actual_value / (1.0 + normalized_actual_growth) if normalized_actual_growth != -1 and actual_value > 0 else 0.0)
+        target_value = base_value * (1.0 + growth_pct_target) if base_value > 0 else (actual_value if actual_value > 0 else 0.0)
 
         # Generate Outcome Audit Letter
         outcome_letter = generate_outcome_letter(
@@ -652,7 +692,20 @@ def predict_target_specific(target_id):
         # Forward to predict logic with target's preset rate
         entity_name = _resolve_entity_info(cursor, entity_type, entity_id)
         historical_series = _fetch_historical_revenue(cursor, entity_type, entity_id, entity_name)
-        base_revenue = historical_series[-1]['revenue'] if historical_series else 5000000.0
+        if not historical_series:
+            return jsonify({
+                'target_id': target_id,
+                'entity_type': entity_type,
+                'entity_id': entity_id,
+                'entity_name': entity_name,
+                'insufficient_data': True,
+                'reason': 'no_invoice_history',
+                'growth_pct_target': float(rate),
+                'base_revenue': 0.0,
+                'projections': []
+            })
+
+        base_revenue = historical_series[-1]['revenue']
 
         projections = []
         for t in range(1, 4):
@@ -669,6 +722,7 @@ def predict_target_specific(target_id):
             'entity_type': entity_type,
             'entity_id': entity_id,
             'entity_name': entity_name,
+            'insufficient_data': False,
             'growth_pct_target': float(rate),
             'base_revenue': base_revenue,
             'projections': projections
