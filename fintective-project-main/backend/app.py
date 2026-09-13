@@ -2961,21 +2961,40 @@ def sync_saarthi_endpoint():
     from sync_service import sync_saarthi_all
     try:
         result = sync_saarthi_all()
-        if result.get('status') == 'locked' or result.get('ok') is False:
+        if result.get('status') == 'locked':
             return jsonify({
                 'success': False,
-                'message': result.get('error', 'Saarthi Live CRM sync is locked or failed'),
+                'error': result.get('error', 'A sync is already running. Please wait.'),
+                'message': result.get('error', 'A sync is already running. Please wait.'),
                 'data': result
-            }), 409 if result.get('status') == 'locked' else 500
+            }), 409
+        if result.get('ok') is False:
+            # Build a human-readable error from the errors array
+            err_list = result.get('errors', [])
+            err_summary = ' | '.join(err_list) if err_list else result.get('error', 'Sync failed on the backend server.')
+            return jsonify({
+                'success': False,
+                'error': err_summary,
+                'message': err_summary,
+                'data': result
+            }), 500
+        # Partial success: sync ran but some endpoints had warnings
+        err_list = result.get('errors', [])
         return jsonify({
             'success': True,
             'message': 'Saarthi Live CRM sync completed successfully',
+            'warnings': err_list,
             'data': result
         })
     except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print('[SYNC ENDPOINT ERROR]', tb)
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': str(e),
+            'message': str(e),
+            'traceback': tb
         }), 500
 
 @app.route('/api/finance/sync-status', methods=['GET'])

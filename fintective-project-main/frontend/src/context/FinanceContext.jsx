@@ -442,11 +442,17 @@ export const FinanceProvider = ({ children }) => {
         headers: { 'Content-Type': 'application/json' }
       });
       const data = await response.json();
+      console.log('[Sync] Raw backend response:', data);
       if (data && data.success) {
         await fetchAllData();
         return { success: true, data: data.data };
       } else {
-        return { success: false, error: data?.error || 'Sync returned non-success status' };
+        // Backend may return 'error' OR 'message' key — check both
+        const errDetail = data?.error || data?.message || data?.data?.error ||
+          (data?.data?.errors && data.data.errors.length > 0 ? data.data.errors.join(' | ') : null) ||
+          `HTTP ${response.status}: Sync returned non-success status`;
+        console.warn('[Sync] Sync failed. Backend payload:', data);
+        return { success: false, error: errDetail };
       }
     } catch (err) {
       console.error('Error during Saarthi Live Sync:', err);
@@ -529,14 +535,14 @@ export const FinanceProvider = ({ children }) => {
 
 
 
-  // Derived filtered transactions based on active module
-  const moduleFilteredTransactions = Array.isArray(transactions) ? transactions.filter(tx => {
-    if (!tx) return false;
+  // Derived filtered transactions based on active module (memoized for peak UI performance)
+  const moduleFilteredTransactions = useMemo(() => {
+    if (!Array.isArray(transactions)) return [];
     if (activeModule === 'job_portal') {
-      return tx.category === 'Job portal' || tx.category === 'Portal subscriptions';
+      return transactions.filter(tx => tx && (tx.category === 'Job portal' || tx.category === 'Portal subscriptions'));
     }
-    return tx.category !== 'Job portal' && tx.category !== 'Portal subscriptions';
-  }) : [];
+    return transactions.filter(tx => tx && tx.category !== 'Job portal' && tx.category !== 'Portal subscriptions');
+  }, [transactions, activeModule]);
 
   const [toast, setToast] = useState(null);
 
