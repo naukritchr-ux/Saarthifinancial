@@ -3027,6 +3027,39 @@ def get_sync_status():
         conn.close()
 
 # ----------------------------------------------------
+# SYNC DEBUG DIAGNOSTIC ENDPOINT
+# ----------------------------------------------------
+@app.route('/api/health/sync-debug', methods=['GET'])
+def sync_debug_health():
+    """Diagnostic: test DB connectivity and Saarthi API reachability from this server."""
+    import urllib.request as ureq, urllib.error
+    result = {'db': {}, 'saarthi_api': {}}
+
+    # Test DB
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) AS n FROM enquiries")
+            row = cur.fetchone()
+        conn.close()
+        result['db'] = {'ok': True, 'enquiries_count': int(row['n']) if row else 0}
+    except Exception as e:
+        result['db'] = {'ok': False, 'error': str(e)}
+
+    # Test Saarthi API reachability
+    for url in ['https://api.sarthi360.in/api/enquiries', 'https://sarthi360.in/api/enquiries']:
+        try:
+            req = ureq.Request(url, headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'})
+            with ureq.urlopen(req, timeout=10) as r:
+                result['saarthi_api'][url] = {'ok': True, 'status': r.status}
+        except urllib.error.HTTPError as he:
+            result['saarthi_api'][url] = {'ok': False, 'error': f'HTTP {he.code}: {he.reason}'}
+        except Exception as e:
+            result['saarthi_api'][url] = {'ok': False, 'error': str(e)}
+
+    return jsonify({'success': True, 'diagnostics': result})
+
+# ----------------------------------------------------
 # JOB PORTAL & EMPLOYER ACCOUNTS APIS
 # ----------------------------------------------------
 @app.route('/api/job-portal/clients', methods=['GET'])
