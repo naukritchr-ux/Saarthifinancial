@@ -165,7 +165,7 @@ ENFORCE_API_KEY = os.environ.get('ENFORCE_API_KEY', 'false').lower() in ('true',
 @app.before_request
 def verify_api_key():
     # Always allow preflight OPTIONS requests and /health endpoints
-    if request.method == 'OPTIONS' or request.path in ['/health', '/api/health']:
+    if request.method == 'OPTIONS' or request.path in ['/health', '/api/health', '/api/health/sync-debug']:
         return None
 
     incoming_key = request.headers.get('X-API-Key')
