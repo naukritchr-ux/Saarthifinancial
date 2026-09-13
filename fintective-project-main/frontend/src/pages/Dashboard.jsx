@@ -342,23 +342,72 @@ const Dashboard = ({ setActivePage }) => {
     return 'Welcome to Saarthi Finance Audit Board.';
   };
 
+  // Dynamically calculate timeline target month & available data periods
+  const monthNamesList = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const now = new Date();
+  const currentCalendarMonth = `${monthNamesList[now.getMonth()]} ${now.getFullYear()}`;
+
+  // Find all available transaction months sorted descending
+  const availableDataMonths = Array.from(new Set(roleTxs.map(tx => getMonthAndYear(tx.date).monthYear))).filter(Boolean).sort((a, b) => {
+    const partsA = a.split(' ');
+    const partsB = b.split(' ');
+    const dateA = new Date(parseInt(partsA[1]), monthNamesList.indexOf(partsA[0]));
+    const dateB = new Date(parseInt(partsB[1]), monthNamesList.indexOf(partsB[0]));
+    return dateB - dateA;
+  });
+
+  const latestActiveMonth = availableDataMonths[0] || currentCalendarMonth;
+  const isAllMonths = selectedMonth === 'All Months';
+  const timelineTargetMonth = isAllMonths 
+    ? (availableDataMonths.includes(currentCalendarMonth) ? currentCalendarMonth : latestActiveMonth) 
+    : selectedMonth;
+
+  // Calculate Next Month forecast label dynamically
+  const getNextMonthLabel = (targetMonth) => {
+    const parts = (targetMonth || currentCalendarMonth).split(' ');
+    const mName = parts[0];
+    const yVal = parseInt(parts[1]) || now.getFullYear();
+    const mIdx = monthNamesList.indexOf(mName);
+    let nextIdx = mIdx + 1;
+    let nextYear = yVal;
+    if (nextIdx > 11) {
+      nextIdx = 0;
+      nextYear += 1;
+    }
+    return `${monthNamesList[nextIdx]} ${nextYear}`;
+  };
+
+  const nextMonthForecastLabel = getNextMonthLabel(timelineTargetMonth);
+
+  // Derive last 4-6 months dynamically for the trend bar chart
+  const monthsList = availableDataMonths.length >= 4 
+    ? availableDataMonths.slice(0, 4).reverse() 
+    : (() => {
+        const list = [];
+        for (let i = 3; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          list.push(`${monthNamesList[d.getMonth()]} ${d.getFullYear()}`);
+        }
+        return list;
+      })();
+
   // Moving Average Projections (Forecast)
-  const allMonthsList = ['April 2026', 'May 2026', 'June 2026', 'July 2026'];
   let avgInflow = 0;
   let avgOutflow = 0;
 
-  allMonthsList.forEach(m => {
+  monthsList.forEach(m => {
     const monthTxs = roleTxs.filter(tx => getMonthAndYear(tx.date).monthYear === m);
     avgInflow += monthTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
     avgOutflow += monthTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
   });
 
-  avgInflow /= allMonthsList.length;
-  avgOutflow /= allMonthsList.length;
+  if (monthsList.length > 0) {
+    avgInflow /= monthsList.length;
+    avgOutflow /= monthsList.length;
+  }
   const avgNet = avgInflow - avgOutflow;
 
   // Monthly trend historical data calculation
-  const monthsList = ['April 2026', 'May 2026', 'June 2026', 'July 2026'];
   const barChartData = monthsList.map(m => {
     const monthTxs = roleTxs.filter(tx => getMonthAndYear(tx.date).monthYear === m);
     return {
@@ -368,17 +417,12 @@ const Dashboard = ({ setActivePage }) => {
     };
   });
 
-  // Daily Cash Flow timeline data
-  const isAllMonths = selectedMonth === 'All Months';
-  const timelineTargetMonth = isAllMonths ? 'July 2026' : selectedMonth;
-
   // Calculate dynamic days count for the target month
   const getDaysInMonth = (monthLabel) => {
-    const parts = monthLabel.split(' ');
+    const parts = (monthLabel || currentCalendarMonth).split(' ');
     const mName = parts[0];
-    const yVal = parseInt(parts[1]);
-    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    const mIdx = monthNames.indexOf(mName);
+    const yVal = parseInt(parts[1]) || now.getFullYear();
+    const mIdx = monthNamesList.indexOf(mName);
     return new Date(yVal, mIdx + 1, 0).getDate();
   };
 
@@ -446,7 +490,7 @@ const Dashboard = ({ setActivePage }) => {
 
             {/* Dynamic Moving Average Trend Forecast */}
             <div className="forecast-mini-card" style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid #e2e8f0' }}>
-              <span className="hero-label" style={{ display: 'block', fontSize: '0.65rem', color: 'var(--accent-teal)', letterSpacing: '0.05em' }}>NEXT MONTH FORECAST (AUGUST 2026)</span>
+              <span className="hero-label" style={{ display: 'block', fontSize: '0.65rem', color: 'var(--accent-teal)', letterSpacing: '0.05em' }}>NEXT MONTH FORECAST ({nextMonthForecastLabel.toUpperCase()})</span>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.85rem', color: '#475569' }}>
                 <span>Exp. Inflow: <strong style={{ color: '#0f172a' }}>{formatLakhs(avgInflow)}</strong></span>
                 <span>Exp. Outflow: <strong style={{ color: '#0f172a' }}>{formatLakhs(avgOutflow)}</strong></span>
@@ -458,11 +502,11 @@ const Dashboard = ({ setActivePage }) => {
           <div className="hero-right">
             <div className="daily-flow-title-wrapper">
               <h4 className="flow-title">
-                {isAllMonths ? 'Daily Operations (July 2026)' : 'Daily Cash Operations'}
+                {isAllMonths ? `Daily Operations (${timelineTargetMonth})` : 'Daily Cash Operations'}
               </h4>
               <span className="flow-subtitle" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                 <span>Green spikes = Income, Red = Expense</span>
-                {isAllMonths && <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontStyle: 'italic', marginTop: '2px' }}>*Showing July 2026 (the most recent period) for All Months view</span>}
+                {isAllMonths && <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontStyle: 'italic', marginTop: '2px' }}>*Showing {timelineTargetMonth} (the current active period) for All Months view</span>}
               </span>
             </div>
 
