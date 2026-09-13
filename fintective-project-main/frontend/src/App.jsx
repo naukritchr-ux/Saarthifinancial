@@ -93,9 +93,11 @@ function AppContent() {
       </main>
 
       {/* Budget Settings modal */}
-      <ErrorBoundary>
-        <BudgetSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
-      </ErrorBoundary>
+      {isSettingsOpen && (
+        <ErrorBoundary>
+          <BudgetSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+        </ErrorBoundary>
+      )}
       
     </div>
   );

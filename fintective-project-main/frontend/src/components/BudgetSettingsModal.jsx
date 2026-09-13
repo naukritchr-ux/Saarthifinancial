@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect, useMemo } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import {
@@ -102,13 +102,14 @@ const BudgetSettingsModal = ({ isOpen, onClose }) => {
     category.toLowerCase().includes(searchQuery.toLowerCase().trim())
   );
 
-  const isDirty = useMemo(() => {
-    const keys = Object.keys(localBudgets);
-    for (const k of keys) {
-      if ((localBudgets[k] || 0) !== (initialBudgets[k] || 0)) return true;
+  let isDirty = false;
+  const keys = Object.keys(localBudgets);
+  for (const k of keys) {
+    if ((Number(localBudgets[k]) || 0) !== (Number(initialBudgets[k]) || 0)) {
+      isDirty = true;
+      break;
     }
-    return false;
-  }, [localBudgets, initialBudgets]);
+  }
 
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
