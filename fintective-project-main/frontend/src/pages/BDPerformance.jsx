@@ -3,6 +3,7 @@ import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { TrendingUp, Plus, Award, Briefcase, X, Percent, ChevronLeft, ChevronRight } from 'lucide-react';
+import Pagination from '../components/Pagination';
 
 const BDPerformance = () => {
   const { bdAgents, transactions, addBdAgent, updateBdAgent, selectedMonth, selectedYear } = useContext(FinanceContext);
@@ -29,6 +30,8 @@ const BDPerformance = () => {
 
   const [activeAgentDetails, setActiveAgentDetails] = useState(null); // Detail modal state
   const [modalPage, setModalPage] = useState(1); // Modal table pagination page
+  const [agentPage, setAgentPage] = useState(1);
+  const AGENTS_PER_PAGE = 8;
 
   const getSafeAgent = (agent) => {
     if (!agent) return {};
@@ -660,39 +663,52 @@ const BDPerformance = () => {
                 </tr>
               </thead>
               <tbody>
-                {agentSummaries.map(agent => (
-                  <tr 
-                    key={agent.id}
-                    onClick={() => { setActiveAgentDetails(agent); setModalPage(1); }}
-                    className="clickable-row-item"
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <td className="font-bold">
-                      <div>{agent.name}</div>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--accent-teal)', fontWeight: 'normal' }}>Click to audit & edit</span>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 'bold', fontSize: '0.8rem' }}>
-                        <span style={{ color: '#10b981' }}>{agent.leadsProgressed}P</span> / <span style={{ color: '#ef4444' }}>{agent.leadsCancelled}C</span> / <span style={{ color: '#ea580c' }}>{agent.leadsInternallyClosed}I</span> / <span style={{ color: '#64748b' }}>{(agent.leadsBought || 0) - (agent.leadsProgressed || 0) - (agent.leadsCancelled || 0) - (agent.leadsInternallyClosed || 0)}Pnd</span>
-                      </div>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Total: {agent.leadsBought}</div>
-                    </td>
-                    <td>
-                      <div style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Base: {formatCurrency(agent.baseSalary)}</div>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>+{formatCurrency(agent.payPerProgressed)}/P | +{formatCurrency(agent.payPerCancelled)}/C</div>
-                    </td>
-                    <td className="font-bold text-teal text-right">{formatCurrency(agent.grossRevenue)}</td>
-                    <td className="font-bold text-right text-blue" style={{ color: 'var(--color-link)' }}>{formatCurrency(agent.netRevenue)}</td>
-                    <td style={{ textAlign: 'center' }}>
-                      <span className="status-badge inactive" style={{ backgroundColor: 'var(--bg-main)', color: 'var(--text-muted)', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
-                        Cost Audit Pending (Task 1)
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {(() => {
+                  const safeAgentPage = Math.min(Math.max(1, agentPage), Math.max(1, Math.ceil(agentSummaries.length / AGENTS_PER_PAGE)));
+                  const paginatedAgents = agentSummaries.slice((safeAgentPage - 1) * AGENTS_PER_PAGE, safeAgentPage * AGENTS_PER_PAGE);
+                  
+                  return paginatedAgents.map(agent => (
+                    <tr 
+                      key={agent.id}
+                      onClick={() => { setActiveAgentDetails(agent); setModalPage(1); }}
+                      className="clickable-row-item"
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td className="font-bold">
+                        <div>{agent.name}</div>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--accent-teal)', fontWeight: 'normal' }}>Click to audit & edit</span>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 'bold', fontSize: '0.8rem' }}>
+                          <span style={{ color: '#10b981' }}>{agent.leadsProgressed}P</span> / <span style={{ color: '#ef4444' }}>{agent.leadsCancelled}C</span> / <span style={{ color: '#ea580c' }}>{agent.leadsInternallyClosed}I</span> / <span style={{ color: '#64748b' }}>{(agent.leadsBought || 0) - (agent.leadsProgressed || 0) - (agent.leadsCancelled || 0) - (agent.leadsInternallyClosed || 0)}Pnd</span>
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Total: {agent.leadsBought}</div>
+                      </td>
+                      <td>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Base: {formatCurrency(agent.baseSalary)}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>+{formatCurrency(agent.payPerProgressed)}/P | +{formatCurrency(agent.payPerCancelled)}/C</div>
+                      </td>
+                      <td className="font-bold text-teal text-right">{formatCurrency(agent.grossRevenue)}</td>
+                      <td className="font-bold text-right text-blue" style={{ color: 'var(--color-link)' }}>{formatCurrency(agent.netRevenue)}</td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span className="status-badge inactive" style={{ backgroundColor: 'var(--bg-main)', color: 'var(--text-muted)', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
+                          Cost Audit Pending (Task 1)
+                        </span>
+                      </td>
+                    </tr>
+                  ));
+                })()}
               </tbody>
             </table>
           </div>
+
+          <Pagination
+            currentPage={agentPage}
+            totalItems={agentSummaries.length}
+            pageSize={AGENTS_PER_PAGE}
+            onPageChange={setAgentPage}
+            itemName="agents"
+          />
 
         </div>
       </div>
@@ -1006,79 +1022,14 @@ const BDPerformance = () => {
                         </table>
                       </div>
 
-                      {totalPages > 1 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', padding: '8px 0' }}>
-                          <span style={{ fontSize: '0.78rem', color: '#6B7268' }}>
-                            Showing {(modalPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(modalPage * ITEMS_PER_PAGE, detailTxs.length)} of {detailTxs.length}
-                          </span>
-                          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                            <button
-                              type="button"
-                              disabled={modalPage === 1}
-                              onClick={() => setModalPage(p => Math.max(1, p - 1))}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                padding: '4px 10px',
-                                fontSize: '0.75rem',
-                                fontWeight: '500',
-                                backgroundColor: '#FFFFFF',
-                                color: modalPage === 1 ? '#94A3B8' : '#1B2321',
-                                border: '1px solid #E3E5E0',
-                                borderRadius: '6px',
-                                cursor: modalPage === 1 ? 'not-allowed' : 'pointer'
-                              }}
-                            >
-                              <ChevronLeft size={13} />
-                              <span>Prev</span>
-                            </button>
-                            
-                            {Array.from({ length: totalPages }, (_, i) => i + 1).slice(Math.max(0, modalPage - 3), Math.min(totalPages, modalPage + 2)).map(pageNum => (
-                              <button
-                                key={pageNum}
-                                type="button"
-                                onClick={() => setModalPage(pageNum)}
-                                style={{
-                                  padding: '3px 9px',
-                                  fontSize: '0.75rem',
-                                  backgroundColor: modalPage === pageNum ? '#0F6E56' : '#FFFFFF',
-                                  color: modalPage === pageNum ? '#FFFFFF' : '#1B2321',
-                                  border: '1px solid ' + (modalPage === pageNum ? '#0F6E56' : '#E3E5E0'),
-                                  borderRadius: '6px',
-                                  cursor: 'pointer',
-                                  fontWeight: modalPage === pageNum ? '700' : '500',
-                                  minWidth: '26px'
-                                }}
-                              >
-                                {pageNum}
-                              </button>
-                            ))}
-
-                            <button
-                              type="button"
-                              disabled={modalPage === totalPages}
-                              onClick={() => setModalPage(p => Math.min(totalPages, p + 1))}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                padding: '4px 10px',
-                                fontSize: '0.75rem',
-                                fontWeight: '500',
-                                backgroundColor: '#FFFFFF',
-                                color: modalPage === totalPages ? '#94A3B8' : '#1B2321',
-                                border: '1px solid #E3E5E0',
-                                borderRadius: '6px',
-                                cursor: modalPage === totalPages ? 'not-allowed' : 'pointer'
-                              }}
-                            >
-                              <span>Next</span>
-                              <ChevronRight size={13} />
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                      <Pagination
+                        currentPage={modalPage}
+                        totalItems={detailTxs.length}
+                        pageSize={ITEMS_PER_PAGE}
+                        onPageChange={setModalPage}
+                        itemName="records"
+                        style={{ marginTop: '8px', padding: '10px 4px' }}
+                      />
                     </div>
                   );
                 })()}

@@ -3,6 +3,7 @@ import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { Globe, Plus, ShieldCheck, MapPin, X, ArrowUpRight, ArrowDownRight, TrendingUp, CreditCard, Users, Briefcase, RefreshCw, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import Pagination from '../components/Pagination';
 
 const inferIndustry = (name) => {
   const n = (name || '').toLowerCase();
@@ -498,60 +499,13 @@ const JobPortalAnalytics = () => {
           </div>
 
           {/* Compact Controlled Pagination Bar */}
-          {totalPages > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '12px 4px 4px 4px', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '8px' }}>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                Page {safePage} of {totalPages} ({filteredClients.length} total companies)
-              </span>
-              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  disabled={safePage === 1}
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  style={{ padding: '4px 8px', fontSize: '0.75rem', opacity: safePage === 1 ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', gap: '2px' }}
-                >
-                  <ChevronLeft size={14} />
-                  <span>Prev</span>
-                </button>
-                {getPageNumbers().map((item, idx) => (
-                  item === '...' ? (
-                    <span key={`dots-${idx}`} style={{ padding: '0 4px', color: 'var(--text-muted)', fontSize: '0.75rem' }}>...</span>
-                  ) : (
-                    <button
-                      key={`page-${item}`}
-                      type="button"
-                      onClick={() => setPage(item)}
-                      style={{
-                        padding: '4px 8px',
-                        minWidth: '28px',
-                        height: '28px',
-                        fontSize: '0.75rem',
-                        fontWeight: 'bold',
-                        borderRadius: '4px',
-                        border: '1px solid var(--border-color)',
-                        backgroundColor: safePage === item ? 'var(--accent-teal)' : 'var(--bg-main)',
-                        color: safePage === item ? '#ffffff' : 'var(--text-main)',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {item}
-                    </button>
-                  )
-                ))}
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  disabled={safePage >= totalPages}
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  style={{ padding: '4px 8px', fontSize: '0.75rem', opacity: safePage >= totalPages ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', gap: '2px' }}
-                >
-                  <span>Next</span>
-                  <ChevronRight size={14} />
-                </button>
-              </div>
-            </div>
-          )}
+          <Pagination
+            currentPage={page}
+            totalItems={filteredClients.length}
+            pageSize={ITEMS_PER_PAGE}
+            onPageChange={setPage}
+            itemName="companies"
+          />
 
         </div>
       </div>

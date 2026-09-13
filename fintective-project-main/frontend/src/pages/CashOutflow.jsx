@@ -4,8 +4,12 @@ import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { ProgressBarList } from '../components/CustomCharts';
 import { TrendingDown, ArrowDownRight, DollarSign } from 'lucide-react';
 
+import Pagination from '../components/Pagination';
+
 const CashOutflow = () => {
   const { transactions, selectedMonth } = useContext(FinanceContext);
+  const [page, setPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
 
   // Filter current expenses with useMemo
   const currentExpenses = useMemo(() => {
@@ -65,10 +69,25 @@ const CashOutflow = () => {
     return Array.from(companies).sort();
   }, [currentExpenses]);
 
-  const filteredExpenses = currentExpenses.filter(tx => {
-    if (vendorFilter !== 'all' && tx.companyName !== vendorFilter) return false;
-    return true;
-  });
+  const filteredExpenses = useMemo(() => {
+    return currentExpenses.filter(tx => {
+      if (vendorFilter !== 'all' && tx.companyName !== vendorFilter) return false;
+      return true;
+    });
+  }, [currentExpenses, vendorFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredExpenses.length / ITEMS_PER_PAGE));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+
+  const paginatedExpenses = useMemo(() => {
+    const start = (safePage - 1) * ITEMS_PER_PAGE;
+    return filteredExpenses.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredExpenses, safePage]);
+
+  // Reset page when vendorFilter or selectedMonth changes
+  React.useEffect(() => {
+    setPage(1);
+  }, [vendorFilter, selectedMonth]);
 
   return (
     <div className="cash-outflow-page animate-fade-in">
@@ -132,7 +151,10 @@ const CashOutflow = () => {
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: '600' }}>Filter Company:</span>
                 <select 
                   value={vendorFilter} 
-                  onChange={(e) => setVendorFilter(e.target.value)}
+                  onChange={(e) => {
+                    setVendorFilter(e.target.value);
+                    setPage(1);
+                  }}
                   style={{
                     padding: '6px 12px',
                     borderRadius: '8px',
@@ -152,51 +174,62 @@ const CashOutflow = () => {
             )}
           </div>
 
-          <div className="card-content">
+          <div className="card-content" style={{ padding: 0 }}>
             {filteredExpenses.length === 0 ? (
-              <p className="no-data-text">No expense entries found.</p>
-            ) : (
-              <div className="table-responsive">
-                <table className="data-table small-table">
-                  <thead>
-                    <tr>
-                      <th>Title</th>
-                      <th>Company / Vendor</th>
-                      <th>Category</th>
-                      <th>Date</th>
-                      <th className="text-right">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredExpenses.map(tx => (
-                      <tr key={tx.id}>
-                        <td className="font-bold">{tx.title}</td>
-                        <td>
-                          {tx.companyName && tx.companyName !== 'N/A' ? (
-                            <span style={{
-                              fontSize: '0.75rem',
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                              backgroundColor: '#e0f2fe',
-                              color: '#0369a1',
-                              fontWeight: '600'
-                            }}>
-                              {tx.companyName}
-                            </span>
-                          ) : (
-                            <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
-                          )}
-                        </td>
-                        <td>{tx.category}</td>
-                        <td>{formatDate(tx.date)}</td>
-                        <td className="font-bold text-red text-right">
-                          {formatCurrency(tx.amount, true)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div style={{ padding: '16px' }}>
+                <p className="no-data-text">No expense entries found.</p>
               </div>
+            ) : (
+              <>
+                <div className="table-responsive">
+                  <table className="data-table small-table">
+                    <thead>
+                      <tr>
+                        <th>Title</th>
+                        <th>Company / Vendor</th>
+                        <th>Category</th>
+                        <th>Date</th>
+                        <th className="text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedExpenses.map(tx => (
+                        <tr key={tx.id}>
+                          <td className="font-bold">{tx.title}</td>
+                          <td>
+                            {tx.companyName && tx.companyName !== 'N/A' ? (
+                              <span style={{
+                                fontSize: '0.75rem',
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                backgroundColor: '#e0f2fe',
+                                color: '#0369a1',
+                                fontWeight: '600'
+                              }}>
+                                {tx.companyName}
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
+                            )}
+                          </td>
+                          <td>{tx.category}</td>
+                          <td>{formatDate(tx.date)}</td>
+                          <td className="font-bold text-red text-right">
+                            {formatCurrency(tx.amount, true)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Pagination
+                  currentPage={safePage}
+                  totalItems={filteredExpenses.length}
+                  pageSize={ITEMS_PER_PAGE}
+                  onPageChange={setPage}
+                  itemName="expenses"
+                />
+              </>
             )}
           </div>
         </div>

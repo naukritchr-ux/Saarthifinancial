@@ -24,6 +24,7 @@ import {
   Check,
   FileText
 } from 'lucide-react';
+import Pagination from '../components/Pagination';
 
 const LineChart = TrendingUp;
 const ArrowUpRight = TrendingUp;
@@ -70,6 +71,17 @@ const RunwayRoiTracker = () => {
   const [invoiceSearch, setInvoiceSearch] = useState('');
   const [invoicePage, setInvoicePage] = useState(1);
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState('all');
+
+  // Pagination states for data tables
+  const [leaderboardPage, setLeaderboardPage] = useState(1);
+  const [franchiseRoiPage, setFranchiseRoiPage] = useState(1);
+  const [companiesPage, setCompaniesPage] = useState(1);
+  const [recruiterPage, setRecruiterPage] = useState(1);
+  const [ghostDealsPage, setGhostDealsPage] = useState(1);
+  const [duplicateExpPage, setDuplicateExpPage] = useState(1);
+  const [predictionsPage, setPredictionsPage] = useState(1);
+  const [leakLeaderboardPage, setLeakLeaderboardPage] = useState(1);
+  const ITEMS_PER_PAGE = 8;
 
   useEffect(() => {
     const fetchInvoices = async () => {
@@ -1086,31 +1098,13 @@ const RunwayRoiTracker = () => {
             </table>
 
             {/* Pagination Controls */}
-            {totalInvoicePages > 1 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '8px 0', borderTop: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                  Page {invoicePage} of {totalInvoicePages} ({filteredInvoices.length} items)
-                </span>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    disabled={invoicePage === 1}
-                    onClick={() => setInvoicePage(p => Math.max(1, p - 1))}
-                    style={{ opacity: invoicePage === 1 ? 0.5 : 1, padding: '4px 12px', fontSize: '0.8rem' }}
-                  >
-                    Previous
-                  </button>
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    disabled={invoicePage >= totalInvoicePages}
-                    onClick={() => setInvoicePage(p => Math.min(totalInvoicePages, p + 1))}
-                    style={{ opacity: invoicePage >= totalInvoicePages ? 0.5 : 1, padding: '4px 12px', fontSize: '0.8rem' }}
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            )}
+            <Pagination
+              currentPage={invoicePage}
+              totalItems={filteredInvoices.length}
+              pageSize={ITEMS_PER_PAGE}
+              onPageChange={setInvoicePage}
+              itemName="invoices"
+            />
           </div>
         )}
 
@@ -1130,47 +1124,52 @@ const RunwayRoiTracker = () => {
                 </tr>
               </thead>
               <tbody>
-                {effectiveLeaderboard.map((agent, index) => (
-                  <tr key={index}>
-                    <td className="font-bold">
-                      <span 
-                        onClick={() => handleRecruiterClick(agent.bd_name)} 
-                        style={{ cursor: 'pointer', color: 'var(--color-link)', textDecoration: 'underline' }}
-                        onMouseOver={(e) => e.target.style.color = '#1e40af'}
-                        onMouseOut={(e) => e.target.style.color = 'var(--color-link)'}
-                      >
-                        {agent.bd_name}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="status-badge" style={{ backgroundColor: 'rgba(29,78,216,0.08)', color: 'var(--color-link)', border: '1px solid rgba(29,78,216,0.2)' }}>
-                        {agent.invoices_closed} Deals Closed
-                      </span>
-                    </td>
-                    <td className="font-bold text-teal text-right">{formatCurrency(agent.gross_revenue)}</td>
-                    <td className="font-bold text-right" style={{ color: 'var(--color-purple)' }}>{formatCurrency(agent.net_revenue)}</td>
-                    <td style={{ textAlign: 'center' }}>
-                      <span 
-                        onClick={() => handleRecruiterClick(agent.bd_name)}
-                        className="status-badge" 
-                        style={{ 
-                          backgroundColor: 'rgba(16,185,129,0.1)', 
-                          color: '#10b981', 
-                          border: '1px solid rgba(16,185,129,0.2)', 
-                          fontSize: '0.8rem',
-                          fontWeight: 'bold',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}
-                      >
-                        <Check size={12} />
-                        Audited & Verified
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {(() => {
+                  const safeLbPage = Math.min(Math.max(1, leaderboardPage), Math.max(1, Math.ceil(effectiveLeaderboard.length / ITEMS_PER_PAGE)));
+                  const paginatedLeaderboard = effectiveLeaderboard.slice((safeLbPage - 1) * ITEMS_PER_PAGE, safeLbPage * ITEMS_PER_PAGE);
+
+                  return paginatedLeaderboard.map((agent, index) => (
+                    <tr key={index}>
+                      <td className="font-bold">
+                        <span 
+                          onClick={() => handleRecruiterClick(agent.bd_name)} 
+                          style={{ cursor: 'pointer', color: 'var(--color-link)', textDecoration: 'underline' }}
+                          onMouseOver={(e) => e.target.style.color = '#1e40af'}
+                          onMouseOut={(e) => e.target.style.color = 'var(--color-link)'}
+                        >
+                          {agent.bd_name}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="status-badge" style={{ backgroundColor: 'rgba(29,78,216,0.08)', color: 'var(--color-link)', border: '1px solid rgba(29,78,216,0.2)' }}>
+                          {agent.invoices_closed} Deals Closed
+                        </span>
+                      </td>
+                      <td className="font-bold text-teal text-right">{formatCurrency(agent.gross_revenue)}</td>
+                      <td className="font-bold text-right" style={{ color: 'var(--color-purple)' }}>{formatCurrency(agent.net_revenue)}</td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span 
+                          onClick={() => handleRecruiterClick(agent.bd_name)}
+                          className="status-badge" 
+                          style={{ 
+                            backgroundColor: 'rgba(16,185,129,0.1)', 
+                            color: '#10b981', 
+                            border: '1px solid rgba(16,185,129,0.2)', 
+                            fontSize: '0.8rem',
+                            fontWeight: 'bold',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <Check size={12} />
+                          Audited & Verified
+                        </span>
+                      </td>
+                    </tr>
+                  ));
+                })()}
                 {effectiveLeaderboard.length === 0 && (
                   <tr>
                     <td colSpan="5" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>
@@ -1180,6 +1179,14 @@ const RunwayRoiTracker = () => {
                 )}
               </tbody>
             </table>
+
+            <Pagination
+              currentPage={leaderboardPage}
+              totalItems={effectiveLeaderboard.length}
+              pageSize={ITEMS_PER_PAGE}
+              onPageChange={setLeaderboardPage}
+              itemName="agents"
+            />
           </div>
         )}
 
@@ -1201,29 +1208,42 @@ const RunwayRoiTracker = () => {
                 </tr>
               </thead>
               <tbody>
-                {franchiseeROI.map(fran => (
-                  <tr key={fran.id}>
-                    <td className="font-bold">{fran.name} ({fran.city})</td>
-                    <td>{fran.owner}</td>
-                    <td className="text-center font-bold">{fran.candidatesPlaced}</td>
-                    <td className="font-bold text-teal text-right">{formatCurrency(fran.royaltyInflow)}</td>
-                    <td className="text-red text-right">{formatCurrency(fran.supportOutflow, true)}</td>
-                    <td className={`font-bold text-right ${fran.netHubContribution >= 0 ? 'text-teal' : 'text-red'}`}>
-                      {formatCurrency(fran.netHubContribution)}
-                    </td>
-                    <td>
-                      {fran.hubROI === Infinity ? (
-                        <span className="status-badge active" style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: 'var(--color-income)' }}>Infinite ROI (No HQ Cost)</span>
-                      ) : (
-                        <span className={`status-badge ${fran.hubROI >= 100 ? 'active' : 'inactive'}`}>
-                          {fran.hubROI.toFixed(0)}% ROI
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {(() => {
+                  const safeFranRoiPage = Math.min(Math.max(1, franchiseRoiPage), Math.max(1, Math.ceil(franchiseeROI.length / ITEMS_PER_PAGE)));
+                  const paginatedFranchiseeROI = franchiseeROI.slice((safeFranRoiPage - 1) * ITEMS_PER_PAGE, safeFranRoiPage * ITEMS_PER_PAGE);
+
+                  return paginatedFranchiseeROI.map(fran => (
+                    <tr key={fran.id}>
+                      <td className="font-bold">{fran.name} ({fran.city})</td>
+                      <td>{fran.owner}</td>
+                      <td className="text-center font-bold">{fran.candidatesPlaced}</td>
+                      <td className="font-bold text-teal text-right">{formatCurrency(fran.royaltyInflow)}</td>
+                      <td className="text-red text-right">{formatCurrency(fran.supportOutflow, true)}</td>
+                      <td className={`font-bold text-right ${fran.netHubContribution >= 0 ? 'text-teal' : 'text-red'}`}>
+                        {formatCurrency(fran.netHubContribution)}
+                      </td>
+                      <td>
+                        {fran.hubROI === Infinity ? (
+                          <span className="status-badge active" style={{ backgroundColor: 'rgba(16,185,129,0.1)', color: 'var(--color-income)' }}>Infinite ROI (No HQ Cost)</span>
+                        ) : (
+                          <span className={`status-badge ${fran.hubROI >= 100 ? 'active' : 'inactive'}`}>
+                            {fran.hubROI.toFixed(0)}% ROI
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ));
+                })()}
               </tbody>
             </table>
+
+            <Pagination
+              currentPage={franchiseRoiPage}
+              totalItems={franchiseeROI.length}
+              pageSize={ITEMS_PER_PAGE}
+              onPageChange={setFranchiseRoiPage}
+              itemName="franchise hubs"
+            />
           </div>
         )}
 
@@ -1245,29 +1265,42 @@ const RunwayRoiTracker = () => {
                 </tr>
               </thead>
               <tbody>
-                {companyAccounts.map((account, index) => (
-                  <tr key={index}>
-                    <td className="font-bold">{account.companyName}</td>
-                    <td>
-                      <span className={`info-badge`} style={{ color: account.type === 'Franchise Hub' ? 'var(--accent-teal)' : 'var(--color-purple)', background: 'var(--bg-main)' }}>
-                        {account.type}
-                      </span>
-                    </td>
-                    <td>{account.owner}</td>
-                    <td className="font-bold text-teal text-right">{formatCurrency(account.inflow)}</td>
-                    <td className="text-red text-right">{formatCurrency(account.outflow, true)}</td>
-                    <td className={`font-bold text-right ${account.net >= 0 ? 'text-teal' : 'text-red'}`}>
-                      {formatCurrency(account.net)}
-                    </td>
-                    <td className="text-right font-bold">
-                      <span style={{ color: account.margin >= 50 ? 'var(--color-income)' : (account.margin >= 20 ? 'var(--color-pending)' : 'var(--color-expense)') }}>
-                        {account.margin.toFixed(1)}%
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {(() => {
+                  const safeCompaniesPage = Math.min(Math.max(1, companiesPage), Math.max(1, Math.ceil(companyAccounts.length / ITEMS_PER_PAGE)));
+                  const paginatedCompanyAccounts = companyAccounts.slice((safeCompaniesPage - 1) * ITEMS_PER_PAGE, safeCompaniesPage * ITEMS_PER_PAGE);
+
+                  return paginatedCompanyAccounts.map((account, index) => (
+                    <tr key={index}>
+                      <td className="font-bold">{account.companyName}</td>
+                      <td>
+                        <span className={`info-badge`} style={{ color: account.type === 'Franchise Hub' ? 'var(--accent-teal)' : 'var(--color-purple)', background: 'var(--bg-main)' }}>
+                          {account.type}
+                        </span>
+                      </td>
+                      <td>{account.owner}</td>
+                      <td className="font-bold text-teal text-right">{formatCurrency(account.inflow)}</td>
+                      <td className="text-red text-right">{formatCurrency(account.outflow, true)}</td>
+                      <td className={`font-bold text-right ${account.net >= 0 ? 'text-teal' : 'text-red'}`}>
+                        {formatCurrency(account.net)}
+                      </td>
+                      <td className="text-right font-bold">
+                        <span style={{ color: account.margin >= 50 ? 'var(--color-income)' : (account.margin >= 20 ? 'var(--color-pending)' : 'var(--color-expense)') }}>
+                          {account.margin.toFixed(1)}%
+                        </span>
+                      </td>
+                    </tr>
+                  ));
+                })()}
               </tbody>
             </table>
+
+            <Pagination
+              currentPage={companiesPage}
+              totalItems={companyAccounts.length}
+              pageSize={ITEMS_PER_PAGE}
+              onPageChange={setCompaniesPage}
+              itemName="company accounts"
+            />
           </div>
         )}
 
@@ -1904,134 +1937,147 @@ const RunwayRoiTracker = () => {
                   Action Box: Missing Placement Invoice Dates ({ghostDeals.length})
                 </h5>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '420px', overflowY: 'auto', paddingRight: '8px' }}>
-                  {ghostDeals.map((deal) => {
-                    const priorityColor = deal.priority === 'High' ? '#b91c1c' : (deal.priority === 'Medium' ? '#c2410c' : '#a16207');
-                    const priorityBg = deal.priority === 'High' ? '#fef2f2' : (deal.priority === 'Medium' ? '#fff7ed' : '#fefce8');
-                    const priorityBorder = deal.priority === 'High' ? '#fca5a5' : (deal.priority === 'Medium' ? '#fed7aa' : '#fef08a');
-                    
-                    return (
-                      <div 
-                        key={deal.id}
-                        style={{
-                          background: '#ffffff',
-                          border: `1.5px solid ${priorityBorder}`,
-                          padding: '16px',
-                          borderRadius: '12px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '12px',
-                          transition: 'transform 0.2s, box-shadow 0.2s',
-                          cursor: 'pointer',
-                          boxShadow: 'var(--shadow-sm)'
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <span style={{ fontSize: '0.75rem', color: '#475569', display: 'block', fontWeight: '600' }}>Company / Candidate Position</span>
-                            <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>{deal.company_name}</strong> - <span style={{ fontSize: '0.8rem', color: '#334155' }}>{deal.position_name}</span>
-                          </div>
-                          <span style={{
-                            fontSize: '0.7rem',
-                            padding: '3px 8px',
-                            borderRadius: '4px',
-                            fontWeight: 'bold',
-                            backgroundColor: priorityBg,
-                            color: priorityColor,
-                            border: `1px solid ${priorityBorder}`
-                          }}>
-                            {deal.priority} Alert ({deal.age_days || 0}d)
-                          </span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#334155' }}>
-                          <div>BD: <strong>{deal.bd_member}</strong></div>
-                          <div style={{ color: '#059669', fontWeight: 'bold' }}>Placement Fee: {formatCurrency(deal.service_charges)}</div>
-                        </div>
-                        
-                        {/* Date, Bill & Root Cause Form */}
-                        <form onSubmit={(e) => {
-                          e.preventDefault();
-                          const date = e.target.elements.billDate.value;
-                          const billNo = e.target.elements.billNo.value;
-                          const reasonCode = e.target.elements.reasonCode.value;
-                          if (!date) return alert("Please specify the Bill Date!");
-                          handleResolveLeakage(deal.id, date, billNo, reasonCode);
-                        }} style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
-                          <input 
-                            type="date"
-                            name="billDate"
-                            defaultValue={deal.suggested_date || ''}
-                            style={{
-                              backgroundColor: '#f8fafc',
-                              color: '#0f172a',
-                              border: '1px solid #cbd5e1',
-                              borderRadius: '6px',
-                              padding: '6px 10px',
-                              fontSize: '0.8rem',
-                              flex: 1,
-                              minWidth: '120px',
-                              fontWeight: '600'
-                            }}
-                          />
-                          <input 
-                            type="text"
-                            name="billNo"
-                            placeholder="Bill Number"
-                            defaultValue={deal.bill_no || ''}
-                            style={{
-                              backgroundColor: '#f8fafc',
-                              color: '#0f172a',
-                              border: '1px solid #cbd5e1',
-                              borderRadius: '6px',
-                              padding: '6px 10px',
-                              fontSize: '0.8rem',
-                              width: '100px',
-                              fontWeight: '600'
-                            }}
-                          />
-                          <select
-                            name="reasonCode"
-                            style={{
-                              backgroundColor: '#f8fafc',
-                              color: '#0f172a',
-                              border: '1px solid #cbd5e1',
-                              borderRadius: '6px',
-                              padding: '6px 10px',
-                              fontSize: '0.8rem',
-                              width: '150px',
-                              fontWeight: '600'
-                            }}
-                          >
-                            <option value="forgot_invoice">Forgot to raise invoice</option>
-                            <option value="client_delay">Client delayed payment</option>
-                            <option value="wrong_bill_no">Wrong bill number entered</option>
-                            <option value="duplicate_entry">Duplicate entry</option>
-                            <option value="other">Other reason</option>
-                          </select>
-                          <button 
-                            type="submit"
-                            style={{
-                              backgroundColor: '#ea580c',
-                              color: '#fff',
-                              border: 'none',
-                              borderRadius: '6px',
-                              padding: '6px 16px',
-                              fontSize: '0.8rem',
+                  {(() => {
+                    const safeGhostPage = Math.min(Math.max(1, ghostDealsPage), Math.max(1, Math.ceil(ghostDeals.length / 5)));
+                    const paginatedGhostDeals = ghostDeals.slice((safeGhostPage - 1) * 5, safeGhostPage * 5);
+
+                    return paginatedGhostDeals.map((deal) => {
+                      const priorityColor = deal.priority === 'High' ? '#b91c1c' : (deal.priority === 'Medium' ? '#c2410c' : '#a16207');
+                      const priorityBg = deal.priority === 'High' ? '#fef2f2' : (deal.priority === 'Medium' ? '#fff7ed' : '#fefce8');
+                      const priorityBorder = deal.priority === 'High' ? '#fca5a5' : (deal.priority === 'Medium' ? '#fed7aa' : '#fef08a');
+                      
+                      return (
+                        <div 
+                          key={deal.id}
+                          style={{
+                            background: '#ffffff',
+                            border: `1.5px solid ${priorityBorder}`,
+                            padding: '16px',
+                            borderRadius: '12px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '12px',
+                            transition: 'transform 0.2s, box-shadow 0.2s',
+                            cursor: 'pointer',
+                            boxShadow: 'var(--shadow-sm)'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <span style={{ fontSize: '0.75rem', color: '#475569', display: 'block', fontWeight: '600' }}>Company / Candidate Position</span>
+                              <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>{deal.company_name}</strong> - <span style={{ fontSize: '0.8rem', color: '#334155' }}>{deal.position_name}</span>
+                            </div>
+                            <span style={{
+                              fontSize: '0.7rem',
+                              padding: '3px 8px',
+                              borderRadius: '4px',
                               fontWeight: 'bold',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Recover
-                          </button>
-                        </form>
-                      </div>
-                    );
-                  })}
+                              backgroundColor: priorityBg,
+                              color: priorityColor,
+                              border: `1px solid ${priorityBorder}`
+                            }}>
+                              {deal.priority} Alert ({deal.age_days || 0}d)
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#334155' }}>
+                            <div>BD: <strong>{deal.bd_member}</strong></div>
+                            <div style={{ color: '#059669', fontWeight: 'bold' }}>Placement Fee: {formatCurrency(deal.service_charges)}</div>
+                          </div>
+                          
+                          {/* Date, Bill & Root Cause Form */}
+                          <form onSubmit={(e) => {
+                            e.preventDefault();
+                            const date = e.target.elements.billDate.value;
+                            const billNo = e.target.elements.billNo.value;
+                            const reasonCode = e.target.elements.reasonCode.value;
+                            if (!date) return alert("Please specify the Bill Date!");
+                            handleResolveLeakage(deal.id, date, billNo, reasonCode);
+                          }} style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
+                            <input 
+                              type="date"
+                              name="billDate"
+                              defaultValue={deal.suggested_date || ''}
+                              style={{
+                                backgroundColor: '#f8fafc',
+                                color: '#0f172a',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '6px',
+                                padding: '6px 10px',
+                                fontSize: '0.8rem',
+                                flex: 1,
+                                minWidth: '120px',
+                                fontWeight: '600'
+                              }}
+                            />
+                            <input 
+                              type="text"
+                              name="billNo"
+                              placeholder="Bill Number"
+                              defaultValue={deal.bill_no || ''}
+                              style={{
+                                backgroundColor: '#f8fafc',
+                                color: '#0f172a',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '6px',
+                                padding: '6px 10px',
+                                fontSize: '0.8rem',
+                                width: '100px',
+                                fontWeight: '600'
+                              }}
+                            />
+                            <select
+                              name="reasonCode"
+                              style={{
+                                backgroundColor: '#f8fafc',
+                                color: '#0f172a',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: '6px',
+                                padding: '6px 10px',
+                                fontSize: '0.8rem',
+                                width: '150px',
+                                fontWeight: '600'
+                              }}
+                            >
+                              <option value="forgot_invoice">Forgot to raise invoice</option>
+                              <option value="client_delay">Client delayed payment</option>
+                              <option value="wrong_bill_no">Wrong bill number entered</option>
+                              <option value="duplicate_entry">Duplicate entry</option>
+                              <option value="other">Other reason</option>
+                            </select>
+                            <button 
+                              type="submit"
+                              style={{
+                                backgroundColor: '#ea580c',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: '6px',
+                                padding: '6px 16px',
+                                fontSize: '0.8rem',
+                                fontWeight: 'bold',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Recover
+                            </button>
+                          </form>
+                        </div>
+                      );
+                    });
+                  })()}
                   {ghostDeals.length === 0 && (
                     <div style={{ padding: '24px', textAlign: 'center', color: '#059669', background: '#ecfdf5', borderRadius: '12px', border: '1px solid #a7f3d0', fontWeight: 'bold' }}>
                       ✔️ No uninvoiced placements detected!
                     </div>
                   )}
                 </div>
+                <Pagination
+                  currentPage={ghostDealsPage}
+                  totalItems={ghostDeals.length}
+                  pageSize={5}
+                  onPageChange={setGhostDealsPage}
+                  itemName="ghost deals"
+                  style={{ padding: '8px 0' }}
+                />
               </div>
 
               {/* DECK 2: DUPLICATE EXPENSES */}
@@ -2051,36 +2097,41 @@ const RunwayRoiTracker = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {duplicateExpenses.map((exp) => (
-                        <tr key={exp.id}>
-                          <td>{exp.date}</td>
-                          <td>
-                            <strong>{exp.vendors || 'Office Rent'}</strong>
-                            <span style={{ display: 'block', fontSize: '0.7rem', color: '#475569' }}>{exp.category}</span>
-                          </td>
-                          <td className="text-right font-bold text-red">{formatCurrency(exp.amount)}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <button
-                              onClick={() => handleDeleteDuplicate(exp.id, exp)}
-                              style={{
-                                border: 'none',
-                                background: '#fef2f2',
-                                color: '#dc2626',
-                                padding: '6px 12px',
-                                borderRadius: '6px',
-                                fontWeight: 'bold',
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                              }}
-                            >
-                              <Trash2 size={12} />
-                              Delete Duplicate
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {(() => {
+                        const safeDupPage = Math.min(Math.max(1, duplicateExpPage), Math.max(1, Math.ceil(duplicateExpenses.length / 5)));
+                        const paginatedDuplicates = duplicateExpenses.slice((safeDupPage - 1) * 5, safeDupPage * 5);
+
+                        return paginatedDuplicates.map((exp) => (
+                          <tr key={exp.id}>
+                            <td>{exp.date}</td>
+                            <td>
+                              <strong>{exp.vendors || 'Office Rent'}</strong>
+                              <span style={{ display: 'block', fontSize: '0.7rem', color: '#475569' }}>{exp.category}</span>
+                            </td>
+                            <td className="text-right font-bold text-red">{formatCurrency(exp.amount)}</td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button
+                                onClick={() => handleDeleteDuplicate(exp.id, exp)}
+                                style={{
+                                  border: 'none',
+                                  background: '#fef2f2',
+                                  color: '#dc2626',
+                                  padding: '6px 12px',
+                                  borderRadius: '6px',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                              >
+                                <Trash2 size={12} />
+                                Delete Duplicate
+                              </button>
+                            </td>
+                          </tr>
+                        ));
+                      })()}
                       {duplicateExpenses.length === 0 && (
                         <tr>
                           <td colSpan="4" style={{ textAlign: 'center', color: '#059669', padding: '20px', backgroundColor: '#ecfdf5', fontWeight: 'bold' }}>
@@ -2091,6 +2142,14 @@ const RunwayRoiTracker = () => {
                     </tbody>
                   </table>
                 </div>
+                <Pagination
+                  currentPage={duplicateExpPage}
+                  totalItems={duplicateExpenses.length}
+                  pageSize={5}
+                  onPageChange={setDuplicateExpPage}
+                  itemName="duplicate entries"
+                  style={{ padding: '8px 0' }}
+                />
               </div>
 
             </div>
@@ -2187,35 +2246,40 @@ const RunwayRoiTracker = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {activePredictions.slice(0, 8).map((pred) => {
-                        const riskColor = pred.leakage_risk > 60 ? '#b91c1c' : (pred.leakage_risk > 30 ? '#c2410c' : '#047857');
-                        const riskBg = pred.leakage_risk > 60 ? '#fef2f2' : (pred.leakage_risk > 30 ? '#fff7ed' : '#ecfdf5');
-                        const riskBorder = pred.leakage_risk > 60 ? '#fca5a5' : (pred.leakage_risk > 30 ? '#fed7aa' : '#a7f3d0');
-                        
-                        return (
-                          <tr key={pred.id}>
-                            <td>
-                              <strong>{pred.company_name}</strong>
-                              <span style={{ display: 'block', fontSize: '0.7rem', color: '#475569' }}>{pred.position_name}</span>
-                            </td>
-                            <td className="font-bold">{pred.bd_member}</td>
-                            <td className="text-center" style={{ color: 'var(--color-link)', fontWeight: 'bold' }}>{pred.predicted_days} days</td>
-                            <td style={{ textAlign: 'center' }}>
-                              <span style={{
-                                padding: '4px 10px',
-                                borderRadius: '6px',
-                                fontWeight: 'bold',
-                                fontSize: '0.75rem',
-                                color: riskColor,
-                                backgroundColor: riskBg,
-                                border: `1px solid ${riskBorder}`
-                              }}>
-                                {pred.leakage_risk}% Risk
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {(() => {
+                        const safePredPage = Math.min(Math.max(1, predictionsPage), Math.max(1, Math.ceil(activePredictions.length / 6)));
+                        const paginatedPredictions = activePredictions.slice((safePredPage - 1) * 6, safePredPage * 6);
+
+                        return paginatedPredictions.map((pred) => {
+                          const riskColor = pred.leakage_risk > 60 ? '#b91c1c' : (pred.leakage_risk > 30 ? '#c2410c' : '#047857');
+                          const riskBg = pred.leakage_risk > 60 ? '#fef2f2' : (pred.leakage_risk > 30 ? '#fff7ed' : '#ecfdf5');
+                          const riskBorder = pred.leakage_risk > 60 ? '#fca5a5' : (pred.leakage_risk > 30 ? '#fed7aa' : '#a7f3d0');
+                          
+                          return (
+                            <tr key={pred.id}>
+                              <td>
+                                <strong>{pred.company_name}</strong>
+                                <span style={{ display: 'block', fontSize: '0.7rem', color: '#475569' }}>{pred.position_name}</span>
+                              </td>
+                              <td className="font-bold">{pred.bd_member}</td>
+                              <td className="text-center" style={{ color: 'var(--color-link)', fontWeight: 'bold' }}>{pred.predicted_days} days</td>
+                              <td style={{ textAlign: 'center' }}>
+                                <span style={{
+                                  padding: '4px 10px',
+                                  borderRadius: '6px',
+                                  fontWeight: 'bold',
+                                  fontSize: '0.75rem',
+                                  color: riskColor,
+                                  backgroundColor: riskBg,
+                                  border: `1px solid ${riskBorder}`
+                                }}>
+                                  {pred.leakage_risk}% Risk
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
                       {activePredictions.length === 0 && (
                         <tr>
                           <td colSpan="4" style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>
@@ -2226,6 +2290,14 @@ const RunwayRoiTracker = () => {
                     </tbody>
                   </table>
                 </div>
+                <Pagination
+                  currentPage={predictionsPage}
+                  totalItems={activePredictions.length}
+                  pageSize={6}
+                  onPageChange={setPredictionsPage}
+                  itemName="deals"
+                  style={{ padding: '8px 0' }}
+                />
               </div>
 
               {/* Recruiter Leakage Leaderboard */}
@@ -2248,33 +2320,38 @@ const RunwayRoiTracker = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {leakLeaderboard.map((item, idx) => {
-                        const alertColor = item.open_leaks >= 2 ? '#ef4444' : (item.open_leaks === 1 ? '#f97316' : '#10b981');
-                        const alertText = item.open_leaks >= 2 ? 'Action Required' : (item.open_leaks === 1 ? 'Needs Audit' : 'Good');
-                        
-                        return (
-                          <tr key={idx}>
-                            <td className="font-bold">{item.bd_name}</td>
-                            <td className="text-center" style={{ fontWeight: 'bold' }}>{item.open_leaks}</td>
-                            <td className="text-right font-bold" style={{ color: item.leak_amount > 0 ? '#dc2626' : '#475569' }}>
-                              {formatCurrency(item.leak_amount)}
-                            </td>
-                            <td style={{ textAlign: 'center' }}>
-                              <span style={{
-                                padding: '3px 8px',
-                                borderRadius: '4px',
-                                fontSize: '0.7rem',
-                                fontWeight: 'bold',
-                                color: alertColor,
-                                backgroundColor: `${alertColor}12`,
-                                border: `1px solid ${alertColor}33`
-                              }}>
-                                {alertText}
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                      {(() => {
+                        const safeLeakPage = Math.min(Math.max(1, leakLeaderboardPage), Math.max(1, Math.ceil(leakLeaderboard.length / 6)));
+                        const paginatedLeakLeaderboard = leakLeaderboard.slice((safeLeakPage - 1) * 6, safeLeakPage * 6);
+
+                        return paginatedLeakLeaderboard.map((item, idx) => {
+                          const alertColor = item.open_leaks >= 2 ? '#ef4444' : (item.open_leaks === 1 ? '#f97316' : '#10b981');
+                          const alertText = item.open_leaks >= 2 ? 'Action Required' : (item.open_leaks === 1 ? 'Needs Audit' : 'Good');
+                          
+                          return (
+                            <tr key={idx}>
+                              <td className="font-bold">{item.bd_name}</td>
+                              <td className="text-center" style={{ fontWeight: 'bold' }}>{item.open_leaks}</td>
+                              <td className="text-right font-bold" style={{ color: item.leak_amount > 0 ? '#dc2626' : '#475569' }}>
+                                {formatCurrency(item.leak_amount)}
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                <span style={{
+                                  padding: '3px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 'bold',
+                                  color: alertColor,
+                                  backgroundColor: `${alertColor}12`,
+                                  border: `1px solid ${alertColor}33`
+                                }}>
+                                  {alertText}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
                       {leakLeaderboard.length === 0 && (
                         <tr>
                           <td colSpan="4" style={{ textAlign: 'center', color: '#64748b', padding: '20px' }}>
@@ -2285,6 +2362,14 @@ const RunwayRoiTracker = () => {
                     </tbody>
                   </table>
                 </div>
+                <Pagination
+                  currentPage={leakLeaderboardPage}
+                  totalItems={leakLeaderboard.length}
+                  pageSize={6}
+                  onPageChange={setLeakLeaderboardPage}
+                  itemName="agents"
+                  style={{ padding: '8px 0' }}
+                />
               </div>
 
             </div>
@@ -2352,7 +2437,7 @@ const RunwayRoiTracker = () => {
               <h4 style={{ color: 'var(--text-main)', margin: '4px 0 0 0' }}>{selectedRecruiter}</h4>
             </div>
             <button 
-              onClick={() => setSelectedRecruiter(null)}
+              onClick={() => { setSelectedRecruiter(null); setRecruiterPage(1); }}
               style={{
                 background: 'var(--bg-main)',
                 border: '1px solid var(--border-color)',
@@ -2370,7 +2455,7 @@ const RunwayRoiTracker = () => {
 
           {/* Placements detailed table */}
           <div style={{ flex: 1, overflowY: 'auto', marginBottom: '20px' }}>
-            <h5 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>Audit Invoices Log</h5>
+            <h5 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '12px' }}>Audit Invoices Log ({recruiterDetails.length})</h5>
             {recruiterDetailsLoading ? (
               <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                 <Activity className="animate-spin animate-spin-slow" style={{ margin: '0 auto 12px auto' }} />
@@ -2378,24 +2463,41 @@ const RunwayRoiTracker = () => {
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {recruiterDetails.map((row, idx) => (
-                  <div key={idx} style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-main)', fontWeight: 'bold', marginBottom: '4px' }}>
-                      <span>{row.company_name}</span>
-                      <span style={{ color: 'var(--color-income)' }}>{formatCurrency(row.gross_revenue)}</span>
-                    </div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                      Invoice: {row.invoice_no} | Date: {row.bill_date}
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--color-link)', marginTop: '4px' }}>
-                      <span>Recruiter Net Share: {formatCurrency(row.net_revenue)}</span>
-                      <span>Franchise: {row.franchise_name || 'None'}</span>
-                    </div>
-                  </div>
-                ))}
-                {recruiterDetails.length === 0 && (
-                  <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>No invoice attributions found for this agent.</div>
-                )}
+                {(() => {
+                  const safeRecruiterPage = Math.min(Math.max(1, recruiterPage), Math.max(1, Math.ceil(recruiterDetails.length / 6)));
+                  const paginatedRecruiterDetails = recruiterDetails.slice((safeRecruiterPage - 1) * 6, safeRecruiterPage * 6);
+
+                  return (
+                    <>
+                      {paginatedRecruiterDetails.map((row, idx) => (
+                        <div key={idx} style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-main)', fontWeight: 'bold', marginBottom: '4px' }}>
+                            <span>{row.company_name}</span>
+                            <span style={{ color: 'var(--color-income)' }}>{formatCurrency(row.gross_revenue)}</span>
+                          </div>
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                            Invoice: {row.invoice_no} | Date: {row.bill_date}
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--color-link)', marginTop: '4px' }}>
+                            <span>Recruiter Net Share: {formatCurrency(row.net_revenue)}</span>
+                            <span>Franchise: {row.franchise_name || 'None'}</span>
+                          </div>
+                        </div>
+                      ))}
+                      {recruiterDetails.length === 0 && (
+                        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>No invoice attributions found for this agent.</div>
+                      )}
+                      <Pagination
+                        currentPage={recruiterPage}
+                        totalItems={recruiterDetails.length}
+                        pageSize={6}
+                        onPageChange={setRecruiterPage}
+                        itemName="invoices"
+                        style={{ padding: '8px 0', borderTop: '1px solid var(--border-color)' }}
+                      />
+                    </>
+                  );
+                })()}
               </div>
             )}
           </div>

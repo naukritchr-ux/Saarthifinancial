@@ -3,11 +3,14 @@ import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { TrendingUp, Plus, Award, Briefcase, X, Percent, ChevronLeft, ChevronRight, Users } from 'lucide-react';
+import Pagination from '../components/Pagination';
 
 const TLPerformance = () => {
   const { teamLeaders, transactions, selectedMonth, selectedYear } = useContext(FinanceContext);
   const [activeTLDetails, setActiveTLDetails] = useState(null); // Detail modal state
   const [modalPage, setModalPage] = useState(1); // Modal table pagination page
+  const [tlPage, setTlPage] = useState(1);
+  const TL_PER_PAGE = 8;
 
   // Period filter checks both selectedMonth and selectedYear
   const isInFilteredPeriod = (tx) => {
@@ -341,34 +344,47 @@ const TLPerformance = () => {
                 </tr>
               </thead>
               <tbody>
-                {processedLeaders.map(tl => (
-                  <tr 
-                    key={tl.id}
-                    onClick={() => { setActiveTLDetails(tl); setModalPage(1); }}
-                    className="clickable-row-item"
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <td className="font-bold">
-                      <div>{tl.name}</div>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--accent-teal)', fontWeight: 'normal' }}>Click to view details</span>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: 'bold', fontSize: '0.8rem' }}>
-                        <span style={{ color: '#10b981' }}>{tl.enquiriesProgressed}P</span> / <span style={{ color: '#ef4444' }}>{tl.enquiriesCancelled}C</span> / <span style={{ color: '#ea580c' }}>{tl.enquiriesInternallyClosed}I</span> / <span style={{ color: '#64748b' }}>{(tl.totalEnquiries || 0) - (tl.enquiriesProgressed || 0) - (tl.enquiriesCancelled || 0) - (tl.enquiriesInternallyClosed || 0)}Pnd</span>
-                      </div>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Total: {tl.totalEnquiries}</div>
-                    </td>
-                    <td className="font-bold text-teal text-right">{formatCurrency(tl.grossRevenue)}</td>
-                    <td className="font-bold text-right text-blue" style={{ color: 'var(--color-link)' }}>{formatCurrency(tl.netRevenue)}</td>
-                    <td className="text-red font-bold text-right">{formatCurrency(tl.lossAmount)}</td>
-                    <td>
-                      <span className="status-badge active">{tl.status || 'Active'}</span>
-                    </td>
-                  </tr>
-                ))}
+                {(() => {
+                  const safeTlPage = Math.min(Math.max(1, tlPage), Math.max(1, Math.ceil(processedLeaders.length / TL_PER_PAGE)));
+                  const paginatedLeaders = processedLeaders.slice((safeTlPage - 1) * TL_PER_PAGE, safeTlPage * TL_PER_PAGE);
+
+                  return paginatedLeaders.map(tl => (
+                    <tr 
+                      key={tl.id}
+                      onClick={() => { setActiveTLDetails(tl); setModalPage(1); }}
+                      className="clickable-row-item"
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td className="font-bold">
+                        <div>{tl.name}</div>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--accent-teal)', fontWeight: 'normal' }}>Click to view details</span>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: 'bold', fontSize: '0.8rem' }}>
+                          <span style={{ color: '#10b981' }}>{tl.enquiriesProgressed}P</span> / <span style={{ color: '#ef4444' }}>{tl.enquiriesCancelled}C</span> / <span style={{ color: '#ea580c' }}>{tl.enquiriesInternallyClosed}I</span> / <span style={{ color: '#64748b' }}>{(tl.totalEnquiries || 0) - (tl.enquiriesProgressed || 0) - (tl.enquiriesCancelled || 0) - (tl.enquiriesInternallyClosed || 0)}Pnd</span>
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Total: {tl.totalEnquiries}</div>
+                      </td>
+                      <td className="font-bold text-teal text-right">{formatCurrency(tl.grossRevenue)}</td>
+                      <td className="font-bold text-right text-blue" style={{ color: 'var(--color-link)' }}>{formatCurrency(tl.netRevenue)}</td>
+                      <td className="text-red font-bold text-right">{formatCurrency(tl.lossAmount)}</td>
+                      <td>
+                        <span className="status-badge active">{tl.status || 'Active'}</span>
+                      </td>
+                    </tr>
+                  ));
+                })()}
               </tbody>
             </table>
           </div>
+
+          <Pagination
+            currentPage={tlPage}
+            totalItems={processedLeaders.length}
+            pageSize={TL_PER_PAGE}
+            onPageChange={setTlPage}
+            itemName="team leaders"
+          />
         </div>
       </div>
 
@@ -466,7 +482,8 @@ const TLPerformance = () => {
                 ) : (() => {
                   const ITEMS_PER_PAGE = 10;
                   const totalPages = Math.ceil(detailTxs.length / ITEMS_PER_PAGE);
-                  const paginatedTxs = detailTxs.slice((modalPage - 1) * ITEMS_PER_PAGE, modalPage * ITEMS_PER_PAGE);
+                  const safeModalPage = Math.min(Math.max(1, modalPage), totalPages);
+                  const paginatedTxs = detailTxs.slice((safeModalPage - 1) * ITEMS_PER_PAGE, safeModalPage * ITEMS_PER_PAGE);
 
                   return (
                     <div>
@@ -514,79 +531,14 @@ const TLPerformance = () => {
                         </table>
                       </div>
 
-                      {totalPages > 1 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', padding: '8px 0' }}>
-                          <span style={{ fontSize: '0.78rem', color: '#6B7268' }}>
-                            Showing {(modalPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(modalPage * ITEMS_PER_PAGE, detailTxs.length)} of {detailTxs.length} records
-                          </span>
-                          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                            <button
-                              type="button"
-                              disabled={modalPage === 1}
-                              onClick={() => setModalPage(p => Math.max(1, p - 1))}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                padding: '4px 10px',
-                                fontSize: '0.75rem',
-                                fontWeight: '500',
-                                backgroundColor: '#FFFFFF',
-                                color: modalPage === 1 ? '#94A3B8' : '#1B2321',
-                                border: '1px solid #E3E5E0',
-                                borderRadius: '6px',
-                                cursor: modalPage === 1 ? 'not-allowed' : 'pointer'
-                              }}
-                            >
-                              <ChevronLeft size={13} />
-                              <span>Prev</span>
-                            </button>
-                            
-                            {Array.from({ length: totalPages }, (_, i) => i + 1).slice(Math.max(0, modalPage - 3), Math.min(totalPages, modalPage + 2)).map(pageNum => (
-                              <button
-                                key={pageNum}
-                                type="button"
-                                onClick={() => setModalPage(pageNum)}
-                                style={{
-                                  padding: '3px 9px',
-                                  fontSize: '0.75rem',
-                                  backgroundColor: modalPage === pageNum ? '#0F6E56' : '#FFFFFF',
-                                  color: modalPage === pageNum ? '#FFFFFF' : '#1B2321',
-                                  border: '1px solid ' + (modalPage === pageNum ? '#0F6E56' : '#E3E5E0'),
-                                  borderRadius: '6px',
-                                  cursor: 'pointer',
-                                  fontWeight: modalPage === pageNum ? '700' : '500',
-                                  minWidth: '26px'
-                                }}
-                              >
-                                {pageNum}
-                              </button>
-                            ))}
-
-                            <button
-                              type="button"
-                              disabled={modalPage === totalPages}
-                              onClick={() => setModalPage(p => Math.min(totalPages, p + 1))}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                padding: '4px 10px',
-                                fontSize: '0.75rem',
-                                fontWeight: '500',
-                                backgroundColor: '#FFFFFF',
-                                color: modalPage === totalPages ? '#94A3B8' : '#1B2321',
-                                border: '1px solid #E3E5E0',
-                                borderRadius: '6px',
-                                cursor: modalPage === totalPages ? 'not-allowed' : 'pointer'
-                              }}
-                            >
-                              <span>Next</span>
-                              <ChevronRight size={13} />
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                      <Pagination
+                        currentPage={safeModalPage}
+                        totalItems={detailTxs.length}
+                        pageSize={ITEMS_PER_PAGE}
+                        onPageChange={setModalPage}
+                        itemName="records"
+                        style={{ marginTop: '8px', padding: '10px 4px' }}
+                      />
                     </div>
                   );
                 })()}

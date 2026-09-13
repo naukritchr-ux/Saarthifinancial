@@ -3,11 +3,16 @@ import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { Users, Plus, ShieldCheck, MapPin, X, AlertTriangle, Award } from 'lucide-react';
+import Pagination from '../components/Pagination';
 
 const Franchisees = () => {
   const { franchisees, transactions, addFranchisee, selectedMonth, selectedYear } = useContext(FinanceContext);
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeFranchiseeDetails, setActiveFranchiseeDetails] = useState(null); // Click detailed modal state
+  const [page, setPage] = useState(1);
+  const [modalPage, setModalPage] = useState(1);
+  const ITEMS_PER_PAGE = 8;
+  const MODAL_ITEMS_PER_PAGE = 8;
   
   // New franchisee form inputs
   const [name, setName] = useState('');
@@ -443,54 +448,68 @@ const Franchisees = () => {
               </tr>
             </thead>
             <tbody>
-              {franchiseSummaries.map(fran => (
-                <tr 
-                  key={fran.id} 
-                  onClick={() => setActiveFranchiseeDetails(fran)}
-                  className="clickable-row-item"
-                  style={{ cursor: 'pointer' }}
-                >
-                  <td className="font-bold">
-                    <div>{fran.name}</div>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--accent-teal)', fontWeight: 'normal' }}>Click to audit ledger</span>
-                  </td>
-                  <td>{fran.city}</td>
-                  <td>{fran.owner}</td>
-                  <td className="text-center">{fran.candidatesPlaced}</td>
-                  <td className="font-bold text-teal text-right">{formatCurrency(fran.revenuePaid)}</td>
-                  <td className="text-red text-right">
-                    {fran.costsIncurred === 0 ? (
-                      <span style={{ color: '#64748b', fontSize: '0.8rem' }}>Not tracked</span>
-                    ) : (
-                      formatCurrency(fran.costsIncurred, true)
-                    )}
-                  </td>
-                  <td className={`font-bold text-right ${fran.netContribution >= 0 ? 'text-teal' : 'text-red'}`}>
-                    {formatCurrency(fran.netContribution)}
-                  </td>
-                  <td>
-                    <span className={`trend-badge-tag ${fran.trend.positive ? 'positive' : 'negative'}`} style={{ color: fran.trend.positive ? 'var(--accent-teal)' : '#ef4444', fontWeight: 'bold' }}>
-                      {fran.trend.text}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="status-badge" style={{
-                      backgroundColor: fran.mlCluster === 0 ? 'rgba(16, 185, 129, 0.1)' : (fran.mlCluster === 1 ? 'rgba(37, 99, 235, 0.1)' : 'rgba(239, 68, 68, 0.1)'),
-                      color: fran.mlCluster === 0 ? '#10b981' : (fran.mlCluster === 1 ? '#3b82f6' : '#ef4444')
-                    }}>
-                      {fran.mlSegment.split(' ')[0]}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`status-badge ${fran.status.toLowerCase()}`}>
-                      {fran.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {(() => {
+                const totalPages = Math.max(1, Math.ceil(franchiseSummaries.length / ITEMS_PER_PAGE));
+                const safePage = Math.min(Math.max(1, page), totalPages);
+                const paginatedFrans = franchiseSummaries.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+
+                return paginatedFrans.map(fran => (
+                  <tr 
+                    key={fran.id} 
+                    onClick={() => { setActiveFranchiseeDetails(fran); setModalPage(1); }}
+                    className="clickable-row-item"
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <td className="font-bold">
+                      <div>{fran.name}</div>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--accent-teal)', fontWeight: 'normal' }}>Click to audit ledger</span>
+                    </td>
+                    <td>{fran.city}</td>
+                    <td>{fran.owner}</td>
+                    <td className="text-center">{fran.candidatesPlaced}</td>
+                    <td className="font-bold text-teal text-right">{formatCurrency(fran.revenuePaid)}</td>
+                    <td className="text-red text-right">
+                      {fran.costsIncurred === 0 ? (
+                        <span style={{ color: '#64748b', fontSize: '0.8rem' }}>Not tracked</span>
+                      ) : (
+                        formatCurrency(fran.costsIncurred, true)
+                      )}
+                    </td>
+                    <td className={`font-bold text-right ${fran.netContribution >= 0 ? 'text-teal' : 'text-red'}`}>
+                      {formatCurrency(fran.netContribution)}
+                    </td>
+                    <td>
+                      <span className={`trend-badge-tag ${fran.trend.positive ? 'positive' : 'negative'}`} style={{ color: fran.trend.positive ? 'var(--accent-teal)' : '#ef4444', fontWeight: 'bold' }}>
+                        {fran.trend.text}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="status-badge" style={{
+                        backgroundColor: fran.mlCluster === 0 ? 'rgba(16, 185, 129, 0.1)' : (fran.mlCluster === 1 ? 'rgba(37, 99, 235, 0.1)' : 'rgba(239, 68, 68, 0.1)'),
+                        color: fran.mlCluster === 0 ? '#10b981' : (fran.mlCluster === 1 ? '#3b82f6' : '#ef4444')
+                      }}>
+                        {fran.mlSegment.split(' ')[0]}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`status-badge ${fran.status.toLowerCase()}`}>
+                        {fran.status}
+                      </span>
+                    </td>
+                  </tr>
+                ));
+              })()}
             </tbody>
           </table>
         </div>
+
+        <Pagination
+          currentPage={page}
+          totalItems={franchiseSummaries.length}
+          pageSize={ITEMS_PER_PAGE}
+          onPageChange={setPage}
+          itemName="franchise hubs"
+        />
       </div>
 
       {/* Franchise Detail Audit Modal Popup overlay */}
@@ -503,6 +522,11 @@ const Franchisees = () => {
           const txMonthYear = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
           return txMonthYear === selectedMonth;
         });
+
+        const totalModalPages = Math.max(1, Math.ceil(detailTxs.length / MODAL_ITEMS_PER_PAGE));
+        const safeModalPage = Math.min(Math.max(1, modalPage), totalModalPages);
+        const paginatedDetailTxs = detailTxs.slice((safeModalPage - 1) * MODAL_ITEMS_PER_PAGE, safeModalPage * MODAL_ITEMS_PER_PAGE);
+
         return (
           <div className="modal-backdrop" onClick={() => setActiveFranchiseeDetails(null)}>
             <div className="modal-container auditor-modal animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '820px', width: '92%' }}>
@@ -542,42 +566,53 @@ const Franchisees = () => {
                 {detailTxs.length === 0 ? (
                   <p style={{ color: '#6B7268', fontSize: '0.85rem', padding: '20px 0', textAlign: 'center' }}>No transaction history found for this franchisee location.</p>
                 ) : (
-                  <div className="table-responsive" style={{ border: '1px solid #E3E5E0', borderRadius: '8px', overflow: 'hidden' }}>
-                    <table className="data-table" style={{ fontSize: '0.82rem', width: '100%', margin: 0 }}>
-                      <thead>
-                        <tr style={{ background: '#FAFAF8', borderBottom: '1px solid #E3E5E0' }}>
-                          <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', width: '110px' }}>Date</th>
-                          <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600' }}>Title / Category</th>
-                          <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', width: '100px' }}>Type</th>
-                          <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', textAlign: 'right', width: '120px' }}>Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {detailTxs.map(t => (
-                          <tr key={t.id} style={{ borderBottom: '1px solid #E3E5E0' }}>
-                            <td style={{ color: '#6B7268', padding: '10px 14px', whiteSpace: 'nowrap' }}>{formatDate(t.date)}</td>
-                            <td style={{ padding: '10px 14px' }}>
-                              <div style={{ fontWeight: '600', color: '#1B2321', fontSize: '0.84rem' }}>{t.title}</div>
-                              <div style={{ fontSize: '0.72rem', color: '#6B7268', marginTop: '2px' }}>{t.category} • {t.subCategory || 'General'}</div>
-                            </td>
-                            <td style={{ padding: '10px 14px' }}>
-                              {t.type === 'income' ? (
-                                <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '600', backgroundColor: '#E6F4EA', color: '#0F6E56' }}>
-                                  Inflow
-                                </span>
-                              ) : (
-                                <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '600', backgroundColor: '#FCE8E6', color: '#A8402E' }}>
-                                  Outflow
-                                </span>
-                              )}
-                            </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '700', color: t.type === 'income' ? '#0F6E56' : '#A8402E' }}>
-                              {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                            </td>
+                  <div>
+                    <div className="table-responsive" style={{ border: '1px solid #E3E5E0', borderRadius: '8px', overflow: 'hidden' }}>
+                      <table className="data-table" style={{ fontSize: '0.82rem', width: '100%', margin: 0 }}>
+                        <thead>
+                          <tr style={{ background: '#FAFAF8', borderBottom: '1px solid #E3E5E0' }}>
+                            <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', width: '110px' }}>Date</th>
+                            <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600' }}>Title / Category</th>
+                            <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', width: '100px' }}>Type</th>
+                            <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', textAlign: 'right', width: '120px' }}>Amount</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {paginatedDetailTxs.map(t => (
+                            <tr key={t.id} style={{ borderBottom: '1px solid #E3E5E0' }}>
+                              <td style={{ color: '#6B7268', padding: '10px 14px', whiteSpace: 'nowrap' }}>{formatDate(t.date)}</td>
+                              <td style={{ padding: '10px 14px' }}>
+                                <div style={{ fontWeight: '600', color: '#1B2321', fontSize: '0.84rem' }}>{t.title}</div>
+                                <div style={{ fontSize: '0.72rem', color: '#6B7268', marginTop: '2px' }}>{t.category} • {t.subCategory || 'General'}</div>
+                              </td>
+                              <td style={{ padding: '10px 14px' }}>
+                                {t.type === 'income' ? (
+                                  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '600', backgroundColor: '#E6F4EA', color: '#0F6E56' }}>
+                                    Inflow
+                                  </span>
+                                ) : (
+                                  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '600', backgroundColor: '#FCE8E6', color: '#A8402E' }}>
+                                    Outflow
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '700', color: t.type === 'income' ? '#0F6E56' : '#A8402E' }}>
+                                {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <Pagination
+                      currentPage={safeModalPage}
+                      totalItems={detailTxs.length}
+                      pageSize={MODAL_ITEMS_PER_PAGE}
+                      onPageChange={setModalPage}
+                      itemName="records"
+                      style={{ marginTop: '8px', padding: '10px 4px' }}
+                    />
                   </div>
                 )}
               </div>

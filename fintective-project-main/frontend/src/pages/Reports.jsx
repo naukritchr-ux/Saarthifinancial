@@ -4,6 +4,7 @@ import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { Search, Trash2, Printer, Filter, X, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, RefreshCw } from 'lucide-react';
 import { DynamicExpenseScatterPlot, DynamicFranchiseClusterPlot, DynamicClientClusterPlot } from '../components/DynamicMLCharts';
+import Pagination from '../components/Pagination';
 
 const Reports = () => {
   const { 
@@ -454,95 +455,14 @@ const Reports = () => {
                     </tbody>
                   </table>
                 </div>
-                {totalPages > 1 && (() => {
-                  const buttonStyle = (disabled, active) => ({
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    minWidth: '32px',
-                    height: '32px',
-                    padding: '0 6px',
-                    fontSize: '0.85rem',
-                    backgroundColor: active ? 'var(--accent-teal)' : (disabled ? 'transparent' : 'var(--bg-main)'),
-                    color: active ? '#ffffff' : (disabled ? 'var(--text-muted)' : 'var(--text-main)'),
-                    border: active ? 'none' : '1px solid var(--border-color)',
-                    borderRadius: '6px',
-                    cursor: disabled ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.2s',
-                  });
-
-                  return (
-                    <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem', padding: '12px 16px', backgroundColor: 'var(--bg-main)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                        Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, filteredTxs.length)} of {filteredTxs.length} transactions
-                      </span>
-                      <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
-                        {/* First Page */}
-                        <button
-                          type="button"
-                          disabled={currentPage === 1}
-                          onClick={() => setCurrentPage(1)}
-                          style={buttonStyle(currentPage === 1, false)}
-                          title="First Page"
-                        >
-                          <ChevronsLeft size={16} />
-                        </button>
-                        
-                        {/* Prev Page */}
-                        <button
-                          type="button"
-                          disabled={currentPage === 1}
-                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                          style={buttonStyle(currentPage === 1, false)}
-                          title="Previous Page"
-                        >
-                          <ChevronLeft size={16} />
-                        </button>
-                        
-                        {/* Page Numbers */}
-                        {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => {
-                          if (totalPages > 6 && pageNum !== 1 && pageNum !== totalPages && Math.abs(pageNum - currentPage) > 1) {
-                            if (pageNum === 2 && currentPage > 3) return <span key="dots-start" style={{ color: '#475569', padding: '0 4px', fontSize: '0.85rem' }}>...</span>;
-                            if (pageNum === totalPages - 1 && currentPage < totalPages - 2) return <span key="dots-end" style={{ color: '#475569', padding: '0 4px', fontSize: '0.85rem' }}>...</span>;
-                            return null;
-                          }
-                          return (
-                            <button
-                              key={pageNum}
-                              type="button"
-                              onClick={() => setCurrentPage(pageNum)}
-                              style={buttonStyle(false, currentPage === pageNum)}
-                            >
-                              {pageNum}
-                            </button>
-                          );
-                        })}
-
-                        {/* Next Page */}
-                        <button
-                          type="button"
-                          disabled={currentPage === totalPages}
-                          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                          style={buttonStyle(currentPage === totalPages, false)}
-                          title="Next Page"
-                        >
-                          <ChevronRight size={16} />
-                        </button>
-
-                        {/* Last Page */}
-                        <button
-                          type="button"
-                          disabled={currentPage === totalPages}
-                          onClick={() => setCurrentPage(totalPages)}
-                          style={buttonStyle(currentPage === totalPages, false)}
-                          title="Last Page"
-                        >
-                          <ChevronsRight size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })()}
+                <Pagination
+                  currentPage={currentPage}
+                  totalItems={filteredTxs.length}
+                  pageSize={ITEMS_PER_PAGE}
+                  onPageChange={setCurrentPage}
+                  itemName="transactions"
+                  className="no-print"
+                />
               </div>
             );
           })()
