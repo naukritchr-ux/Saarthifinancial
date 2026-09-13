@@ -2705,14 +2705,43 @@ def compute_ml_insights(force=False):
             
             if anoms:
                 df_anoms = pd.concat(anoms).sort_values(by='amount', ascending=False)
-                for _, row in df_anoms.head(15).iterrows():
+                for _, row in df_anoms.head(20).iterrows():
                     insights['expense_anomalies'].append({
                         'id': int(row['id']) if 'id' in row else 0,
                         'date': str(row['billDate']),
-                        'particulars': row['particulars'],
-                        'category': row['expenses'],
+                        'particulars': str(row['particulars']),
+                        'category': str(row['expenses']),
                         'amount': float(row['amount'])
                     })
+
+            # Generate sample points for dynamic client-side scatter plot
+            sample_normal = df_exp.sample(n=min(len(df_exp), 120), random_state=42) if len(df_exp) > 0 else pd.DataFrame()
+            anom_ids = {a['id'] for a in insights['expense_anomalies']}
+            expense_points = []
+            for idx, row in sample_normal.iterrows():
+                row_id = int(row['id']) if 'id' in row else int(idx)
+                is_anom = row_id in anom_ids
+                expense_points.append({
+                    'id': row_id,
+                    'index': int(idx),
+                    'date': str(row['billDate']),
+                    'particulars': str(row['particulars']),
+                    'category': str(row['expenses']),
+                    'amount': float(row['amount']),
+                    'is_anomaly': is_anom
+                })
+            for anom in insights['expense_anomalies']:
+                if not any(p['id'] == anom['id'] for p in expense_points):
+                    expense_points.append({
+                        'id': anom['id'],
+                        'index': anom['id'],
+                        'date': anom['date'],
+                        'particulars': anom['particulars'],
+                        'category': anom['category'],
+                        'amount': anom['amount'],
+                        'is_anomaly': True
+                    })
+            insights['expense_scatter_sample'] = sorted(expense_points, key=lambda x: x['index'])
 
         # 2. Franchise Clustering (K-Means)
         df_fran = pd.DataFrame()

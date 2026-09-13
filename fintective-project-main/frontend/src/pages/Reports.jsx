@@ -3,6 +3,7 @@ import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatDate } from '../utils/formatters';
 import { Search, Trash2, Printer, Filter, X, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, RefreshCw } from 'lucide-react';
+import { DynamicExpenseScatterPlot, DynamicFranchiseClusterPlot, DynamicClientClusterPlot } from '../components/DynamicMLCharts';
 
 const Reports = () => {
   const { 
@@ -604,15 +605,15 @@ const Reports = () => {
                   Runs an Isolation Forest outlier model over expense categories to catch spikes, duplicate charges, or service fee ratio variances automatically.
                 </p>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px', alignItems: 'start' }}>
-                  {/* Expense Outlier Chart */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px', alignItems: 'start' }}>
+                  {/* Dynamic Expense Outlier Chart */}
                   <div>
-                    <span className="font-bold" style={{ fontSize: '0.85rem', color: '#94a3b8', display: 'block', marginBottom: '8px' }}>Outlier Distribution Analysis</span>
-                    <img 
-                      src={`${API_BASE_URL}/ml/plots/expense_anomalies.png`} 
-                      alt="Expense Outliers Analysis Chart"
-                      style={{ width: '100%', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)' }}
-                      onError={(e) => { e.target.style.display = 'none'; }}
+                    <span className="font-bold" style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748B)', display: 'block', marginBottom: '8px' }}>
+                      Interactive Outlier Distribution (Isolation Forest)
+                    </span>
+                    <DynamicExpenseScatterPlot 
+                      points={mlData.expense_scatter_sample || []} 
+                      anomalies={mlData.expense_anomalies || []} 
                     />
                   </div>
                   
@@ -680,19 +681,16 @@ const Reports = () => {
               {/* Task 2: Franchisee & Company Segmentation */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' }}>
                 
-                {/* Franchisee Segmentations */}
+                {/* Dynamic Franchisee Segmentations */}
                 <div className="dashboard-card">
                   <h3 className="card-title" style={{ color: 'var(--accent-teal)', marginBottom: '8px' }}>Franchisee Hub Segmentation</h3>
                   <p className="flow-subtitle" style={{ marginBottom: '16px' }}>
-                    Clusters franchise locations by placement activity, enquiries, and billing output using K-Means ($K=3$).
+                    Interactive 2D K-Means cluster space ($K=3$) plotting placements vs billing revenue.
                   </p>
                   
-                  <img 
-                    src={`${API_BASE_URL}/ml/plots/franchise_segments.png`} 
-                    alt="Franchise Segments Chart"
-                    style={{ width: '100%', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '16px' }}
-                    onError={(e) => { e.target.style.display = 'none'; }}
-                  />
+                  <div style={{ marginBottom: '16px' }}>
+                    <DynamicFranchiseClusterPlot data={mlData.franchise_clusters || []} />
+                  </div>
 
                   <div className="table-responsive" style={{ maxHeight: '250px', overflowY: 'auto' }}>
                     <table className="data-table" style={{ fontSize: '0.85rem' }}>
@@ -725,19 +723,16 @@ const Reports = () => {
                   </div>
                 </div>
 
-                {/* Client Company Segmentations */}
+                {/* Dynamic Client Company Segmentations */}
                 <div className="dashboard-card">
                   <h3 className="card-title" style={{ color: 'var(--accent-teal)', marginBottom: '8px' }}>Corporate Client Clustering</h3>
                   <p className="flow-subtitle" style={{ marginBottom: '16px' }}>
-                    Groups corporate accounts by job volumes, placement rates, and average salaries using K-Means ($K=4$).
+                    Interactive 2D K-Means cluster space ($K=4$) plotting jobs allocated vs total billing contribution.
                   </p>
                   
-                  <img 
-                    src={`${API_BASE_URL}/ml/plots/client_segments.png`} 
-                    alt="Client Segments Chart"
-                    style={{ width: '100%', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', marginBottom: '16px' }}
-                    onError={(e) => { e.target.style.display = 'none'; }}
-                  />
+                  <div style={{ marginBottom: '16px' }}>
+                    <DynamicClientClusterPlot data={mlData.client_clusters || []} />
+                  </div>
 
                   <div className="table-responsive" style={{ maxHeight: '250px', overflowY: 'auto' }}>
                     <table className="data-table" style={{ fontSize: '0.85rem' }}>
