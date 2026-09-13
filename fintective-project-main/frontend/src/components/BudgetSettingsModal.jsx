@@ -3,13 +3,11 @@ import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import {
   X,
-  Sliders,
+  Settings,
   CheckCircle2,
   AlertTriangle,
   Save,
   Search,
-  Layers,
-  ShieldCheck,
   RotateCcw
 } from 'lucide-react';
 
@@ -215,7 +213,7 @@ const BudgetSettingsModal = ({ isOpen, onClose }) => {
                 flexShrink: 0
               }}
             >
-              <Sliders size={20} />
+              <Settings size={20} />
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: '#1B2321', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -344,7 +342,6 @@ const BudgetSettingsModal = ({ isOpen, onClose }) => {
 
             {Object.keys(localBudgets).length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px 20px', color: '#6B7268' }}>
-                <Layers size={32} style={{ opacity: 0.4, marginBottom: '8px' }} />
                 <p style={{ margin: 0, fontSize: '0.9rem' }}>Loading budget configurations...</p>
               </div>
             ) : filteredCategories.length === 0 ? (
@@ -591,7 +588,6 @@ const BudgetSettingsModal = ({ isOpen, onClose }) => {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <ShieldCheck size={16} color={isAdmin ? '#0F6E56' : '#9CA3AF'} />
               <span style={{ fontSize: '0.78rem', color: '#6B7268', fontWeight: '500' }}>
                 {isAdmin ? 'Admin controls active' : 'View only permissions'}
               </span>
