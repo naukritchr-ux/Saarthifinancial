@@ -1,770 +1,304 @@
-import sqlite3
 import os
-import re
+import pymysql
+import pymysql.cursors
 import datetime
 from dotenv import load_dotenv
 
 # Load env file
 load_dotenv()
 
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = int(os.getenv("DB_PORT", 3306))
+DB_USER = os.getenv("DB_USER", "root")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "crm_db")
-DB_PORT = 3306
-DB_HOST = "localhost"
-DB_USER = "root"
-DB_PASSWORD = ""
-
-class SQLiteDateString(str):
-    @property
-    def month(self):
-        try:
-            return int(self.split(' ')[0].split('-')[1])
-        except:
-            return None
-        
-    @property
-    def year(self):
-        try:
-            return int(self.split(' ')[0].split('-')[0])
-        except:
-            return None
-        
-    @property
-    def day(self):
-        try:
-            return int(self.split(' ')[0].split('-')[2])
-        except:
-            return None
-        
-    def __sub__(self, other):
-        try:
-            self_dt = datetime.datetime.strptime(self.split(' ')[0], '%Y-%m-%d').date()
-            if isinstance(other, datetime.timedelta):
-                res_dt = self_dt - other
-                return SQLiteDateString(res_dt.strftime('%Y-%m-%d'))
-            elif isinstance(other, str):
-                other_dt = datetime.datetime.strptime(other.split(' ')[0], '%Y-%m-%d').date()
-            elif isinstance(other, (datetime.date, datetime.datetime)):
-                other_dt = other.date() if isinstance(other, datetime.datetime) else other
-            else:
-                return NotImplemented
-            return self_dt - other_dt
-        except Exception as e:
-            print("SQLiteDateString __sub__ failed:", str(e))
-            return datetime.timedelta(0)
-        
-    def __rsub__(self, other):
-        try:
-            self_dt = datetime.datetime.strptime(self.split(' ')[0], '%Y-%m-%d').date()
-            if isinstance(other, datetime.timedelta):
-                # other - self_dt => not standard for timedelta
-                return NotImplemented
-            elif isinstance(other, str):
-                other_dt = datetime.datetime.strptime(other.split(' ')[0], '%Y-%m-%d').date()
-            elif isinstance(other, (datetime.date, datetime.datetime)):
-                other_dt = other.date() if isinstance(other, datetime.datetime) else other
-            else:
-                return NotImplemented
-            return other_dt - self_dt
-        except Exception as e:
-            print("SQLiteDateString __rsub__ failed:", str(e))
-            return datetime.timedelta(0)
-
-    def __add__(self, other):
-        if isinstance(other, datetime.timedelta):
-            try:
-                self_dt = datetime.datetime.strptime(self.split(' ')[0], '%Y-%m-%d').date()
-                res_dt = self_dt + other
-                return SQLiteDateString(res_dt.strftime('%Y-%m-%d'))
-            except Exception as e:
-                print("SQLiteDateString __add__ failed:", str(e))
-                return self
-        return NotImplemented
-
-    def __radd__(self, other):
-        return self.__add__(other)
-
-def parse_sqlite_value(val):
-    if not isinstance(val, str):
-        return val
-    # Check YYYY-MM-DD
-    if len(val) == 10 and val[4] == '-' and val[7] == '-':
-        return SQLiteDateString(val)
-    # Check YYYY-MM-DD HH:MM:SS
-    elif len(val) >= 19 and val[4] == '-' and val[7] == '-' and val[10] == ' ' and val[13] == ':' and val[16] == ':':
-        return SQLiteDateString(val)
-    return val
-
-class SQLiteDictCursor:
-    def __init__(self, conn):
-        self.cursor = conn.cursor()
-    
-    def execute(self, query, params=None):
-        # Convert MySQL %s parameter placeholders to SQLite ? placeholders
-        query = query.replace('%s', '?')
-        
-        # Convert MySQL specific DATE_SUB calculations
-        query = query.replace("DATE_SUB(CURDATE(), INTERVAL 3 MONTH)", "date('now', '-3 month')")
-        query = query.replace("date_sub(curdate(), interval 3 month)", "date('now', '-3 month')")
-        
-        if params is not None:
-            # If params is a single item, make it a tuple
-            if not isinstance(params, (list, tuple, dict)):
-                params = (params,)
-            self.cursor.execute(query, params)
-        else:
-            self.cursor.execute(query)
-        return self
-        
-    def _parse_row(self, row, columns):
-        parsed_row = {}
-        for col, val in zip(columns, row):
-            parsed_row[col] = parse_sqlite_value(val)
-        return parsed_row
-        
-    def fetchall(self):
-        rows = self.cursor.fetchall()
-        if not rows:
-            return []
-        columns = [col[0] for col in self.cursor.description]
-        return [self._parse_row(row, columns) for row in rows]
-        
-    def fetchone(self):
-        row = self.cursor.fetchone()
-        if row is None:
-            return None
-        columns = [col[0] for col in self.cursor.description]
-        return self._parse_row(row, columns)
-        
-    @property
-    def description(self):
-        return self.cursor.description
-        
-    @property
-    def rowcount(self):
-        return self.cursor.rowcount
-        
-    @property
-    def lastrowid(self):
-        return self.cursor.lastrowid
-        
-    def close(self):
-        self.cursor.close()
-        
-    def __enter__(self):
-        return self
-        
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
-
-_SHARED_CONN = None
-
-def get_shared_conn():
-    global _SHARED_CONN
-    if _SHARED_CONN is None:
-        _SHARED_CONN = sqlite3.connect(':memory:', check_same_thread=False)
-    else:
-        try:
-            _SHARED_CONN.execute("SELECT 1")
-        except Exception:
-            _SHARED_CONN = sqlite3.connect(':memory:', check_same_thread=False)
-            global _DB_INITIALIZED
-            _DB_INITIALIZED = False
-    return _SHARED_CONN
-
-class SQLiteConnectionWrapper:
-    def __init__(self, conn=None):
-        pass
-        
-    @property
-    def conn(self):
-        return get_shared_conn()
-        
-    def cursor(self, *args, **kwargs):
-        return SQLiteDictCursor(self.conn)
-        
-    def commit(self):
-        try:
-            self.conn.commit()
-        except Exception:
-            pass
-        
-    def rollback(self):
-        try:
-            self.conn.rollback()
-        except Exception:
-            pass
-        
-    def close(self):
-        pass
-        
-    def __enter__(self):
-        return self
-        
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        pass
-
-_DB_INITIALIZED = False
+DB_SSL = os.getenv("DB_SSL", "false").lower() in ("true", "1", "yes")
 
 def get_db_connection(select_db=True):
-    global _DB_INITIALIZED
-    if not _DB_INITIALIZED:
-        _DB_INITIALIZED = True
-        try:
-            init_db()
-        except Exception as e:
-            print("Warning: Lazy DB initialization failed:", str(e))
-            
-    conn = SQLiteConnectionWrapper()
-    
-    # 1. Register DATE_FORMAT custom function
-    def date_format(date_str, format_str):
-        if not date_str:
-            return None
-        py_fmt = format_str.replace('%%', '%')
-        try:
-            dt = datetime.datetime.strptime(str(date_str).split('.')[0], '%Y-%m-%d %H:%M:%S')
-        except ValueError:
-            try:
-                dt = datetime.datetime.strptime(str(date_str), '%Y-%m-%d')
-            except ValueError:
-                return str(date_str)
-        return dt.strftime(py_fmt)
-        
-    # 2. Register CONCAT custom function
-    def concat(*args):
-        return "".join(str(arg) for arg in args if arg is not None)
-        
-    # 3. Register CURDATE custom function
-    def curdate():
-        return datetime.date.today().strftime('%Y-%m-%d')
-        
+    """
+    Creates and returns a connection to MySQL / Aiven MySQL with DictCursor.
+    Supports SSL for hosted cloud databases like Aiven.
+    """
+    conn_params = {
+        "host": DB_HOST.strip().replace("https://", "").replace("http://", "").split(":")[0],
+        "port": DB_PORT,
+        "user": DB_USER.strip(),
+        "password": DB_PASSWORD,
+        "cursorclass": pymysql.cursors.DictCursor,
+        "connect_timeout": 15,
+        "autocommit": True,
+        "charset": "utf8mb4"
+    }
+
+    if select_db:
+        conn_params["database"] = DB_NAME.strip()
+
+    # Enable SSL for Aiven or any managed cloud MySQL
+    if DB_SSL or "aivencloud.com" in DB_HOST:
+        conn_params["ssl"] = {"ssl_mode": "REQUIRED"}
+
+    return pymysql.connect(**conn_params)
+
+def test_connection():
+    """Tests connection to MySQL and returns connection status."""
     try:
-        conn.conn.create_function("DATE_FORMAT", 2, date_format)
-        conn.conn.create_function("CONCAT", -1, concat)
-        conn.conn.create_function("CURDATE", 0, curdate)
-    except Exception:
-        pass
-    
-    return conn
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 AS test_val")
+            res = cur.fetchone()
+        conn.close()
+        return {"status": "connected", "database": DB_NAME, "host": DB_HOST, "test": res}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "host": DB_HOST, "database": DB_NAME}
+
+def ensure_tables_exist():
+    """
+    Verifies and creates all required MySQL tables for Fintective if they do not already exist.
+    """
+    print("Verifying Fintective MySQL tables schema...")
+    try:
+        conn = get_db_connection(select_db=False)
+        with conn.cursor() as cur:
+            cur.execute(f"CREATE DATABASE IF NOT EXISTS `{DB_NAME}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;")
+            cur.execute(f"USE `{DB_NAME}`;")
+            
+            # 1. Franchisees
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS franchisees (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    nameAsPerAgreement VARCHAR(255) NULL,
+                    teamLeaderName VARCHAR(255) NULL,
+                    onboardingDate VARCHAR(100) NULL,
+                    status VARCHAR(50) DEFAULT 'active',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS franchisees_forms (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    nameAsPerAgreement VARCHAR(255) NULL,
+                    teamLeaderName VARCHAR(255) NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 2. Enquiries
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS enquiries (
+                    id INT PRIMARY KEY,
+                    companyName VARCHAR(255) NULL,
+                    bdMemberName VARCHAR(255) NULL,
+                    teamLeaderName VARCHAR(255) NULL,
+                    franchiseeName VARCHAR(255) NULL,
+                    placementFees DECIMAL(15, 2) DEFAULT 0.00,
+                    positionName VARCHAR(255) NULL,
+                    industry VARCHAR(255) NULL,
+                    `from` DECIMAL(15, 2) DEFAULT 0.00,
+                    `to` DECIMAL(15, 2) DEFAULT 0.00,
+                    enquiryStatus VARCHAR(100) NULL,
+                    dateOfAllocation VARCHAR(100) NULL,
+                    dateClientAcquired VARCHAR(100) NULL,
+                    dateOfReallocation VARCHAR(100) NULL,
+                    bill_no VARCHAR(100) NULL,
+                    bill_date VARCHAR(100) NULL,
+                    bill_amount DECIMAL(15, 2) DEFAULT 0.00,
+                    info TEXT NULL,
+                    created_at VARCHAR(100) NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_enq_status (enquiryStatus),
+                    INDEX idx_enq_bd (bdMemberName),
+                    INDEX idx_enq_tl (teamLeaderName),
+                    INDEX idx_enq_fran (franchiseeName),
+                    INDEX idx_enq_company (companyName)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 3. Invoices
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS invoice (
+                    id INT PRIMARY KEY,
+                    enquiry_id INT NULL,
+                    billNumber VARCHAR(100) NULL,
+                    billDate VARCHAR(100) NULL,
+                    serviceCharges DECIMAL(15, 2) DEFAULT 0.00,
+                    serviceCharge DECIMAL(15, 2) DEFAULT 0.00,
+                    totalGST DECIMAL(15, 2) DEFAULT 0.00,
+                    totalBillAmt DECIMAL(15, 2) DEFAULT 0.00,
+                    franchiseeShare DECIMAL(15, 2) DEFAULT 0.00,
+                    franchiseeGST DECIMAL(15, 2) DEFAULT 0.00,
+                    ourShare DECIMAL(15, 2) DEFAULT 0.00,
+                    amountReceived DECIMAL(15, 2) DEFAULT 0.00,
+                    amountDue DECIMAL(15, 2) DEFAULT 0.00,
+                    tds DECIMAL(15, 2) DEFAULT 0.00,
+                    tdsFF DECIMAL(15, 2) DEFAULT 0.00,
+                    dateReceived VARCHAR(100) NULL,
+                    paidOnDate VARCHAR(100) NULL,
+                    payment_mode VARCHAR(100) NULL,
+                    uid_transaction_id VARCHAR(100) NULL,
+                    nameOfBd VARCHAR(255) NULL,
+                    teamLeader VARCHAR(255) NULL,
+                    franchiseName VARCHAR(255) NULL,
+                    financialYear VARCHAR(50) NULL,
+                    candidateName VARCHAR(255) NULL,
+                    companyName VARCHAR(255) NULL,
+                    postOfCandidate VARCHAR(255) NULL,
+                    annualSalaryOffered DECIMAL(15, 2) DEFAULT 0.00,
+                    info VARCHAR(100) NULL,
+                    status VARCHAR(100) NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_inv_bill (billNumber),
+                    INDEX idx_inv_bd (nameOfBd),
+                    INDEX idx_inv_tl (teamLeader),
+                    INDEX idx_inv_fran (franchiseName),
+                    INDEX idx_inv_fy (financialYear),
+                    INDEX idx_inv_company (companyName)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 4. Franchise Payments
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS franchisePayments (
+                    franchisePayment_id INT AUTO_INCREMENT PRIMARY KEY,
+                    invoice_id INT NULL,
+                    payment_done VARCHAR(50) DEFAULT 'no',
+                    payment_date VARCHAR(100) NULL,
+                    payment_mode VARCHAR(100) NULL,
+                    uid_transaction_id VARCHAR(100) NULL,
+                    payment_amount DECIMAL(15, 2) DEFAULT 0.00,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 5. Expenditure
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS expenditure (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    srNo VARCHAR(100) NULL,
+                    billDate VARCHAR(100) NULL,
+                    particulars VARCHAR(255) NULL,
+                    expenses VARCHAR(255) NULL,
+                    amount DECIMAL(15, 2) DEFAULT 0.00,
+                    net DECIMAL(15, 2) DEFAULT 0.00,
+                    expenseType VARCHAR(100) NULL,
+                    bdAgentId VARCHAR(100) NULL,
+                    franchiseeId VARCHAR(100) NULL,
+                    is_deleted TINYINT DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_exp_date (billDate),
+                    INDEX idx_exp_type (expenseType)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 6. Budgets
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS budgets (
+                    category VARCHAR(100) PRIMARY KEY,
+                    limit_amount DECIMAL(15, 2) DEFAULT 0.00,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # Seed default budgets if empty
+            cur.execute("SELECT COUNT(*) as cnt FROM budgets;")
+            if cur.fetchone()["cnt"] == 0:
+                initial_budgets = [
+                    ('Marketing', 50000.0),
+                    ('Operations', 150000.0),
+                    ('Rent', 45000.0),
+                    ('Salaries', 800000.0),
+                    ('Software', 25000.0),
+                    ('Travel', 30000.0),
+                    ('Utilities', 15000.0),
+                    ('Office & infra', 55000.0),
+                    ('Portal subscriptions', 85000.0),
+                    ('BD commissions', 120000.0),
+                    ('Other', 50000.0)
+                ]
+                cur.executemany("INSERT INTO budgets (category, limit_amount) VALUES (%s, %s);", initial_budgets)
+
+            # 7. Audit Log
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    table_name VARCHAR(100) NULL,
+                    record_id VARCHAR(100) NULL,
+                    field_changed VARCHAR(100) NULL,
+                    old_value TEXT NULL,
+                    new_value TEXT NULL,
+                    changed_by VARCHAR(100) NULL,
+                    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 8. Clients Info (from Saarthi CRM)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS clients_info (
+                    id INT PRIMARY KEY,
+                    companyName VARCHAR(255) NULL,
+                    contactPersonName VARCHAR(255) NULL,
+                    designation VARCHAR(255) NULL,
+                    phoneNumber VARCHAR(100) NULL,
+                    emailId VARCHAR(255) NULL,
+                    teamLeader VARCHAR(255) NULL,
+                    gstNumber VARCHAR(50) NULL,
+                    panNumber VARCHAR(50) NULL,
+                    tanNumber VARCHAR(50) NULL,
+                    status VARCHAR(50) DEFAULT 'active',
+                    amount DECIMAL(15, 2) DEFAULT 0.00,
+                    tdsAmount DECIMAL(15, 2) DEFAULT 0.00,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_client_comp (companyName),
+                    INDEX idx_client_pan (panNumber),
+                    INDEX idx_client_tan (tanNumber)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 9. Legals Info (from Saarthi CRM)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS legals_info (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    legal_id INT NULL,
+                    companyName VARCHAR(255) NULL,
+                    partyName VARCHAR(255) NULL,
+                    gstNo VARCHAR(50) NULL,
+                    panNo VARCHAR(50) NULL,
+                    tanNo VARCHAR(50) NULL,
+                    financialYear VARCHAR(50) NULL,
+                    voucherDate VARCHAR(100) NULL,
+                    legal_amount DECIMAL(15, 2) DEFAULT 0.00,
+                    tdsAmount DECIMAL(15, 2) DEFAULT 0.00,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_legal_comp (companyName),
+                    INDEX idx_legal_tan (tanNo)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # 10. Sync Logs
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS crm_sync_logs (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    sync_type VARCHAR(100) DEFAULT 'all',
+                    status VARCHAR(50) DEFAULT 'in_progress',
+                    enquiries_count INT DEFAULT 0,
+                    invoices_count INT DEFAULT 0,
+                    franchisees_count INT DEFAULT 0,
+                    expenses_count INT DEFAULT 0,
+                    clients_count INT DEFAULT 0,
+                    legals_count INT DEFAULT 0,
+                    message TEXT NULL,
+                    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    completed_at TIMESTAMP NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+        conn.close()
+        print("✅ MySQL schema verified and ready.")
+        return True
+    except Exception as e:
+        print(f"⚠️ Note during MySQL schema verification: {str(e)}")
+        return False
 
 def init_db():
-    import urllib.request
-    import json
-    import sqlite3
-    
-    def clean_date_str(date_str):
-        if not date_str:
-            return None
-        s = str(date_str).split('T')[0].strip()
-        if '2027' in s:
-            s = s.replace('2027', '2026')
-        return s
-        
-    print("Syncing in-memory database with live recruitment API data...")
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'en-US,en;q=0.9'
-    }
-    
-    # 1. Fetch franchisees
-    try:
-        req_f = urllib.request.Request('https://api.sarthi360.in/api/franchisees', headers=headers)
-        with urllib.request.urlopen(req_f, timeout=15) as response:
-            franchisees = json.loads(response.read().decode('utf-8'))
-    except Exception as e:
-        print("Warning: Failed to fetch franchisees from live API:", str(e))
-        franchisees = []
-        
-    # 2. Fetch enquiries
-    try:
-        req_enq = urllib.request.Request('https://api.sarthi360.in/api/enquiries', headers=headers)
-        with urllib.request.urlopen(req_enq, timeout=35) as response:
-            enquiries_res = json.loads(response.read().decode('utf-8'))
-            enquiries = enquiries_res.get('data', []) if isinstance(enquiries_res, dict) else (enquiries_res if isinstance(enquiries_res, list) else [])
-    except Exception as e:
-        print("Warning: Failed to fetch enquiries from live API:", str(e))
-        enquiries = []
-        
-    # 3. Fetch invoices
-    try:
-        req_inv = urllib.request.Request('https://api.sarthi360.in/api/Invoice', headers=headers)
-        with urllib.request.urlopen(req_inv, timeout=45) as response:
-            inv_res = json.loads(response.read().decode('utf-8'))
-            invoices = inv_res if isinstance(inv_res, list) else (inv_res.get('data', []) if isinstance(inv_res, dict) else [])
-    except Exception as e:
-        print("Warning: Failed to fetch invoices from live API:", str(e))
-        invoices = []
-
-    # 4. Fetch live expenses
-    try:
-        req_exp = urllib.request.Request('https://api.sarthi360.in/api/expenses', headers=headers)
-        with urllib.request.urlopen(req_exp, timeout=15) as response:
-            api_expenses = json.loads(response.read().decode('utf-8'))
-    except Exception as e:
-        print("Warning: Failed to fetch expenses from live API:", str(e))
-        api_expenses = []
-
-    # Seed fallback if external live API is blocked by WAF (403) or offline
-    if not franchisees:
-        franchisees = [
-            {'nameAsPerAgreement': 'Sandeep', 'teamLeaderName': 'Avadai Esakki Muthu Sundaram Marthuvar'},
-            {'nameAsPerAgreement': 'Anita Mandar Kulkarni', 'teamLeaderName': 'Surbhi Vinod Jain'},
-            {'nameAsPerAgreement': 'Preshita Rane', 'teamLeaderName': 'Joyeeta Joydeb Khaskel'},
-            {'nameAsPerAgreement': 'Razia Begum', 'teamLeaderName': 'Vedika Girish Tolani'},
-            {'nameAsPerAgreement': 'Subhash Pande', 'teamLeaderName': 'Surbhi Vinod Jain'},
-            {'nameAsPerAgreement': 'Ankur Sharma', 'teamLeaderName': 'Joyeeta Joydeb Khaskel'}
-        ]
-
-    if not enquiries or not invoices:
-        print("Using backup placement & invoice seed dataset (live URL API unreachable or 403)...")
-        seed_items = [
-            (120008, 180010, 'JAYATMA TECHNOLOGIES', 'Namrata', 'Hr', 'Komal Suresh Bhanushali', 'Avadai Esakki Muthu Sundaram Marthuvar', 'Sandeep', 8000.0, 9440.0, '2025-06-07', '2025-06-07', '2025-2026', 'closed'),
-            (120011, 180019, 'TEMA BUSINESS SYSTEMS PVT LTD', 'Uma Mourya', 'Hr Executive', 'Komal Suresh Bhanushali', 'Surbhi Vinod Jain', 'Unknown', 2499.0, 2949.0, '2024-05-09', '2024-05-09', '2024-2025', 'closed'),
-            (120015, 180025, 'ACCUPEX AIR SOLUTIONS', 'Rajesh Sharma', 'Senior Engineer', 'Rahul Patil', 'Joyeeta Joydeb Khaskel', 'Preshita Rane', 41650.0, 49147.0, '2026-08-10', '2026-08-10', '2026-2027', 'closed'),
-            (120020, 180030, 'SUNDARAM TECHNOLOGIES', 'Priya Verma', 'Software Architect', 'Komal Suresh Bhanushali', 'Vedika Girish Tolani', 'Razia Begum', 112500.0, 132750.0, '2026-08-15', '2026-08-15', '2026-2027', 'closed'),
-            (120025, 180035, 'COIGN CONSULTING', 'Amit Deshmukh', 'Lead Developer', 'Sneha Kulkarni', 'Surbhi Vinod Jain', 'Anita Mandar Kulkarni', 45000.0, 53100.0, '2026-08-20', '2026-08-20', '2026-2027', 'closed'),
-            (120030, 180040, 'EMBASSY TECH HUB', 'Neha Gupta', 'HR Business Partner', 'Komal Suresh Bhanushali', 'Joyeeta Joydeb Khaskel', 'Subhash Pande', 65000.0, 76700.0, '2025-11-12', '2025-11-12', '2025-2026', 'closed'),
-            (120035, 180045, 'INFOSYS LIMITED', 'Vikram Patel', 'Project Manager', 'Ankur Sharma', 'Vedika Girish Tolani', 'Ankur Sharma', 180000.0, 212400.0, '2025-09-05', '2025-09-05', '2025-2026', 'closed')
-        ]
-        
-        fallback_enquiries = []
-        fallback_invoices = []
-        for enq_id, inv_id, comp, cand, role, bd, tl, fran, svc, total, bdate, alloc_d, fy, st in seed_items:
-            fallback_enquiries.append({
-                'id': enq_id,
-                'companyName': comp,
-                'candidateName': cand,
-                'positionName': role,
-                'bdMemberName': bd,
-                'teamLeaderName': tl,
-                'franchiseeName': fran,
-                'placementFees': svc,
-                'bill_amount': total,
-                'bill_no': f'BILL-{inv_id}',
-                'bill_date': bdate,
-                'dateOfAllocation': alloc_d,
-                'created_at': f'{alloc_d}T00:00:00.000Z',
-                'enquiryStatus': st
-            })
-            fallback_invoices.append({
-                'id': inv_id,
-                'enquiry_id': enq_id,
-                'companyName': comp,
-                'candidateName': cand,
-                'postOfCandidate': role,
-                'nameOfBd': bd,
-                'teamLeader': tl,
-                'franchiseName': fran,
-                'serviceCharges': str(svc),
-                'totalBillAmt': str(total),
-                'billNumber': f'BILL-{inv_id}',
-                'billDate': f'{bdate}T00:00:00.000Z',
-                'financialYear': fy
-            })
-        
-        if not enquiries:
-            enquiries = fallback_enquiries
-        if not invoices:
-            invoices = fallback_invoices
-        
-    print(f"Loaded live URL API data: {len(franchisees)} franchisees, {len(enquiries)} enquiries, {len(invoices)} invoices, and {len(api_expenses)} live expense items.")
-    
-    try:
-        conn = get_shared_conn()
-        cursor = conn.cursor()
-        
-        # Check and handle table expenditure
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='expenditure'")
-        has_expenditure = cursor.fetchone()
-        expenditure_rows = []
-        if has_expenditure:
-            # Save existing expenditures
-            cursor.execute("SELECT srNo, billDate, particulars, expenses, amount, net, expenseType, bdAgentId, franchiseeId, is_deleted FROM expenditure")
-            expenditure_rows = cursor.fetchall()
-            
-        # Check and handle table budgets
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='budgets'")
-        has_budgets = cursor.fetchone()
-        budgets_rows = []
-        if has_budgets:
-            cursor.execute("SELECT category, limit_amount FROM budgets")
-            budgets_rows = cursor.fetchall()
-            
-        # Check and handle table audit_log
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_log'")
-        has_audit = cursor.fetchone()
-        audit_rows = []
-        if has_audit:
-            cursor.execute("SELECT id, table_name, record_id, field_changed, old_value, new_value, changed_by, changed_at FROM audit_log")
-            audit_rows = cursor.fetchall()
-
-        # Re-create tables
-        cursor.execute("DROP TABLE IF EXISTS franchisees")
-        cursor.execute("""
-            CREATE TABLE franchisees (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nameAsPerAgreement TEXT,
-                teamLeaderName TEXT,
-                onboardingDate TEXT
-            )
-        """)
-        cursor.execute("DROP TABLE IF EXISTS franchisees_forms")
-        cursor.execute("""
-            CREATE TABLE franchisees_forms (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nameAsPerAgreement TEXT,
-                teamLeaderName TEXT
-            )
-        """)
-        
-        cursor.execute("DROP TABLE IF EXISTS enquiries")
-        cursor.execute("""
-            CREATE TABLE enquiries (
-                id INTEGER PRIMARY KEY,
-                companyName TEXT,
-                bdMemberName TEXT,
-                teamLeaderName TEXT,
-                franchiseeName TEXT,
-                placementFees REAL,
-                positionName TEXT,
-                industry TEXT,
-                `from` REAL,
-                `to` REAL,
-                enquiryStatus TEXT,
-                dateOfAllocation TEXT,
-                dateClientAcquired TEXT,
-                dateOfReallocation TEXT,
-                bill_no TEXT,
-                bill_date TEXT,
-                bill_amount REAL,
-                info TEXT,
-                created_at TEXT
-            )
-        """)
-        
-        cursor.execute("DROP TABLE IF EXISTS invoice")
-        cursor.execute("""
-            CREATE TABLE invoice (
-                id INTEGER PRIMARY KEY,
-                enquiry_id INTEGER,
-                billNumber TEXT,
-                billDate TEXT,
-                serviceCharges REAL,
-                franchiseeShare REAL,
-                ourShare REAL,
-                amountReceived REAL,
-                dateReceived TEXT,
-                nameOfBd TEXT,
-                teamLeader TEXT,
-                franchiseName TEXT,
-                financialYear TEXT,
-                candidateName TEXT,
-                companyName TEXT,
-                postOfCandidate TEXT
-            )
-        """)
-        
-        cursor.execute("DROP TABLE IF EXISTS franchisePayments")
-        cursor.execute("""
-            CREATE TABLE franchisePayments (
-                franchisePayment_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                invoice_id INTEGER,
-                payment_done TEXT,
-                payment_date TEXT,
-                payment_mode TEXT,
-                uid_transaction_id TEXT,
-                payment_amount REAL
-            )
-        """)
-        
-        cursor.execute("DROP TABLE IF EXISTS expenditure")
-        cursor.execute("""
-            CREATE TABLE expenditure (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                srNo TEXT,
-                billDate TEXT,
-                particulars TEXT,
-                expenses TEXT,
-                amount REAL,
-                net REAL,
-                expenseType TEXT,
-                bdAgentId TEXT,
-                franchiseeId TEXT,
-                is_deleted INTEGER
-            )
-        """)
-        
-        cursor.execute("DROP TABLE IF EXISTS budgets")
-        cursor.execute("""
-            CREATE TABLE budgets (
-                category TEXT PRIMARY KEY,
-                limit_amount REAL
-            )
-        """)
-        
-        cursor.execute("DROP TABLE IF EXISTS audit_log")
-        cursor.execute("""
-            CREATE TABLE audit_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                table_name TEXT,
-                record_id TEXT,
-                field_changed TEXT,
-                old_value TEXT,
-                new_value TEXT,
-                changed_by TEXT,
-                changed_at TEXT
-            )
-        """)
-        
-        # Populate budgets
-        if budgets_rows:
-            for r in budgets_rows:
-                cursor.execute("INSERT INTO budgets (category, limit_amount) VALUES (?, ?)", r)
-        else:
-            initial_budgets = {
-                'Marketing': 50000.0,
-                'Operations': 150000.0,
-                'Rent': 45000.0,
-                'Salaries': 800000.0,
-                'Software': 25000.0,
-                'Travel': 30000.0,
-                'Utilities': 15000.0,
-                'Other': 50000.0
-            }
-            for cat, lim in initial_budgets.items():
-                cursor.execute("INSERT INTO budgets (category, limit_amount) VALUES (?, ?)", (cat, lim))
-                
-        # Populate expenditure
-        if expenditure_rows:
-            for r in expenditure_rows:
-                cursor.execute("""
-                    INSERT INTO expenditure (srNo, billDate, particulars, expenses, amount, net, expenseType, bdAgentId, franchiseeId, is_deleted)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, r)
-        else:
-            # Seed comprehensive operational expenditures spanning 2024-2026
-            seed_expenditures = []
-            categories_templates = [
-                ('TX', 'Salaries', 'Employee Base Salaries Batch', 450000.0, 'Monthly Salary Distribution', 'Salaries', 'HDFC Bank Corporate'),
-                ('TX', 'Office & infra', 'Commercial Office Rent & Maintenance', 45000.0, 'Rent & Infrastructure', 'Office & infra', 'Embassy Office Parks'),
-                ('TX', 'Portal subscriptions', 'Naukri.com & LinkedIn Recruiter Suite', 85000.0, 'Job Portal Access', 'Portal subscriptions', 'Info Edge India Ltd'),
-                ('TX', 'Marketing', 'Google Search Ads & Social Campaigns', 65000.0, 'Performance Marketing', 'Marketing', 'Google India Digital'),
-                ('TX', 'Office & infra', 'AWS Cloud Server Infrastructure & DB', 35000.0, 'Cloud Infrastructure', 'Office & infra', 'Amazon Web Services'),
-                ('TX', 'Other', 'Office Pantry, Tea & Refreshments', 18000.0, 'Operational Supplies', 'Other', 'Local Vendor Supplies'),
-                ('TX', 'BD commissions', 'BD Agent Quarterly Performance Payouts', 120000.0, 'Commission Share', 'BD commissions', 'Saarthi BD Pool')
-            ]
-            
-            for yr in [2024, 2025, 2026]:
-                for mo in range(1, 13):
-                    if yr == 2026 and mo > 8:
-                        break
-                    for idx, (sr, crm_cat, title, base_amt, sub_cat, exp_type, vendor) in enumerate(categories_templates):
-                        day = min(5 + (idx * 3), 28)
-                        bdate = f"{yr}-{mo:02d}-{day:02d}"
-                        amt = round(base_amt * (0.95 + (mo % 5) * 0.025), 2)
-                        seed_expenditures.append((sr, bdate, title, crm_cat, amt, amt, exp_type, None, None, 0))
-            
-            for r in seed_expenditures:
-                cursor.execute("""
-                    INSERT INTO expenditure (srNo, billDate, particulars, expenses, amount, net, expenseType, bdAgentId, franchiseeId, is_deleted)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, r)
-                
-        # Populate audit log
-        if audit_rows:
-            for r in audit_rows:
-                cursor.execute("""
-                    INSERT INTO audit_log (id, table_name, record_id, field_changed, old_value, new_value, changed_by, changed_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, r)
-                
-        # Populate franchisees
-        for f in franchisees:
-            name = f.get('nameAsPerAgreement', '')
-            if name:
-                name = name.strip()
-            tl = f.get('teamLeaderName', '')
-            if tl:
-                tl = tl.strip()
-            cursor.execute("""
-                INSERT INTO franchisees (nameAsPerAgreement, teamLeaderName, onboardingDate)
-                VALUES (?, ?, ?)
-            """, (name, tl, '2025-01-01'))
-            cursor.execute("""
-                INSERT INTO franchisees_forms (nameAsPerAgreement, teamLeaderName)
-                VALUES (?, ?)
-            """, (name, tl))
-            
-        # Populate enquiries
-        for enq in enquiries:
-            enq_id = enq.get('id')
-            if not enq_id:
-                continue
-                
-            company = enq.get('companyName', '')
-            if company:
-                company = company.strip()
-            bd = enq.get('bdMemberName', '')
-            if bd:
-                bd = bd.strip()
-            tl = enq.get('teamLeaderName', '')
-            if tl:
-                tl = tl.strip()
-            franchisee = enq.get('franchiseeName', '')
-            if franchisee:
-                franchisee = franchisee.strip()
-                
-            # Parse Dates
-            alloc_date = clean_date_str(enq.get('dateOfAllocation'))
-            realloc_date = clean_date_str(enq.get('dateOfReallocation'))
-            bill_date = clean_date_str(enq.get('bill_date'))
-            created_at = clean_date_str(enq.get('created_at'))
-                
-            # Parse numeric fields
-            placement_fees = 0.0
-            try:
-                placement_fees = float(enq.get('placementFees') or 0.0)
-            except:
-                pass
-                
-            sal_from = 0.0
-            try:
-                sal_from = float(enq.get('from') or 0.0)
-            except:
-                pass
-                
-            sal_to = 0.0
-            try:
-                sal_to = float(enq.get('to') or 0.0)
-            except:
-                pass
-                
-            bill_amount = 0.0
-            try:
-                bill_amount = float(enq.get('bill_amount') or 0.0)
-            except:
-                pass
-                
-            cursor.execute("""
-                INSERT INTO enquiries (
-                    id, companyName, bdMemberName, teamLeaderName, franchiseeName,
-                    placementFees, positionName, industry, `from`, `to`, enquiryStatus,
-                    dateOfAllocation, dateClientAcquired, dateOfReallocation,
-                    bill_no, bill_date, bill_amount, info, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                enq_id, company, bd, tl, franchisee,
-                placement_fees, enq.get('positionName'), enq.get('industry'), sal_from, sal_to, enq.get('enquiryStatus'),
-                alloc_date, alloc_date, realloc_date,
-                enq.get('bill_no'), bill_date, bill_amount, "O", created_at
-            ))
-            
-        # Populate invoice and franchisePayments
-        for inv in invoices:
-            inv_id = inv.get('id')
-            if not inv_id:
-                continue
-                
-            enq_id = inv.get('enquiry_id')
-            bill_no = inv.get('billNumber', '')
-            if bill_no:
-                bill_no = bill_no.strip()
-            else:
-                bill_no = None
-                
-            bill_date = clean_date_str(inv.get('billDate'))
-                
-            # Parse numeric fields
-            service_charges = 0.0
-            try:
-                service_charges = float(inv.get('serviceCharges') or 0.0)
-            except:
-                pass
-                
-            # Parse franchiseeShare from API if valid
-            franchisee_share = 0.0
-            try:
-                f_share_raw = inv.get('franchiseeShare')
-                franchisee_share = float(f_share_raw) if f_share_raw else 0.0
-            except:
-                pass
-                
-            # Parse ourShare from API if valid
-            our_share = 0.0
-            try:
-                o_share_raw = inv.get('ourShare')
-                our_share = float(o_share_raw) if o_share_raw else 0.0
-            except:
-                pass
-                
-            # Fallback to business split rules if they are not set / zero
-            if franchisee_share == 0.0 and our_share == 0.0:
-                split_pct = 0.75
-                if bill_date and bill_date < '2026-04-01':
-                    split_pct = 0.60
-                franchisee_share = service_charges * split_pct
-                our_share = service_charges - franchisee_share
-                
-            amt_received = 0.0
-            try:
-                amt_received = float(inv.get('amountReceived') or 0.0)
-            except:
-                pass
-                
-            date_received_raw = inv.get('dateReceived')
-            if date_received_raw:
-                date_received = clean_date_str(date_received_raw)
-            else:
-                date_received = bill_date
-                
-            franchise_name = inv.get('franchiseName', '')
-            if franchise_name:
-                franchise_name = franchise_name.strip()
-            tl = inv.get('teamLeader', '')
-            if tl:
-                tl = tl.strip()
-            bd = inv.get('nameOfBd', '')
-            if bd:
-                bd = bd.strip()
-                
-            fy_val = inv.get('financialYear', '')
-            cand_name = inv.get('candidateName', '')
-            comp_name = inv.get('companyName', '')
-            post_cand = inv.get('postOfCandidate', '')
-
-            cursor.execute("""
-                INSERT INTO invoice (
-                    id, enquiry_id, billNumber, billDate, serviceCharges,
-                    franchiseeShare, ourShare, amountReceived, dateReceived,
-                    nameOfBd, teamLeader, franchiseName, financialYear,
-                    candidateName, companyName, postOfCandidate
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                inv_id, enq_id, bill_no, bill_date, service_charges,
-                franchisee_share, our_share, amt_received, date_received,
-                bd, tl, franchise_name, fy_val,
-                cand_name, comp_name, post_cand
-            ))
-            
-            # Insert into franchisePayments if payment done
-            if amt_received > 0:
-                pay_mode = inv.get('payment_mode') or "Online"
-                trans_id = inv.get('uid_transaction_id') or bill_no
-                cursor.execute("""
-                    INSERT INTO franchisePayments (
-                        invoice_id, payment_done, payment_date, payment_mode, uid_transaction_id, payment_amount
-                    ) VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    inv_id, "Yes", date_received, pay_mode, trans_id, amt_received
-                ))
-                
-        conn.commit()
-        print("In-memory live API database sync completed successfully.")
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print("Failed to sync database with live API data:", str(e))
-
-if __name__ == "__main__":
-    init_db()
+    """Initializes tables on startup."""
+    return ensure_tables_exist()

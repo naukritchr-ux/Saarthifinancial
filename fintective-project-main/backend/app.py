@@ -2841,9 +2841,72 @@ def get_active_predictions():
     finally:
         conn.close()
 
+# --------------------------------------------------------------------------
+# Saarthi Live CRM API Sync Routes
+# --------------------------------------------------------------------------
+
+@app.route('/health', methods=['GET'])
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    from db import test_connection
+    db_status = test_connection()
+    return jsonify({
+        'status': 'ok',
+        'service': 'fintective-backend',
+        'database': db_status,
+        'timestamp': datetime.datetime.now().isoformat()
+    })
+
+@app.route('/api/finance/sync-saarthi', methods=['POST'])
+@app.route('/api/sync', methods=['POST'])
+def sync_saarthi_endpoint():
+    from sync_service import sync_saarthi_all
+    try:
+        result = sync_saarthi_all()
+        return jsonify({
+            'success': True,
+            'message': 'Saarthi Live CRM sync completed successfully',
+            'data': result
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/finance/sync-status', methods=['GET'])
+@app.route('/api/sync/status', methods=['GET'])
+def get_sync_status():
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, sync_type, status, enquiries_count, invoices_count,
+                       franchisees_count, expenses_count, clients_count, legals_count,
+                       message, started_at, completed_at
+                FROM crm_sync_logs
+                ORDER BY id DESC
+                LIMIT 5
+            """)
+            logs = cur.fetchall()
+            for l in logs:
+                if l.get('started_at'):
+                    l['started_at'] = str(l['started_at'])
+                if l.get('completed_at'):
+                    l['completed_at'] = str(l['completed_at'])
+            return jsonify({
+                'success': True,
+                'logs': logs
+            })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        conn.close()
+
 if __name__ == '__main__':
     init_db()
     
     port = int(os.getenv("PORT", 5000))
     print(f"Starting Python Flask server on port {port}...")
     app.run(host='0.0.0.0', port=port, debug=False)
+
