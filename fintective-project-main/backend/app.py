@@ -1623,24 +1623,27 @@ def get_tl_revenue_leaderboard():
         cursor.execute(rev_query, params_rev)
         rev_rows = cursor.fetchall()
         
-        # 2. Fetch Potential Loss & Enquiries Count from enquiries table using placementFees and dateOfAllocation
+        # 2. Fetch Total Enquiries, Status Breakdowns, & Potential Loss from enquiries table
         enq_clause_loss = get_enq_exclude_clause()
-        loss_query = f"""
+        enq_query = f"""
             SELECT 
                 TRIM(teamLeaderName) AS name,
-                SUM(placementFees) AS potential_loss,
-                COUNT(*) AS total_enquiries
+                COUNT(*) AS total_enquiries,
+                SUM(CASE WHEN enquiryStatus IN ('cancelled', 'offered_and_rejected', 'credit_note') THEN 1 ELSE 0 END) AS enquiries_cancelled,
+                SUM(CASE WHEN enquiryStatus = 'internally_closed' THEN 1 ELSE 0 END) AS enquiries_internally_closed,
+                SUM(CASE WHEN enquiryStatus IN ('inprogress', 'reallocation', 'position_hold', 'revised') THEN 1 ELSE 0 END) AS enquiries_inprogress,
+                SUM(CASE WHEN enquiryStatus IN ('closed', 'offered_and_accepted') THEN 1 ELSE 0 END) AS enquiries_closed,
+                SUM(CASE WHEN enquiryStatus IN ('cancelled', 'offered_and_rejected', 'internally_closed') THEN COALESCE(placementFees, 0) ELSE 0 END) AS potential_loss
             FROM enquiries
-            WHERE enquiryStatus IN ('cancelled', 'offered_and_rejected', 'internally_closed')
-              AND dateOfAllocation BETWEEN %s AND %s
+            WHERE (dateOfAllocation BETWEEN %s AND %s OR (dateOfAllocation IS NULL AND created_at BETWEEN %s AND %s))
               AND teamLeaderName IS NOT NULL AND TRIM(teamLeaderName) != ''
               AND TRIM(LOWER(teamLeaderName)) NOT IN ('head office', 'head  - office')
               AND {enq_clause_loss}
             GROUP BY TRIM(teamLeaderName)
         """
-        params_loss = [start_date, end_date]
-        cursor.execute(loss_query, params_loss)
-        loss_rows = cursor.fetchall()
+        params_enq = [start_date, end_date, start_date, end_date]
+        cursor.execute(enq_query, params_enq)
+        enq_rows = cursor.fetchall()
         
         # Merge them by name in Python
         tl_map = {}
@@ -1652,10 +1655,14 @@ def get_tl_revenue_leaderboard():
                 'gross_revenue': float(r['gross_revenue'] or 0.0),
                 'net_revenue': float(r['net_revenue'] or 0.0),
                 'potential_loss': 0.0,
-                'total_enquiries': 0
+                'total_enquiries': 0,
+                'enquiries_cancelled': 0,
+                'enquiries_internally_closed': 0,
+                'enquiries_inprogress': 0,
+                'enquiries_closed': 0
             }
             
-        for r in loss_rows:
+        for r in enq_rows:
             name = r['name']
             if name not in tl_map:
                 tl_map[name] = {
@@ -1664,10 +1671,28 @@ def get_tl_revenue_leaderboard():
                     'gross_revenue': 0.0,
                     'net_revenue': 0.0,
                     'potential_loss': 0.0,
-                    'total_enquiries': 0
+                    'total_enquiries': 0,
+                    'enquiries_cancelled': 0,
+                    'enquiries_internally_closed': 0,
+                    'enquiries_inprogress': 0,
+                    'enquiries_closed': 0
                 }
             tl_map[name]['potential_loss'] = float(r['potential_loss'] or 0.0)
-            tl_map[name]['total_enquiries'] = int(r['total_enquiries'] or 0)
+            tl_map[name]['enquiries_cancelled'] = int(r['enquiries_cancelled'] or 0)
+            tl_map[name]['enquiries_internally_closed'] = int(r['enquiries_internally_closed'] or 0)
+            tl_map[name]['enquiries_inprogress'] = int(r['enquiries_inprogress'] or 0)
+            tl_map[name]['enquiries_closed'] = int(r['enquiries_closed'] or 0)
+            
+            raw_total = int(r['total_enquiries'] or 0)
+            invoiced = tl_map[name]['invoices_closed']
+            cancelled = tl_map[name]['enquiries_cancelled']
+            int_closed = tl_map[name]['enquiries_internally_closed']
+            inprogress = tl_map[name]['enquiries_inprogress']
+            tl_map[name]['total_enquiries'] = max(raw_total, invoiced + cancelled + int_closed + inprogress, invoiced + cancelled + int_closed)
+
+        for name, item in tl_map.items():
+            if item['total_enquiries'] < item['invoices_closed']:
+                item['total_enquiries'] = max(item['total_enquiries'], item['invoices_closed'] + item['enquiries_cancelled'] + item['enquiries_internally_closed'])
             
         result = list(tl_map.values())
         result.sort(key=lambda x: x['net_revenue'], reverse=True)

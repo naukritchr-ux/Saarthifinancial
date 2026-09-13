@@ -101,15 +101,23 @@ const TLPerformance = () => {
       if (lbIdx !== -1) {
         matchedLbIndices.add(lbIdx);
         const item = lbItems[lbIdx];
+        const rawTotal = item.total_enquiries || tl.totalEnquiries || 0;
+        const progressed = item.invoices_closed ?? (tl.enquiriesProgressed || 0);
+        const cancelled = item.enquiries_cancelled !== undefined ? item.enquiries_cancelled : (item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : (tl.enquiriesCancelled || 0));
+        const internallyClosed = item.enquiries_internally_closed !== undefined ? item.enquiries_internally_closed : (item.potential_loss > 0 ? Math.ceil(item.potential_loss / 75000) : (tl.enquiriesInternallyClosed || 0));
+        const inprogress = item.enquiries_inprogress || 0;
+        const totalEnquiries = Math.max(rawTotal, progressed + cancelled + internallyClosed + inprogress, progressed + cancelled + internallyClosed);
+
         return {
           ...tl,
           grossRevenue: item.gross_revenue || 0,
           netRevenue: item.net_revenue || 0,
           lossAmount: item.potential_loss || 0,
-          totalEnquiries: item.total_enquiries || tl.totalEnquiries || 0,
-          enquiriesProgressed: item.invoices_closed ?? (tl.enquiriesProgressed || 0),
-          enquiriesCancelled: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : (tl.enquiriesCancelled || 0),
-          enquiriesInternallyClosed: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 75000) : (tl.enquiriesInternallyClosed || 0)
+          totalEnquiries,
+          enquiriesProgressed: progressed,
+          enquiriesCancelled: cancelled,
+          enquiriesInternallyClosed: internallyClosed,
+          enquiriesInprogress: inprogress
         };
       }
       return {
@@ -193,11 +201,12 @@ const TLPerformance = () => {
       const grossRevenue = lbMatch ? lbMatch.gross_revenue : (contextGross > 0 ? contextGross : 0.0);
       const netRevenue = lbMatch ? lbMatch.net_revenue : (contextNet > 0 ? contextNet : 0.0);
       const lossAmount = lbMatch ? lbMatch.potential_loss : 0.0;
-      const totalEnquiries = lbMatch ? lbMatch.total_enquiries : Math.max(1, tlTxs.length);
+      const rawTotal = lbMatch ? lbMatch.total_enquiries : Math.max(1, tlTxs.length);
       const enquiriesProgressed = lbMatch ? lbMatch.invoices_closed : tlTxs.filter(t => t.type === 'income').length;
-      
-      // Estimate cancelled/internally closed mixes based on loss amount vs average fee
-      const enquiriesCancelled = lossAmount > 0 ? Math.ceil(lossAmount / 50000) : 0;
+      const enquiriesCancelled = lbMatch && lbMatch.enquiries_cancelled !== undefined ? lbMatch.enquiries_cancelled : (lossAmount > 0 ? Math.ceil(lossAmount / 50000) : 0);
+      const enquiriesInternallyClosed = lbMatch && lbMatch.enquiries_internally_closed !== undefined ? lbMatch.enquiries_internally_closed : (lossAmount > 0 ? Math.ceil(lossAmount / 75000) : 0);
+      const enquiriesInprogress = lbMatch ? (lbMatch.enquiries_inprogress || 0) : 0;
+      const totalEnquiries = Math.max(rawTotal, enquiriesProgressed + enquiriesCancelled + enquiriesInternallyClosed + enquiriesInprogress, enquiriesProgressed + enquiriesCancelled + enquiriesInternallyClosed);
 
       return {
         ...tl,
@@ -207,7 +216,8 @@ const TLPerformance = () => {
         totalEnquiries,
         enquiriesProgressed,
         enquiriesCancelled,
-        enquiriesInternallyClosed: lossAmount > 0 ? Math.ceil(lossAmount / 75000) : 0
+        enquiriesInternallyClosed,
+        enquiriesInprogress
       };
     }).sort((a, b) => b.grossRevenue - a.grossRevenue);
   }, [effectiveLeaders, leaderboard, tlTxsMap]);
@@ -361,9 +371,9 @@ const TLPerformance = () => {
                       </td>
                       <td>
                         <div style={{ fontWeight: 'bold', fontSize: '0.8rem' }}>
-                          <span style={{ color: '#10b981' }}>{tl.enquiriesProgressed}P</span> / <span style={{ color: '#ef4444' }}>{tl.enquiriesCancelled}C</span> / <span style={{ color: '#ea580c' }}>{tl.enquiriesInternallyClosed}I</span> / <span style={{ color: '#64748b' }}>{(tl.totalEnquiries || 0) - (tl.enquiriesProgressed || 0) - (tl.enquiriesCancelled || 0) - (tl.enquiriesInternallyClosed || 0)}Pnd</span>
+                          <span style={{ color: '#10b981' }}>{tl.enquiriesProgressed || 0}P</span> / <span style={{ color: '#ef4444' }}>{tl.enquiriesCancelled || 0}C</span> / <span style={{ color: '#ea580c' }}>{tl.enquiriesInternallyClosed || 0}I</span> / <span style={{ color: '#64748b' }}>{Math.max(0, (tl.totalEnquiries || 0) - (tl.enquiriesProgressed || 0) - (tl.enquiriesCancelled || 0) - (tl.enquiriesInternallyClosed || 0))}Pnd</span>
                         </div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Total: {tl.totalEnquiries}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Total: {tl.totalEnquiries || 0}</div>
                       </td>
                       <td className="font-bold text-teal text-right">{formatCurrency(tl.grossRevenue)}</td>
                       <td className="font-bold text-right text-blue" style={{ color: 'var(--color-link)' }}>{formatCurrency(tl.netRevenue)}</td>
@@ -397,11 +407,16 @@ const TLPerformance = () => {
           isInFilteredPeriod(t)
         );
 
-        const total = currentTL.totalEnquiries || 1;
-        const progressedPct = ((currentTL.enquiriesProgressed || 0) / total) * 100;
-        const cancelledPct = ((currentTL.enquiriesCancelled || 0) / total) * 100;
-        const internallyClosedPct = ((currentTL.enquiriesInternallyClosed || 0) / total) * 100;
-        const pendingPct = 100 - progressedPct - cancelledPct - internallyClosedPct;
+        const progressed = currentTL.enquiriesProgressed || 0;
+        const cancelled = currentTL.enquiriesCancelled || 0;
+        const internallyClosed = currentTL.enquiriesInternallyClosed || 0;
+        const total = Math.max(1, currentTL.totalEnquiries || 0, progressed + cancelled + internallyClosed);
+
+        const progressedPct = Math.min(100, Math.max(0, (progressed / total) * 100));
+        const cancelledPct = Math.min(100 - progressedPct, Math.max(0, (cancelled / total) * 100));
+        const internallyClosedPct = Math.min(100 - progressedPct - cancelledPct, Math.max(0, (internallyClosed / total) * 100));
+        const pendingPct = Math.max(0, 100 - progressedPct - cancelledPct - internallyClosedPct);
+        const realizationPct = Math.min(100, Math.round(((progressed + cancelled + internallyClosed) / total) * 100));
 
         return (
           <div className="modal-backdrop" onClick={() => setActiveTLDetails(null)}>
@@ -427,31 +442,99 @@ const TLPerformance = () => {
                 
                 {/* Progress Bar */}
                 <div style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0', marginBottom: '1.25rem' }}>
-                  <div style={{ display: 'flex', height: '22px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#E3E5E0' }}>
+                  <div style={{ display: 'flex', height: '24px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#E3E5E0' }}>
                     {progressedPct > 0 && (
-                      <div style={{ width: `${progressedPct}%`, backgroundColor: '#0F6E56', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.72rem', fontWeight: '600' }} title={`${currentTL.enquiriesProgressed} Progressed`}>
-                        {currentTL.enquiriesProgressed} Prog ({progressedPct.toFixed(0)}%)
+                      <div 
+                        style={{ 
+                          width: `${progressedPct}%`, 
+                          backgroundColor: '#0F6E56', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center', 
+                          color: '#fff', 
+                          fontSize: '0.72rem', 
+                          fontWeight: '600',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          padding: '0 4px',
+                          boxSizing: 'border-box'
+                        }} 
+                        title={`${progressed} Progressed (${progressedPct.toFixed(1)}%)`}
+                      >
+                        {progressedPct >= 14 ? `${progressed} Prog (${progressedPct.toFixed(0)}%)` : (progressedPct >= 7 ? `${progressed}` : '')}
                       </div>
                     )}
                     {cancelledPct > 0 && (
-                      <div style={{ width: `${cancelledPct}%`, backgroundColor: '#A8402E', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.72rem', fontWeight: '600' }} title={`${currentTL.enquiriesCancelled} Cancelled`}>
-                        {currentTL.enquiriesCancelled} Cancel ({cancelledPct.toFixed(0)}%)
+                      <div 
+                        style={{ 
+                          width: `${cancelledPct}%`, 
+                          backgroundColor: '#A8402E', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center', 
+                          color: '#fff', 
+                          fontSize: '0.72rem', 
+                          fontWeight: '600',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          padding: '0 4px',
+                          boxSizing: 'border-box'
+                        }} 
+                        title={`${cancelled} Cancelled (${cancelledPct.toFixed(1)}%)`}
+                      >
+                        {cancelledPct >= 14 ? `${cancelled} Cancel (${cancelledPct.toFixed(0)}%)` : (cancelledPct >= 7 ? `${cancelled}` : '')}
                       </div>
                     )}
                     {internallyClosedPct > 0 && (
-                      <div style={{ width: `${internallyClosedPct}%`, backgroundColor: '#B7791F', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.72rem', fontWeight: '600' }} title={`${currentTL.enquiriesInternallyClosed} Internally Closed`}>
-                        {currentTL.enquiriesInternallyClosed} Int. ({internallyClosedPct.toFixed(0)}%)
+                      <div 
+                        style={{ 
+                          width: `${internallyClosedPct}%`, 
+                          backgroundColor: '#B7791F', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center', 
+                          color: '#fff', 
+                          fontSize: '0.72rem', 
+                          fontWeight: '600',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          padding: '0 4px',
+                          boxSizing: 'border-box'
+                        }} 
+                        title={`${internallyClosed} Internally Closed (${internallyClosedPct.toFixed(1)}%)`}
+                      >
+                        {internallyClosedPct >= 14 ? `${internallyClosed} Int. (${internallyClosedPct.toFixed(0)}%)` : (internallyClosedPct >= 7 ? `${internallyClosed}` : '')}
                       </div>
                     )}
                     {pendingPct > 0 && (
-                      <div style={{ width: `${pendingPct}%`, backgroundColor: '#94A3B8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '0.72rem', fontWeight: '600' }} title={`${currentTL.totalEnquiries - currentTL.enquiriesProgressed - currentTL.enquiriesCancelled - currentTL.enquiriesInternallyClosed} Pending`}>
-                        Pending ({pendingPct.toFixed(0)}%)
+                      <div 
+                        style={{ 
+                          width: `${pendingPct}%`, 
+                          backgroundColor: '#94A3B8', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center', 
+                          color: '#fff', 
+                          fontSize: '0.72rem', 
+                          fontWeight: '600',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          padding: '0 4px',
+                          boxSizing: 'border-box'
+                        }} 
+                        title={`${Math.max(0, total - progressed - cancelled - internallyClosed)} Pending (${pendingPct.toFixed(1)}%)`}
+                      >
+                        {pendingPct >= 14 ? `Pending (${pendingPct.toFixed(0)}%)` : ''}
                       </div>
                     )}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.75rem', color: '#6B7268', fontWeight: '500' }}>
-                    <span>Total Enquiries: <strong style={{ color: '#1B2321' }}>{currentTL.totalEnquiries}</strong></span>
-                    <span>Pipeline Realization: <strong style={{ color: '#0F6E56' }}>{(((currentTL.enquiriesProgressed || 0) + (currentTL.enquiriesCancelled || 0) + (currentTL.enquiriesInternallyClosed || 0)) / total * 100).toFixed(0)}%</strong></span>
+                    <span>Total Enquiries: <strong style={{ color: '#1B2321' }}>{total}</strong></span>
+                    <span>Pipeline Realization: <strong style={{ color: '#0F6E56' }}>{realizationPct}%</strong></span>
                   </div>
                 </div>
 

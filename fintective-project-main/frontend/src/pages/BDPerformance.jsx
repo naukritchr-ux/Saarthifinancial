@@ -718,13 +718,21 @@ const BDPerformance = () => {
         const currentAgent = agentSummaries.find(a => a.id === activeAgentDetails.id) || getSafeAgent(activeAgentDetails);
         const detailTxs = transactions.filter(t => t.bdAgentId === currentAgent.id && isInFilteredPeriod(t));
         
-        const total = currentAgent.leadsBought || 1;
-        const progressedPct = ((currentAgent.leadsProgressed || 0) / total) * 100;
-        const cancelledPct = ((currentAgent.leadsCancelled || 0) / total) * 100;
-        const pendingPct = Math.max(0, 100 - progressedPct - cancelledPct);
+        const progressed = currentAgent.leadsProgressed || 0;
+        const cancelled = currentAgent.leadsCancelled || 0;
+        const internallyClosed = currentAgent.leadsInternallyClosed || 0;
+        const rawBought = currentAgent.leadsBought || 0;
+        const total = Math.max(1, rawBought, progressed + cancelled + internallyClosed);
+        
+        const progressedPct = Math.min(100, Math.max(0, (progressed / total) * 100));
+        const cancelledPct = Math.min(100 - progressedPct, Math.max(0, (cancelled / total) * 100));
+        const internallyClosedPct = Math.min(100 - progressedPct - cancelledPct, Math.max(0, (internallyClosed / total) * 100));
+        const pendingPct = Math.max(0, 100 - progressedPct - cancelledPct - internallyClosedPct);
+        const pendingCount = Math.max(0, total - progressed - cancelled - internallyClosed);
+        const realizationPct = Math.min(100, Math.round(((progressed + cancelled + internallyClosed) / total) * 100));
         
         const commissionBonus = (currentAgent.revenueGenerated || 0) * (currentAgent.commissionRate || 0.02);
-        const expectedCommission = (currentAgent.leadsProgressed || 0) * (currentAgent.payPerProgressed || 0) + (currentAgent.leadsCancelled || 0) * (currentAgent.payPerCancelled || 0) + commissionBonus;
+        const expectedCommission = (progressed * (currentAgent.payPerProgressed || 0)) + (cancelled * (currentAgent.payPerCancelled || 0)) + commissionBonus;
         const totalCalculatedSalary = (currentAgent.baseSalary || 0) + expectedCommission;
         const variance = (currentAgent.commissionsEarned || 0) - totalCalculatedSalary;
 
@@ -857,11 +865,12 @@ const BDPerformance = () => {
                               whiteSpace: 'nowrap',
                               textOverflow: 'ellipsis',
                               padding: '0 4px',
+                              boxSizing: 'border-box',
                               minWidth: 0
                             }} 
-                            title={`${currentAgent.leadsProgressed} Progressed (${progressedPct.toFixed(1)}%)`}
+                            title={`${progressed} Progressed (${progressedPct.toFixed(1)}%)`}
                           >
-                            {progressedPct >= 18 ? `${currentAgent.leadsProgressed} Prog (${progressedPct.toFixed(0)}%)` : (progressedPct >= 8 ? `${progressedPct.toFixed(0)}%` : '')}
+                            {progressedPct >= 18 ? `${progressed} Prog (${progressedPct.toFixed(0)}%)` : (progressedPct >= 8 ? `${progressedPct.toFixed(0)}%` : '')}
                           </div>
                         )}
                         {cancelledPct > 0 && (
@@ -879,38 +888,37 @@ const BDPerformance = () => {
                               whiteSpace: 'nowrap',
                               textOverflow: 'ellipsis',
                               padding: '0 4px',
+                              boxSizing: 'border-box',
                               minWidth: 0
                             }} 
-                            title={`${currentAgent.leadsCancelled} Cancelled (${cancelledPct.toFixed(1)}%)`}
+                            title={`${cancelled} Cancelled (${cancelledPct.toFixed(1)}%)`}
                           >
-                            {cancelledPct >= 18 ? `${currentAgent.leadsCancelled} Cancel (${cancelledPct.toFixed(0)}%)` : (cancelledPct >= 8 ? `${cancelledPct.toFixed(0)}%` : '')}
+                            {cancelledPct >= 18 ? `${cancelled} Cancel (${cancelledPct.toFixed(0)}%)` : (cancelledPct >= 8 ? `${cancelledPct.toFixed(0)}%` : '')}
                           </div>
                         )}
-                        {(() => {
-                          const intClosedPct = total > 0 ? ((currentAgent.leadsInternallyClosed || 0) / total) * 100 : 0;
-                          return intClosedPct > 0 && (
-                            <div 
-                              style={{ 
-                                width: `${intClosedPct}%`, 
-                                backgroundColor: '#B7791F', 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'center', 
-                                color: '#FFFFFF', 
-                                fontSize: '0.75rem', 
-                                fontWeight: '700',
-                                overflow: 'hidden',
-                                whiteSpace: 'nowrap',
-                                textOverflow: 'ellipsis',
-                                padding: '0 4px',
-                                minWidth: 0
-                              }} 
-                              title={`${currentAgent.leadsInternallyClosed} Internally Closed (${intClosedPct.toFixed(1)}%)`}
-                            >
-                              {intClosedPct >= 18 ? `${currentAgent.leadsInternallyClosed} Int. Close (${intClosedPct.toFixed(0)}%)` : (intClosedPct >= 8 ? `${intClosedPct.toFixed(0)}%` : '')}
-                            </div>
-                          );
-                        })()}
+                        {internallyClosedPct > 0 && (
+                          <div 
+                            style={{ 
+                              width: `${internallyClosedPct}%`, 
+                              backgroundColor: '#B7791F', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center', 
+                              color: '#FFFFFF', 
+                              fontSize: '0.75rem', 
+                              fontWeight: '700',
+                              overflow: 'hidden',
+                              whiteSpace: 'nowrap',
+                              textOverflow: 'ellipsis',
+                              padding: '0 4px',
+                              boxSizing: 'border-box',
+                              minWidth: 0
+                            }} 
+                            title={`${internallyClosed} Internally Closed (${internallyClosedPct.toFixed(1)}%)`}
+                          >
+                            {internallyClosedPct >= 18 ? `${internallyClosed} Int. Close (${internallyClosedPct.toFixed(0)}%)` : (internallyClosedPct >= 8 ? `${internallyClosedPct.toFixed(0)}%` : '')}
+                          </div>
+                        )}
                         {pendingPct > 0 && (
                           <div 
                             style={{ 
@@ -926,18 +934,19 @@ const BDPerformance = () => {
                               whiteSpace: 'nowrap',
                               textOverflow: 'ellipsis',
                               padding: '0 4px',
+                              boxSizing: 'border-box',
                               minWidth: 0
                             }} 
-                            title={`${currentAgent.leadsBought - currentAgent.leadsProgressed - currentAgent.leadsCancelled - (currentAgent.leadsInternallyClosed || 0)} Pending (${pendingPct.toFixed(1)}%)`}
+                            title={`${pendingCount} Pending (${pendingPct.toFixed(1)}%)`}
                           >
-                            {pendingPct >= 18 ? `${currentAgent.leadsBought - currentAgent.leadsProgressed - currentAgent.leadsCancelled - (currentAgent.leadsInternallyClosed || 0)} Pending (${pendingPct.toFixed(0)}%)` : (pendingPct >= 8 ? `${pendingPct.toFixed(0)}%` : '')}
+                            {pendingPct >= 18 ? `${pendingCount} Pending (${pendingPct.toFixed(0)}%)` : (pendingPct >= 8 ? `${pendingPct.toFixed(0)}%` : '')}
                           </div>
                         )}
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.75rem', color: '#6B7268' }}>
-                        <span>Total Allocated Enquiries: <strong>{currentAgent.leadsBought}</strong></span>
-                        <span>Pending Realization: <strong>{currentAgent.leadsBought - currentAgent.leadsProgressed - currentAgent.leadsCancelled - (currentAgent.leadsInternallyClosed || 0)} Enquiries</strong></span>
-                        <span>Realization rate: <strong>{(((currentAgent.leadsProgressed || 0) + (currentAgent.leadsCancelled || 0) + (currentAgent.leadsInternallyClosed || 0)) / total * 100).toFixed(0)}%</strong></span>
+                        <span>Total Allocated Enquiries: <strong>{total}</strong></span>
+                        <span>Pending Realization: <strong>{pendingCount} Enquiries</strong></span>
+                        <span>Realization rate: <strong>{realizationPct}%</strong></span>
                       </div>
                     </div>
 
