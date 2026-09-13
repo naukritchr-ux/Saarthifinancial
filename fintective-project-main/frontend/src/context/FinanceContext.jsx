@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect } from 'react';
+import React, { createContext, useState, useEffect, useMemo } from 'react';
 import { fetchWithApiKey } from '../utils/apiClient';
 
 export const FinanceContext = createContext();
