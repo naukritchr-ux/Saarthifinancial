@@ -183,22 +183,35 @@ export const FinanceProvider = ({ children }) => {
         }
       }
       
+      let finalFrans = [];
+      let finalBds = [];
+      let finalTls = [];
+
       const franRes = await fetchWithApiKey(`${API_BASE_URL}/franchisees`);
       if (franRes.ok) {
         const franData = await franRes.json();
-        if (Array.isArray(franData) && franData.length > 0) setFranchisees(franData);
+        if (Array.isArray(franData) && franData.length > 0) {
+          finalFrans = franData;
+          setFranchisees(franData);
+        }
       }
       
       const bdRes = await fetchWithApiKey(`${API_BASE_URL}/bd-agents`);
       if (bdRes.ok) {
         const bdData = await bdRes.json();
-        if (Array.isArray(bdData) && bdData.length > 0) setBdAgents(bdData);
+        if (Array.isArray(bdData) && bdData.length > 0) {
+          finalBds = bdData;
+          setBdAgents(bdData);
+        }
       }
 
       const tlRes = await fetchWithApiKey(`${API_BASE_URL}/team-leaders`);
       if (tlRes.ok) {
         const tlData = await tlRes.json();
-        if (Array.isArray(tlData) && tlData.length > 0) setTeamLeaders(tlData);
+        if (Array.isArray(tlData) && tlData.length > 0) {
+          finalTls = tlData;
+          setTeamLeaders(tlData);
+        }
       }
 
       const budgetRes = await fetchWithApiKey(`${API_BASE_URL}/budgets`);

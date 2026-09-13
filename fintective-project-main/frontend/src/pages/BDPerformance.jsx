@@ -267,27 +267,34 @@ const BDPerformance = () => {
       };
     });
 
-    // Also include any leaderboard BD not in base roster
-    lbItems.forEach((item, idx) => {
-      if (!matchedLbIndices.has(idx)) {
-        merged.push({
-          id: `bd-lb-${idx}`,
-          name: item.bd_name,
-          role: 'BD Specialist',
-          baseSalary: 12000,
-          commissionRate: 0.02,
-          payPerProgressed: 2500,
-          payPerCancelled: 500,
-          leadsBought: item.invoices_closed ? item.invoices_closed * 2 : 20,
-          leadsProgressed: item.invoices_closed || 0,
-          leadsCancelled: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : 0,
-          status: 'Active'
-        });
-      }
-    });
+    // Also include any BD present in live transactions not yet in merged roster
+    const existingNames = new Set(merged.map(a => (a.name || '').trim().toLowerCase()));
+    if (Array.isArray(transactions)) {
+      transactions.forEach((t, idx) => {
+        const bName = (t.bdAgentName || '').trim();
+        if (bName && bName.toLowerCase() !== 'unknown' && bName.toLowerCase() !== 'head office' && !existingNames.has(bName.toLowerCase())) {
+          existingNames.add(bName.toLowerCase());
+          const agentTxs = transactions.filter(x => (x.bdAgentName || '').trim().toLowerCase() === bName.toLowerCase());
+          const closedCount = agentTxs.filter(x => x.type === 'income').length;
+          merged.push({
+            id: t.bdAgentId || `bd-tx-${idx}`,
+            name: bName,
+            role: 'BD Specialist',
+            baseSalary: 12000,
+            commissionRate: 0.02,
+            payPerProgressed: 2500,
+            payPerCancelled: 500,
+            leadsBought: Math.max(10, closedCount * 2),
+            leadsProgressed: closedCount,
+            leadsCancelled: 0,
+            status: 'Active'
+          });
+        }
+      });
+    }
 
     return merged;
-  }, [bdAgents, leaderboard]);
+  }, [bdAgents, leaderboard, transactions]);
 
   const agentSummaries = allAgentsList.map(agent => {
     const safeAgent = getSafeAgent(agent);

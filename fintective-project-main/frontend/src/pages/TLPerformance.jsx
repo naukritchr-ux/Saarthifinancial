@@ -121,28 +121,34 @@ const TLPerformance = () => {
       };
     });
 
-    // Also include any leaderboard TL not in base roster
-    lbItems.forEach((item, idx) => {
-      if (!matchedLbIndices.has(idx)) {
-        const tlName = item.name || item.tl_name || `Team Leader ${idx + 1}`;
-        merged.push({
-          id: `tl-lb-${idx}`,
-          name: tlName,
-          role: 'Team Leader',
-          target: 500000,
-          grossRevenue: item.gross_revenue || 0,
-          netRevenue: item.net_revenue || 0,
-          lossAmount: item.potential_loss || 0,
-          totalEnquiries: item.total_enquiries || 0,
-          enquiriesProgressed: item.invoices_closed || 0,
-          enquiriesCancelled: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : 0,
-          enquiriesInternallyClosed: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 75000) : 0
-        });
-      }
-    });
+    // Also include any TL present in live transactions not yet in merged roster
+    const existingNames = new Set(merged.map(t => (t.name || '').trim().toLowerCase()));
+    if (Array.isArray(transactions)) {
+      transactions.forEach((tx, idx) => {
+        const tlName = (tx.teamLeaderName || '').trim();
+        if (tlName && tlName.toLowerCase() !== 'unknown' && !existingNames.has(tlName.toLowerCase())) {
+          existingNames.add(tlName.toLowerCase());
+          const tlTxs = transactions.filter(x => (x.teamLeaderName || '').trim().toLowerCase() === tlName.toLowerCase());
+          const closedCount = tlTxs.filter(x => x.type === 'income').length;
+          merged.push({
+            id: `tl-tx-${idx}`,
+            name: tlName,
+            role: 'Team Leader',
+            target: 500000,
+            grossRevenue: 0,
+            netRevenue: 0,
+            lossAmount: 0,
+            totalEnquiries: Math.max(10, closedCount * 2),
+            enquiriesProgressed: closedCount,
+            enquiriesCancelled: 0,
+            enquiriesInternallyClosed: 0
+          });
+        }
+      });
+    }
 
     return merged;
-  }, [teamLeaders, leaderboard]);
+  }, [teamLeaders, leaderboard, transactions]);
 
   // Process data locally if filters change
   const processedLeaders = effectiveLeaders.map(tl => {

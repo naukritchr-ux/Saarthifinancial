@@ -156,29 +156,74 @@ const Franchisees = () => {
       .finally(() => setLoadingSummary(false));
   }, [selectedMonth, selectedYear]);
 
-  const effectiveLedger = (summaryData.ledger && summaryData.ledger.length > 0)
-    ? summaryData.ledger
-    : franchisees.map((f, idx) => {
+  const effectiveLedger = React.useMemo(() => {
+    const list = [];
+    const seen = new Set();
+
+    // 1. Add all from summaryData.ledger (live backend summary)
+    if (summaryData.ledger && summaryData.ledger.length > 0) {
+      summaryData.ledger.forEach(item => {
+        const clean = (item.name || '').trim().toLowerCase();
+        if (clean && !seen.has(clean)) {
+          seen.add(clean);
+          list.push(item);
+        }
+      });
+    }
+
+    // 2. Add all from franchisees roster
+    (franchisees || []).forEach((f, idx) => {
+      const fName = (f.name || f.nameAsPerAgreement || f.franchiseName || '').trim();
+      const clean = fName.toLowerCase();
+      if (clean && !seen.has(clean)) {
+        seen.add(clean);
         const fId = f.id || `f-${idx}`;
-        const fName = (f.name || f.nameAsPerAgreement || f.franchiseName || '').trim();
-        const fTxs = transactions.filter(t =>
-          (t.franchiseeId === fId || (t.franchiseeName && t.franchiseeName.toLowerCase() === fName.toLowerCase()))
+        const fTxs = (transactions || []).filter(t =>
+          (t.franchiseeId === fId || (t.franchiseeName && t.franchiseeName.toLowerCase() === clean))
         );
-        const rev = fTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
+        const rev = fTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.franchiseeShare || t.amount || 0), 0);
         const cost = fTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
-        return {
+        list.push({
           id: fId,
-          name: fName || `Franchise Hub ${idx + 1}`,
+          name: fName,
           owner: f.teamLeaderName || f.owner || 'Franchise Lead',
           city: f.city || 'India Hub',
-          candidatesPlaced: Math.max(1, fTxs.filter(t => t.type === 'income').length),
+          candidatesPlaced: f.candidatesPlaced || fTxs.filter(t => t.type === 'income').length,
+          revenuePaid: rev,
+          costsIncurred: cost,
+          netContribution: rev - cost,
+          costsTracked: cost > 0,
+          status: f.status || 'Active'
+        });
+      }
+    });
+
+    // 3. Add any franchisee from live transactions not yet seen
+    (transactions || []).forEach((t, idx) => {
+      const fName = (t.franchiseeName || '').trim();
+      const clean = fName.toLowerCase();
+      if (clean && clean !== 'unknown' && !seen.has(clean)) {
+        seen.add(clean);
+        const fTxs = (transactions || []).filter(x => (x.franchiseeName || '').trim().toLowerCase() === clean);
+        const rev = fTxs.filter(x => x.type === 'income').reduce((sum, x) => sum + (x.franchiseeShare || x.amount || 0), 0);
+        const cost = fTxs.filter(x => x.type === 'expense').reduce((sum, x) => sum + (x.amount || 0), 0);
+        list.push({
+          id: t.franchiseeId || `f-tx-${idx}`,
+          name: fName,
+          owner: t.teamLeaderName || 'Franchise Lead',
+          city: 'India Hub',
+          candidatesPlaced: fTxs.filter(x => x.type === 'income').length,
           revenuePaid: rev,
           costsIncurred: cost,
           netContribution: rev - cost,
           costsTracked: cost > 0,
           status: 'Active'
-        };
-      });
+        });
+      }
+    });
+
+    return list;
+  }, [summaryData.ledger, franchisees, transactions]);
 
   const franchiseSummaries = effectiveLedger.map(fran => {
     const trend = getFranchiseeTrend(fran.id);
