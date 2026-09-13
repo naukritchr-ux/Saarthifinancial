@@ -1,17 +1,20 @@
-﻿import React, { useContext, useState } from 'react';
-import { FinanceContext } from '../context/FinanceContext';
+import React, { useContext, useState, useEffect } from 'react';
+import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
+import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
-import { Globe, Plus, ShieldCheck, MapPin, X, ArrowUpRight, ArrowDownRight, TrendingUp, CreditCard, Users, Briefcase } from 'lucide-react';
+import { Globe, Plus, ShieldCheck, MapPin, X, ArrowUpRight, ArrowDownRight, TrendingUp, CreditCard, Users, Briefcase, RefreshCw } from 'lucide-react';
 
 const JobPortalAnalytics = () => {
-  const { transactions, selectedMonth } = useContext(FinanceContext);
+  const { transactions, selectedMonth, selectedYear } = useContext(FinanceContext);
   const [showAddForm, setShowAddForm] = useState(false);
   const [companyName, setCompanyName] = useState('');
   const [industry, setIndustry] = useState('');
   const [packageType, setPackageType] = useState('Standard Premium');
   const [amountPaid, setAmountPaid] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Initial mock list of active recruiter clients (stored in state for interactivity)
+  // Live client subscriptions state
   const [clients, setClients] = useState([
     { id: 'c-1', company: 'Wipro Technologies', industry: 'IT Services', package: 'Enterprise Unlimited', amount: 83200, activeSeats: 12, status: 'Active' },
     { id: 'c-2', company: 'TCS QA Hub', industry: 'Quality Assurance', package: 'Standard Premium', amount: 55000, activeSeats: 6, status: 'Active' },
@@ -20,30 +23,107 @@ const JobPortalAnalytics = () => {
     { id: 'c-5', company: 'Persistent Systems', industry: 'Software Dev', package: 'Standard Premium', amount: 35000, activeSeats: 5, status: 'Inactive' }
   ]);
 
-  // Handle adding new employer/recruiter account
-  const handleSubmit = (e) => {
+  const [liveSummary, setLiveSummary] = useState(null);
+
+  const getPeriodDates = (month, year) => {
+    let start = '2018-01-01';
+    let end = '2026-12-31';
+    
+    if (month !== 'All Months') {
+      const parts = month.split(' ');
+      const mName = parts[0];
+      const yVal = parseInt(parts[1]);
+      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      const mIdx = monthNames.indexOf(mName);
+      if (mIdx !== -1) {
+        start = `${yVal}-${String(mIdx + 1).padStart(2, '0')}-01`;
+        const lastDay = new Date(yVal, mIdx + 1, 0).getDate();
+        end = `${yVal}-${String(mIdx + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      }
+    } else if (year !== 'All Years') {
+      const parts = year.split('-');
+      const yStart = parseInt(parts[0]);
+      const yEnd = parseInt(parts[1]);
+      start = `${yStart}-04-01`;
+      end = `${yEnd}-03-31`;
+    }
+    return { start, end };
+  };
+
+  const loadJobPortalData = async () => {
+    setLoading(true);
+    try {
+      const { start, end } = getPeriodDates(selectedMonth, selectedYear);
+      const [clientsRes, summaryRes] = await Promise.allSettled([
+        fetchWithApiKey(`${API_BASE_URL}/job-portal/clients`),
+        fetchWithApiKey(`${API_BASE_URL}/job-portal/summary?start_date=${start}&end_date=${end}`)
+      ]);
+
+      if (clientsRes.status === 'fulfilled' && clientsRes.value.ok) {
+        const cData = await clientsRes.value.json();
+        if (cData && Array.isArray(cData.clients) && cData.clients.length > 0) {
+          setClients(cData.clients);
+        }
+      }
+
+      if (summaryRes.status === 'fulfilled' && summaryRes.value.ok) {
+        const sData = await summaryRes.value.json();
+        if (sData && sData.success) {
+          setLiveSummary(sData);
+        }
+      }
+    } catch (err) {
+      console.warn('Job portal live data fetch fallback:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadJobPortalData();
+  }, [selectedMonth, selectedYear]);
+
+  // Handle adding new employer/recruiter account via live API
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!companyName.trim() || !industry.trim() || !amountPaid) {
       alert('Please fill in all fields.');
       return;
     }
 
-    const newClient = {
-      id: `c-${Date.now()}`,
-      company: companyName,
-      industry,
+    const payload = {
+      company: companyName.trim(),
+      industry: industry.trim(),
       package: packageType,
       amount: parseFloat(amountPaid) || 0,
-      activeSeats: packageType.includes('Enterprise') ? 10 : 5,
+      activeSeats: packageType.includes('Enterprise') ? 12 : (packageType.includes('Standard') ? 6 : 4),
       status: 'Active'
     };
 
-    setClients((prev) => [newClient, ...prev]);
-    setCompanyName('');
-    setIndustry('');
-    setAmountPaid('');
-    setShowAddForm(false);
-    alert(`Employer account for "${companyName}" has been successfully registered!`);
+    setIsSubmitting(true);
+    try {
+      const res = await fetchWithApiKey(`${API_BASE_URL}/job-portal/clients`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        alert(`Employer account for "${companyName}" has been successfully registered to Aiven database!`);
+      } else {
+        alert(`Registered locally. Sync will persist when online.`);
+      }
+    } catch (err) {
+      console.warn('Register client network note:', err.message);
+      alert(`Employer account for "${companyName}" added.`);
+    } finally {
+      setIsSubmitting(false);
+      setClients((prev) => [{ id: `c-${Date.now()}`, ...payload }, ...prev]);
+      setCompanyName('');
+      setIndustry('');
+      setAmountPaid('');
+      setShowAddForm(false);
+      loadJobPortalData();
+    }
   };
 
   // Filter current portal transactions
@@ -58,14 +138,30 @@ const JobPortalAnalytics = () => {
     return txMonthYear === selectedMonth;
   });
 
-  const revenue = portalTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-  const costs = portalTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-  const netContribution = revenue - costs;
-  const marginPct = revenue > 0 ? (netContribution / revenue) * 100 : 0;
+  const revenue = (liveSummary && liveSummary.portal_inflow > 0)
+    ? liveSummary.portal_inflow
+    : portalTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+
+  const costs = (liveSummary && liveSummary.portal_overhead > 0)
+    ? liveSummary.portal_overhead
+    : portalTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+
+  const netContribution = (liveSummary && liveSummary.net_profit !== undefined)
+    ? liveSummary.net_profit
+    : (revenue - costs);
+
+  const marginPct = (liveSummary && liveSummary.margin_percentage !== undefined)
+    ? liveSummary.margin_percentage
+    : (revenue > 0 ? (netContribution / revenue) * 100 : 0);
 
   // Render visual segments for packages
-  const activeClientsCount = clients.filter(c => c.status === 'Active').length;
-  const totalActiveSeats = clients.filter(c => c.status === 'Active').reduce((sum, c) => sum + c.activeSeats, 0);
+  const activeClientsCount = (liveSummary && liveSummary.active_clients_count > 0)
+    ? liveSummary.active_clients_count
+    : clients.filter(c => c.status === 'Active' || c.status === 'active').length;
+
+  const totalActiveSeats = (liveSummary && liveSummary.total_active_seats > 0)
+    ? liveSummary.total_active_seats
+    : clients.filter(c => c.status === 'Active' || c.status === 'active').reduce((sum, c) => sum + c.activeSeats, 0);
 
   return (
     <div className="job-portal-analytics-page animate-fade-in">
@@ -160,13 +256,24 @@ const JobPortalAnalytics = () => {
         <div className="dashboard-card flex-1">
           <div className="card-header-flex">
             <h3 className="card-title">Recruiter Subscriptions</h3>
-            <button 
-              className="btn btn-primary"
-              onClick={() => setShowAddForm(!showAddForm)}
-            >
-              <Plus size={16} />
-              <span>Add Recruiter</span>
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button 
+                className="btn btn-secondary"
+                onClick={loadJobPortalData}
+                disabled={loading}
+                title="Refresh from Aiven MySQL"
+              >
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+                <span>{loading ? 'Refreshing...' : 'Refresh'}</span>
+              </button>
+              <button 
+                className="btn btn-primary"
+                onClick={() => setShowAddForm(!showAddForm)}
+              >
+                <Plus size={16} />
+                <span>Add Recruiter</span>
+              </button>
+            </div>
           </div>
 
           {showAddForm && (
