@@ -16,17 +16,34 @@ const DEFAULT_FRANCHISEES = [
 ];
 
 const DEFAULT_BD_AGENTS = [
-  { id: 'bd-1', name: 'Rahul Patil', role: 'Senior BD Specialist', baseSalary: 25000, commissionRate: 0.05, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 35, leadsProgressed: 16, leadsCancelled: 8, status: 'Active' },
-  { id: 'bd-2', name: 'Sneha Kulkarni', role: 'Enterprise Account Exec', baseSalary: 22000, commissionRate: 0.04, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 30, leadsProgressed: 14, leadsCancelled: 6, status: 'Active' },
-  { id: 'bd-3', name: 'Komal Suresh Bhanushali', role: 'Key Account Manager', baseSalary: 20000, commissionRate: 0.03, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 28, leadsProgressed: 12, leadsCancelled: 7, status: 'Active' },
-  { id: 'bd-4', name: 'Ankur Sharma', role: 'BD Manager', baseSalary: 24000, commissionRate: 0.04, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 32, leadsProgressed: 15, leadsCancelled: 5, status: 'Active' }
+  { id: 'bd-1', name: 'Komal Suresh Bhanushali', role: 'Key Account Manager', baseSalary: 20000, commissionRate: 0.03, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 3923, leadsProgressed: 1840, leadsCancelled: 420, status: 'Active' },
+  { id: 'bd-2', name: 'Rajalaxmi Das Das', role: 'Enterprise Account Exec', baseSalary: 22000, commissionRate: 0.04, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 1588, leadsProgressed: 742, leadsCancelled: 180, status: 'Active' },
+  { id: 'bd-3', name: 'Jahnvi Thakker', role: 'Senior BD Specialist', baseSalary: 25000, commissionRate: 0.05, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 720, leadsProgressed: 380, leadsCancelled: 95, status: 'Active' },
+  { id: 'bd-4', name: 'Ashutosh Manoj Hiremath', role: 'Senior BD Specialist', baseSalary: 22000, commissionRate: 0.04, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 82, leadsProgressed: 42, leadsCancelled: 10, status: 'Active' },
+  { id: 'bd-5', name: 'Kadambinee Kundu', role: 'Enterprise Account Exec', baseSalary: 20000, commissionRate: 0.03, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 79, leadsProgressed: 25, leadsCancelled: 33, status: 'Active' },
+  { id: 'bd-6', name: 'Muskan Ritesh Pradhan', role: 'BD Specialist', baseSalary: 18000, commissionRate: 0.03, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 18, leadsProgressed: 15, leadsCancelled: 2, status: 'Active' },
+  { id: 'bd-7', name: 'Rahul Patil', role: 'Senior BD Specialist', baseSalary: 25000, commissionRate: 0.05, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 35, leadsProgressed: 16, leadsCancelled: 8, status: 'Active' },
+  { id: 'bd-8', name: 'Sneha Kulkarni', role: 'Enterprise Account Exec', baseSalary: 22000, commissionRate: 0.04, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 30, leadsProgressed: 14, leadsCancelled: 6, status: 'Active' },
+  { id: 'bd-9', name: 'Ankur Sharma', role: 'BD Manager', baseSalary: 24000, commissionRate: 0.04, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 32, leadsProgressed: 15, leadsCancelled: 5, status: 'Active' },
+  { id: 'bd-10', name: 'Ruchi Shukla', role: 'BD Specialist', baseSalary: 18000, commissionRate: 0.03, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 24, leadsProgressed: 7, leadsCancelled: 0, status: 'Active' },
+  { id: 'bd-11', name: 'Shreya Santosh Talashilkar', role: 'BD Specialist', baseSalary: 18000, commissionRate: 0.03, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 17, leadsProgressed: 8, leadsCancelled: 9, status: 'Active' },
+  { id: 'bd-12', name: 'Sneha Santosh Jaiswal', role: 'BD Associate', baseSalary: 16000, commissionRate: 0.02, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 89, leadsProgressed: 3, leadsCancelled: 1, status: 'Active' },
+  { id: 'bd-13', name: 'Shruti Wilson Adhav', role: 'BD Associate', baseSalary: 16000, commissionRate: 0.02, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 9, leadsProgressed: 3, leadsCancelled: 1, status: 'Active' },
+  { id: 'bd-14', name: 'Jiya Pran Sanda', role: 'BD Associate', baseSalary: 16000, commissionRate: 0.02, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 14, leadsProgressed: 2, leadsCancelled: 0, status: 'Active' },
+  { id: 'bd-15', name: 'Sonali Jayanta Singh', role: 'BD Associate', baseSalary: 16000, commissionRate: 0.02, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 6, leadsProgressed: 1, leadsCancelled: 0, status: 'Active' }
 ];
 
 const DEFAULT_TEAM_LEADERS = [
-  { id: 'tl-1', name: 'Avadai Esakki Muthu Sundaram Marthuvar', role: 'Team Leader', target: 500000 },
+  { id: 'tl-1', name: 'Avadai Esakki Muthu Sundaram Marthuvar', role: 'Senior Team Leader', target: 500000 },
   { id: 'tl-2', name: 'Surbhi Vinod Jain', role: 'Team Leader', target: 500000 },
   { id: 'tl-3', name: 'Joyeeta Joydeb Khaskel', role: 'Team Leader', target: 500000 },
-  { id: 'tl-4', name: 'Vedika Girish Tolani', role: 'Team Leader', target: 500000 }
+  { id: 'tl-4', name: 'Vedika Girish Tolani', role: 'Team Leader', target: 500000 },
+  { id: 'tl-5', name: 'Pooja Sharma', role: 'Team Leader', target: 450000 },
+  { id: 'tl-6', name: 'Rajesh Patil', role: 'Team Leader', target: 450000 },
+  { id: 'tl-7', name: 'Amit Shinde', role: 'Team Leader', target: 400000 },
+  { id: 'tl-8', name: 'Priya Shah', role: 'Team Leader', target: 400000 },
+  { id: 'tl-9', name: 'Sanjay Joshi', role: 'Team Leader', target: 350000 },
+  { id: 'tl-10', name: 'Vikram Mehta', role: 'Team Leader', target: 350000 }
 ];
 
 export const FinanceProvider = ({ children }) => {
