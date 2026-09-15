@@ -647,6 +647,20 @@ button, input, select, textarea {
 .kpi-card.card-red { border-left-color: var(--color-expense); }
 .kpi-card.card-green { border-left-color: var(--color-income); }
 .kpi-card.card-purple { border-left-color: var(--color-purple); }
+.kpi-card.card-yellow { border-left-color: #B7791F; }
+
+.clickable-kpi {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.clickable-kpi:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+.clickable-kpi.active-filter-card {
+  border-color: var(--accent-teal) !important;
+  box-shadow: 0 0 0 2px rgba(15, 110, 86, 0.25), 0 4px 12px rgba(15, 110, 86, 0.12);
+  background: linear-gradient(180deg, rgba(15, 110, 86, 0.04) 0%, var(--bg-card) 100%);
+}
 
 .kpi-header {
   display: flex;

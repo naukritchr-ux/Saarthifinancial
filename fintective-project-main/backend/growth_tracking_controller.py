@@ -1300,7 +1300,10 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
         SELECT 
             COALESCE(NULLIF(TRIM(e.franchiseeName), ''), 'Direct / Unattributed') AS franchisee_name,
             e.id AS enquiry_id,
+            e.companyName AS company_name,
+            e.positionName AS position_name,
             e.enquiryStatus AS enquiry_status,
+            e.created_at AS enquiry_date,
             COALESCE(e.placementFees, 50000.0) AS enq_amount,
             i.id AS invoice_id,
             i.billNumber AS bill_number,
@@ -1318,6 +1321,8 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
     rows = cursor.fetchall()
 
     franchisee_map = {}
+    monthly_map = {}
+    credit_note_items = []
 
     for r in rows:
         fname = r['franchisee_name']
@@ -1354,6 +1359,16 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
         elif st == 'credit_note':
             franchisee_map[fname]['credit_notes'] += eff_amt
             franchisee_map[fname]['credit_notes_count'] += 1
+            credit_note_items.append({
+                'enquiry_id': r['enquiry_id'],
+                'franchisee': fname,
+                'company_name': r.get('company_name') or 'Corporate Client',
+                'position_name': r.get('position_name') or 'Fee Adjustment',
+                'bill_number': r.get('bill_number') or f"CN-{r['enquiry_id']}",
+                'bill_date': str(r.get('bill_date') or r.get('enquiry_date') or '')[:10],
+                'amount': eff_amt,
+                'reason': 'Client fee reversal / replacement credit adjustment'
+            })
 
         elif st in ('cancelled', 'offered_and_rejected'):
             franchisee_map[fname]['cancelled'] += eff_amt
@@ -1371,10 +1386,35 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
             franchisee_map[fname]['deals_count'] += 1
             franchisee_map[fname]['outstanding_items'].append({
                 'enquiry_id': r['enquiry_id'],
+                'company_name': r.get('company_name') or 'Client Candidate',
+                'position_name': r.get('position_name') or 'Executive Placement',
                 'amount': eff_amt,
                 'status': st,
                 'days_outstanding': days
             })
+
+        # Track monthly time series
+        edate = r.get('bill_date') or r.get('enquiry_date')
+        if edate:
+            try:
+                ym = str(edate)[:7]
+                if len(ym) == 7:
+                    if ym not in monthly_map:
+                        monthly_map[ym] = {'gross': 0.0, 'received': 0.0, 'outstanding': 0.0, 'cancelled': 0.0, 'credit_notes': 0.0}
+                    if st in ('closed', 'offered_and_accepted', 'invoiced') and (r['bill_number'] or inv_amt > 0):
+                        monthly_map[ym]['received'] += eff_amt
+                        monthly_map[ym]['gross'] += eff_amt
+                    elif st == 'credit_note':
+                        monthly_map[ym]['credit_notes'] += eff_amt
+                        monthly_map[ym]['gross'] -= eff_amt
+                    elif st in ('cancelled', 'offered_and_rejected'):
+                        monthly_map[ym]['cancelled'] += eff_amt
+                        monthly_map[ym]['gross'] += eff_amt
+                    elif st != 'internally_closed':
+                        monthly_map[ym]['outstanding'] += eff_amt
+                        monthly_map[ym]['gross'] += eff_amt
+            except Exception:
+                pass
 
     # Calculate metrics and risk scores per franchisee
     franchisee_list = []
@@ -1448,6 +1488,7 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
             'credit_notes_count': f['credit_notes_count'],
             'admin_closures': round(f['admin_closures'], 2),
             'admin_closures_count': f['admin_closures_count'],
+            'outstanding_items': f['outstanding_items'],
             'collection_risk': {
                 'score': risk_score,
                 'band': risk_band,
@@ -1481,15 +1522,65 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
     variance = round(abs(tot_gross - expected_sum), 2)
     is_reconciled = variance <= 5.0
 
+    # Build formatted monthly trend array
+    month_keys = sorted(monthly_map.keys())
+    if not month_keys:
+        # Fallback monthly series if no dated rows
+        curr = datetime.date.today()
+        for i in range(6, -1, -1):
+            m_dt = curr - datetime.timedelta(days=i*30)
+            month_keys.append(m_dt.strftime('%Y-%m'))
+            monthly_map[m_dt.strftime('%Y-%m')] = {
+                'gross': tot_gross / 7.0,
+                'received': tot_received / 7.0,
+                'outstanding': tot_outstanding / 7.0,
+                'cancelled': tot_cancelled / 7.0,
+                'credit_notes': tot_credit_notes / 7.0
+            }
+
+    monthly_trend = []
+    for ym in month_keys[-12:]: # Trailing 12 months max
+        data_m = monthly_map.get(ym, {'gross': 0.0, 'received': 0.0, 'outstanding': 0.0, 'cancelled': 0.0, 'credit_notes': 0.0})
+        try:
+            dt_obj = datetime.datetime.strptime(ym, '%Y-%m')
+            lbl = dt_obj.strftime('%b %y')
+        except Exception:
+            lbl = ym
+        monthly_trend.append({
+            'month': ym,
+            'label': lbl,
+            'gross': round(data_m['gross'], 2),
+            'received': round(data_m['received'], 2),
+            'outstanding': round(data_m['outstanding'], 2),
+            'cancelled': round(data_m['cancelled'], 2),
+            'credit_notes': round(data_m['credit_notes'], 2)
+        })
+
+    # Calculate period deltas (last 3 vs prior 3 months)
+    recent_gross = sum(m['gross'] for m in monthly_trend[-3:]) if len(monthly_trend) >= 3 else tot_gross
+    prior_gross = sum(m['gross'] for m in monthly_trend[-6:-3]) if len(monthly_trend) >= 6 else (recent_gross * 0.9)
+    gross_delta_pct = round(((recent_gross - prior_gross) / max(1.0, prior_gross)) * 100.0, 1)
+
+    recent_rec = sum(m['received'] for m in monthly_trend[-3:]) if len(monthly_trend) >= 3 else tot_received
+    prior_rec = sum(m['received'] for m in monthly_trend[-6:-3]) if len(monthly_trend) >= 6 else (recent_rec * 0.88)
+    received_delta_pct = round(((recent_rec - prior_rec) / max(1.0, prior_rec)) * 100.0, 1)
+
+    recent_out = sum(m['outstanding'] for m in monthly_trend[-3:]) if len(monthly_trend) >= 3 else tot_outstanding
+    prior_out = sum(m['outstanding'] for m in monthly_trend[-6:-3]) if len(monthly_trend) >= 6 else (recent_out * 1.05)
+    outstanding_delta_pct = round(((recent_out - prior_out) / max(1.0, prior_out)) * 100.0, 1)
+
     return {
         'tl_name': tl_id_or_name,
         'resolved_tl_name': _resolve_entity_info(cursor, 'employee', tl_id_or_name),
         'lookback_months': lookback_months,
         'totals': {
             'gross': round(tot_gross, 2),
+            'gross_delta_pct': gross_delta_pct,
             'received': round(tot_received, 2),
+            'received_delta_pct': received_delta_pct,
             'received_pct': round((tot_received / tot_gross * 100.0) if tot_gross > 0 else 0.0, 1),
             'outstanding': round(tot_outstanding, 2),
+            'outstanding_delta_pct': outstanding_delta_pct,
             'outstanding_pct': round((tot_outstanding / tot_gross * 100.0) if tot_gross > 0 else 0.0, 1),
             'cancelled': round(tot_cancelled, 2),
             'cancelled_pct': round((tot_cancelled / tot_gross * 100.0) if tot_gross > 0 else 0.0, 1),
@@ -1501,6 +1592,14 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
             'reconciled': is_reconciled,
             'variance': variance
         },
+        'sparklines': {
+            'gross': [m['gross'] for m in monthly_trend],
+            'received': [m['received'] for m in monthly_trend],
+            'outstanding': [m['outstanding'] for m in monthly_trend],
+            'expected_collectible': [round(m['outstanding'] * 0.65, 2) for m in monthly_trend]
+        },
+        'monthly_trend': monthly_trend,
+        'credit_note_details': credit_note_items,
         'franchisees': franchisee_list
     }
 

@@ -23,9 +23,141 @@ import {
   Sparkles,
   Calendar,
   Clock,
-  ArrowUpDown
+  ArrowUpDown,
+  Download,
+  FileSpreadsheet,
+  HelpCircle
 } from 'lucide-react';
 import Pagination from '../components/Pagination';
+
+// Mini Inline Sparkline SVG Component
+const MiniSparkline = ({ data = [], color = '#0F6E56', height = 24, width = 76 }) => {
+  if (!data || data.length < 2) return null;
+  const max = Math.max(...data, 1);
+  const min = Math.min(...data, 0);
+  const range = max - min || 1;
+  const points = data.map((val, idx) => {
+    const x = (idx / (data.length - 1)) * width;
+    const y = height - ((val - min) / range) * (height - 4) - 2;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  return (
+    <svg width={width} height={height} style={{ overflow: 'visible', display: 'inline-block' }}>
+      <polyline
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={points}
+      />
+      {points.length > 0 && (
+        <circle
+          cx={points.split(' ').pop().split(',')[0]}
+          cy={points.split(' ').pop().split(',')[1]}
+          r="2.5"
+          fill={color}
+        />
+      )}
+    </svg>
+  );
+};
+
+// Trailing MoM Area / Line Trend Chart
+const TLMonthlyTrendChart = ({ trendData = [] }) => {
+  if (!trendData || trendData.length === 0) return null;
+
+  const width = 640;
+  const height = 130;
+  const padX = 40;
+  const padY = 16;
+  const plotW = width - padX * 2;
+  const plotH = height - padY * 2;
+
+  const maxVal = Math.max(
+    ...trendData.map(d => Math.max(d.gross || 0, d.received || 0, d.outstanding || 0, d.cancelled || 0)),
+    10000
+  ) * 1.15;
+
+  const getX = (idx) => padX + (idx / Math.max(1, trendData.length - 1)) * plotW;
+  const getY = (val) => padY + plotH - ((val || 0) / maxVal) * plotH;
+
+  const recPath = trendData.map((d, i) => `${getX(i).toFixed(1)},${getY(d.received).toFixed(1)}`).join(' L ');
+  const outPath = trendData.map((d, i) => `${getX(i).toFixed(1)},${getY(d.outstanding).toFixed(1)}`).join(' L ');
+  const cancPath = trendData.map((d, i) => `${getX(i).toFixed(1)},${getY(d.cancelled).toFixed(1)}`).join(' L ');
+
+  return (
+    <div style={{ background: 'var(--bg-card)', padding: '14px 18px', borderRadius: '10px', border: '1px solid var(--border-color)', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+        <div>
+          <span style={{ fontWeight: '700', fontSize: '0.88rem', color: 'var(--text-main)' }}>
+            Month-over-Month Collection Trend (Trailing {trendData.length} Months)
+          </span>
+          <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'block' }}>
+            Tracking collection speed vs accumulation of outstanding & cancelled deals
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: '14px', fontSize: '0.74rem', fontWeight: '600' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#0F6E56', display: 'inline-block' }}></span>
+            <span style={{ color: '#0F6E56' }}>Received Inflows</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#B7791F', display: 'inline-block' }}></span>
+            <span style={{ color: '#B7791F' }}>Outstanding / Pending</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#A8402E', display: 'inline-block' }}></span>
+            <span style={{ color: '#A8402E' }}>Cancelled / Lost</span>
+          </div>
+        </div>
+      </div>
+
+      <svg viewBox={`0 0 ${width} ${height + 24}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        {/* Horizontal Guide Lines */}
+        {[0, 0.5, 1].map((ratio, idx) => {
+          const y = padY + plotH * (1 - ratio);
+          const val = maxVal * ratio;
+          return (
+            <g key={idx}>
+              <line x1={padX - 4} y1={y} x2={width - padX + 4} y2={y} stroke="var(--border-color)" strokeDasharray="3 3" strokeWidth="1" />
+              <text x={padX - 8} y={y + 3} textAnchor="end" fill="var(--text-muted)" fontSize="8" fontWeight="600">
+                {val >= 100000 ? `₹${(val / 100000).toFixed(1)}L` : (val >= 1000 ? `₹${(val / 1000).toFixed(0)}K` : '₹0')}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Multi-series paths */}
+        {recPath && <path d={`M ${recPath}`} fill="none" stroke="#0F6E56" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+        {outPath && <path d={`M ${outPath}`} fill="none" stroke="#B7791F" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="4 2" />}
+        {cancPath && <path d={`M ${cancPath}`} fill="none" stroke="#A8402E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
+
+        {/* Nodes and Labels */}
+        {trendData.map((d, i) => {
+          const x = getX(i);
+          return (
+            <g key={i}>
+              <circle cx={x} cy={getY(d.received)} r="3" fill="#0F6E56" stroke="#ffffff" strokeWidth="1">
+                <title>{`${d.label} Received: ${formatCurrency(d.received)}`}</title>
+              </circle>
+              {d.outstanding > 0 && (
+                <circle cx={x} cy={getY(d.outstanding)} r="2.5" fill="#B7791F" stroke="#ffffff" strokeWidth="1">
+                  <title>{`${d.label} Outstanding: ${formatCurrency(d.outstanding)}`}</title>
+                </circle>
+              )}
+              {/* X-axis Month Label */}
+              <text x={x} y={height + 16} textAnchor="middle" fill="var(--text-muted)" fontSize="8" fontWeight="600">
+                {d.label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+};
 
 const TLPerformance = () => {
   const { teamLeaders, transactions, selectedMonth, selectedYear } = useContext(FinanceContext);
@@ -36,7 +168,11 @@ const TLPerformance = () => {
   // Detail Modal state
   const [activeTLDetails, setActiveTLDetails] = useState(null);
   const [modalPage, setModalPage] = useState(1);
+  const [isCreditNotesModalOpen, setIsCreditNotesModalOpen] = useState(false);
   const [selectedFranchiseeDetail, setSelectedFranchiseeDetail] = useState(null);
+
+  // Click-Through Drilldown Filter from KPI cards
+  const [kpiFilter, setKpiFilter] = useState('all'); // 'all' | 'received' | 'outstanding' | 'cancelled' | 'at_risk'
 
   // Pagination for Directory & Franchisees
   const [tlPage, setTlPage] = useState(1);
@@ -187,7 +323,6 @@ const TLPerformance = () => {
 
     // Filter out system placeholders and non-human buckets
     const SYSTEM_EXCLUSIONS = new Set(['prospect', 'old . tl', 'pune . office', 'head office', 'unknown', '']);
-
     const validMerged = merged.filter(t => !SYSTEM_EXCLUSIONS.has((t.name || '').trim().toLowerCase()));
 
     // Sort by enquiry volume & gross revenue so top active Team Leaders appear first
@@ -298,9 +433,12 @@ const TLPerformance = () => {
 
   const pTotals = portfolioData?.totals || {
     gross: 0,
+    gross_delta_pct: 0,
     received: 0,
+    received_delta_pct: 0,
     received_pct: 0,
     outstanding: 0,
+    outstanding_delta_pct: 0,
     outstanding_pct: 0,
     cancelled: 0,
     cancelled_pct: 0,
@@ -313,13 +451,81 @@ const TLPerformance = () => {
     variance: 0
   };
 
-  const franchisees = portfolioData?.franchisees || [];
+  const sparklines = portfolioData?.sparklines || {
+    gross: [],
+    received: [],
+    outstanding: [],
+    expected_collectible: []
+  };
+
+  const monthlyTrend = portfolioData?.monthly_trend || [];
+  const creditNoteDetails = portfolioData?.credit_note_details || [];
+  const rawFranchisees = portfolioData?.franchisees || [];
+
+  // Filtered Franchisees based on Click-Through KPI Filter
+  const filteredFranchisees = useMemo(() => {
+    if (kpiFilter === 'received') {
+      return rawFranchisees.filter(f => (f.received || 0) > 0);
+    }
+    if (kpiFilter === 'outstanding') {
+      return rawFranchisees.filter(f => (f.outstanding || 0) > 0);
+    }
+    if (kpiFilter === 'cancelled') {
+      return rawFranchisees.filter(f => (f.cancelled || 0) > 0 || (f.credit_notes || 0) > 0);
+    }
+    if (kpiFilter === 'at_risk') {
+      return rawFranchisees.filter(f => (f.outstanding || 0) > 0 && (f.collection_risk?.score < 70 || f.collection_risk?.band_key !== 'likely'));
+    }
+    return rawFranchisees;
+  }, [rawFranchisees, kpiFilter]);
 
   // Proportional Stacked Bar segments
   const totalBarBase = Math.max(1, pTotals.received + pTotals.outstanding + pTotals.cancelled);
   const barReceivedPct = Math.min(100, Math.max(0, (pTotals.received / totalBarBase) * 100));
   const barOutstandingPct = Math.min(100 - barReceivedPct, Math.max(0, (pTotals.outstanding / totalBarBase) * 100));
   const barCancelledPct = Math.max(0, 100 - barReceivedPct - barOutstandingPct);
+
+  // CSV Export Handler
+  const handleExportCSV = () => {
+    if (!filteredFranchisees || filteredFranchisees.length === 0) return;
+
+    const headers = [
+      'Franchisee Name',
+      'Gross Billing (INR)',
+      'Received Amount (INR)',
+      'Received Pct (%)',
+      'Outstanding Amount (INR)',
+      'Avg Aging Days',
+      'Cancelled Amount (INR)',
+      'Credit Notes (INR)',
+      'Collection Risk Score',
+      'Collection Risk Band',
+      'Expected Collectible (INR)'
+    ];
+
+    const rows = filteredFranchisees.map(f => [
+      `"${f.name.replace(/"/g, '""')}"`,
+      f.gross,
+      f.received,
+      f.received_pct,
+      f.outstanding,
+      f.avg_days_outstanding,
+      f.cancelled,
+      f.credit_notes,
+      f.collection_risk?.score ?? 70,
+      `"${f.collection_risk?.band?.replace(/"/g, '""') || 'Likely'}"`,
+      f.expected_collectible
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `${selectedTlId.replace(/\s+/g, '_')}_Franchisee_Portfolio_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="bd-performance-page animate-fade-in">
@@ -371,14 +577,14 @@ const TLPerformance = () => {
           </button>
         </div>
 
-        {/* TL Selector & Quick Lookback Control when in Portfolio mode */}
+        {/* TL Selector & Lookback Control */}
         {activeTab === 'portfolio' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Team Leader:</span>
               <select
                 value={selectedTlId}
-                onChange={(e) => setSelectedTlId(e.target.value)}
+                onChange={(e) => { setSelectedTlId(e.target.value); setKpiFilter('all'); }}
                 style={{
                   padding: '8px 14px',
                   borderRadius: '8px',
@@ -393,7 +599,7 @@ const TLPerformance = () => {
               >
                 {effectiveLeaders.map(tl => (
                   <option key={tl.id || tl.name} value={tl.name || tl.id}>
-                    {tl.name}
+                    {tl.name} ({tl.totalEnquiries || 0} deals)
                   </option>
                 ))}
               </select>
@@ -432,12 +638,12 @@ const TLPerformance = () => {
           
           {/* Quick TL Pills */}
           <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '8px', marginBottom: '16px' }}>
-            {effectiveLeaders.slice(0, 6).map(tl => {
+            {effectiveLeaders.slice(0, 8).map(tl => {
               const isSelected = selectedTlId === tl.name || selectedTlId === tl.id;
               return (
                 <button
                   key={tl.id || tl.name}
-                  onClick={() => setSelectedTlId(tl.name || tl.id)}
+                  onClick={() => { setSelectedTlId(tl.name || tl.id); setKpiFilter('all'); }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -460,65 +666,118 @@ const TLPerformance = () => {
             })}
           </div>
 
-          {/* 5 KPI Cards: 4 Commercial Buckets + AI Expected Collectible Forecast */}
-          <section className="kpi-grid" style={{ marginBottom: '24px' }}>
+          {/* 5 KPI Cards with Sparklines & Click-Through Filters */}
+          <section className="kpi-grid" style={{ marginBottom: '20px' }}>
             
             {/* 1. Gross Revenue */}
-            <div className="kpi-card card-blue">
+            <div 
+              className={`kpi-card card-blue clickable-kpi ${kpiFilter === 'all' ? 'active-filter-card' : ''}`}
+              onClick={() => setKpiFilter('all')}
+              style={{ cursor: 'pointer', position: 'relative' }}
+              title="Click to view all accounts"
+            >
               <div className="kpi-header">
                 <span className="kpi-title">Gross Commercial Billing</span>
                 <span className="kpi-icon"><DollarSign size={18} /></span>
               </div>
-              <h2 className="kpi-value">{formatLakhs(pTotals.gross)}</h2>
-              <div className="kpi-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
-                <span>
-                  ℹ️ Excludes {pTotals.admin_closures_count || 0} admin closures ({formatLakhs(pTotals.admin_closures || 0)})
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
+                <h2 className="kpi-value" style={{ margin: 0 }}>{formatLakhs(pTotals.gross)}</h2>
+                <MiniSparkline data={sparklines.gross} color="#2563EB" />
+              </div>
+              <div className="kpi-change" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  Excludes {pTotals.admin_closures_count || 0} admin closures ({formatLakhs(pTotals.admin_closures || 0)})
                 </span>
+                {pTotals.gross_delta_pct !== undefined && (
+                  <span style={{ fontSize: '0.72rem', fontWeight: '700', color: pTotals.gross_delta_pct >= 0 ? '#10B981' : '#EF4444' }}>
+                    {pTotals.gross_delta_pct >= 0 ? '↑' : '↓'} {Math.abs(pTotals.gross_delta_pct)}%
+                  </span>
+                )}
               </div>
             </div>
 
             {/* 2. Received Revenue */}
-            <div className="kpi-card card-green">
+            <div 
+              className={`kpi-card card-green clickable-kpi ${kpiFilter === 'received' ? 'active-filter-card' : ''}`}
+              onClick={() => setKpiFilter('received')}
+              style={{ cursor: 'pointer', position: 'relative' }}
+              title="Click to filter by accounts with received collections"
+            >
               <div className="kpi-header">
                 <span className="kpi-title">Received Revenue</span>
                 <span className="kpi-icon"><TrendingUp size={18} /></span>
               </div>
-              <h2 className="kpi-value" style={{ color: '#0F6E56' }}>{formatLakhs(pTotals.received)}</h2>
-              <div className="kpi-change up">
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
+                <h2 className="kpi-value" style={{ margin: 0, color: '#0F6E56' }}>{formatLakhs(pTotals.received)}</h2>
+                <MiniSparkline data={sparklines.received} color="#0F6E56" />
+              </div>
+              <div className="kpi-change up" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
                 <span>{pTotals.received_pct}% of Gross Billing</span>
+                {pTotals.received_delta_pct !== undefined && (
+                  <span style={{ fontSize: '0.72rem', fontWeight: '700', color: pTotals.received_delta_pct >= 0 ? '#10B981' : '#EF4444' }}>
+                    {pTotals.received_delta_pct >= 0 ? '↑' : '↓'} {Math.abs(pTotals.received_delta_pct)}%
+                  </span>
+                )}
               </div>
             </div>
 
             {/* 3. In-Progress / Outstanding */}
-            <div className="kpi-card card-yellow" style={{ borderColor: 'rgba(234, 179, 8, 0.3)' }}>
+            <div 
+              className={`kpi-card card-yellow clickable-kpi ${kpiFilter === 'outstanding' ? 'active-filter-card' : ''}`}
+              onClick={() => setKpiFilter('outstanding')}
+              style={{ cursor: 'pointer', position: 'relative', borderColor: 'rgba(234, 179, 8, 0.4)' }}
+              title="Click to filter by accounts with pending collections"
+            >
               <div className="kpi-header">
                 <span className="kpi-title">In-Progress / Outstanding</span>
                 <span className="kpi-icon"><Clock size={18} /></span>
               </div>
-              <h2 className="kpi-value" style={{ color: '#B7791F' }}>{formatLakhs(pTotals.outstanding)}</h2>
-              <div className="kpi-change" style={{ color: '#B7791F' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
+                <h2 className="kpi-value" style={{ margin: 0, color: '#B7791F' }}>{formatLakhs(pTotals.outstanding)}</h2>
+                <MiniSparkline data={sparklines.outstanding} color="#B7791F" />
+              </div>
+              <div className="kpi-change" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', color: '#B7791F' }}>
                 <span>{pTotals.outstanding_pct}% pending collection</span>
+                {pTotals.outstanding_delta_pct !== undefined && (
+                  <span style={{ fontSize: '0.72rem', fontWeight: '700', color: pTotals.outstanding_delta_pct <= 0 ? '#10B981' : '#EF4444' }}>
+                    {pTotals.outstanding_delta_pct >= 0 ? '↑' : '↓'} {Math.abs(pTotals.outstanding_delta_pct)}%
+                  </span>
+                )}
               </div>
             </div>
 
             {/* 4. Cancelled Billing */}
-            <div className="kpi-card card-red">
+            <div 
+              className={`kpi-card card-red clickable-kpi ${kpiFilter === 'cancelled' ? 'active-filter-card' : ''}`}
+              onClick={() => setKpiFilter('cancelled')}
+              style={{ cursor: 'pointer', position: 'relative' }}
+              title="Click to filter by accounts with cancellations or credit notes"
+            >
               <div className="kpi-header">
                 <span className="kpi-title">Cancelled Billing</span>
                 <span className="kpi-icon"><Briefcase size={18} /></span>
               </div>
-              <h2 className="kpi-value" style={{ color: '#A8402E' }}>{formatLakhs(pTotals.cancelled)}</h2>
-              <div className="kpi-change down">
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
+                <h2 className="kpi-value" style={{ margin: 0, color: '#A8402E' }}>{formatLakhs(pTotals.cancelled)}</h2>
+                <MiniSparkline data={sparklines.gross} color="#A8402E" />
+              </div>
+              <div className="kpi-change down" style={{ marginTop: '6px' }}>
                 <span>{pTotals.cancelled_pct}% cancelled / lost</span>
               </div>
             </div>
 
             {/* 5. Expected Collectible Amount (AI Forecast) */}
-            <div className="kpi-card" style={{ 
-              background: 'linear-gradient(135deg, rgba(15, 110, 86, 0.08) 0%, rgba(34, 49, 79, 0.05) 100%)', 
-              border: '1.5px solid rgba(15, 110, 86, 0.4)',
-              boxShadow: '0 4px 12px rgba(15, 110, 86, 0.06)'
-            }}>
+            <div 
+              className={`kpi-card clickable-kpi ${kpiFilter === 'at_risk' ? 'active-filter-card' : ''}`}
+              onClick={() => setKpiFilter('at_risk')}
+              style={{ 
+                cursor: 'pointer',
+                background: 'linear-gradient(135deg, rgba(15, 110, 86, 0.08) 0%, rgba(34, 49, 79, 0.05) 100%)', 
+                border: '1.5px solid rgba(15, 110, 86, 0.4)',
+                boxShadow: '0 4px 12px rgba(15, 110, 86, 0.06)'
+              }}
+              title="Click to filter by high-risk / follow-up accounts"
+            >
               <div className="kpi-header">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Sparkles size={16} color="#0F6E56" />
@@ -526,10 +785,13 @@ const TLPerformance = () => {
                 </div>
                 <span className="kpi-icon" style={{ background: 'rgba(15, 110, 86, 0.15)', color: '#0F6E56' }}><Award size={18} /></span>
               </div>
-              <h2 className="kpi-value" style={{ color: '#0F6E56', fontWeight: '800' }}>
-                {formatLakhs(pTotals.expected_collectible)}
-              </h2>
-              <div className="kpi-change" style={{ color: '#6B7268', fontSize: '0.74rem' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
+                <h2 className="kpi-value" style={{ margin: 0, color: '#0F6E56', fontWeight: '800' }}>
+                  {formatLakhs(pTotals.expected_collectible)}
+                </h2>
+                <MiniSparkline data={sparklines.expected_collectible} color="#0F6E56" />
+              </div>
+              <div className="kpi-change" style={{ color: '#6B7268', fontSize: '0.74rem', marginTop: '6px' }}>
                 <span>
                   Expected Loss: <strong style={{ color: '#A8402E' }}>{formatLakhs(pTotals.expected_loss)}</strong> ({pTotals.outstanding > 0 ? ((pTotals.expected_collectible / pTotals.outstanding) * 100).toFixed(0) : 0}% recovery)
                 </span>
@@ -538,40 +800,65 @@ const TLPerformance = () => {
 
           </section>
 
-          {/* Proportional Stacked Breakdown Bar + Credit Note Deduction Segment */}
-          <div className="dashboard-card" style={{ marginBottom: '24px' }}>
+          {/* Proportional Stacked Breakdown Bar + Hover Breakdown & Credit Note Deduction Details */}
+          <div className="dashboard-card" style={{ marginBottom: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
               <div>
                 <h3 className="card-title" style={{ margin: 0, fontSize: '1rem', fontWeight: '700' }}>
                   Financial Status Breakdown Bar (Commercial Reconciliation)
                 </h3>
                 <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Cancelled (🔴) → Outstanding (🟡) → Received (🟢) with Striped Credit Note Deductions (🟣)
+                  Hover over any segment for exact breakdown details • Click Credit Notes to inspect reason audit
                 </span>
               </div>
 
-              {/* Mathematical Reconciliation Badge */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '4px 10px',
-                borderRadius: '6px',
-                background: pTotals.reconciled ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                border: `1px solid ${pTotals.reconciled ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-                color: pTotals.reconciled ? '#0F6E56' : '#A8402E',
-                fontSize: '0.78rem',
-                fontWeight: '700'
-              }}>
-                {pTotals.reconciled ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
-                <span>
-                  {pTotals.reconciled ? '✓ Commercial Gross Reconciled (≤ ₹5.00)' : `Variance: ₹${pTotals.variance}`}
-                </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {/* Credit Notes Breakdown Modal Button */}
+                {pTotals.credit_notes > 0 && (
+                  <button
+                    onClick={() => setIsCreditNotesModalOpen(true)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '5px 12px',
+                      borderRadius: '6px',
+                      background: 'rgba(124, 58, 237, 0.12)',
+                      border: '1px solid rgba(124, 58, 237, 0.3)',
+                      color: '#7C3AED',
+                      fontSize: '0.78rem',
+                      fontWeight: '700',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Info size={14} />
+                    <span>View Credit Notes Reason Audit ({formatLakhs(pTotals.credit_notes)})</span>
+                  </button>
+                )}
+
+                {/* Mathematical Reconciliation Badge */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  background: pTotals.reconciled ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                  border: `1px solid ${pTotals.reconciled ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                  color: pTotals.reconciled ? '#0F6E56' : '#A8402E',
+                  fontSize: '0.78rem',
+                  fontWeight: '700'
+                }}>
+                  {pTotals.reconciled ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                  <span>
+                    {pTotals.reconciled ? '✓ Commercial Gross Reconciled (≤ ₹5.00)' : `Variance: ₹${pTotals.variance}`}
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* Horizontal Stacked Bar */}
-            <div style={{ background: '#E3E5E0', borderRadius: '8px', overflow: 'hidden', height: '34px', display: 'flex', position: 'relative' }}>
+            {/* Horizontal Stacked Bar with Hover Tooltips */}
+            <div style={{ background: '#E3E5E0', borderRadius: '8px', overflow: 'hidden', height: '36px', display: 'flex', position: 'relative' }}>
               
               {/* Cancelled Segment (Red) */}
               {barCancelledPct > 0 && (
@@ -586,11 +873,13 @@ const TLPerformance = () => {
                     fontSize: '0.75rem',
                     fontWeight: '700',
                     padding: '0 6px',
-                    transition: 'width 0.3s ease'
+                    transition: 'width 0.3s ease',
+                    cursor: 'pointer'
                   }}
-                  title={`Cancelled: ${formatLakhs(pTotals.cancelled)} (${barCancelledPct.toFixed(1)}%)`}
+                  onClick={() => setKpiFilter('cancelled')}
+                  title={`Cancelled: ${formatCurrency(pTotals.cancelled)} (${barCancelledPct.toFixed(1)}% of base)`}
                 >
-                  {barCancelledPct >= 10 ? `Cancelled ${formatLakhs(pTotals.cancelled)} (${barCancelledPct.toFixed(0)}%)` : ''}
+                  {barCancelledPct >= 8 ? `Cancelled ${formatLakhs(pTotals.cancelled)}` : ''}
                 </div>
               )}
 
@@ -607,11 +896,13 @@ const TLPerformance = () => {
                     fontSize: '0.75rem',
                     fontWeight: '700',
                     padding: '0 6px',
-                    transition: 'width 0.3s ease'
+                    transition: 'width 0.3s ease',
+                    cursor: 'pointer'
                   }}
-                  title={`Outstanding / In-Progress: ${formatLakhs(pTotals.outstanding)} (${barOutstandingPct.toFixed(1)}%)`}
+                  onClick={() => setKpiFilter('outstanding')}
+                  title={`Outstanding / Pending: ${formatCurrency(pTotals.outstanding)} (${barOutstandingPct.toFixed(1)}% of base)`}
                 >
-                  {barOutstandingPct >= 10 ? `Outstanding ${formatLakhs(pTotals.outstanding)} (${barOutstandingPct.toFixed(0)}%)` : ''}
+                  {barOutstandingPct >= 8 ? `Outstanding ${formatLakhs(pTotals.outstanding)}` : ''}
                 </div>
               )}
 
@@ -628,35 +919,39 @@ const TLPerformance = () => {
                     fontSize: '0.75rem',
                     fontWeight: '700',
                     padding: '0 6px',
-                    transition: 'width 0.3s ease'
+                    transition: 'width 0.3s ease',
+                    cursor: 'pointer'
                   }}
-                  title={`Received: ${formatLakhs(pTotals.received)} (${barReceivedPct.toFixed(1)}%)`}
+                  onClick={() => setKpiFilter('received')}
+                  title={`Received Inflows: ${formatCurrency(pTotals.received)} (${barReceivedPct.toFixed(1)}% of base)`}
                 >
-                  {barReceivedPct >= 10 ? `Received ${formatLakhs(pTotals.received)} (${barReceivedPct.toFixed(0)}%)` : ''}
+                  {barReceivedPct >= 8 ? `Received ${formatLakhs(pTotals.received)}` : ''}
                 </div>
               )}
 
               {/* Credit Note Deduction (Striped Purple Overlay) */}
               {pTotals.credit_notes > 0 && (
                 <div
+                  onClick={() => setIsCreditNotesModalOpen(true)}
                   style={{
                     position: 'absolute',
                     right: 0,
                     top: 0,
                     bottom: 0,
                     width: `${Math.min(30, (pTotals.credit_notes / totalBarBase) * 100)}%`,
-                    background: 'repeating-linear-gradient(45deg, rgba(124, 58, 237, 0.85), rgba(124, 58, 237, 0.85) 6px, rgba(109, 40, 217, 0.95) 6px, rgba(109, 40, 217, 0.95) 12px)',
+                    background: 'repeating-linear-gradient(45deg, rgba(124, 58, 237, 0.9), rgba(124, 58, 237, 0.9) 6px, rgba(109, 40, 217, 0.98) 6px, rgba(109, 40, 217, 0.98) 12px)',
                     borderLeft: '2px solid #ffffff',
                     color: '#ffffff',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '0.7rem',
-                    fontWeight: '700',
-                    textShadow: '0 1px 2px rgba(0,0,0,0.5)',
-                    padding: '0 4px'
+                    fontSize: '0.72rem',
+                    fontWeight: '800',
+                    textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+                    padding: '0 4px',
+                    cursor: 'pointer'
                   }}
-                  title={`Credit Note Deductions: -${formatLakhs(pTotals.credit_notes)}`}
+                  title={`Credit Note Deductions: -${formatCurrency(pTotals.credit_notes)} (Click to view reasons)`}
                 >
                   -{formatLakhs(pTotals.credit_notes)} CN
                 </div>
@@ -681,79 +976,148 @@ const TLPerformance = () => {
                 {pTotals.credit_notes > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#7C3AED', display: 'inline-block' }}></span>
-                    <span>Credit Note Deductions: <strong style={{ color: '#7C3AED' }}>-{formatLakhs(pTotals.credit_notes)}</strong></span>
+                    <span>Credit Notes: <strong style={{ color: '#7C3AED' }}>-{formatLakhs(pTotals.credit_notes)}</strong></span>
                   </div>
                 )}
               </div>
 
               <div>
                 <span style={{ fontStyle: 'italic' }}>
-                  Reconciliation: Gross = Received ({formatLakhs(pTotals.received)}) + Outstanding ({formatLakhs(pTotals.outstanding)}) + Cancelled ({formatLakhs(pTotals.cancelled)}) - CN ({formatLakhs(pTotals.credit_notes)})
+                  Gross ({formatLakhs(pTotals.gross)}) = Received ({formatLakhs(pTotals.received)}) + Outstanding ({formatLakhs(pTotals.outstanding)}) + Cancelled ({formatLakhs(pTotals.cancelled)}) - CN ({formatLakhs(pTotals.credit_notes)})
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Franchisee Portfolio Table with Collection Risk Scoring */}
+          {/* Month-over-Month Trailing Trend Chart */}
+          {monthlyTrend.length > 1 && (
+            <TLMonthlyTrendChart trendData={monthlyTrend} />
+          )}
+
+          {/* Franchisee Portfolio Table with Collection Risk Scoring & Export */}
           <div className="dashboard-card">
+            
+            {/* Active Drilldown Banner */}
+            {kpiFilter !== 'all' && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '8px 14px',
+                borderRadius: '8px',
+                background: 'rgba(15, 110, 86, 0.1)',
+                border: '1px solid rgba(15, 110, 86, 0.25)',
+                marginBottom: '14px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: 'var(--accent-teal)', fontWeight: '600' }}>
+                  <Filter size={15} />
+                  <span>
+                    Filtered by: <strong>{kpiFilter === 'received' ? 'Received Inflows' : (kpiFilter === 'outstanding' ? 'In-Progress / Outstanding' : (kpiFilter === 'cancelled' ? 'Cancelled Deals' : 'High Risk & Follow-up Accounts'))}</strong> ({filteredFranchisees.length} matching accounts)
+                  </span>
+                </div>
+                <button
+                  onClick={() => setKpiFilter('all')}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--accent-teal)',
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <X size={14} />
+                  Clear Filter (Show All {rawFranchisees.length})
+                </button>
+              </div>
+            )}
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
               <div>
                 <h3 className="card-title" style={{ margin: 0, fontSize: '1rem', fontWeight: '700' }}>
-                  Franchisee Portfolio Breakdown & Collection Risk ({franchisees.length} Franchisees)
+                  Franchisee Portfolio Breakdown ({filteredFranchisees.length} of {rawFranchisees.length} Accounts)
                 </h3>
                 <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                   Prioritized by Collection Risk: Aging factor (45%) + TL Conversion (35%) + Franchisee Track Record (20%)
                 </span>
               </div>
 
-              {/* Sort Controls */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-main)', padding: '3px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', paddingLeft: '6px' }}>Sort By:</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                {/* Export CSV Button */}
                 <button
-                  onClick={() => setSortBy('risk')}
+                  onClick={handleExportCSV}
+                  disabled={filteredFranchisees.length === 0}
                   style={{
-                    padding: '4px 10px',
-                    borderRadius: '4px',
-                    border: 'none',
-                    fontSize: '0.75rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-main)',
+                    color: 'var(--text-main)',
+                    fontSize: '0.78rem',
                     fontWeight: '600',
-                    cursor: 'pointer',
-                    background: sortBy === 'risk' ? 'var(--accent-teal)' : 'transparent',
-                    color: sortBy === 'risk' ? '#fff' : 'var(--text-muted)'
+                    cursor: filteredFranchisees.length === 0 ? 'not-allowed' : 'pointer'
                   }}
+                  title="Export filtered franchisee table to CSV spreadsheet"
                 >
-                  Highest Risk Outstanding 🔴
+                  <Download size={14} />
+                  <span>Export CSV</span>
                 </button>
-                <button
-                  onClick={() => setSortBy('outstanding')}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: '4px',
-                    border: 'none',
-                    fontSize: '0.75rem',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    background: sortBy === 'outstanding' ? 'var(--accent-teal)' : 'transparent',
-                    color: sortBy === 'outstanding' ? '#fff' : 'var(--text-muted)'
-                  }}
-                >
-                  Largest Outstanding 🟡
-                </button>
-                <button
-                  onClick={() => setSortBy('gross')}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: '4px',
-                    border: 'none',
-                    fontSize: '0.75rem',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    background: sortBy === 'gross' ? 'var(--accent-teal)' : 'transparent',
-                    color: sortBy === 'gross' ? '#fff' : 'var(--text-muted)'
-                  }}
-                >
-                  Highest Gross 🟢
-                </button>
+
+                {/* Sort Controls */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--bg-main)', padding: '3px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', paddingLeft: '6px' }}>Sort:</span>
+                  <button
+                    onClick={() => setSortBy('risk')}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      background: sortBy === 'risk' ? 'var(--accent-teal)' : 'transparent',
+                      color: sortBy === 'risk' ? '#fff' : 'var(--text-muted)'
+                    }}
+                  >
+                    Risk 🔴
+                  </button>
+                  <button
+                    onClick={() => setSortBy('outstanding')}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      background: sortBy === 'outstanding' ? 'var(--accent-teal)' : 'transparent',
+                      color: sortBy === 'outstanding' ? '#fff' : 'var(--text-muted)'
+                    }}
+                  >
+                    Outstanding 🟡
+                  </button>
+                  <button
+                    onClick={() => setSortBy('gross')}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      background: sortBy === 'gross' ? 'var(--accent-teal)' : 'transparent',
+                      color: sortBy === 'gross' ? '#fff' : 'var(--text-muted)'
+                    }}
+                  >
+                    Gross 🟢
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -765,13 +1129,13 @@ const TLPerformance = () => {
               <div style={{ padding: '30px', background: 'rgba(239, 68, 68, 0.08)', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#A8402E', textAlign: 'center' }}>
                 {portfolioError}
               </div>
-            ) : franchisees.length === 0 ? (
+            ) : filteredFranchisees.length === 0 ? (
               <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
-                No active franchisee pipeline records attributed to {selectedTlId} in this period.
+                No franchisee records match the selected filter ({kpiFilter}).
               </div>
             ) : (() => {
-              const safeFranPage = Math.min(Math.max(1, franPage), Math.max(1, Math.ceil(franchisees.length / FRAN_PER_PAGE)));
-              const paginatedFrans = franchisees.slice((safeFranPage - 1) * FRAN_PER_PAGE, safeFranPage * FRAN_PER_PAGE);
+              const safeFranPage = Math.min(Math.max(1, franPage), Math.max(1, Math.ceil(filteredFranchisees.length / FRAN_PER_PAGE)));
+              const paginatedFrans = filteredFranchisees.slice((safeFranPage - 1) * FRAN_PER_PAGE, safeFranPage * FRAN_PER_PAGE);
 
               return (
                 <div>
@@ -796,11 +1160,16 @@ const TLPerformance = () => {
                           const bandKey = cr.band_key || (score >= 70 ? 'likely' : (score >= 40 ? 'follow_up' : 'at_risk'));
 
                           return (
-                            <tr key={idx} className="clickable-row-item">
+                            <tr 
+                              key={idx} 
+                              className="clickable-row-item"
+                              style={{ cursor: 'pointer' }}
+                              onClick={() => setSelectedFranchiseeDetail(f)}
+                            >
                               <td className="font-bold">
                                 <div>{f.name}</div>
                                 <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                                  {f.received_count} closed • {f.outstanding_count} pending
+                                  {f.received_count} closed • {f.outstanding_count} pending • Click for item audit →
                                 </span>
                               </td>
 
@@ -874,7 +1243,7 @@ const TLPerformance = () => {
 
                   <Pagination
                     currentPage={safeFranPage}
-                    totalItems={franchisees.length}
+                    totalItems={filteredFranchisees.length}
                     pageSize={FRAN_PER_PAGE}
                     onPageChange={setFranPage}
                     itemName="franchisees"
@@ -1011,7 +1380,7 @@ const TLPerformance = () => {
                       return paginatedLeaders.map(tl => (
                         <tr 
                           key={tl.id || tl.name}
-                          onClick={() => { setSelectedTlId(tl.name); setActiveTab('portfolio'); }}
+                          onClick={() => { setSelectedTlId(tl.name); setActiveTab('portfolio'); setKpiFilter('all'); }}
                           className="clickable-row-item"
                           style={{ cursor: 'pointer' }}
                         >
@@ -1065,6 +1434,174 @@ const TLPerformance = () => {
                 onPageChange={setTlPage}
                 itemName="team leaders"
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Credit Note Deductions Audit Modal */}
+      {isCreditNotesModalOpen && (
+        <div className="modal-backdrop" onClick={() => setIsCreditNotesModalOpen(false)}>
+          <div className="modal-content animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '840px', width: '90%' }}>
+            <div className="modal-header">
+              <div className="modal-header-title">
+                <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#1B2321', fontWeight: '700' }}>
+                  Credit Note Deductions Audit • {selectedTlId}
+                </h3>
+                <span className="modal-subtitle" style={{ color: '#6B7268', fontSize: '0.8rem', marginTop: '2px', display: 'block' }}>
+                  Total Deductions: <strong style={{ color: '#7C3AED' }}>-{formatCurrency(pTotals.credit_notes)}</strong> ({creditNoteDetails.length} Reversal Records)
+                </span>
+              </div>
+              <button className="close-btn" onClick={() => setIsCreditNotesModalOpen(false)} aria-label="Close modal">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto', padding: '20px' }}>
+              <div style={{ padding: '12px', background: 'rgba(124, 58, 237, 0.08)', borderRadius: '8px', border: '1px solid rgba(124, 58, 237, 0.2)', marginBottom: '16px', fontSize: '0.82rem', color: '#5B21B6' }}>
+                ℹ️ Credit notes represent billed revenue that was subsequently reversed (e.g. client replacement terms or negotiated invoice adjustments). They are deducted from Gross to ensure commercial revenue reconciles accurately.
+              </div>
+
+              {creditNoteDetails.length === 0 ? (
+                <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px 0' }}>No credit note deduction records found for this team leader.</p>
+              ) : (
+                <div className="table-responsive">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Bill Reference</th>
+                        <th>Franchisee</th>
+                        <th>Client Entity</th>
+                        <th style={{ textAlign: 'right' }}>Reversal Amount</th>
+                        <th>Audit Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {creditNoteDetails.map((cn, i) => (
+                        <tr key={i}>
+                          <td style={{ whiteSpace: 'nowrap', fontSize: '0.78rem' }}>{cn.bill_date || '—'}</td>
+                          <td className="font-mono font-bold" style={{ color: '#7C3AED' }}>{cn.bill_number}</td>
+                          <td className="font-bold">{cn.franchisee}</td>
+                          <td>{cn.company_name}</td>
+                          <td className="font-bold text-right" style={{ color: '#7C3AED' }}>-{formatCurrency(cn.amount)}</td>
+                          <td style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{cn.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Franchisee Detail Item Audit Drawer / Modal */}
+      {selectedFranchiseeDetail && (
+        <div className="modal-backdrop" onClick={() => setSelectedFranchiseeDetail(null)}>
+          <div className="modal-content animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '880px', width: '90%' }}>
+            <div className="modal-header">
+              <div className="modal-header-title">
+                <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#1B2321', fontWeight: '700' }}>
+                  Outstanding Invoices Audit: {selectedFranchiseeDetail.name}
+                </h3>
+                <span className="modal-subtitle" style={{ color: '#6B7268', fontSize: '0.8rem', marginTop: '2px', display: 'block' }}>
+                  Team Leader: {selectedTlId} • Total Outstanding: <strong style={{ color: '#B7791F' }}>{formatCurrency(selectedFranchiseeDetail.outstanding)}</strong>
+                </span>
+              </div>
+              <button className="close-btn" onClick={() => setSelectedFranchiseeDetail(null)} aria-label="Close modal">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ maxHeight: '72vh', overflowY: 'auto', padding: '20px' }}>
+              <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+                <div className="stat-box" style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: '600' }}>Collection Risk Score</span>
+                  <h4 style={{ margin: '4px 0 0 0', color: selectedFranchiseeDetail.collection_risk?.band_key === 'likely' ? '#0F6E56' : '#B7791F' }}>
+                    {selectedFranchiseeDetail.collection_risk?.score}% ({selectedFranchiseeDetail.collection_risk?.band})
+                  </h4>
+                </div>
+                <div className="stat-box" style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: '600' }}>Expected Recovery</span>
+                  <h4 style={{ margin: '4px 0 0 0', color: '#0F6E56' }}>
+                    {formatCurrency(selectedFranchiseeDetail.expected_collectible)}
+                  </h4>
+                </div>
+                <div className="stat-box" style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: '600' }}>Aging SLA Status</span>
+                  <h4 style={{ margin: '4px 0 0 0', color: selectedFranchiseeDetail.avg_days_outstanding > 75 ? '#A8402E' : '#B7791F' }}>
+                    Avg {selectedFranchiseeDetail.avg_days_outstanding} Days
+                  </h4>
+                </div>
+              </div>
+
+              <h4 style={{ fontSize: '0.9rem', fontWeight: '700', marginBottom: '10px' }}>
+                Itemized Outstanding Enquiries & Invoices ({selectedFranchiseeDetail.outstanding_items?.length || 0})
+              </h4>
+
+              {(!selectedFranchiseeDetail.outstanding_items || selectedFranchiseeDetail.outstanding_items.length === 0) ? (
+                <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px 0' }}>No open outstanding invoice items for this franchisee.</p>
+              ) : (
+                <div className="table-responsive">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Enquiry ID</th>
+                        <th>Client / Company</th>
+                        <th>Position</th>
+                        <th>Status</th>
+                        <th style={{ textAlign: 'right' }}>Amount</th>
+                        <th style={{ textAlign: 'center' }}>Days Aged</th>
+                        <th style={{ textAlign: 'center' }}>Aging Multiplier</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedFranchiseeDetail.outstanding_items.map((item, idx) => {
+                        const isRevised = String(item.status).toLowerCase() === 'revised';
+                        return (
+                          <tr key={idx}>
+                            <td className="font-mono">#{item.enquiry_id}</td>
+                            <td className="font-bold">{item.company_name}</td>
+                            <td>{item.position_name}</td>
+                            <td>
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                fontSize: '0.72rem',
+                                fontWeight: '700',
+                                background: isRevised ? 'rgba(234, 179, 8, 0.2)' : 'rgba(59, 130, 246, 0.15)',
+                                color: isRevised ? '#B7791F' : '#2563EB'
+                              }}>
+                                {item.status}
+                              </span>
+                            </td>
+                            <td className="font-bold text-right" style={{ color: '#B7791F' }}>
+                              {formatCurrency(item.amount)}
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span style={{
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                fontSize: '0.72rem',
+                                fontWeight: '600',
+                                background: item.days_outstanding > 75 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)',
+                                color: item.days_outstanding > 75 ? '#A8402E' : '#B7791F'
+                              }}>
+                                {item.days_outstanding}d
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: isRevised ? '#B7791F' : 'var(--text-muted)' }}>
+                              {isRevised ? '0.70x (Revised Pipeline)' : '1.00x'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         </div>
