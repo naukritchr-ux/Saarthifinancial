@@ -48,8 +48,63 @@ const DEFAULT_TEAM_LEADERS = [
   { id: 'tl-10', name: 'Vikram Mehta', role: 'Team Leader', target: 350000 }
 ];
 
+// Helper to standardize Financial Year format to standard YYYY-YYYY (e.g. '2024-2025', '2025-2026')
+// Also converts short formats like '2025-26' -> '2025-2026' and fixes invalid ones like '2025-2025'
+export const normalizeFinancialYear = (fy, dateStr = null) => {
+  if (typeof fy === 'string') {
+    const clean = fy.trim();
+    // 1. Standard 4-digit consecutive format: YYYY-YYYY (e.g. 2025-2026)
+    const match4 = clean.match(/^(\d{4})-(\d{4})$/);
+    if (match4) {
+      const y1 = parseInt(match4[1], 10);
+      const y2 = parseInt(match4[2], 10);
+      if (y2 === y1 + 1) {
+        return `${y1}-${y2}`;
+      }
+    }
+    // 2. Short 2-digit format: YYYY-YY (e.g. 2025-26 -> 2025-2026)
+    const match2 = clean.match(/^(\d{4})-(\d{2})$/);
+    if (match2) {
+      const y1 = parseInt(match2[1], 10);
+      const y2Suffix = parseInt(match2[2], 10);
+      const century = Math.floor(y1 / 100) * 100;
+      const y2 = century + y2Suffix;
+      if (y2 === y1 + 1) {
+        return `${y1}-${y2}`;
+      }
+    }
+  }
+
+  // 3. Fallback: derive strictly valid consecutive FY from date (e.g. invalid '2025-2025' gets corrected)
+  if (dateStr) {
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const m = d.getMonth(); // 0=Jan, 3=Apr
+      return m >= 3 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
+    }
+  }
+  return null;
+};
+
 export const FinanceProvider = ({ children }) => {
-  const [transactions, setTransactions] = useState([]);
+  const [transactions, setTransactions] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('fintective_cached_txs');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          return parsed.map(tx => ({
+            ...tx,
+            financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || '2025-2026'
+          }));
+        }
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  });
   const [franchisees, setFranchisees] = useState(DEFAULT_FRANCHISEES);
   const [bdAgents, setBdAgents] = useState(DEFAULT_BD_AGENTS);
   const [teamLeaders, setTeamLeaders] = useState(DEFAULT_TEAM_LEADERS);
@@ -75,8 +130,8 @@ export const FinanceProvider = ({ children }) => {
   const [selectedMonth, setSelectedMonth] = useState('All Months');
   const [selectedYear, setSelectedYear] = useState(() => {
     const saved = localStorage.getItem('saarthi_selected_year');
-    // If no prior manual selection, or if previously defaulted to 'All Years', automatically use current FY
-    return (saved && saved !== 'All Years') ? saved : currentFY;
+    const normalized = saved ? normalizeFinancialYear(saved) : null;
+    return (normalized && normalized !== 'All Years') ? normalized : currentFY;
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
@@ -106,34 +161,35 @@ export const FinanceProvider = ({ children }) => {
 
   const availableYears = React.useMemo(() => {
     const years = new Set();
-    // Always include current FY and standard historical FYs
-    years.add(currentFY);
-    years.add('2024-2025');
-    years.add('2025-2026');
+    // Standard consecutive financial years only
     years.add('2026-2027');
+    years.add('2025-2026');
+    years.add('2024-2025');
+    years.add('2023-2024');
 
     if (Array.isArray(transactions)) {
       transactions.forEach(tx => {
-        if (tx && tx.financialYear && tx.financialYear !== 'N/A') {
-          years.add(tx.financialYear);
-        } else if (tx && tx.date) {
-          const d = new Date(tx.date);
-          if (!isNaN(d.getTime())) {
-            const y = d.getFullYear();
-            const m = d.getMonth();
-            if (m >= 3) {
-              years.add(`${y}-${y+1}`);
-            } else {
-              years.add(`${y-1}-${y}`);
-            }
-          }
+        const norm = normalizeFinancialYear(tx?.financialYear, tx?.date);
+        if (norm) {
+          years.add(norm);
         }
       });
     }
 
-    const sortedYears = Array.from(years).filter(y => y && y !== 'All Years').sort((a, b) => b.localeCompare(a));
+    const sortedYears = Array.from(years)
+      .filter(y => {
+        if (!y || y === 'All Years') return false;
+        // Strictly only allow valid consecutive 4-digit years YYYY-(YYYY+1)
+        const m = y.match(/^(\d{4})-(\d{4})$/);
+        if (!m) return false;
+        const y1 = parseInt(m[1], 10);
+        const y2 = parseInt(m[2], 10);
+        return y2 === y1 + 1; // Rejects 2025-2025, 2025-26, etc.
+      })
+      .sort((a, b) => b.localeCompare(a));
+
     return [...sortedYears, 'All Years'];
-  }, [transactions, currentFY]);
+  }, [transactions]);
 
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem('saarthi_current_user');
@@ -252,11 +308,15 @@ export const FinanceProvider = ({ children }) => {
       if (txRes.status === 'fulfilled' && txRes.value.ok) {
         const txData = await txRes.value.json();
         if (Array.isArray(txData) && txData.length > 0) {
-          setTransactions(txData);
+          const sanitized = txData.map(tx => ({
+            ...tx,
+            financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || '2025-2026'
+          }));
+          setTransactions(sanitized);
           loadedFromBackend = true;
           setDataSource('backend');
           try {
-            sessionStorage.setItem('fintective_cached_txs', JSON.stringify(txData));
+            sessionStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
           } catch (e) {}
         }
       }
@@ -506,7 +566,10 @@ export const FinanceProvider = ({ children }) => {
           }
         }
 
-        const combined = [...liveTxs, ...liveExpenseTxs];
+        const combined = [...liveTxs, ...liveExpenseTxs].map(tx => ({
+          ...tx,
+          financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || '2025-2026'
+        }));
         if (combined.length > 0) {
           setTransactions(combined);
         }
