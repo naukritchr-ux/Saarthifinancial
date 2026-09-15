@@ -190,7 +190,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
         clientMasters.push({
           saarthi_client_id: item.id ? parseInt(item.id) : null,
           company_name: companyName,
-          normalized_name: normalizeCompanyName(companyName),
+          normalized_name: cleanNameTokens(companyName),
           gst_no: gstRegex.test(gst) ? gst : null,
           pan_no: pan,
           tan_no: (itemTan ? itemTan.replace(/\s+/g, '') : null) || null,
@@ -226,7 +226,7 @@ export const syncSaarthiLiveApi = async (req, res) => {
         clientMasters.push({
           saarthi_client_id: item.id ? parseInt(item.id) : null,
           company_name: companyName,
-          normalized_name: normalizeCompanyName(companyName),
+          normalized_name: cleanNameTokens(companyName),
           gst_no: gstRegex.test(gst) ? gst : null,
           pan_no: panRegex.test(pan) ? pan : null,
           tan_no: (tan ? tan.replace(/\s+/g, '') : null) || null,
