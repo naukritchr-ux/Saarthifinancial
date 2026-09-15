@@ -170,6 +170,25 @@ const TLPerformance = () => {
   const [modalPage, setModalPage] = useState(1);
   const [isCreditNotesModalOpen, setIsCreditNotesModalOpen] = useState(false);
   const [selectedFranchiseeDetail, setSelectedFranchiseeDetail] = useState(null);
+  const [franModalTab, setFranModalTab] = useState('received'); // 'received' | 'outstanding' | 'cancelled'
+
+  // Open Franchisee Detail with appropriate initial tab
+  const handleOpenFranchiseeModal = (f, preferredTab = null) => {
+    setSelectedFranchiseeDetail(f);
+    if (preferredTab) {
+      setFranModalTab(preferredTab);
+    } else if (kpiFilter === 'received') {
+      setFranModalTab('received');
+    } else if (kpiFilter === 'cancelled') {
+      setFranModalTab('cancelled');
+    } else if (kpiFilter === 'outstanding' || kpiFilter === 'at_risk') {
+      setFranModalTab('outstanding');
+    } else if ((f.received || 0) > 0 && (f.outstanding || 0) === 0) {
+      setFranModalTab('received');
+    } else {
+      setFranModalTab('outstanding');
+    }
+  };
 
   // Click-Through Drilldown Filter from KPI cards
   const [kpiFilter, setKpiFilter] = useState('all'); // 'all' | 'received' | 'outstanding' | 'cancelled' | 'at_risk'
@@ -1035,6 +1054,114 @@ const TLPerformance = () => {
               </div>
             )}
 
+            {/* Quick Segmented Filter Tabs: All, Received, Outstanding, Cancelled, High Risk */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setKpiFilter('all')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 14px',
+                  borderRadius: '6px',
+                  border: kpiFilter === 'all' ? '1.5px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                  background: kpiFilter === 'all' ? 'rgba(15, 110, 86, 0.12)' : 'var(--bg-main)',
+                  color: kpiFilter === 'all' ? 'var(--accent-teal)' : 'var(--text-main)',
+                  fontSize: '0.82rem',
+                  fontWeight: kpiFilter === 'all' ? '700' : '500',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Layers size={14} />
+                <span>All Accounts ({rawFranchisees.length})</span>
+              </button>
+
+              <button
+                onClick={() => setKpiFilter('received')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 14px',
+                  borderRadius: '6px',
+                  border: kpiFilter === 'received' ? '1.5px solid #0F6E56' : '1px solid var(--border-color)',
+                  background: kpiFilter === 'received' ? 'rgba(15, 110, 86, 0.15)' : 'var(--bg-main)',
+                  color: kpiFilter === 'received' ? '#0F6E56' : 'var(--text-main)',
+                  fontSize: '0.82rem',
+                  fontWeight: kpiFilter === 'received' ? '700' : '500',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <TrendingUp size={14} color="#0F6E56" />
+                <span>🟢 Received Inflows ({rawFranchisees.filter(f => (f.received || 0) > 0).length})</span>
+              </button>
+
+              <button
+                onClick={() => setKpiFilter('outstanding')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 14px',
+                  borderRadius: '6px',
+                  border: kpiFilter === 'outstanding' ? '1.5px solid #B7791F' : '1px solid var(--border-color)',
+                  background: kpiFilter === 'outstanding' ? 'rgba(234, 179, 8, 0.15)' : 'var(--bg-main)',
+                  color: kpiFilter === 'outstanding' ? '#B7791F' : 'var(--text-main)',
+                  fontSize: '0.82rem',
+                  fontWeight: kpiFilter === 'outstanding' ? '700' : '500',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Clock size={14} color="#B7791F" />
+                <span>🟡 Outstandings ({rawFranchisees.filter(f => (f.outstanding || 0) > 0).length})</span>
+              </button>
+
+              <button
+                onClick={() => setKpiFilter('cancelled')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 14px',
+                  borderRadius: '6px',
+                  border: kpiFilter === 'cancelled' ? '1.5px solid #A8402E' : '1px solid var(--border-color)',
+                  background: kpiFilter === 'cancelled' ? 'rgba(239, 68, 68, 0.12)' : 'var(--bg-main)',
+                  color: kpiFilter === 'cancelled' ? '#A8402E' : 'var(--text-main)',
+                  fontSize: '0.82rem',
+                  fontWeight: kpiFilter === 'cancelled' ? '700' : '500',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Briefcase size={14} color="#A8402E" />
+                <span>🔴 Cancelled & CN ({rawFranchisees.filter(f => (f.cancelled || 0) > 0 || (f.credit_notes || 0) > 0).length})</span>
+              </button>
+
+              <button
+                onClick={() => setKpiFilter('at_risk')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 14px',
+                  borderRadius: '6px',
+                  border: kpiFilter === 'at_risk' ? '1.5px solid #DC2626' : '1px solid var(--border-color)',
+                  background: kpiFilter === 'at_risk' ? 'rgba(220, 38, 38, 0.12)' : 'var(--bg-main)',
+                  color: kpiFilter === 'at_risk' ? '#DC2626' : 'var(--text-main)',
+                  fontSize: '0.82rem',
+                  fontWeight: kpiFilter === 'at_risk' ? '700' : '500',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <ShieldAlert size={14} color="#DC2626" />
+                <span>⚠️ High Risk ({rawFranchisees.filter(f => (f.outstanding || 0) > 0 && (f.collection_risk?.band_key !== 'likely')).length})</span>
+              </button>
+            </div>
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
               <div>
                 <h3 className="card-title" style={{ margin: 0, fontSize: '1rem', fontWeight: '700' }}>
@@ -1164,25 +1291,24 @@ const TLPerformance = () => {
                               key={idx} 
                               className="clickable-row-item"
                               style={{ cursor: 'pointer' }}
-                              onClick={() => setSelectedFranchiseeDetail(f)}
                             >
-                              <td className="font-bold">
+                              <td className="font-bold" onClick={() => handleOpenFranchiseeModal(f)}>
                                 <div>{f.name}</div>
                                 <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                                  {f.received_count} closed • {f.outstanding_count} pending • Click for item audit →
+                                  {f.received_count || 0} received • {f.outstanding_count || 0} pending • Click for item audit →
                                 </span>
                               </td>
 
-                              <td className="font-bold text-right">
+                              <td className="font-bold text-right" onClick={() => handleOpenFranchiseeModal(f)}>
                                 {formatCurrency(f.gross)}
                               </td>
 
-                              <td className="text-right">
+                              <td className="text-right" onClick={() => handleOpenFranchiseeModal(f, 'received')} title="Click to view Received Inflows itemization">
                                 <div style={{ color: '#0F6E56', fontWeight: '700' }}>{formatCurrency(f.received)}</div>
-                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{f.received_pct}%</div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{f.received_pct}% ({f.received_count || 0} items)</div>
                               </td>
 
-                              <td className="text-right">
+                              <td className="text-right" onClick={() => handleOpenFranchiseeModal(f, 'outstanding')} title="Click to view Outstanding Invoices itemization">
                                 <div style={{ color: f.outstanding > 0 ? '#B7791F' : 'var(--text-muted)', fontWeight: '700' }}>
                                   {formatCurrency(f.outstanding)}
                                 </div>
@@ -1193,7 +1319,7 @@ const TLPerformance = () => {
                                 )}
                               </td>
 
-                              <td className="text-right">
+                              <td className="text-right" onClick={() => handleOpenFranchiseeModal(f, 'cancelled')} title="Click to view Cancelled & CN itemization">
                                 <div style={{ color: f.cancelled > 0 ? '#A8402E' : 'var(--text-muted)', fontWeight: '600' }}>
                                   {formatCurrency(f.cancelled)}
                                 </div>
@@ -1204,7 +1330,7 @@ const TLPerformance = () => {
                                 )}
                               </td>
 
-                              <td style={{ textAlign: 'center' }}>
+                              <td style={{ textAlign: 'center' }} onClick={() => handleOpenFranchiseeModal(f, 'outstanding')}>
                                 <span style={{
                                   display: 'inline-flex',
                                   alignItems: 'center',
@@ -1221,11 +1347,11 @@ const TLPerformance = () => {
                                 </span>
                               </td>
 
-                              <td className="text-right font-bold" style={{ color: '#0F6E56' }}>
+                              <td className="text-right font-bold" style={{ color: '#0F6E56' }} onClick={() => handleOpenFranchiseeModal(f, 'outstanding')}>
                                 {f.outstanding > 0 ? formatCurrency(f.expected_collectible) : '—'}
                               </td>
 
-                              <td style={{ textAlign: 'center' }}>
+                              <td style={{ textAlign: 'center' }} onClick={() => handleOpenFranchiseeModal(f)}>
                                 <div 
                                   title={`Aging Factor: ${cr.aging_factor}% (45%) | TL Conv: ${cr.tl_conversion_rate}% (35%) | Fran Record: ${cr.franchisee_track_record}% (20%)`}
                                   style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--accent-teal)', fontSize: '0.75rem', fontWeight: '600' }}
@@ -1500,14 +1626,14 @@ const TLPerformance = () => {
       {/* Franchisee Detail Item Audit Drawer / Modal */}
       {selectedFranchiseeDetail && (
         <div className="modal-backdrop" onClick={() => setSelectedFranchiseeDetail(null)}>
-          <div className="modal-content animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '880px', width: '90%' }}>
+          <div className="modal-content animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '920px', width: '92%' }}>
             <div className="modal-header">
               <div className="modal-header-title">
                 <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#1B2321', fontWeight: '700' }}>
-                  Outstanding Invoices Audit: {selectedFranchiseeDetail.name}
+                  Franchisee Financial Audit: {selectedFranchiseeDetail.name}
                 </h3>
                 <span className="modal-subtitle" style={{ color: '#6B7268', fontSize: '0.8rem', marginTop: '2px', display: 'block' }}>
-                  Team Leader: {selectedTlId} • Total Outstanding: <strong style={{ color: '#B7791F' }}>{formatCurrency(selectedFranchiseeDetail.outstanding)}</strong>
+                  Team Leader: {selectedTlId} • Gross Billing: <strong style={{ color: 'var(--text-main)' }}>{formatCurrency(selectedFranchiseeDetail.gross)}</strong> • Received: <strong style={{ color: '#0F6E56' }}>{formatCurrency(selectedFranchiseeDetail.received)}</strong> ({selectedFranchiseeDetail.received_pct}%) • Outstanding: <strong style={{ color: '#B7791F' }}>{formatCurrency(selectedFranchiseeDetail.outstanding)}</strong>
                 </span>
               </div>
               <button className="close-btn" onClick={() => setSelectedFranchiseeDetail(null)} aria-label="Close modal">
@@ -1515,93 +1641,331 @@ const TLPerformance = () => {
               </button>
             </div>
 
-            <div className="modal-body" style={{ maxHeight: '72vh', overflowY: 'auto', padding: '20px' }}>
-              <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
-                <div className="stat-box" style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: '600' }}>Collection Risk Score</span>
-                  <h4 style={{ margin: '4px 0 0 0', color: selectedFranchiseeDetail.collection_risk?.band_key === 'likely' ? '#0F6E56' : '#B7791F' }}>
-                    {selectedFranchiseeDetail.collection_risk?.score}% ({selectedFranchiseeDetail.collection_risk?.band})
+            <div className="modal-body" style={{ maxHeight: '74vh', overflowY: 'auto', padding: '20px' }}>
+              
+              {/* 4 Stat Overview Cards */}
+              <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '16px' }}>
+                <div className="stat-box" style={{ background: 'var(--bg-main)', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.70rem', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>Gross Commercial</span>
+                  <h4 style={{ margin: '4px 0 0 0', color: 'var(--text-main)', fontSize: '1.05rem', fontWeight: '800' }}>
+                    {formatCurrency(selectedFranchiseeDetail.gross)}
                   </h4>
                 </div>
-                <div className="stat-box" style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: '600' }}>Expected Recovery</span>
-                  <h4 style={{ margin: '4px 0 0 0', color: '#0F6E56' }}>
+
+                <div className="stat-box" style={{ background: 'rgba(15, 110, 86, 0.06)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(15, 110, 86, 0.2)' }}>
+                  <span style={{ fontSize: '0.70rem', color: '#0F6E56', fontWeight: '600', textTransform: 'uppercase' }}>Received Collections</span>
+                  <h4 style={{ margin: '4px 0 0 0', color: '#0F6E56', fontSize: '1.05rem', fontWeight: '800' }}>
+                    {formatCurrency(selectedFranchiseeDetail.received)}
+                  </h4>
+                  <span style={{ fontSize: '0.68rem', color: '#0F6E56', display: 'block', marginTop: '2px' }}>
+                    {selectedFranchiseeDetail.received_pct}% of Gross Billing
+                  </span>
+                </div>
+
+                <div className="stat-box" style={{ background: 'rgba(234, 179, 8, 0.08)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(234, 179, 8, 0.25)' }}>
+                  <span style={{ fontSize: '0.70rem', color: '#B7791F', fontWeight: '600', textTransform: 'uppercase' }}>Outstanding Pending</span>
+                  <h4 style={{ margin: '4px 0 0 0', color: '#B7791F', fontSize: '1.05rem', fontWeight: '800' }}>
+                    {formatCurrency(selectedFranchiseeDetail.outstanding)}
+                  </h4>
+                  <span style={{ fontSize: '0.68rem', color: '#B7791F', display: 'block', marginTop: '2px' }}>
+                    Avg {selectedFranchiseeDetail.avg_days_outstanding}d SLA
+                  </span>
+                </div>
+
+                <div className="stat-box" style={{ background: 'var(--bg-main)', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <span style={{ fontSize: '0.70rem', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>AI Recovery Forecast</span>
+                  <h4 style={{ margin: '4px 0 0 0', color: '#0F6E56', fontSize: '1.05rem', fontWeight: '800' }}>
                     {formatCurrency(selectedFranchiseeDetail.expected_collectible)}
                   </h4>
-                </div>
-                <div className="stat-box" style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: '600' }}>Aging SLA Status</span>
-                  <h4 style={{ margin: '4px 0 0 0', color: selectedFranchiseeDetail.avg_days_outstanding > 75 ? '#A8402E' : '#B7791F' }}>
-                    Avg {selectedFranchiseeDetail.avg_days_outstanding} Days
-                  </h4>
+                  <span style={{ fontSize: '0.68rem', color: selectedFranchiseeDetail.collection_risk?.band_key === 'likely' ? '#0F6E56' : '#B7791F', display: 'block', marginTop: '2px' }}>
+                    {selectedFranchiseeDetail.collection_risk?.score}% ({selectedFranchiseeDetail.collection_risk?.band})
+                  </span>
                 </div>
               </div>
 
-              <h4 style={{ fontSize: '0.9rem', fontWeight: '700', marginBottom: '10px' }}>
-                Itemized Outstanding Enquiries & Invoices ({selectedFranchiseeDetail.outstanding_items?.length || 0})
-              </h4>
+              {/* Sub-Tab Navigation Bar within Franchisee Modal */}
+              <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', marginBottom: '14px' }}>
+                <button
+                  onClick={() => setFranModalTab('received')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 14px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: franModalTab === 'received' ? '#0F6E56' : 'transparent',
+                    color: franModalTab === 'received' ? '#ffffff' : 'var(--text-muted)',
+                    fontWeight: franModalTab === 'received' ? '700' : '500',
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <TrendingUp size={15} />
+                  <span>🟢 Received Inflows ({selectedFranchiseeDetail.received_items?.length || selectedFranchiseeDetail.received_count || 0})</span>
+                </button>
 
-              {(!selectedFranchiseeDetail.outstanding_items || selectedFranchiseeDetail.outstanding_items.length === 0) ? (
-                <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px 0' }}>No open outstanding invoice items for this franchisee.</p>
-              ) : (
-                <div className="table-responsive">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Enquiry ID</th>
-                        <th>Client / Company</th>
-                        <th>Position</th>
-                        <th>Status</th>
-                        <th style={{ textAlign: 'right' }}>Amount</th>
-                        <th style={{ textAlign: 'center' }}>Days Aged</th>
-                        <th style={{ textAlign: 'center' }}>Aging Multiplier</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedFranchiseeDetail.outstanding_items.map((item, idx) => {
-                        const isRevised = String(item.status).toLowerCase() === 'revised';
-                        return (
-                          <tr key={idx}>
-                            <td className="font-mono">#{item.enquiry_id}</td>
-                            <td className="font-bold">{item.company_name}</td>
-                            <td>{item.position_name}</td>
-                            <td>
-                              <span style={{
-                                padding: '2px 8px',
-                                borderRadius: '4px',
-                                fontSize: '0.72rem',
-                                fontWeight: '700',
-                                background: isRevised ? 'rgba(234, 179, 8, 0.2)' : 'rgba(59, 130, 246, 0.15)',
-                                color: isRevised ? '#B7791F' : '#2563EB'
-                              }}>
-                                {item.status}
-                              </span>
-                            </td>
-                            <td className="font-bold text-right" style={{ color: '#B7791F' }}>
-                              {formatCurrency(item.amount)}
-                            </td>
-                            <td style={{ textAlign: 'center' }}>
-                              <span style={{
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                fontSize: '0.72rem',
-                                fontWeight: '600',
-                                background: item.days_outstanding > 75 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)',
-                                color: item.days_outstanding > 75 ? '#A8402E' : '#B7791F'
-                              }}>
-                                {item.days_outstanding}d
-                              </span>
-                            </td>
-                            <td style={{ textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: isRevised ? '#B7791F' : 'var(--text-muted)' }}>
-                              {isRevised ? '0.70x (Revised Pipeline)' : '1.00x'}
-                            </td>
+                <button
+                  onClick={() => setFranModalTab('outstanding')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 14px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: franModalTab === 'outstanding' ? '#B7791F' : 'transparent',
+                    color: franModalTab === 'outstanding' ? '#ffffff' : 'var(--text-muted)',
+                    fontWeight: franModalTab === 'outstanding' ? '700' : '500',
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <Clock size={15} />
+                  <span>🟡 Outstanding & In-Progress ({selectedFranchiseeDetail.outstanding_items?.length || selectedFranchiseeDetail.outstanding_count || 0})</span>
+                </button>
+
+                <button
+                  onClick={() => setFranModalTab('cancelled')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 14px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: franModalTab === 'cancelled' ? '#A8402E' : 'transparent',
+                    color: franModalTab === 'cancelled' ? '#ffffff' : 'var(--text-muted)',
+                    fontWeight: franModalTab === 'cancelled' ? '700' : '500',
+                    fontSize: '0.82rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <Briefcase size={15} />
+                  <span>🔴 Cancelled & Credit Notes ({(selectedFranchiseeDetail.cancelled_items?.length || 0) + (selectedFranchiseeDetail.credit_note_items?.length || 0)})</span>
+                </button>
+              </div>
+
+              {/* TAB 1: RECEIVED INFLOWS */}
+              {franModalTab === 'received' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '0.84rem', fontWeight: '700', color: '#0F6E56' }}>
+                      Settled Inflows & Closed Placements ({selectedFranchiseeDetail.received_items?.length || 0} Records • Total: {formatCurrency(selectedFranchiseeDetail.received)})
+                    </span>
+                  </div>
+
+                  {(!selectedFranchiseeDetail.received_items || selectedFranchiseeDetail.received_items.length === 0) ? (
+                    <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px 0' }}>
+                      No closed placement or settled invoice records found for this franchisee.
+                    </p>
+                  ) : (
+                    <div className="table-responsive">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Bill Date</th>
+                            <th>Bill / Invoice #</th>
+                            <th>Client / Corporate</th>
+                            <th>Position Name</th>
+                            <th>Status</th>
+                            <th style={{ textAlign: 'right' }}>Received Amount</th>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                        </thead>
+                        <tbody>
+                          {selectedFranchiseeDetail.received_items.map((item, idx) => (
+                            <tr key={idx}>
+                              <td style={{ whiteSpace: 'nowrap', fontSize: '0.78rem' }}>{item.bill_date || '—'}</td>
+                              <td className="font-mono font-bold" style={{ color: '#0F6E56' }}>{item.bill_number}</td>
+                              <td className="font-bold">{item.company_name}</td>
+                              <td>{item.position_name}</td>
+                              <td>
+                                <span style={{
+                                  display: 'inline-block',
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: '700',
+                                  background: 'rgba(16, 185, 129, 0.15)',
+                                  color: '#0F6E56'
+                                }}>
+                                  {item.status || 'Invoiced'}
+                                </span>
+                              </td>
+                              <td className="font-bold text-right" style={{ color: '#0F6E56' }}>
+                                {formatCurrency(item.amount)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* TAB 2: OUTSTANDING & COLLECTION RISK */}
+              {franModalTab === 'outstanding' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '0.84rem', fontWeight: '700', color: '#B7791F' }}>
+                      Open In-Progress Pipelines & Outstanding Invoices ({selectedFranchiseeDetail.outstanding_items?.length || 0} Records • Total: {formatCurrency(selectedFranchiseeDetail.outstanding)})
+                    </span>
+                  </div>
+
+                  {(!selectedFranchiseeDetail.outstanding_items || selectedFranchiseeDetail.outstanding_items.length === 0) ? (
+                    <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px 0' }}>
+                      No open outstanding invoice or pipeline items for this franchisee.
+                    </p>
+                  ) : (
+                    <div className="table-responsive">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Enquiry ID</th>
+                            <th>Client / Company</th>
+                            <th>Position</th>
+                            <th>Pipeline Status</th>
+                            <th style={{ textAlign: 'right' }}>Amount</th>
+                            <th style={{ textAlign: 'center' }}>Days Aged</th>
+                            <th style={{ textAlign: 'center' }}>Aging Factor</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedFranchiseeDetail.outstanding_items.map((item, idx) => {
+                            const isRevised = String(item.status).toLowerCase() === 'revised';
+                            return (
+                              <tr key={idx}>
+                                <td className="font-mono">#{item.enquiry_id}</td>
+                                <td className="font-bold">{item.company_name}</td>
+                                <td>{item.position_name}</td>
+                                <td>
+                                  <span style={{
+                                    padding: '2px 8px',
+                                    borderRadius: '4px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: '700',
+                                    background: isRevised ? 'rgba(234, 179, 8, 0.2)' : 'rgba(59, 130, 246, 0.15)',
+                                    color: isRevised ? '#B7791F' : '#2563EB'
+                                  }}>
+                                    {item.status}
+                                  </span>
+                                </td>
+                                <td className="font-bold text-right" style={{ color: '#B7791F' }}>
+                                  {formatCurrency(item.amount)}
+                                </td>
+                                <td style={{ textAlign: 'center' }}>
+                                  <span style={{
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: '600',
+                                    background: item.days_outstanding > 75 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)',
+                                    color: item.days_outstanding > 75 ? '#A8402E' : '#B7791F'
+                                  }}>
+                                    {item.days_outstanding}d
+                                  </span>
+                                </td>
+                                <td style={{ textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: isRevised ? '#B7791F' : 'var(--text-muted)' }}>
+                                  {isRevised ? '0.70x (Revised Pipeline)' : '1.00x'}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 3: CANCELLED & CREDIT NOTES */}
+              {franModalTab === 'cancelled' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '0.84rem', fontWeight: '700', color: '#A8402E' }}>
+                      Cancelled Enquiries & Credit Note Deductions (Cancelled: {formatCurrency(selectedFranchiseeDetail.cancelled)} • Credit Notes: -{formatCurrency(selectedFranchiseeDetail.credit_notes)})
+                    </span>
+                  </div>
+
+                  {((!selectedFranchiseeDetail.cancelled_items || selectedFranchiseeDetail.cancelled_items.length === 0) &&
+                    (!selectedFranchiseeDetail.credit_note_items || selectedFranchiseeDetail.credit_note_items.length === 0)) ? (
+                    <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px 0' }}>
+                      No cancelled enquiries or credit note reversals recorded for this franchisee.
+                    </p>
+                  ) : (
+                    <div className="table-responsive">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Date</th>
+                            <th>Ref / ID</th>
+                            <th>Client Entity</th>
+                            <th>Position / Details</th>
+                            <th>Classification</th>
+                            <th style={{ textAlign: 'right' }}>Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {/* Cancelled Enquiries */}
+                          {(selectedFranchiseeDetail.cancelled_items || []).map((item, idx) => (
+                            <tr key={`canc-${idx}`}>
+                              <td style={{ whiteSpace: 'nowrap', fontSize: '0.78rem' }}>{item.date || '—'}</td>
+                              <td className="font-mono">#{item.enquiry_id}</td>
+                              <td className="font-bold">{item.company_name}</td>
+                              <td>{item.position_name}</td>
+                              <td>
+                                <span style={{
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: '700',
+                                  background: 'rgba(239, 68, 68, 0.15)',
+                                  color: '#A8402E'
+                                }}>
+                                  {item.status || 'Cancelled'}
+                                </span>
+                              </td>
+                              <td className="font-bold text-right" style={{ color: '#A8402E' }}>
+                                {formatCurrency(item.amount)}
+                              </td>
+                            </tr>
+                          ))}
+
+                          {/* Credit Notes */}
+                          {(selectedFranchiseeDetail.credit_note_items || []).map((item, idx) => (
+                            <tr key={`cn-${idx}`}>
+                              <td style={{ whiteSpace: 'nowrap', fontSize: '0.78rem' }}>{item.bill_date || '—'}</td>
+                              <td className="font-mono font-bold" style={{ color: '#7C3AED' }}>{item.bill_number}</td>
+                              <td className="font-bold">{item.company_name}</td>
+                              <td>{item.position_name || item.reason}</td>
+                              <td>
+                                <span style={{
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: '700',
+                                  background: 'rgba(124, 58, 237, 0.15)',
+                                  color: '#7C3AED'
+                                }}>
+                                  Credit Note
+                                </span>
+                              </td>
+                              <td className="font-bold text-right" style={{ color: '#7C3AED' }}>
+                                -{formatCurrency(item.amount)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
           </div>
         </div>

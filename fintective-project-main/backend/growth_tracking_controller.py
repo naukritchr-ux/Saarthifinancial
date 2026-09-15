@@ -1341,7 +1341,10 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
                 'credit_notes_count': 0,
                 'admin_closures': 0.0,
                 'admin_closures_count': 0,
-                'outstanding_items': []
+                'outstanding_items': [],
+                'received_items': [],
+                'cancelled_items': [],
+                'credit_note_items': []
             }
 
         st = str(r['enquiry_status'] or 'inprogress').strip().lower()
@@ -1355,11 +1358,20 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
             franchisee_map[fname]['received'] += eff_amt
             franchisee_map[fname]['received_count'] += 1
             franchisee_map[fname]['deals_count'] += 1
+            franchisee_map[fname]['received_items'].append({
+                'enquiry_id': r['enquiry_id'],
+                'company_name': r.get('company_name') or 'Corporate Client',
+                'position_name': r.get('position_name') or 'Executive Placement',
+                'bill_number': r.get('bill_number') or f"INV-{r['enquiry_id']}",
+                'bill_date': str(r.get('bill_date') or r.get('enquiry_date') or '')[:10],
+                'amount': eff_amt,
+                'status': st
+            })
 
         elif st == 'credit_note':
             franchisee_map[fname]['credit_notes'] += eff_amt
             franchisee_map[fname]['credit_notes_count'] += 1
-            credit_note_items.append({
+            cn_obj = {
                 'enquiry_id': r['enquiry_id'],
                 'franchisee': fname,
                 'company_name': r.get('company_name') or 'Corporate Client',
@@ -1368,12 +1380,22 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
                 'bill_date': str(r.get('bill_date') or r.get('enquiry_date') or '')[:10],
                 'amount': eff_amt,
                 'reason': 'Client fee reversal / replacement credit adjustment'
-            })
+            }
+            franchisee_map[fname]['credit_note_items'].append(cn_obj)
+            credit_note_items.append(cn_obj)
 
         elif st in ('cancelled', 'offered_and_rejected'):
             franchisee_map[fname]['cancelled'] += eff_amt
             franchisee_map[fname]['cancelled_count'] += 1
             franchisee_map[fname]['deals_count'] += 1
+            franchisee_map[fname]['cancelled_items'].append({
+                'enquiry_id': r['enquiry_id'],
+                'company_name': r.get('company_name') or 'Client Candidate',
+                'position_name': r.get('position_name') or 'Placement Request',
+                'date': str(r.get('bill_date') or r.get('enquiry_date') or '')[:10],
+                'amount': eff_amt,
+                'status': st
+            })
 
         elif st == 'internally_closed':
             # Excluded from commercial Gross; tracked as admin audit note
@@ -1488,7 +1510,10 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
             'credit_notes_count': f['credit_notes_count'],
             'admin_closures': round(f['admin_closures'], 2),
             'admin_closures_count': f['admin_closures_count'],
+            'received_items': f['received_items'],
             'outstanding_items': f['outstanding_items'],
+            'cancelled_items': f['cancelled_items'],
+            'credit_note_items': f['credit_note_items'],
             'collection_risk': {
                 'score': risk_score,
                 'band': risk_band,
