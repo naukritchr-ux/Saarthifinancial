@@ -10,12 +10,33 @@ if backend_dir not in sys.path:
 from growth_tracking_controller import (
     _calc_aging_factor,
     _calc_tl_conversion_rate,
+    _calc_bd_conversion_rate,
     _calc_franchisee_track_record,
-    _fetch_tl_portfolio
+    _fetch_tl_portfolio,
+    _fetch_bd_portfolio
 )
 from db import get_db_connection
 
 class TestTLPortfolioLogic(unittest.TestCase):
+
+    def test_bd_portfolio_fetching_and_reconciliation(self):
+        """
+        Verify that _fetch_bd_portfolio executes correctly and satisfies mathematical reconciliation.
+        """
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT DISTINCT bdMemberName FROM enquiries WHERE bdMemberName IS NOT NULL AND TRIM(bdMemberName) != '' LIMIT 1")
+            row = cursor.fetchone()
+            if row and row['bdMemberName']:
+                bd_name = row['bdMemberName']
+                bd_port = _fetch_bd_portfolio(cursor, bd_name)
+                totals = bd_port['totals']
+                expected_gross = totals['received'] + totals['outstanding'] + totals['cancelled'] - totals['credit_notes']
+                self.assertAlmostEqual(totals['gross'], expected_gross, delta=5.0)
+                self.assertIn('franchisees', bd_port)
+        finally:
+            conn.close()
 
     def test_revised_status_aging_multiplier_concrete_assertion(self):
         """

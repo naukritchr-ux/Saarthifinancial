@@ -1208,30 +1208,29 @@ def _calc_aging_factor(days_outstanding, status='inprogress'):
     return round(base_score * status_multiplier, 2)
 
 
-def _calc_tl_conversion_rate(cursor, tl_aliases, lookback_months=12):
+def _calc_entity_conversion_rate(cursor, entity_col, aliases, lookback_months=12):
     """
-    Calculates the historical conversion rate for a TL over trailing lookback_months.
-    HistoricalConversionRate = 100 * (Received / (Received + Cancelled))
+    Calculates historical conversion rate for an entity (TL or BD) over lookback_months.
     Fallback to 70.0% if < 5 resolved deals.
     """
-    if isinstance(tl_aliases, str):
-        tl_aliases = [tl_aliases]
+    if isinstance(aliases, str):
+        aliases = [aliases]
     else:
-        tl_aliases = list(tl_aliases)
-    if not tl_aliases:
+        aliases = list(aliases)
+    if not aliases:
         return 70.0, 0
 
-    placeholders = ", ".join(["%s"] * len(tl_aliases))
+    placeholders = ", ".join(["%s"] * len(aliases))
     try:
         query = f"""
             SELECT 
                 SUM(CASE WHEN e.enquiryStatus IN ('closed', 'offered_and_accepted', 'invoiced') THEN 1 ELSE 0 END) as received_cnt,
                 SUM(CASE WHEN e.enquiryStatus IN ('cancelled', 'offered_and_rejected') THEN 1 ELSE 0 END) as cancelled_cnt
             FROM enquiries e
-            WHERE (LOWER(TRIM(e.teamLeaderName)) IN ({placeholders}) OR e.teamLeaderName IN ({placeholders}))
+            WHERE (LOWER(TRIM(e.{entity_col})) IN ({placeholders}) OR e.{entity_col} IN ({placeholders}))
               AND e.created_at >= DATE_SUB(CURDATE(), INTERVAL %s MONTH)
         """
-        cursor.execute(query, tl_aliases + tl_aliases + [lookback_months])
+        cursor.execute(query, aliases + aliases + [lookback_months])
         row = cursor.fetchone()
         rec = int(row['received_cnt'] or 0) if row else 0
         canc = int(row['cancelled_cnt'] or 0) if row else 0
@@ -1239,15 +1238,23 @@ def _calc_tl_conversion_rate(cursor, tl_aliases, lookback_months=12):
 
         if total_resolved >= 5:
             return round((rec / total_resolved) * 100.0, 2), total_resolved
-        return 70.0, total_resolved # Gated default benchmark
+        return 70.0, total_resolved
     except Exception as e:
-        print(f"[_calc_tl_conversion_rate] Error: {e}")
+        print(f"[_calc_entity_conversion_rate] Error: {e}")
         return 70.0, 0
+
+
+def _calc_tl_conversion_rate(cursor, tl_aliases, lookback_months=12):
+    return _calc_entity_conversion_rate(cursor, 'teamLeaderName', tl_aliases, lookback_months)
+
+
+def _calc_bd_conversion_rate(cursor, bd_aliases, lookback_months=12):
+    return _calc_entity_conversion_rate(cursor, 'bdMemberName', bd_aliases, lookback_months)
 
 
 def _calc_franchisee_track_record(cursor, franchisee_name, lookback_months=12):
     """
-    Calculates historical conversion rate for a specific franchisee across all TLs
+    Calculates historical conversion rate for a specific franchisee across all TLs/BDs
     over the same trailing lookback_months. Fallback to 70.0% if < 3 resolved deals.
     """
     if not franchisee_name:
@@ -1275,18 +1282,19 @@ def _calc_franchisee_track_record(cursor, franchisee_name, lookback_months=12):
         return 70.0, 0
 
 
-def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, lookback_months=12, sort_by='risk'):
+def _fetch_entity_portfolio(cursor, entity_type, entity_id_or_name, start_date=None, end_date=None, lookback_months=12, sort_by='risk'):
     """
-    Fetches comprehensive franchisee portfolio breakdown for a TL with collection risk forecasting.
+    Generic franchisee portfolio breakdown & collection risk engine for TLs ('tl') and BD Agents ('bd').
     """
-    aliases = _get_entity_aliases(cursor, 'employee', tl_id_or_name, tl_id_or_name)
+    entity_col = 'teamLeaderName' if entity_type == 'tl' else 'bdMemberName'
+    aliases = _get_entity_aliases(cursor, 'employee', entity_id_or_name, entity_id_or_name)
     if not aliases:
-        aliases = [str(tl_id_or_name).strip()]
+        aliases = [str(entity_id_or_name).strip()]
 
     placeholders = ", ".join(["%s"] * len(aliases))
 
-    # TL historical conversion rate
-    tl_conv_rate, tl_resolved_deals = _calc_tl_conversion_rate(cursor, aliases, lookback_months)
+    # Entity historical conversion rate
+    entity_conv_rate, entity_resolved_deals = _calc_entity_conversion_rate(cursor, entity_col, aliases, lookback_months)
 
     # Base date filter on enquiries
     date_filter = ""
@@ -1295,7 +1303,7 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
         date_filter = "AND (e.created_at BETWEEN %s AND %s OR i.billDate BETWEEN %s AND %s)"
         date_params = [start_date, end_date, start_date, end_date]
 
-    # Query all enquiries and invoices under this TL grouped by franchisee
+    # Query all enquiries and invoices under this entity grouped by franchisee
     query = f"""
         SELECT 
             COALESCE(NULLIF(TRIM(e.franchiseeName), ''), 'Direct / Unattributed') AS franchisee_name,
@@ -1313,7 +1321,7 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
             COALESCE(DATEDIFF(CURDATE(), COALESCE(i.billDate, e.dateOfAllocation, e.created_at)), 30) AS days_outstanding
         FROM enquiries e
         LEFT JOIN invoice i ON i.enquiry_id = e.id
-        WHERE (LOWER(TRIM(e.teamLeaderName)) IN ({placeholders}) OR e.teamLeaderName IN ({placeholders}))
+        WHERE (LOWER(TRIM(e.{entity_col})) IN ({placeholders}) OR e.{entity_col} IN ({placeholders}))
           {date_filter}
         ORDER BY franchisee_name ASC, days_outstanding DESC
     """
@@ -1477,7 +1485,7 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
             avg_days = 0
 
         # Collection Risk Score (0-100)
-        risk_score = (0.45 * weighted_aging) + (0.35 * tl_conv_rate) + (0.20 * fran_conv_rate)
+        risk_score = (0.45 * weighted_aging) + (0.35 * entity_conv_rate) + (0.20 * fran_conv_rate)
         risk_score = round(max(0.0, min(100.0, risk_score)), 1)
 
         # Risk Band
@@ -1519,7 +1527,7 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
                 'band': risk_band,
                 'band_key': risk_band_key,
                 'aging_factor': round(weighted_aging, 1),
-                'tl_conversion_rate': tl_conv_rate,
+                'conversion_rate': entity_conv_rate,
                 'franchisee_track_record': fran_conv_rate
             },
             'expected_collectible': expected_collectible
@@ -1550,7 +1558,6 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
     # Build formatted monthly trend array
     month_keys = sorted(monthly_map.keys())
     if not month_keys:
-        # Fallback monthly series if no dated rows
         curr = datetime.date.today()
         for i in range(6, -1, -1):
             m_dt = curr - datetime.timedelta(days=i*30)
@@ -1594,9 +1601,15 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
     prior_out = sum(m['outstanding'] for m in monthly_trend[-6:-3]) if len(monthly_trend) >= 6 else (recent_out * 1.05)
     outstanding_delta_pct = round(((recent_out - prior_out) / max(1.0, prior_out)) * 100.0, 1)
 
+    resolved_info = _resolve_entity_info(cursor, 'employee', entity_id_or_name)
+
     return {
-        'tl_name': tl_id_or_name,
-        'resolved_tl_name': _resolve_entity_info(cursor, 'employee', tl_id_or_name),
+        'entity_type': entity_type,
+        'entity_name': entity_id_or_name,
+        'tl_name': entity_id_or_name if entity_type == 'tl' else None,
+        'bd_name': entity_id_or_name if entity_type == 'bd' else None,
+        'resolved_entity_name': resolved_info,
+        'resolved_tl_name': resolved_info,
         'lookback_months': lookback_months,
         'totals': {
             'gross': round(tot_gross, 2),
@@ -1627,6 +1640,14 @@ def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, l
         'credit_note_details': credit_note_items,
         'franchisees': franchisee_list
     }
+
+
+def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, lookback_months=12, sort_by='risk'):
+    return _fetch_entity_portfolio(cursor, 'tl', tl_id_or_name, start_date, end_date, lookback_months, sort_by)
+
+
+def _fetch_bd_portfolio(cursor, bd_id_or_name, start_date=None, end_date=None, lookback_months=12, sort_by='risk'):
+    return _fetch_entity_portfolio(cursor, 'bd', bd_id_or_name, start_date, end_date, lookback_months, sort_by)
 
 
 # --------------------------------------------------------------------------
@@ -1706,3 +1727,82 @@ def get_tl_tracking_leaderboard():
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
+
+
+# --------------------------------------------------------------------------
+# 7. GET /api/bd-tracking/<bd_id>/portfolio
+# --------------------------------------------------------------------------
+@growth_tracking_bp.route("/api/bd-tracking/<bd_id>/portfolio", methods=["GET"])
+def get_bd_portfolio(bd_id):
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+    lookback_months = int(request.args.get("lookback_months", "12"))
+    sort_by = request.args.get("sort_by", "risk").strip().lower()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        data = _fetch_bd_portfolio(cursor, bd_id, start_date, end_date, lookback_months, sort_by)
+        return jsonify(data)
+    except Exception as e:
+        print(f"[get_bd_portfolio] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+
+# --------------------------------------------------------------------------
+# 8. GET /api/bd-tracking/leaderboard
+# --------------------------------------------------------------------------
+@growth_tracking_bp.route("/api/bd-tracking/leaderboard", methods=["GET"])
+def get_bd_tracking_leaderboard():
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+    lookback_months = int(request.args.get("lookback_months", "12"))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT DISTINCT e.bdMemberName 
+            FROM enquiries e
+            WHERE e.bdMemberName IS NOT NULL AND TRIM(e.bdMemberName) != ''
+              AND LOWER(TRIM(e.bdMemberName)) NOT IN ('head office', 'head  - office', 'unknown', 'prospect', '')
+        """)
+        bd_rows = cursor.fetchall()
+        
+        leaderboard = []
+        for r in bd_rows:
+            bd_name = r['bdMemberName'].strip()
+            port = _fetch_bd_portfolio(cursor, bd_name, start_date, end_date, lookback_months, sort_by='gross')
+            t = port['totals']
+            leaderboard.append({
+                'bd_name': bd_name,
+                'resolved_name': port['resolved_entity_name'],
+                'gross': t['gross'],
+                'received': t['received'],
+                'received_pct': t['received_pct'],
+                'outstanding': t['outstanding'],
+                'outstanding_pct': t['outstanding_pct'],
+                'expected_collectible': t['expected_collectible'],
+                'expected_loss': t['expected_loss'],
+                'cancelled': t['cancelled'],
+                'cancelled_pct': t['cancelled_pct'],
+                'credit_notes': t['credit_notes'],
+                'admin_closures': t['admin_closures'],
+                'admin_closures_count': t['admin_closures_count'],
+                'franchisees_count': len(port['franchisees']),
+                'reconciled': t['reconciled']
+            })
+
+        leaderboard.sort(key=lambda x: x['gross'], reverse=True)
+        return jsonify({
+            'period': {'start_date': start_date, 'end_date': end_date, 'lookback_months': lookback_months},
+            'leaderboard': leaderboard
+        })
+    except Exception as e:
+        print(f"[get_bd_tracking_leaderboard] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
