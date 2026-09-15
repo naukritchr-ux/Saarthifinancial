@@ -163,12 +163,18 @@ export const getTanWiseByFyReport = async ({ view = 'all', fy = '', search = '' 
       COALESCE(MAX(d.company_name), tr.tan_no) AS company_name,
       SUM(COALESCE(tr.tally_tds, 0)) AS tally_total,
       SUM(COALESCE(tr.as26_tds, 0)) AS as26_total,
-      MAX(d.contact_person_name) AS dues_contact_person,
-      MAX(d.contact_number) AS dues_contact_number,
+      COALESCE(
+        MAX(d.contact_person_name), 
+        (SELECT d2.contact_person_name FROM tds_dues d2 WHERE d2.tan_no = tr.tan_no AND d2.contact_person_name IS NOT NULL AND TRIM(d2.contact_person_name) != '' LIMIT 1)
+      ) AS dues_contact_person,
+      COALESCE(
+        MAX(d.contact_number), 
+        (SELECT d2.contact_number FROM tds_dues d2 WHERE d2.tan_no = tr.tan_no AND d2.contact_number IS NOT NULL AND TRIM(d2.contact_number) != '' LIMIT 1)
+      ) AS dues_contact_number,
       (SELECT f.contact_person FROM tds_followups f WHERE f.tan_no = tr.tan_no ORDER BY f.id DESC LIMIT 1) AS followup_contact_person,
       (SELECT f.contact_number FROM tds_followups f WHERE f.tan_no = tr.tan_no ORDER BY f.id DESC LIMIT 1) AS followup_contact_number
     FROM tds_reconciliation_results tr
-    LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+    LEFT JOIN tds_dues d ON (tr.tds_dues_id = d.id OR (tr.tan_no = d.tan_no AND d.tan_no IS NOT NULL AND TRIM(d.tan_no) != ''))
     WHERE ${whereClauses.join(' AND ')}
     GROUP BY tr.tan_no, COALESCE(NULLIF(TRIM(tr.financial_year), ''), 'Unspecified')
     ORDER BY financial_year DESC, company_name ASC, tr.tan_no ASC
