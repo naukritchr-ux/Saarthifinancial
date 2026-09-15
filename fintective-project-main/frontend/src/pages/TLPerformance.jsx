@@ -497,19 +497,21 @@ const TLPerformance = () => {
 
   // Filtered Franchisees based on Click-Through KPI Filter
   const filteredFranchisees = useMemo(() => {
+    let list = [...rawFranchisees];
     if (kpiFilter === 'received') {
-      return rawFranchisees.filter(f => (f.received || 0) > 0);
+      list = list.filter(f => (f.received || 0) > 0);
+      list.sort((a, b) => (b.received || 0) - (a.received || 0));
+    } else if (kpiFilter === 'outstanding') {
+      list = list.filter(f => (f.outstanding || 0) > 0);
+      list.sort((a, b) => (b.outstanding || 0) - (a.outstanding || 0));
+    } else if (kpiFilter === 'cancelled') {
+      list = list.filter(f => (f.cancelled || 0) > 0 || (f.credit_notes || 0) > 0);
+      list.sort((a, b) => ((b.cancelled || 0) + (b.credit_notes || 0)) - ((a.cancelled || 0) + (a.credit_notes || 0)));
+    } else if (kpiFilter === 'at_risk') {
+      list = list.filter(f => (f.outstanding || 0) > 0 && (f.collection_risk?.band_key !== 'likely' || (f.collection_risk?.score != null && f.collection_risk?.score < 70)));
+      list.sort((a, b) => (a.collection_risk?.score ?? 70) - (b.collection_risk?.score ?? 70));
     }
-    if (kpiFilter === 'outstanding') {
-      return rawFranchisees.filter(f => (f.outstanding || 0) > 0);
-    }
-    if (kpiFilter === 'cancelled') {
-      return rawFranchisees.filter(f => (f.cancelled || 0) > 0 || (f.credit_notes || 0) > 0);
-    }
-    if (kpiFilter === 'at_risk') {
-      return rawFranchisees.filter(f => (f.outstanding || 0) > 0 && (f.collection_risk?.score < 70 || f.collection_risk?.band_key !== 'likely'));
-    }
-    return rawFranchisees;
+    return list;
   }, [rawFranchisees, kpiFilter]);
 
   // Proportional Stacked Bar segments
@@ -732,7 +734,7 @@ const TLPerformance = () => {
             {/* 2. Received Revenue */}
             <div 
               className={`kpi-card card-green clickable-kpi ${kpiFilter === 'received' ? 'active-filter-card' : ''}`}
-              onClick={() => setKpiFilter('received')}
+              onClick={() => { setKpiFilter('received'); setFranPage(1); }}
               style={{ cursor: 'pointer', position: 'relative' }}
               title="Click to filter by accounts with received collections"
             >
@@ -757,7 +759,7 @@ const TLPerformance = () => {
             {/* 3. In-Progress / Outstanding */}
             <div 
               className={`kpi-card card-yellow clickable-kpi ${kpiFilter === 'outstanding' ? 'active-filter-card' : ''}`}
-              onClick={() => setKpiFilter('outstanding')}
+              onClick={() => { setKpiFilter('outstanding'); setFranPage(1); }}
               style={{ cursor: 'pointer', position: 'relative', borderColor: 'rgba(234, 179, 8, 0.4)' }}
               title="Click to filter by accounts with pending collections"
             >
@@ -782,7 +784,7 @@ const TLPerformance = () => {
             {/* 4. Cancelled Billing */}
             <div 
               className={`kpi-card card-red clickable-kpi ${kpiFilter === 'cancelled' ? 'active-filter-card' : ''}`}
-              onClick={() => setKpiFilter('cancelled')}
+              onClick={() => { setKpiFilter('cancelled'); setFranPage(1); }}
               style={{ cursor: 'pointer', position: 'relative' }}
               title="Click to filter by accounts with cancellations or credit notes"
             >
@@ -802,7 +804,7 @@ const TLPerformance = () => {
             {/* 5. Expected Collectible Amount (AI Forecast) */}
             <div 
               className={`kpi-card clickable-kpi ${kpiFilter === 'at_risk' ? 'active-filter-card' : ''}`}
-              onClick={() => setKpiFilter('at_risk')}
+              onClick={() => { setKpiFilter('at_risk'); setFranPage(1); }}
               style={{ 
                 cursor: 'pointer',
                 background: 'linear-gradient(135deg, rgba(15, 110, 86, 0.08) 0%, rgba(34, 49, 79, 0.05) 100%)', 
@@ -909,7 +911,7 @@ const TLPerformance = () => {
                     transition: 'width 0.3s ease',
                     cursor: 'pointer'
                   }}
-                  onClick={() => setKpiFilter('cancelled')}
+                  onClick={() => { setKpiFilter('cancelled'); setFranPage(1); }}
                   title={`Cancelled: ${formatCurrency(pTotals.cancelled)} (${barCancelledPct.toFixed(1)}% of base)`}
                 >
                   {barCancelledPct >= 8 ? `Cancelled ${formatLakhs(pTotals.cancelled)}` : ''}
@@ -932,7 +934,7 @@ const TLPerformance = () => {
                     transition: 'width 0.3s ease',
                     cursor: 'pointer'
                   }}
-                  onClick={() => setKpiFilter('outstanding')}
+                  onClick={() => { setKpiFilter('outstanding'); setFranPage(1); }}
                   title={`Outstanding / Pending: ${formatCurrency(pTotals.outstanding)} (${barOutstandingPct.toFixed(1)}% of base)`}
                 >
                   {barOutstandingPct >= 8 ? `Outstanding ${formatLakhs(pTotals.outstanding)}` : ''}
@@ -955,7 +957,7 @@ const TLPerformance = () => {
                     transition: 'width 0.3s ease',
                     cursor: 'pointer'
                   }}
-                  onClick={() => setKpiFilter('received')}
+                  onClick={() => { setKpiFilter('received'); setFranPage(1); }}
                   title={`Received Inflows: ${formatCurrency(pTotals.received)} (${barReceivedPct.toFixed(1)}% of base)`}
                 >
                   {barReceivedPct >= 8 ? `Received ${formatLakhs(pTotals.received)}` : ''}
@@ -1071,7 +1073,7 @@ const TLPerformance = () => {
             {/* Quick Segmented Filter Tabs: All, Received, Outstanding, Cancelled, High Risk */}
             <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
               <button
-                onClick={() => setKpiFilter('all')}
+                onClick={() => { setKpiFilter('all'); setFranPage(1); }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1092,7 +1094,7 @@ const TLPerformance = () => {
               </button>
 
               <button
-                onClick={() => setKpiFilter('received')}
+                onClick={() => { setKpiFilter('received'); setFranPage(1); }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1113,7 +1115,7 @@ const TLPerformance = () => {
               </button>
 
               <button
-                onClick={() => setKpiFilter('outstanding')}
+                onClick={() => { setKpiFilter('outstanding'); setFranPage(1); }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1134,7 +1136,7 @@ const TLPerformance = () => {
               </button>
 
               <button
-                onClick={() => setKpiFilter('cancelled')}
+                onClick={() => { setKpiFilter('cancelled'); setFranPage(1); }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1155,7 +1157,7 @@ const TLPerformance = () => {
               </button>
 
               <button
-                onClick={() => setKpiFilter('at_risk')}
+                onClick={() => { setKpiFilter('at_risk'); setFranPage(1); }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1172,7 +1174,7 @@ const TLPerformance = () => {
                 }}
               >
                 <ShieldAlert size={14} color="#DC2626" />
-                <span>⚠️ High Risk ({rawFranchisees.filter(f => (f.outstanding || 0) > 0 && (f.collection_risk?.band_key !== 'likely')).length})</span>
+                <span>⚠️ High Risk ({rawFranchisees.filter(f => (f.outstanding || 0) > 0 && (f.collection_risk?.band_key !== 'likely' || (f.collection_risk?.score != null && f.collection_risk?.score < 70))).length})</span>
               </button>
             </div>
 
@@ -1209,56 +1211,6 @@ const TLPerformance = () => {
                   <Download size={14} />
                   <span>Export CSV</span>
                 </button>
-
-                {/* Sort Controls */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--bg-main)', padding: '3px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', paddingLeft: '6px' }}>Sort:</span>
-                  <button
-                    onClick={() => setSortBy('risk')}
-                    style={{
-                      padding: '4px 8px',
-                      borderRadius: '4px',
-                      border: 'none',
-                      fontSize: '0.75rem',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      background: sortBy === 'risk' ? 'var(--accent-teal)' : 'transparent',
-                      color: sortBy === 'risk' ? '#fff' : 'var(--text-muted)'
-                    }}
-                  >
-                    Risk 🔴
-                  </button>
-                  <button
-                    onClick={() => setSortBy('outstanding')}
-                    style={{
-                      padding: '4px 8px',
-                      borderRadius: '4px',
-                      border: 'none',
-                      fontSize: '0.75rem',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      background: sortBy === 'outstanding' ? 'var(--accent-teal)' : 'transparent',
-                      color: sortBy === 'outstanding' ? '#fff' : 'var(--text-muted)'
-                    }}
-                  >
-                    Outstanding 🟡
-                  </button>
-                  <button
-                    onClick={() => setSortBy('gross')}
-                    style={{
-                      padding: '4px 8px',
-                      borderRadius: '4px',
-                      border: 'none',
-                      fontSize: '0.75rem',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      background: sortBy === 'gross' ? 'var(--accent-teal)' : 'transparent',
-                      color: sortBy === 'gross' ? '#fff' : 'var(--text-muted)'
-                    }}
-                  >
-                    Gross 🟢
-                  </button>
-                </div>
               </div>
             </div>
 

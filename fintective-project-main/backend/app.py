@@ -185,7 +185,13 @@ is_prod = os.environ.get('FLASK_ENV') == 'production' or not app.debug
 allowed_origins_env = os.environ.get('ALLOWED_ORIGINS')
 if not allowed_origins_env:
     if is_prod:
-        allowed_origins = ['https://saarthi360.in', 'https://api.sarthi360.in', 'https://saarthifinancial-1.onrender.com']
+        allowed_origins = [
+            'https://saarthi360.in', 
+            'https://api.sarthi360.in', 
+            'https://saarthifinancial.onrender.com',
+            'https://saarthifinancial-1.onrender.com',
+            r'https://.*\.vercel\.app'
+        ]
     else:
         allowed_origins = '*'
 else:
