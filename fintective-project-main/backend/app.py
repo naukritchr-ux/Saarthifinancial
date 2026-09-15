@@ -180,33 +180,33 @@ def safe_date_diff_days(d1, d2):
 
 app = Flask(__name__)
 
-# Configure CORS with origins check
-is_prod = os.environ.get('FLASK_ENV') == 'production' or not app.debug
-allowed_origins_env = os.environ.get('ALLOWED_ORIGINS')
-if not allowed_origins_env:
-    if is_prod:
-        allowed_origins = [
-            'https://saarthi360.in', 
-            'https://api.sarthi360.in', 
-            'https://saarthifinancial.onrender.com',
-            'https://saarthifinancial-1.onrender.com',
-            r'https://.*\.vercel\.app'
-        ]
-    else:
-        allowed_origins = '*'
-else:
-    allowed_origins = [o.strip() for o in allowed_origins_env.split(',') if o.strip()]
-CORS(app, origins=allowed_origins)
+# Configure CORS to permit all valid origins including Vercel frontend domains
+CORS(
+    app,
+    resources={r"/*": {"origins": "*"}},
+    allow_headers=["Content-Type", "X-API-Key", "Authorization", "Accept", "Origin"],
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    supports_credentials=False
+)
 
+is_prod = os.environ.get('FLASK_ENV') == 'production' or not app.debug
 API_KEY = os.environ.get('API_KEY')
 ENFORCE_API_KEY = os.environ.get('ENFORCE_API_KEY', 'true').lower() in ('true', '1', 'yes')
 if not API_KEY and is_prod and ENFORCE_API_KEY:
     raise RuntimeError("CRITICAL SECURITY CONFIGURATION: API_KEY environment variable must be set in production.")
 
 @app.before_request
-def verify_api_key():
-    # Always allow preflight OPTIONS requests and /health endpoints
-    if request.method == 'OPTIONS' or request.path in ['/health', '/api/health', '/api/health/sync-debug']:
+def handle_preflight_and_api_key():
+    # Always allow preflight OPTIONS requests immediately
+    if request.method == 'OPTIONS':
+        res = app.make_default_options_response()
+        res.headers['Access-Control-Allow-Origin'] = '*'
+        res.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
+        res.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-API-Key, Authorization, Accept, Origin'
+        return res
+
+    # Allow health diagnostic endpoints without auth
+    if request.path in ['/health', '/api/health', '/api/health/sync-debug']:
         return None
 
     incoming_key = request.headers.get('X-API-Key')
@@ -216,6 +216,13 @@ def verify_api_key():
         if not expected_key or not incoming_key or incoming_key != expected_key:
             return jsonify({'success': False, 'error': 'Unauthorized: Invalid or missing X-API-Key header'}), 401
     return None
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-API-Key, Authorization, Accept, Origin'
+    return response
 
 from invoice_controller import invoice_bp
 from growth_tracking_controller import growth_tracking_bp
