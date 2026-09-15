@@ -60,8 +60,22 @@ export const FinanceProvider = ({ children }) => {
     'Other': 50000
   });
 
+  // Helper to compute current dynamic Indian Financial Year (April 1 - March 31)
+  const getCurrentFY = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth(); // 0-indexed: 0=Jan, 3=Apr
+    return m >= 3 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
+  };
+
+  const currentFY = getCurrentFY();
+
   const [selectedMonth, setSelectedMonth] = useState('All Months');
-  const [selectedYear, setSelectedYear] = useState('All Years');
+  const [selectedYear, setSelectedYear] = useState(() => {
+    const saved = localStorage.getItem('saarthi_selected_year');
+    // If no prior manual selection, or if previously defaulted to 'All Years', automatically use current FY
+    return (saved && saved !== 'All Years') ? saved : currentFY;
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   const toggleSidebar = () => setIsSidebarOpen(prev => !prev);
@@ -89,27 +103,35 @@ export const FinanceProvider = ({ children }) => {
   }, [transactions]);
 
   const availableYears = React.useMemo(() => {
-    if (!Array.isArray(transactions)) return ['All Years'];
     const years = new Set();
-    transactions.forEach(tx => {
-      if (tx && tx.financialYear && tx.financialYear !== 'N/A') {
-        years.add(tx.financialYear);
-      } else if (tx && tx.date) {
-        const d = new Date(tx.date);
-        if (!isNaN(d.getTime())) {
-          const y = d.getFullYear();
-          const m = d.getMonth();
-          if (m >= 3) {
-            years.add(`${y}-${y+1}`);
-          } else {
-            years.add(`${y-1}-${y}`);
+    // Always include current FY and standard historical FYs
+    years.add(currentFY);
+    years.add('2024-2025');
+    years.add('2025-2026');
+    years.add('2026-2027');
+
+    if (Array.isArray(transactions)) {
+      transactions.forEach(tx => {
+        if (tx && tx.financialYear && tx.financialYear !== 'N/A') {
+          years.add(tx.financialYear);
+        } else if (tx && tx.date) {
+          const d = new Date(tx.date);
+          if (!isNaN(d.getTime())) {
+            const y = d.getFullYear();
+            const m = d.getMonth();
+            if (m >= 3) {
+              years.add(`${y}-${y+1}`);
+            } else {
+              years.add(`${y-1}-${y}`);
+            }
           }
         }
-      }
-    });
-    const sortedYears = Array.from(years).sort((a, b) => b.localeCompare(a));
-    return ['All Years', ...sortedYears];
-  }, [transactions]);
+      });
+    }
+
+    const sortedYears = Array.from(years).filter(y => y && y !== 'All Years').sort((a, b) => b.localeCompare(a));
+    return [...sortedYears, 'All Years'];
+  }, [transactions, currentFY]);
 
   const [currentUser, setCurrentUser] = useState(() => {
     const saved = localStorage.getItem('saarthi_current_user');
@@ -538,6 +560,12 @@ export const FinanceProvider = ({ children }) => {
   useEffect(() => {
     localStorage.setItem('saarthi_selected_year', selectedYear);
   }, [selectedYear]);
+
+  useEffect(() => {
+    if (availableYears && availableYears.length > 0 && !availableYears.includes(selectedYear)) {
+      setSelectedYear(availableYears.includes(currentFY) ? currentFY : availableYears[0]);
+    }
+  }, [availableYears, selectedYear, currentFY]);
 
   useEffect(() => {
     if (availableMonths && availableMonths.length > 0 && !availableMonths.includes(selectedMonth)) {
