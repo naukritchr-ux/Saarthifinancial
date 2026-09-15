@@ -214,15 +214,15 @@ const GrowthTracking = () => {
     return 0;
   }, [predictionData, chartHistorical]);
 
-  // Current rate (R) in percentage
+  // Current rate (R) in percentage for forward target projections
   const currentRatePct = useMemo(() => {
     if (overrideRate !== '' && overrideRate !== null && overrideRate !== undefined) {
       return parseFloat(overrideRate) || 0;
     }
-    if (predictionData?.applied_rate_pct !== undefined && predictionData?.applied_rate_pct !== null) {
+    if (predictionData?.applied_rate_pct !== undefined && predictionData?.applied_rate_pct !== null && predictionData.applied_rate_pct > 0) {
       return predictionData.applied_rate_pct;
     }
-    if (predictionData?.historical_cagr_pct !== undefined && predictionData?.historical_cagr_pct !== null) {
+    if (predictionData?.historical_cagr_pct !== undefined && predictionData?.historical_cagr_pct !== null && predictionData.historical_cagr_pct > 0) {
       return predictionData.historical_cagr_pct;
     }
     if (chartHistorical.length >= 2) {
@@ -231,7 +231,9 @@ const GrowthTracking = () => {
       const periods = chartHistorical.length - 1;
       if (first > 0 && last > 0 && periods > 0) {
         const cagr = (Math.pow(last / first, 1 / periods) - 1) * 100;
-        return Math.round(Math.max(-50, Math.min(200, cagr)));
+        if (cagr > 0) {
+          return Math.round(Math.min(200, cagr));
+        }
       }
     }
     return effectiveBaseRevenue > 0 ? 15 : null;
@@ -444,7 +446,7 @@ const GrowthTracking = () => {
             <span className="kpi-icon"><Percent size={18} /></span>
           </div>
           <h2 className="kpi-value">
-            {!hasData || currentRatePct === null ? '—' : `+${currentRatePct}%`}
+            {!hasData || currentRatePct === null ? '—' : `${currentRatePct >= 0 ? '+' : ''}${currentRatePct}%`}
           </h2>
           <div className="kpi-change up">
             <span>
@@ -595,17 +597,17 @@ const GrowthTracking = () => {
                       fontWeight: '700',
                       padding: '2px 6px',
                       borderRadius: '4px',
-                      backgroundColor: '#E6F4EA',
-                      color: '#0F6E56'
+                      backgroundColor: proj.growth_pct >= 0 ? '#E6F4EA' : '#FDE8E8',
+                      color: proj.growth_pct >= 0 ? '#0F6E56' : '#C81E1E'
                     }}>
-                      +{proj.growth_pct}%
+                      {proj.growth_pct >= 0 ? '+' : ''}{proj.growth_pct}%
                     </span>
                   </div>
-                  <div style={{ fontSize: '1.25rem', fontWeight: '700', color: '#0F6E56', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '1.25rem', fontWeight: '700', color: proj.growth_pct >= 0 ? '#0F6E56' : '#C81E1E', marginBottom: '4px' }}>
                     {formatCurrency(proj.projected_revenue)}
                   </div>
                   <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    Incremental: +{formatCurrency(proj.incremental_gain)}
+                    Incremental: {proj.incremental_gain >= 0 ? '+' : ''}{formatCurrency(proj.incremental_gain)}
                   </span>
                 </div>
               ))}
