@@ -185,43 +185,20 @@ const TLPerformance = () => {
       };
     });
 
-    // Also include any TL present in live transactions not yet in merged roster
-    const existingNames = new Set(merged.map(t => (t.name || '').trim().toLowerCase()));
-    if (Array.isArray(transactions)) {
-      const tlCountMap = {};
-      transactions.forEach((tx) => {
-        const tlName = (tx.teamLeaderName || '').trim();
-        if (tlName && tlName.toLowerCase() !== 'unknown') {
-          tlCountMap[tlName] = (tlCountMap[tlName] || 0) + (tx.type === 'income' ? 1 : 0);
-        }
-      });
-      Object.keys(tlCountMap).forEach((tlName, idx) => {
-        if (!existingNames.has(tlName.toLowerCase())) {
-          existingNames.add(tlName.toLowerCase());
-          const closedCount = tlCountMap[tlName];
-          merged.push({
-            id: `tl-tx-${idx}`,
-            name: tlName,
-            role: 'Team Leader',
-            target: 500000,
-            grossRevenue: 0,
-            netRevenue: 0,
-            lossAmount: 0,
-            totalEnquiries: Math.max(10, closedCount * 2),
-            enquiriesProgressed: closedCount,
-            enquiriesCancelled: 0,
-            enquiriesInternallyClosed: 0
-          });
-        }
-      });
-    }
+    // Filter out system placeholders and non-human buckets
+    const SYSTEM_EXCLUSIONS = new Set(['prospect', 'old . tl', 'pune . office', 'head office', 'unknown', '']);
 
-    return merged;
+    const validMerged = merged.filter(t => !SYSTEM_EXCLUSIONS.has((t.name || '').trim().toLowerCase()));
+
+    // Sort by enquiry volume & gross revenue so top active Team Leaders appear first
+    validMerged.sort((a, b) => (b.totalEnquiries || 0) - (a.totalEnquiries || 0));
+
+    return validMerged;
   }, [teamLeaders, leaderboard, transactions]);
 
-  // Set default selected TL
+  // Set default selected TL to top active TL
   useEffect(() => {
-    if (!selectedTlId && effectiveLeaders.length > 0) {
+    if ((!selectedTlId || selectedTlId.toLowerCase() === 'prospect') && effectiveLeaders.length > 0) {
       setSelectedTlId(effectiveLeaders[0].name || effectiveLeaders[0].id);
     }
   }, [effectiveLeaders, selectedTlId]);

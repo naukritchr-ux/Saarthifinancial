@@ -657,30 +657,64 @@ def get_entity_roster():
                     'confidence': 'high' if months >= 6 else ('low' if months >= 3 else 'insufficient_data')
                 })
 
-        elif entity_type in ('bd_agent', 'bd_specialist'):
-            status_clause = "" if include_inactive else "WHERE e.status = 'active'"
-            query = f"""
-                SELECT e.id, e.canonical_name, e.role, e.status, e.hire_date
-                FROM employees e
-                {status_clause}
-                {"AND" if status_clause else "WHERE"} e.role = 'bd_specialist'
-                ORDER BY e.canonical_name ASC
-            """
-            cursor.execute(query)
-            rows = cursor.fetchall()
-            for r in rows:
-                hist, monthly, months = _fetch_historical_revenue_and_stats(cursor, 'bd_agent', r['id'], r['canonical_name'])
+        elif entity_type in ('bd_agent', 'bd_specialist', 'bd'):
+            # 1. Fetch all distinct BD member names from enquiries
+            cursor.execute("""
+                SELECT DISTINCT e.bdMemberName as name, COUNT(*) as deal_cnt
+                FROM enquiries e
+                WHERE e.bdMemberName IS NOT NULL AND TRIM(e.bdMemberName) != ''
+                  AND LOWER(TRIM(e.bdMemberName)) NOT IN ('head office', 'head  - office', 'unknown', 'prospect', '')
+                GROUP BY e.bdMemberName
+                ORDER BY deal_cnt DESC
+            """)
+            enquiry_bds = cursor.fetchall()
+
+            # 2. Also fetch from employees table where role is bd_specialist
+            cursor.execute("SELECT id, canonical_name, role, status FROM employees WHERE role = 'bd_specialist'")
+            emp_bds = cursor.fetchall()
+            
+            seen_names = set()
+            bd_candidates = []
+
+            # Prioritize dedicated BD agents/employees
+            for r in emp_bds:
+                cname = r['canonical_name'].strip()
+                seen_names.add(cname.lower())
+                bd_candidates.append({
+                    'id': str(r['id']),
+                    'name': cname,
+                    'role': 'BD Specialist',
+                    'status': r.get('status') or 'active'
+                })
+
+            # Add all other active BD contributors from enquiries
+            for r in enquiry_bds:
+                raw_name = r['name'].strip()
+                resolved_info = _resolve_entity_info(cursor, 'employee', raw_name)
+                canonical = resolved_info.get('canonical_name') or raw_name
+                if canonical.lower() not in seen_names and raw_name.lower() not in seen_names:
+                    seen_names.add(canonical.lower())
+                    seen_names.add(raw_name.lower())
+                    bd_candidates.append({
+                        'id': resolved_info.get('id') or f"bd-{len(bd_candidates)+1}",
+                        'name': canonical,
+                        'role': 'BD Member',
+                        'status': resolved_info.get('status') or 'active'
+                    })
+
+            for b in bd_candidates:
+                hist, monthly, months = _fetch_historical_revenue_and_stats(cursor, 'bd_agent', b['id'], b['name'])
                 tot_rev = sum(h['revenue'] for h in hist)
                 tot_deals = sum(h['deals_count'] for h in hist)
                 cagr = _calculate_cagr(hist)
                 score_data = _compute_productivity_score(monthly, months)
                 roster.append({
-                    'id': str(r['id']),
-                    'name': r['canonical_name'],
-                    'canonical_name': r['canonical_name'],
+                    'id': str(b['id']),
+                    'name': b['name'],
+                    'canonical_name': b['name'],
                     'type': 'bd_agent',
-                    'role': 'BD Specialist',
-                    'status': r['status'],
+                    'role': b['role'],
+                    'status': b['status'],
                     'months_of_history': months,
                     'total_revenue': tot_rev,
                     'total_deals': tot_deals,
@@ -690,6 +724,9 @@ def get_entity_roster():
                     'badge_key': score_data['badge_key'],
                     'confidence': 'high' if months >= 6 else ('low' if months >= 3 else 'insufficient_data')
                 })
+
+            # Sort by total revenue and total deals descending so top BDs appear first
+            roster.sort(key=lambda x: (x['total_deals'], x['total_revenue']), reverse=True)
 
         else: # employee / internal team
             status_clause = "" if include_inactive else "WHERE e.status = 'active'"
@@ -1507,7 +1544,7 @@ def get_tl_tracking_leaderboard():
             SELECT DISTINCT e.teamLeaderName 
             FROM enquiries e
             WHERE e.teamLeaderName IS NOT NULL AND TRIM(e.teamLeaderName) != ''
-              AND LOWER(TRIM(e.teamLeaderName)) NOT IN ('head office', 'head  - office', 'unknown')
+              AND LOWER(TRIM(e.teamLeaderName)) NOT IN ('head office', 'head  - office', 'unknown', 'prospect', 'old . tl', 'pune . office', '')
         """)
         tl_rows = cursor.fetchall()
         

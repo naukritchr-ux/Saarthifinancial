@@ -442,7 +442,7 @@ const GrowthTracking = () => {
               }}
             >
               <Briefcase size={15} />
-              BD Specialists
+              BD
             </button>
             <button
               onClick={() => { setEntityType('employee'); setSelectedEntityId(''); }}
