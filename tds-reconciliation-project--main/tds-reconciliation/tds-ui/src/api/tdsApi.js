@@ -197,7 +197,7 @@ export const upload26as = async (file, modeOrFy = 'update', modeParam = 'update'
     }, 60000);
     const data = await response.json();
     if (response.ok && data && data.success !== false) return data;
-    return { success: false, error: data?.error || 'Failed to upload 26AS file' };
+    return { success: false, error: data?.error || 'Failed to upload 26AS file', details: data?.details };
   } catch (err) {
     return { success: false, error: err.message || 'Network error during 26AS upload' };
   }
@@ -222,7 +222,7 @@ export const uploadTally = async (file, modeOrFy = 'update', modeParam = 'update
     }, 60000);
     const data = await response.json();
     if (response.ok && data && data.success !== false) return data;
-    return { success: false, error: data?.error || 'Failed to upload Tally file' };
+    return { success: false, error: data?.error || 'Failed to upload Tally file', details: data?.details };
   } catch (err) {
     return { success: false, error: err.message || 'Network error during Tally upload' };
   }

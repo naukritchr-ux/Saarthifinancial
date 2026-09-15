@@ -164,9 +164,10 @@ export default function UploadPanel({ onUploadSuccess }) {
         triggerRefresh();
         if (onUploadSuccess) onUploadSuccess();
       } else {
+        const errMsg = res?.details ? `${res.error}: ${res.details}` : (res?.error || 'Failed to parse 26AS file. Please check column format.');
         setAs26Status({
           loading: false,
-          error: res?.error || res?.details || 'Failed to parse 26AS file. Please check column format.',
+          error: errMsg,
           success: null
         });
       }
@@ -198,9 +199,10 @@ export default function UploadPanel({ onUploadSuccess }) {
         triggerRefresh();
         if (onUploadSuccess) onUploadSuccess();
       } else {
+        const errMsg = res?.details ? `${res.error}: ${res.details}` : (res?.error || 'Failed to parse Tally file. Please check column format.');
         setTallyStatus({
           loading: false,
-          error: res?.error || res?.details || 'Failed to parse Tally file. Please check column format.',
+          error: errMsg,
           success: null
         });
       }

@@ -16,13 +16,14 @@ import {
   purgeUploadData
 } from '../controllers/tds26asController.js';
 
+import os from 'os';
+
 const router = express.Router();
 
-// Multer — disk storage so controller can read with xlsx.readFile(file.path)
-// File size limit 10 MB; type validation left to the controller (xlsx can error meaningfully)
+// Multer — temporary disk storage with 50 MB limit
 const upload = multer({
-  dest: 'uploads/',
-  limits: { fileSize: 10 * 1024 * 1024 } // 10 MB — multer throws LIMIT_FILE_SIZE if exceeded
+  dest: os.tmpdir(),
+  limits: { fileSize: 50 * 1024 * 1024 }
 });
 
 // ── Seeding ──────────────────────────────────────────────────────────────────

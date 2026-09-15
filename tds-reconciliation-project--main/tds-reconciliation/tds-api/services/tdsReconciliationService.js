@@ -330,16 +330,19 @@ export async function reconcile(as26BatchId = null, tallyBatchId = null) {
         );
       }
 
-      // Fetch the real IDs assigned by MySQL for the newly inserted orphans
-      const [newDuesRows] = await db.query(
-        'SELECT id, UPPER(TRIM(tan_no)) as tan_no, financial_year, company_name FROM tds_dues WHERE tan_no IN (' +
-        orphanItems.map(() => '?').join(',') + ')',
-        orphanItems.map(item => item.tan)
-      );
+      // Fetch the real IDs assigned by MySQL for the newly inserted orphans in chunks
       const newDuesMap = new Map();
-      (newDuesRows || []).forEach(r => {
-        newDuesMap.set(makeKey(r.tan_no, r.financial_year), r);
-      });
+      const ORPHAN_SELECT_CHUNK = 200;
+      for (let i = 0; i < orphanItems.length; i += ORPHAN_SELECT_CHUNK) {
+        const chunk = orphanItems.slice(i, i + ORPHAN_SELECT_CHUNK);
+        const [rows] = await db.query(
+          `SELECT id, UPPER(TRIM(tan_no)) as tan_no, financial_year, company_name FROM tds_dues WHERE tan_no IN (${chunk.map(() => '?').join(',')})`,
+          chunk.map(item => item.tan)
+        );
+        (rows || []).forEach(r => {
+          newDuesMap.set(makeKey(r.tan_no, r.financial_year), r);
+        });
+      }
 
       // Add newly inserted orphans to duesList with their real IDs
       for (const item of orphanItems) {
