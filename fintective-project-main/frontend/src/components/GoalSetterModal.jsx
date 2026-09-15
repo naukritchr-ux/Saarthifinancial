@@ -145,6 +145,16 @@ Fintective Intelligence Network
         };
       }
 
+      // Persist to localStorage for guaranteed permanent storage
+      try {
+        const savedRaw = localStorage.getItem('saarthi_growth_targets');
+        const existingList = savedRaw ? JSON.parse(savedRaw) : [];
+        const updatedList = [data, ...existingList.filter(t => t.id !== data.id)];
+        localStorage.setItem('saarthi_growth_targets', JSON.stringify(updatedList));
+      } catch (storageErr) {
+        console.warn('LocalStorage save notice:', storageErr);
+      }
+
       setCreatedTarget(data);
       if (onTargetCreated) {
         onTargetCreated(data);

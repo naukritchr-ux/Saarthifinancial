@@ -190,15 +190,46 @@ const GrowthTracking = () => {
   const fetchTargets = async () => {
     if (!selectedEntity) return;
     setTargetsLoading(true);
+
+    // 1. Instant local storage hydration
+    let localTargets = [];
+    try {
+      const savedRaw = localStorage.getItem('saarthi_growth_targets');
+      if (savedRaw) {
+        const parsed = JSON.parse(savedRaw);
+        if (Array.isArray(parsed)) {
+          const entKey = (selectedEntity.id || selectedEntity.name || '').toLowerCase();
+          const entName = (selectedEntity.name || '').toLowerCase();
+          localTargets = parsed.filter(t => {
+            const tId = (t.entity_id || '').toLowerCase();
+            const tName = (t.entity_name || '').toLowerCase();
+            const tType = (t.entity_type || '').toLowerCase();
+            return (tType === entityType.toLowerCase()) && (tId === entKey || tName === entName || (tId.includes(entKey) && entKey.length > 3));
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading local targets:', e);
+    }
+
+    if (localTargets.length > 0) {
+      setTargetsList(localTargets);
+    }
+
+    // 2. Fetch live server targets and merge
     try {
       const url = `${API_BASE_URL}/growth-targets?entity_type=${entityType}&entity_id=${encodeURIComponent(selectedEntity.id || selectedEntity.name)}&entity_name=${encodeURIComponent(selectedEntity.name || '')}`;
       const res = await fetchWithApiKey(url);
       if (res.ok) {
         const data = await res.json();
-        setTargetsList(Array.isArray(data) ? data : []);
+        if (Array.isArray(data) && data.length > 0) {
+          const serverIds = new Set(data.map(t => t.id));
+          const merged = [...data, ...localTargets.filter(t => !serverIds.has(t.id))];
+          setTargetsList(merged);
+        }
       }
     } catch (err) {
-      console.error("Failed to load targets history:", err);
+      console.warn("Using local targets storage:", err);
     } finally {
       setTargetsLoading(false);
     }
