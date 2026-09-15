@@ -29,7 +29,7 @@ import OutcomeRecorderModal from '../components/OutcomeRecorderModal';
 import { TrajectoryLineChart, BarChart, Sparkline, TargetVsActualBar } from '../components/CustomCharts';
 
 const GrowthTracking = () => {
-  const { franchisees, bdAgents } = useContext(FinanceContext);
+  const { franchisees, bdAgents, transactions } = useContext(FinanceContext);
 
   // Entity selection state
   const [entityType, setEntityType] = useState('franchisee'); // 'franchisee' | 'bd_agent'
@@ -100,7 +100,7 @@ const GrowthTracking = () => {
     setPredictionError(null);
     try {
       const rateParam = (customRateVal !== undefined && customRateVal !== '') ? `&rate=${customRateVal}` : '';
-      const url = `${API_BASE_URL}/growth-targets/predict?entity_type=${entityType}&entity_id=${encodeURIComponent(selectedEntity.id || selectedEntity.name)}${rateParam}&periods=3`;
+      const url = `${API_BASE_URL}/growth-targets/predict?entity_type=${entityType}&entity_id=${encodeURIComponent(selectedEntity.id || selectedEntity.name)}&entity_name=${encodeURIComponent(selectedEntity.name || '')}${rateParam}&periods=3`;
       const res = await fetchWithApiKey(url);
       if (res.ok) {
         const data = await res.json();
@@ -129,7 +129,7 @@ const GrowthTracking = () => {
     if (!selectedEntity) return;
     setTargetsLoading(true);
     try {
-      const url = `${API_BASE_URL}/growth-targets?entity_type=${entityType}&entity_id=${encodeURIComponent(selectedEntity.id || selectedEntity.name)}`;
+      const url = `${API_BASE_URL}/growth-targets?entity_type=${entityType}&entity_id=${encodeURIComponent(selectedEntity.id || selectedEntity.name)}&entity_name=${encodeURIComponent(selectedEntity.name || '')}`;
       const res = await fetchWithApiKey(url);
       if (res.ok) {
         const data = await res.json();
@@ -168,32 +168,80 @@ const GrowthTracking = () => {
     return targetsList.find(t => t.status === 'active') || null;
   }, [targetsList]);
 
-  // Effective base revenue strictly from real database historical inflow
-  const effectiveBaseRevenue = useMemo(() => {
-    if (predictionData?.insufficient_data) return 0;
-    return predictionData?.base_revenue || 0;
-  }, [predictionData]);
-
-  // Current rate (R) in percentage
-  const currentRatePct = useMemo(() => {
-    if (predictionData?.insufficient_data) return null;
-    if (overrideRate !== '' && overrideRate !== null && overrideRate !== undefined) {
-      return parseFloat(overrideRate) || 0;
-    }
-    return predictionData?.applied_rate_pct ?? predictionData?.historical_cagr_pct ?? 15;
-  }, [overrideRate, predictionData]);
-
-  // Historical series for TrajectoryLineChart (no fabricated baseline)
+  // Historical series for TrajectoryLineChart
   const chartHistorical = useMemo(() => {
     if (predictionData?.historical_series && predictionData.historical_series.length > 0) {
       return predictionData.historical_series;
     }
+    if (transactions && transactions.length > 0 && selectedEntity) {
+      const matchName = (selectedEntity.name || '').toLowerCase().trim();
+      const entityTxs = transactions.filter(t => {
+        const fn = (t.franchiseeName || t.franchiseName || t.title || '').toLowerCase();
+        const bd = (t.bdMemberName || t.nameOfBd || '').toLowerCase();
+        const franId = String(t.franchiseeId || '');
+        const bdId = String(t.bdAgentId || '');
+        if (entityType === 'franchisee') {
+          return fn.includes(matchName) || matchName.includes(fn) || (selectedEntity.id && franId === String(selectedEntity.id));
+        } else {
+          return bd.includes(matchName) || matchName.includes(bd) || (selectedEntity.id && bdId === String(selectedEntity.id));
+        }
+      });
+      if (entityTxs.length > 0) {
+        const periodMap = {};
+        entityTxs.forEach(t => {
+          const p = t.financialYear || (t.date ? t.date.slice(0, 4) : '2025-2026');
+          if (!periodMap[p]) periodMap[p] = { period: p, revenue: 0, net_revenue: 0, deals_count: 0 };
+          const amt = parseFloat(t.amount || t.serviceAmt || 0);
+          periodMap[p].revenue += amt;
+          periodMap[p].net_revenue += parseFloat(t.rShare || t.netRevenue || (amt * 0.25));
+          periodMap[p].deals_count += 1;
+        });
+        const sorted = Object.values(periodMap).sort((a, b) => a.period.localeCompare(b.period));
+        if (sorted.length > 0) return sorted;
+      }
+    }
     return [];
-  }, [predictionData]);
+  }, [predictionData, transactions, selectedEntity, entityType]);
+
+  // Effective base revenue strictly from real database historical inflow
+  const effectiveBaseRevenue = useMemo(() => {
+    if (predictionData?.base_revenue && predictionData.base_revenue > 0) {
+      return predictionData.base_revenue;
+    }
+    if (chartHistorical.length > 0) {
+      return chartHistorical[chartHistorical.length - 1].revenue;
+    }
+    return 0;
+  }, [predictionData, chartHistorical]);
+
+  // Current rate (R) in percentage
+  const currentRatePct = useMemo(() => {
+    if (overrideRate !== '' && overrideRate !== null && overrideRate !== undefined) {
+      return parseFloat(overrideRate) || 0;
+    }
+    if (predictionData?.applied_rate_pct !== undefined && predictionData?.applied_rate_pct !== null) {
+      return predictionData.applied_rate_pct;
+    }
+    if (predictionData?.historical_cagr_pct !== undefined && predictionData?.historical_cagr_pct !== null) {
+      return predictionData.historical_cagr_pct;
+    }
+    if (chartHistorical.length >= 2) {
+      const first = chartHistorical[0].revenue || 0;
+      const last = chartHistorical[chartHistorical.length - 1].revenue || 0;
+      const periods = chartHistorical.length - 1;
+      if (first > 0 && last > 0 && periods > 0) {
+        const cagr = (Math.pow(last / first, 1 / periods) - 1) * 100;
+        return Math.round(Math.max(-50, Math.min(200, cagr)));
+      }
+    }
+    return effectiveBaseRevenue > 0 ? 15 : null;
+  }, [overrideRate, predictionData, chartHistorical, effectiveBaseRevenue]);
+
+  const hasData = effectiveBaseRevenue > 0 || chartHistorical.length > 0;
 
   // Instant multi-period projections computed only when real baseline data exists
   const chartProjections = useMemo(() => {
-    if (predictionData?.insufficient_data || effectiveBaseRevenue <= 0 || currentRatePct === null) {
+    if (!hasData || effectiveBaseRevenue <= 0 || currentRatePct === null) {
       return [];
     }
     const base = effectiveBaseRevenue;
@@ -209,11 +257,11 @@ const GrowthTracking = () => {
         incremental_gain: Math.round(projVal - base)
       };
     });
-  }, [effectiveBaseRevenue, currentRatePct, predictionData]);
+  }, [hasData, effectiveBaseRevenue, currentRatePct]);
 
   // Scale chart data formatted for BarChart
   const scaleChartData = useMemo(() => {
-    if (predictionData?.insufficient_data || effectiveBaseRevenue <= 0) {
+    if (!hasData || effectiveBaseRevenue <= 0) {
       return [];
     }
     return ['scale1x', 'scale2x', 'scale3x', 'scale4x'].map((key, index) => {
@@ -224,7 +272,7 @@ const GrowthTracking = () => {
         netRetention: Math.round(base * (index + 1) * 0.4375)
       };
     });
-  }, [effectiveBaseRevenue, predictionData]);
+  }, [hasData, effectiveBaseRevenue]);
 
   // Trajectory Sparkline points for each target milestone
   const getTargetSparklinePoints = (target) => {
@@ -360,11 +408,11 @@ const GrowthTracking = () => {
             <span className="kpi-icon"><DollarSign size={18} /></span>
           </div>
           <h2 className="kpi-value">
-            {predictionData?.insufficient_data ? '₹0.00' : formatLakhs(effectiveBaseRevenue)}
+            {!hasData ? '₹0.00' : formatLakhs(effectiveBaseRevenue)}
           </h2>
           <div className="kpi-change up">
             <span>
-              {predictionData?.insufficient_data
+              {!hasData
                 ? `No invoice records for ${selectedEntity?.name}`
                 : `Audited Inflow History (${selectedEntity?.name})`}
             </span>
@@ -377,13 +425,13 @@ const GrowthTracking = () => {
             <span className="kpi-icon"><TrendingUp size={18} /></span>
           </div>
           <h2 className="kpi-value">
-            {predictionData?.insufficient_data || predictionData?.historical_cagr_pct === null || predictionData?.historical_cagr_pct === undefined
+            {!hasData || (predictionData?.historical_cagr_pct === null && chartHistorical.length < 2)
               ? 'N/A'
-              : `${predictionData.historical_cagr_pct >= 0 ? '+' : ''}${predictionData.historical_cagr_pct}%`}
+              : `${(predictionData?.historical_cagr_pct ?? currentRatePct) >= 0 ? '+' : ''}${predictionData?.historical_cagr_pct ?? currentRatePct}%`}
           </h2>
           <div className="kpi-change up">
             <span>
-              {predictionData?.insufficient_data
+              {!hasData || chartHistorical.length < 2
                 ? 'Requires ≥ 2 historical periods'
                 : 'Derived from multi-period financial trajectory'}
             </span>
@@ -396,11 +444,11 @@ const GrowthTracking = () => {
             <span className="kpi-icon"><Percent size={18} /></span>
           </div>
           <h2 className="kpi-value">
-            {predictionData?.insufficient_data || currentRatePct === null ? '—' : `+${currentRatePct}%`}
+            {!hasData || currentRatePct === null ? '—' : `+${currentRatePct}%`}
           </h2>
           <div className="kpi-change up">
             <span>
-              {predictionData?.insufficient_data
+              {!hasData
                 ? 'Awaiting baseline revenue history'
                 : 'Applied compounding model factor'}
             </span>
@@ -501,7 +549,7 @@ const GrowthTracking = () => {
               Retry
             </button>
           </div>
-        ) : predictionData?.insufficient_data ? (
+        ) : (!hasData && predictionData?.insufficient_data) ? (
           <div style={{ padding: '36px 20px', background: 'var(--bg-main)', borderRadius: '10px', border: '1px dashed var(--border-color)', textAlign: 'center' }}>
             <AlertCircle size={32} color="var(--accent-teal)" style={{ marginBottom: '8px', opacity: 0.8 }} />
             <h4 style={{ margin: '0 0 6px 0', color: 'var(--text-main)', fontSize: '0.95rem' }}>

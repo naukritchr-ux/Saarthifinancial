@@ -58,25 +58,70 @@ FALLBACK_BD_HISTORICAL = {
 USE_DEMO_FALLBACK_DATA = os.environ.get('USE_DEMO_FALLBACK_DATA', 'false').lower() in ('true', '1', 'yes')
 
 
-def _resolve_entity_info(cursor, entity_type, entity_id):
+def _resolve_entity_info(cursor, entity_type, entity_id, explicit_name=None):
     """Resolves human-readable entity name and details."""
-    entity_name = entity_id
+    if explicit_name and explicit_name.strip() and explicit_name.strip().lower() != 'undefined':
+        return explicit_name.strip()
+
+    clean_id = str(entity_id).strip()
+    entity_name = clean_id
+
     if entity_type == 'franchisee':
         try:
-            cursor.execute("SELECT nameAsPerAgreement, teamLeaderName FROM franchisees WHERE id = %s OR LOWER(nameAsPerAgreement) = %s LIMIT 1", [entity_id, entity_id.lower()])
+            cursor.execute("SELECT nameAsPerAgreement, teamLeaderName FROM franchisees WHERE id = %s OR LOWER(nameAsPerAgreement) = %s LIMIT 1", [clean_id, clean_id.lower()])
             row = cursor.fetchone()
             if row and row.get('nameAsPerAgreement'):
-                entity_name = row['nameAsPerAgreement']
+                return row['nameAsPerAgreement'].strip()
         except Exception:
             pass
+
+        if clean_id.lower().startswith('f-'):
+            sub_id = clean_id[2:]
+            if sub_id.isdigit():
+                try:
+                    cursor.execute("SELECT nameAsPerAgreement FROM franchisees WHERE id = %s LIMIT 1", [int(sub_id)])
+                    row = cursor.fetchone()
+                    if row and row.get('nameAsPerAgreement'):
+                        return row['nameAsPerAgreement'].strip()
+                except Exception:
+                    pass
+
+        try:
+            cursor.execute("SELECT DISTINCT franchiseName FROM invoice WHERE LOWER(TRIM(franchiseName)) = %s LIMIT 1", [clean_id.lower()])
+            row = cursor.fetchone()
+            if row and row.get('franchiseName'):
+                return row['franchiseName'].strip()
+        except Exception:
+            pass
+
     elif entity_type == 'bd_agent':
         try:
-            cursor.execute("SELECT name, role, baseSalary FROM bd_agents WHERE id = %s OR LOWER(name) = %s LIMIT 1", [entity_id, entity_id.lower()])
+            cursor.execute("SELECT name, role, baseSalary FROM bd_agents WHERE id = %s OR LOWER(name) = %s LIMIT 1", [clean_id, clean_id.lower()])
             row = cursor.fetchone()
             if row and row.get('name'):
-                entity_name = row['name']
+                return row['name'].strip()
         except Exception:
             pass
+
+        if clean_id.lower().startswith('bd-'):
+            sub_id = clean_id[3:]
+            if sub_id.isdigit():
+                try:
+                    cursor.execute("SELECT name FROM bd_agents WHERE id = %s LIMIT 1", [int(sub_id)])
+                    row = cursor.fetchone()
+                    if row and row.get('name'):
+                        return row['name'].strip()
+                except Exception:
+                    pass
+
+        try:
+            cursor.execute("SELECT DISTINCT nameOfBd FROM invoice WHERE LOWER(TRIM(nameOfBd)) = %s LIMIT 1", [clean_id.lower()])
+            row = cursor.fetchone()
+            if row and row.get('nameOfBd'):
+                return row['nameOfBd'].strip()
+        except Exception:
+            pass
+
     return entity_name
 
 
@@ -100,12 +145,17 @@ def _fetch_historical_revenue(cursor, entity_type, entity_id, entity_name):
                     SUM(COALESCE(ourShare, serviceCharges - COALESCE(franchiseeShare, 0.0))) AS net_revenue,
                     COUNT(*) AS deals_count
                 FROM invoice
-                WHERE (LOWER(TRIM(franchiseName)) = %s OR franchiseName = %s)
+                WHERE (LOWER(TRIM(franchiseName)) = %s OR LOWER(TRIM(franchiseName)) = %s OR franchiseName = %s OR franchiseName = %s)
                   AND billNumber IS NOT NULL AND billNumber != ''
                 GROUP BY period
                 ORDER BY period ASC
             """
-            cursor.execute(query, [entity_name.lower().strip(), entity_id])
+            cursor.execute(query, [
+                entity_name.lower().strip(),
+                str(entity_id).lower().strip(),
+                entity_name.strip(),
+                str(entity_id).strip()
+            ])
             rows = cursor.fetchall()
             for r in rows:
                 if r.get('period'):
@@ -123,12 +173,17 @@ def _fetch_historical_revenue(cursor, entity_type, entity_id, entity_name):
                     SUM(COALESCE(ourShare, serviceCharges - COALESCE(franchiseeShare, 0.0))) AS net_revenue,
                     COUNT(*) AS deals_count
                 FROM invoice
-                WHERE (LOWER(TRIM(nameOfBd)) = %s OR nameOfBd = %s)
+                WHERE (LOWER(TRIM(nameOfBd)) = %s OR LOWER(TRIM(nameOfBd)) = %s OR nameOfBd = %s OR nameOfBd = %s)
                   AND billNumber IS NOT NULL AND billNumber != ''
                 GROUP BY period
                 ORDER BY period ASC
             """
-            cursor.execute(query, [entity_name.lower().strip(), entity_id])
+            cursor.execute(query, [
+                entity_name.lower().strip(),
+                str(entity_id).lower().strip(),
+                entity_name.strip(),
+                str(entity_id).strip()
+            ])
             rows = cursor.fetchall()
             for r in rows:
                 if r.get('period'):
@@ -299,7 +354,7 @@ def predict_growth():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        entity_name = _resolve_entity_info(cursor, entity_type, entity_id)
+        entity_name = _resolve_entity_info(cursor, entity_type, entity_id, request.args.get("entity_name"))
         historical_series = _fetch_historical_revenue(cursor, entity_type, entity_id, entity_name)
         
         # When entity genuinely has no historical invoice records, return explicit insufficient_data state
@@ -424,7 +479,7 @@ def create_growth_target():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        entity_name = _resolve_entity_info(cursor, entity_type, entity_id)
+        entity_name = _resolve_entity_info(cursor, entity_type, entity_id, data.get("entity_name"))
         historical_series = _fetch_historical_revenue(cursor, entity_type, entity_id, entity_name)
         base_value = historical_series[-1]['revenue'] if historical_series else 0.0
         target_value = base_value * (1.0 + normalized_growth) if base_value > 0 else 0.0

@@ -34,6 +34,7 @@ const GoalSetterModal = ({ isOpen, onClose, entityType, entity, onTargetCreated 
       const payload = {
         entity_type: entityType,
         entity_id: entity?.id || entity?.name || 'f-1',
+        entity_name: entity?.name || '',
         growth_pct_target: numGrowth,
         salary_target: entityType === 'bd_agent' && salaryTarget ? parseFloat(salaryTarget) : null,
         period_start: periodStart,
