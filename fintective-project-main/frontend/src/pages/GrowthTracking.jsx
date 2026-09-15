@@ -284,6 +284,7 @@ const GrowthTracking = () => {
 
   // Active Rate for the selected view mode
   const activeRatePct = forecastTab === 'target' ? targetRatePct : inertiaRatePct;
+  const currentRatePct = targetRatePct;
 
   const isInsufficientData = Boolean(
     predictionData?.insufficient_data || 
@@ -511,7 +512,7 @@ const GrowthTracking = () => {
           <h2 className="kpi-value">
             {isInsufficientData || (predictionData?.historical_cagr_pct === null && chartHistorical.length < 2)
               ? 'N/A'
-              : `${(predictionData?.historical_cagr_pct ?? currentRatePct) >= 0 ? '+' : ''}${predictionData?.historical_cagr_pct ?? currentRatePct}%`}
+              : `${historicalCagrPct >= 0 ? '+' : ''}${historicalCagrPct}%`}
           </h2>
           <div className="kpi-change up">
             <span>
@@ -524,17 +525,17 @@ const GrowthTracking = () => {
 
         <div className="kpi-card card-green">
           <div className="kpi-header">
-            <span className="kpi-title">5-Year Growth Rate (R)</span>
+            <span className="kpi-title">Target Growth Rate (R)</span>
             <span className="kpi-icon"><Percent size={18} /></span>
           </div>
           <h2 className="kpi-value">
-            {isInsufficientData || currentRatePct === null ? '—' : `${currentRatePct >= 0 ? '+' : ''}${currentRatePct}%`}
+            {isInsufficientData || targetRatePct === null ? '—' : `${targetRatePct >= 0 ? '+' : ''}${targetRatePct}%`}
           </h2>
           <div className="kpi-change up">
             <span>
               {isInsufficientData
                 ? 'Gated until 3mo history threshold'
-                : 'Applied forward growth factor'}
+                : 'Aspirational target factor'}
             </span>
           </div>
         </div>
