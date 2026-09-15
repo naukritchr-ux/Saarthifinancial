@@ -379,9 +379,9 @@ export const purgeFollowups = async () => {
 };
 
 /** Aggregated Reports API */
-export const getFyWiseReport = async (view = 'all') => {
+export const getFyWiseReport = async (view = 'all', fy = '') => {
   try {
-    const q = buildQuery({ view });
+    const q = buildQuery({ view, fy });
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/reports/fy-wise?${q}`);
     const data = await response.json();
     if (response.ok && data && data.success !== false) return data;
@@ -391,9 +391,9 @@ export const getFyWiseReport = async (view = 'all') => {
   }
 };
 
-export const getTanWiseReport = async (view = 'all', search = '') => {
+export const getTanWiseReport = async (view = 'all', search = '', fy = '') => {
   try {
-    const q = buildQuery({ view, search });
+    const q = buildQuery({ view, search, fy });
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/reports/tan-wise?${q}`);
     const data = await response.json();
     if (response.ok && data && data.success !== false) return data;

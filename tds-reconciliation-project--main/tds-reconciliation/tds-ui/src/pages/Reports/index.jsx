@@ -72,9 +72,9 @@ export default function Reports() {
       try {
         let res;
         if (activeTab === 'year-wise') {
-          res = await getFyWiseReport(viewFilter);
+          res = await getFyWiseReport(viewFilter, tabFyFilter);
         } else if (activeTab === 'tan-wise') {
-          res = await getTanWiseReport(viewFilter, search);
+          res = await getTanWiseReport(viewFilter, search, tabFyFilter);
         } else if (activeTab === 'tan-wise-fy') {
           res = await getTanWiseByFyReport(viewFilter, tabFyFilter, search);
         }
@@ -315,7 +315,7 @@ export default function Reports() {
             {formatCurrency(summary.totalTally)}
           </div>
           <div className="text-[11px] text-[#6B6580] font-medium mt-1">
-            {summary.rowCount} {activeTab === 'year-wise' ? 'Financial Years' : 'Entity Groups'}
+            {tabFyFilter !== 'All Financial Years' ? `${tabFyFilter} · ` : ''}{summary.rowCount} {activeTab === 'year-wise' ? 'Years' : 'Entities'}
           </div>
         </div>
 
@@ -329,7 +329,7 @@ export default function Reports() {
             {formatCurrency(summary.totalAs26)}
           </div>
           <div className="text-[11px] text-[#6B6580] font-medium mt-1">
-            Deposited TDS in TRACES
+            {viewFilter !== 'all' ? `${viewFilter.toUpperCase()} · ` : ''}Deposited in TRACES
           </div>
         </div>
 
@@ -356,7 +356,7 @@ export default function Reports() {
         {/* Matched vs Variance Counts */}
         <div className="bg-white rounded-2xl p-4 border border-[#E9E4FA] shadow-xs">
           <div className="flex items-center justify-between text-xs text-[#6B6580] font-bold mb-1">
-            <span>Breakdown Status</span>
+            <span>Breakdown Status ({tabFyFilter})</span>
             <CheckCircle2 className="w-4 h-4 text-[#4ADE80]" />
           </div>
           <div className="flex items-center gap-2 text-xs font-black mt-1">
@@ -371,16 +371,18 @@ export default function Reports() {
             </span>
           </div>
           <div className="text-[11px] text-[#6B6580] font-medium mt-1">
-            Based on active view filter
+            Filter: {viewFilter === 'all' ? 'All Records' : viewFilter === 'excess' ? 'Excess Payment' : viewFilter === 'less' ? 'Less Payment' : 'Matched'}
           </div>
         </div>
       </div>
 
       {/* Navigation Sub-Tabs & Filter Controls */}
+      {/* Navigation Sub-Tabs & Filter Controls */}
       <div className="bg-white rounded-3xl p-5 shadow-sm border border-[#E9E4FA] space-y-4">
         
-        {/* Main Sub-Tabs */}
+        {/* Main Sub-Tabs & Filter Controls */}
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E9E4FA] pb-3">
+          {/* Sub Tabs */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => { setActiveTab('year-wise'); setSearch(''); }}
@@ -414,45 +416,80 @@ export default function Reports() {
             </button>
           </div>
 
-          {/* View Filter Pill Switcher (All / Excess Payment / Less Payment) */}
-          <div className="flex items-center gap-1.5 bg-[#F6F8FA] p-1 rounded-2xl border border-[#E9E4FA]">
-            <button
-              onClick={() => setViewFilter('all')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                viewFilter === 'all'
-                  ? 'bg-white text-[#1F1B2E] shadow-2xs font-extrabold'
-                  : 'text-[#6B6580] hover:text-[#1F1B2E]'
-              }`}
-            >
-              All Records
-            </button>
-            <button
-              onClick={() => setViewFilter('excess')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                viewFilter === 'excess'
-                  ? 'bg-[#F87A9E]/20 text-[#E11D48] shadow-2xs font-extrabold'
-                  : 'text-[#6B6580] hover:text-[#E11D48]'
-              }`}
-            >
-              Excess Payment
-            </button>
-            <button
-              onClick={() => setViewFilter('less')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-                viewFilter === 'less'
-                  ? 'bg-[#FBBF77]/30 text-[#D97706] shadow-2xs font-extrabold'
-                  : 'text-[#6B6580] hover:text-[#D97706]'
-              }`}
-            >
-              Less Payment
-            </button>
+          {/* Right Controls: Financial Year Filter + Status View Switcher */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Year Selector Dropdown */}
+            <div className="flex items-center gap-2 bg-[#F6F8FA] border border-[#E9E4FA] rounded-2xl px-3 py-1.5 text-xs font-bold text-[#1F1B2E]">
+              <Calendar className="w-3.5 h-3.5 text-[#9B87F5]" />
+              <span className="text-[#6B6580] font-extrabold">FY:</span>
+              <select
+                value={tabFyFilter}
+                onChange={(e) => setTabFyFilter(e.target.value)}
+                className="bg-transparent text-[#1F1B2E] font-extrabold focus:outline-none cursor-pointer text-xs"
+              >
+                <option value="All Financial Years">All Financial Years</option>
+                <option value="FY 2026-27">FY 2026-27</option>
+                <option value="FY 2025-26">FY 2025-26</option>
+                <option value="FY 2024-25">FY 2024-25</option>
+                <option value="FY 2023-24">FY 2023-24</option>
+                <option value="FY 2022-23">FY 2022-23</option>
+                <option value="FY 2021-22">FY 2021-22</option>
+                <option value="FY 2020-21">FY 2020-21</option>
+                <option value="FY 2019-20">FY 2019-20</option>
+                <option value="FY 2018-19">FY 2018-19</option>
+                <option value="FY 2017-18">FY 2017-18</option>
+              </select>
+            </div>
+
+            {/* View Filter Pill Switcher (All / Excess Payment / Less Payment / Matched) */}
+            <div className="flex items-center gap-1 bg-[#F6F8FA] p-1 rounded-2xl border border-[#E9E4FA]">
+              <button
+                onClick={() => setViewFilter('all')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  viewFilter === 'all'
+                    ? 'bg-white text-[#1F1B2E] shadow-2xs font-extrabold'
+                    : 'text-[#6B6580] hover:text-[#1F1B2E]'
+                }`}
+              >
+                All Records
+              </button>
+              <button
+                onClick={() => setViewFilter('excess')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  viewFilter === 'excess'
+                    ? 'bg-[#F87A9E]/20 text-[#E11D48] shadow-2xs font-extrabold'
+                    : 'text-[#6B6580] hover:text-[#E11D48]'
+                }`}
+              >
+                Excess Payment
+              </button>
+              <button
+                onClick={() => setViewFilter('less')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  viewFilter === 'less'
+                    ? 'bg-[#FBBF77]/30 text-[#D97706] shadow-2xs font-extrabold'
+                    : 'text-[#6B6580] hover:text-[#D97706]'
+                }`}
+              >
+                Less Payment
+              </button>
+              <button
+                onClick={() => setViewFilter('matched')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  viewFilter === 'matched'
+                    ? 'bg-[#4ADE80]/20 text-[#2E8B57] shadow-2xs font-extrabold'
+                    : 'text-[#6B6580] hover:text-[#2E8B57]'
+                }`}
+              >
+                Matched
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Secondary Filters: Search & Financial Year dropdown for TAN tabs */}
+        {/* Search Filter for TAN tabs */}
         {(activeTab === 'tan-wise' || activeTab === 'tan-wise-fy') && (
-          <div className="flex flex-col sm:flex-row items-center gap-3 pt-1">
-            {/* Search Input */}
+          <div className="flex items-center gap-3 pt-1">
             <div className="relative flex-1 w-full">
               <Search className="w-4 h-4 text-[#6B6580] absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
@@ -463,29 +500,13 @@ export default function Reports() {
                 className="w-full bg-[#F6F8FA] border border-[#E9E4FA] rounded-xl pl-9 pr-4 py-2 text-xs font-medium text-[#1F1B2E] placeholder-[#6B6580] focus:outline-none focus:border-[#9B87F5] focus:bg-white transition"
               />
             </div>
-
-            {/* FY Filter for TAN-Wise by FY */}
-            {activeTab === 'tan-wise-fy' && (
-              <div className="flex items-center gap-2 bg-[#F6F8FA] border border-[#E9E4FA] rounded-xl px-3 py-2 text-xs font-bold text-[#1F1B2E] w-full sm:w-auto">
-                <span className="text-[#6B6580]">FY:</span>
-                <select
-                  value={tabFyFilter}
-                  onChange={(e) => setTabFyFilter(e.target.value)}
-                  className="bg-transparent text-[#1F1B2E] font-bold focus:outline-none cursor-pointer"
-                >
-                  <option value="All Financial Years">All Financial Years</option>
-                  <option value="FY 2026-27">FY 2026-27</option>
-                  <option value="FY 2025-26">FY 2025-26</option>
-                  <option value="FY 2024-25">FY 2024-25</option>
-                  <option value="FY 2023-24">FY 2023-24</option>
-                  <option value="FY 2022-23">FY 2022-23</option>
-                  <option value="FY 2021-22">FY 2021-22</option>
-                  <option value="FY 2020-21">FY 2020-21</option>
-                  <option value="FY 2019-20">FY 2019-20</option>
-                  <option value="FY 2018-19">FY 2018-19</option>
-                  <option value="FY 2017-18">FY 2017-18</option>
-                </select>
-              </div>
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="text-xs font-bold text-[#6B6580] hover:text-[#1F1B2E] px-2 py-1 bg-[#F6F8FA] rounded-lg border border-[#E9E4FA]"
+              >
+                Clear
+              </button>
             )}
           </div>
         )}

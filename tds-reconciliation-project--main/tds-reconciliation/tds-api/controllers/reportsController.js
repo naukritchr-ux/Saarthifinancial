@@ -6,8 +6,8 @@ import {
 import { TDS_TOLERANCE } from '../services/reconciliationRules.js';
 
 export const getFyWiseReportHandler = async (req, res) => {
-  const { view = 'all' } = req.query;
-  const data = await getFyWiseReport({ view });
+  const { view = 'all', fy = '' } = req.query;
+  const data = await getFyWiseReport({ view, fy });
   res.json({
     success: true,
     data,
@@ -16,8 +16,8 @@ export const getFyWiseReportHandler = async (req, res) => {
 };
 
 export const getTanWiseReportHandler = async (req, res) => {
-  const { view = 'all', search = '' } = req.query;
-  const data = await getTanWiseReport({ view, search });
+  const { view = 'all', fy = '', search = '' } = req.query;
+  const data = await getTanWiseReport({ view, fy, search });
   res.json({
     success: true,
     data,

@@ -23,15 +23,18 @@ const calculateRowStatus = (difference) => {
 };
 
 /**
- * Filter processed rows by view ('all' | 'excess' | 'less')
+ * Filter processed rows by view ('all' | 'excess' | 'less' | 'matched')
  */
 const applyViewFilter = (rows, view) => {
   const normalized = String(view || 'all').toLowerCase().trim();
-  if (normalized === 'excess') {
+  if (normalized === 'excess' || normalized === 'excess payment' || normalized === 'excess paid') {
     return rows.filter(r => r.status === 'Excess Payment');
   }
-  if (normalized === 'less') {
+  if (normalized === 'less' || normalized === 'less payment' || normalized === 'less paid') {
     return rows.filter(r => r.status === 'Less Payment');
+  }
+  if (normalized === 'matched' || normalized === 'match') {
+    return rows.filter(r => r.status === 'Matched');
   }
   return rows;
 };
@@ -39,19 +42,29 @@ const applyViewFilter = (rows, view) => {
 /**
  * a) FY-Wise Report: Grouped by financial_year, SUM(tally_tds) and SUM(as26_tds) across all clients
  */
-export const getFyWiseReport = async ({ view = 'all' } = {}) => {
+export const getFyWiseReport = async ({ view = 'all', fy = '' } = {}) => {
+  const whereClauses = [...BASE_WHERE_CLAUSES];
+  const params = [];
+
+  if (fy && fy !== 'All' && fy !== 'All Financial Years' && String(fy).trim() !== '') {
+    const cleanFy = String(fy).replace(/^FY\s*/i, '').trim();
+    whereClauses.push('(TRIM(tr.financial_year) LIKE ? OR (tr.financial_year IS NULL AND TRIM(d.financial_year) LIKE ?))');
+    params.push(`%${cleanFy}%`, `%${cleanFy}%`);
+  }
+
   const query = `
     SELECT 
       COALESCE(NULLIF(TRIM(tr.financial_year), ''), 'Unspecified') AS financial_year,
       SUM(COALESCE(tr.tally_tds, 0)) AS tally_total,
       SUM(COALESCE(tr.as26_tds, 0)) AS as26_total
     FROM tds_reconciliation_results tr
-    WHERE ${BASE_WHERE_CLAUSES.join(' AND ')}
+    LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+    WHERE ${whereClauses.join(' AND ')}
     GROUP BY COALESCE(NULLIF(TRIM(tr.financial_year), ''), 'Unspecified')
     ORDER BY financial_year DESC
   `;
 
-  const [rows] = await db.execute(query);
+  const [rows] = await db.execute(query, params);
 
   const processed = (rows || []).map(row => {
     const tallyTotal = parseFloat(row.tally_total || 0);
@@ -74,9 +87,15 @@ export const getFyWiseReport = async ({ view = 'all' } = {}) => {
 /**
  * b) TAN-Wise Report: Grouped by tan_no + company_name across all financial years
  */
-export const getTanWiseReport = async ({ view = 'all', search = '' } = {}) => {
+export const getTanWiseReport = async ({ view = 'all', fy = '', search = '' } = {}) => {
   const whereClauses = [...BASE_WHERE_CLAUSES];
   const params = [];
+
+  if (fy && fy !== 'All' && fy !== 'All Financial Years' && String(fy).trim() !== '') {
+    const cleanFy = String(fy).replace(/^FY\s*/i, '').trim();
+    whereClauses.push('(TRIM(tr.financial_year) LIKE ? OR (tr.financial_year IS NULL AND TRIM(d.financial_year) LIKE ?))');
+    params.push(`%${cleanFy}%`, `%${cleanFy}%`);
+  }
 
   if (search && String(search).trim() !== '') {
     const term = `%${String(search).trim()}%`;
