@@ -17,7 +17,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  PlusCircle
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { 
@@ -25,6 +26,7 @@ import {
   getTanWiseReport, 
   getTanWiseByFyReport 
 } from '../../api/tdsApi';
+import AddToCrmModal from '../TdsReconciliation/AddToCrmModal';
 
 export default function Reports() {
   const { fyFilter, refreshKey } = useApp();
@@ -45,6 +47,10 @@ export default function Reports() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [localRefresh, setLocalRefresh] = useState(0);
+
+  // Selected row for Booking in CRM Books
+  const [selectedCrmRow, setSelectedCrmRow] = useState(null);
 
   // Pagination state
   const [page, setPage] = useState(1);
@@ -104,7 +110,7 @@ export default function Reports() {
       isCancelled = true;
       clearTimeout(timer);
     };
-  }, [activeTab, viewFilter, search, tabFyFilter, refreshKey]);
+  }, [activeTab, viewFilter, search, tabFyFilter, refreshKey, localRefresh]);
 
   // Format currency helper
   const formatCurrency = (val) => {
@@ -564,6 +570,7 @@ export default function Reports() {
                         <th className="py-3.5 px-4 text-right">Total as per 26AS</th>
                         <th className="py-3.5 px-4 text-right">Difference (Tally - 26AS)</th>
                         <th className="py-3.5 px-4 text-center">Status</th>
+                        <th className="py-3.5 px-4 text-center">Action</th>
                       </>
                     )}
 
@@ -583,6 +590,7 @@ export default function Reports() {
                             <th className="py-3.5 px-4">Contact No.</th>
                           </>
                         )}
+                        <th className="py-3.5 px-4 text-center">Action</th>
                       </>
                     )}
                   </tr>
@@ -592,6 +600,7 @@ export default function Reports() {
                     const diff = parseFloat(row.difference || 0);
                     const isMatch = Math.abs(diff) <= 1.0;
                     const isLess = diff > 1.0;
+                    const isExcess = diff < -1.0 || row.status === 'Excess Payment' || row.status === 'Excess' || (parseFloat(row.tally_total || 0) === 0 && parseFloat(row.as26_total || 0) > 0);
 
                     return (
                       <tr 
@@ -646,6 +655,25 @@ export default function Reports() {
                             </td>
                             <td className="py-3.5 px-4 text-center">
                               {getStatusBadge(row.status)}
+                            </td>
+                            <td className="py-3.5 px-4 text-center">
+                              {isExcess ? (
+                                <button
+                                  onClick={() => setSelectedCrmRow({
+                                    tan_no: row.tan_no,
+                                    company_name: row.company_name,
+                                    financial_year: tabFyFilter !== 'All Financial Years' ? tabFyFilter : '2025-26',
+                                    as26_tds: Math.abs(diff) > 0 ? Math.abs(diff) : row.as26_total
+                                  })}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-black rounded-lg bg-[#9B87F5] text-white hover:bg-[#8572E0] transition shadow-sm cursor-pointer whitespace-nowrap"
+                                  title="Create missing billing entry in Saarthi 360 CRM"
+                                >
+                                  <PlusCircle className="w-3.5 h-3.5" />
+                                  <span>Book in CRM</span>
+                                </button>
+                              ) : (
+                                <span className="text-gray-400 font-medium">—</span>
+                              )}
                             </td>
                           </>
                         )}
@@ -702,6 +730,25 @@ export default function Reports() {
                                 </td>
                               </>
                             )}
+                            <td className="py-3.5 px-4 text-center">
+                              {isExcess ? (
+                                <button
+                                  onClick={() => setSelectedCrmRow({
+                                    tan_no: row.tan_no,
+                                    company_name: row.company_name,
+                                    financial_year: row.financial_year || (tabFyFilter !== 'All Financial Years' ? tabFyFilter : '2025-26'),
+                                    as26_tds: Math.abs(diff) > 0 ? Math.abs(diff) : row.as26_total
+                                  })}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-black rounded-lg bg-[#9B87F5] text-white hover:bg-[#8572E0] transition shadow-sm cursor-pointer whitespace-nowrap"
+                                  title="Create missing billing entry in Saarthi 360 CRM"
+                                >
+                                  <PlusCircle className="w-3.5 h-3.5" />
+                                  <span>Book in CRM</span>
+                                </button>
+                              ) : (
+                                <span className="text-gray-400 font-medium">—</span>
+                              )}
+                            </td>
                           </>
                         )}
                       </tr>
@@ -784,6 +831,14 @@ export default function Reports() {
         )}
       </div>
 
+      {/* Add To CRM Books Modal */}
+      {selectedCrmRow && (
+        <AddToCrmModal
+          row={selectedCrmRow}
+          onClose={() => setSelectedCrmRow(null)}
+          onSuccess={() => setLocalRefresh(k => k + 1)}
+        />
+      )}
     </div>
   );
 }

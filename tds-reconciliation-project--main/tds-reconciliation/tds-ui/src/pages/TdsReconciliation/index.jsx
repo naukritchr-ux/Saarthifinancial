@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { RefreshCw, Search, Download, Database, CheckCircle, AlertTriangle, X, ShieldCheck } from 'lucide-react';
 import ReconciliationTable from './ReconciliationTable';
 import EditModal from './EditModal';
+import AddToCrmModal from './AddToCrmModal';
 import AddFollowupModal from '../FollowUp/AddFollowupModal';
 import { getReconciliationReport, getCsvExportUrl, triggerSeed, toggleFollowupDone } from '../../api/tdsApi';
 import { useApp } from '../../context/AppContext';
@@ -24,6 +25,7 @@ export default function TdsReconciliation() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [activeEditRow, setActiveEditRow] = useState(null);
   const [activeViewRow, setActiveViewRow] = useState(null);
+  const [activeCrmRow, setActiveCrmRow] = useState(null);
   const [followupRow, setFollowupRow] = useState(null);
 
   // Statistics counters
@@ -318,17 +320,19 @@ export default function TdsReconciliation() {
         ))}
       </div>
 
-      {/* Data Table */}
+      {/* Reconciliation Table Component */}
       <ReconciliationTable
         rows={rows}
+        loading={loading}
         total={total}
         page={page}
         limit={limit}
-        onPageChange={setPage}
-        onEditClick={setActiveEditRow}
-        onViewClick={setActiveViewRow}
-        onToggleFollowup={handleToggleFollowup}
-        onFollowupClick={(r) => setFollowupRow(r)}
+        onPageChange={(newPage) => setPage(newPage)}
+        onEditClick={(row) => setActiveEditRow(row)}
+        onViewClick={(row) => setActiveViewRow(row)}
+        onAddToCrmClick={(row) => setActiveCrmRow(row)}
+        onFollowupClick={(row) => setFollowupRow(row)}
+        onFollowupDoneToggle={handleToggleFollowup}
       />
 
       {/* Direct Follow-up Modal on Reconciliation Table */}
@@ -440,6 +444,17 @@ export default function TdsReconciliation() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Add To CRM Books Modal */}
+      {activeCrmRow && (
+        <AddToCrmModal
+          row={activeCrmRow}
+          onClose={() => setActiveCrmRow(null)}
+          onSuccess={() => {
+            setRefreshTrigger(prev => prev + 1);
+          }}
+        />
       )}
     </div>
   );

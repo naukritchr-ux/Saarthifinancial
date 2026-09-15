@@ -16,7 +16,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   CheckSquare,
-  Square
+  Square,
+  PlusCircle
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { toggleFollowupDone } from '../../api/tdsApi';
@@ -29,6 +30,7 @@ export default function ReconciliationTable({
   onPageChange, 
   onEditClick,
   onViewClick,
+  onAddToCrmClick,
   onToggleFollowup,
   onFollowupClick
 }) {
@@ -282,6 +284,15 @@ export default function ReconciliationTable({
                       {/* Actions */}
                       <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
+                          {(!row.saarthiTds && !row.booksTds) && (
+                            <button
+                              onClick={() => onAddToCrmClick && onAddToCrmClick(row)}
+                              className="p-1.5 rounded-lg border border-[#9B87F5]/30 bg-[#9B87F5]/15 text-[#9B87F5] hover:bg-[#9B87F5] hover:text-white transition cursor-pointer"
+                              title="Book Missing Entry in CRM Books"
+                            >
+                              <PlusCircle className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <button
                             onClick={() => onViewClick && onViewClick(row)}
                             className="p-1.5 rounded-lg border border-[#E9E4FA] text-[#6B6580] hover:bg-[#E8E4FF] transition cursor-pointer"
@@ -318,34 +329,35 @@ export default function ReconciliationTable({
                                 </span>
                               </div>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-4 bg-[#E8E4FF]/30 rounded-xl border border-[#E9E4FA] text-[#1F1B2E]">
-                                <div>
-                                  <span className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider mb-0.5">Contact Person</span>
-                                  <span className="font-black text-[#1F1B2E] text-xs flex items-center gap-1">
-                                    <User className="w-3 h-3 text-[#9B87F5]" />
-                                    {row.contactPersonName || 'Not Available'}
-                                  </span>
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <div className="flex items-center gap-2 p-2.5 rounded-xl border border-[#E9E4FA] bg-[#F6F8FA]">
+                                  <User className="w-4 h-4 text-[#6B6580] flex-shrink-0" />
+                                  <div className="truncate">
+                                    <div className="text-[9px] text-[#6B6580] uppercase font-bold">Contact Name</div>
+                                    <div className="font-bold text-[#1F1B2E] text-xs truncate">
+                                      {row.contactPersonName || row.duesContactPerson || row.hrName || 'Not recorded'}
+                                    </div>
+                                  </div>
                                 </div>
-                                <div>
-                                  <span className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider mb-0.5">Designation</span>
-                                  <span className="font-bold text-[#1F1B2E] text-xs flex items-center gap-1">
-                                    <Briefcase className="w-3 h-3 text-[#9B87F5]" />
-                                    {row.designation || 'N/A'}
-                                  </span>
+
+                                <div className="flex items-center gap-2 p-2.5 rounded-xl border border-[#E9E4FA] bg-[#F6F8FA]">
+                                  <Phone className="w-4 h-4 text-[#6B6580] flex-shrink-0" />
+                                  <div className="truncate">
+                                    <div className="text-[9px] text-[#6B6580] uppercase font-bold">Phone Number</div>
+                                    <div className="font-bold text-[#1F1B2E] text-xs truncate">
+                                      {row.contactNumber || row.duesContactNumber || row.contactNo || 'Not recorded'}
+                                    </div>
+                                  </div>
                                 </div>
-                                <div>
-                                  <span className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider mb-0.5">Contact Number</span>
-                                  <span className="font-mono font-black text-[#1F1B2E] text-xs flex items-center gap-1">
-                                    <Phone className="w-3 h-3 text-[#4ADE80]" />
-                                    {row.contactNumber || 'N/A'}
-                                  </span>
-                                </div>
-                                <div>
-                                  <span className="block text-[10px] font-black text-[#6B6580] uppercase tracking-wider mb-0.5">Email / Manager</span>
-                                  <span className="font-semibold text-[#1F1B2E] text-xs flex items-center gap-1 truncate">
-                                    <Mail className="w-3 h-3 text-[#9B87F5]" />
-                                    {row.emailId || (row.teamleader || 'N/A')}
-                                  </span>
+
+                                <div className="flex items-center gap-2 p-2.5 rounded-xl border border-[#E9E4FA] bg-[#F6F8FA]">
+                                  <Mail className="w-4 h-4 text-[#6B6580] flex-shrink-0" />
+                                  <div className="truncate">
+                                    <div className="text-[9px] text-[#6B6580] uppercase font-bold">Email ID</div>
+                                    <div className="font-bold text-[#1F1B2E] text-xs truncate">
+                                      {row.emailId || 'Not recorded'}
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -424,6 +436,15 @@ export default function ReconciliationTable({
                               </span>
 
                               <div className="flex items-center gap-2">
+                                {(!row.saarthiTds && !row.booksTds) && (
+                                  <button
+                                    onClick={() => onAddToCrmClick && onAddToCrmClick(row)}
+                                    className="inline-flex items-center gap-1.5 bg-[#4ADE80] hover:bg-[#38C06C] text-[#1F1B2E] font-black text-xs px-3.5 py-1.5 rounded-xl transition cursor-pointer shadow-2xs"
+                                  >
+                                    <PlusCircle className="w-3.5 h-3.5" />
+                                    Book in CRM Books
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => {
                                     const cleanTan = (!row.tanNo || row.tanNo.startsWith('NO_TAN_') || row.tanNo.includes('UNKNOWN')) ? '' : row.tanNo;

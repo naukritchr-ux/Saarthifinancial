@@ -13,7 +13,8 @@ import {
   exportReconciliationCSV,
   toggleFollowupDone,
   syncSaarthiLiveApi,
-  syncSarthiLiveApi
+  syncSarthiLiveApi,
+  createCrmBookEntry
 } from '../controllers/tds26asController.js';
 
 const router = express.Router();
@@ -24,6 +25,7 @@ router.get('/dashboard-summary', asyncHandler(getDashboardSummary));
 // ── Reconciliation report & overrides ─────────────────────────────────────────
 router.get('/report',    asyncHandler(getReconciliationReport));
 router.put('/override',  asyncHandler(overrideReconciliationStatus));
+router.post('/crm-book-entry', asyncHandler(createCrmBookEntry));
 
 // Follow-up done toggle — support both PUT and PATCH for backward compat
 router.put('/report/:id/followup-done',   validateId, asyncHandler(toggleFollowupDone));

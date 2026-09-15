@@ -415,3 +415,20 @@ export const getTanWiseByFyReport = async (view = 'all', fy = '', search = '') =
   }
 };
 
+/** Create Missing CRM Book Entry */
+export const createCrmBookEntry = async (payload) => {
+  try {
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/crm-book-entry`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json().catch(() => null);
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || data?.message || 'Failed to create CRM book entry' };
+  } catch (err) {
+    return { success: false, error: err.message || 'Error connecting to CRM booking service' };
+  }
+};
+
+

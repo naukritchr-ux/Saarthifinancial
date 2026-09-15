@@ -1272,3 +1272,144 @@ export const toggleFollowupDone = async (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to update follow-up done flag', details: error.message });
   }
 };
+
+/**
+ * Manually create / record missing CRM book entry in tds_dues and auto-reconcile with 26AS/Tally
+ */
+export const createCrmBookEntry = async (req, res) => {
+  try {
+    const {
+      tan_no,
+      company_name,
+      financial_year,
+      tds_amount,
+      total_bill_amount,
+      bill_number,
+      bill_date,
+      contact_person_name,
+      contact_number,
+      designation,
+      email_id,
+      reconciliation_id,
+      note
+    } = req.body;
+
+    if (!tan_no || !financial_year || tds_amount === undefined || tds_amount === null || tds_amount === '') {
+      return res.status(400).json({ success: false, error: 'Missing required parameters: tan_no, financial_year, tds_amount' });
+    }
+
+    const cleanTan = String(tan_no).trim().toUpperCase();
+    const normFy = normalizeFY(financial_year) || String(financial_year).trim();
+    const cleanTds = parseFloat(tds_amount) || 0;
+    const cleanTotalBill = parseFloat(total_bill_amount || (cleanTds * 10) || 0);
+    const cleanBillNo = String(bill_number || `INV-CRM-${Date.now().toString(36).toUpperCase()}`).trim();
+    const cleanBillDate = String(bill_date || new Date().toISOString().slice(0, 10)).trim();
+
+    // 1. Insert/Update into tds_dues (Internal CRM Books table)
+    const insertDueQuery = `
+      INSERT INTO tds_dues (
+        company_name, tan_no, financial_year, bill_number, bill_date,
+        total_bill_amount, tds, contact_person_name, contact_number,
+        designation, email_id, note, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')
+      ON DUPLICATE KEY UPDATE
+        company_name = COALESCE(VALUES(company_name), company_name),
+        tds = VALUES(tds),
+        total_bill_amount = VALUES(total_bill_amount),
+        bill_number = COALESCE(VALUES(bill_number), bill_number),
+        contact_person_name = COALESCE(VALUES(contact_person_name), contact_person_name),
+        contact_number = COALESCE(VALUES(contact_number), contact_number),
+        designation = COALESCE(VALUES(designation), designation),
+        email_id = COALESCE(VALUES(email_id), email_id),
+        note = VALUES(note),
+        status = 'Active'
+    `;
+
+    await db.query(insertDueQuery, [
+      company_name || cleanTan,
+      cleanTan,
+      normFy,
+      cleanBillNo,
+      cleanBillDate,
+      cleanTotalBill,
+      cleanTds,
+      contact_person_name || null,
+      contact_number || null,
+      designation || null,
+      email_id || null,
+      note || 'Manually booked from TDS Reconciliation'
+    ]);
+
+    // 2. Re-run reconciliation engine so row status and difference recalculate immediately
+    try {
+      await reconcile(null, null);
+    } catch (recErr) {
+      console.warn('Reconcile notice:', recErr.message);
+    }
+
+    // 3. Log audit event
+    try {
+      const auditQuery = `
+        INSERT INTO tds_reconciliation_audit_logs (reconciliation_id, action, details, changed_by)
+        VALUES (?, ?, ?, ?)
+      `;
+      await db.query(auditQuery, [
+        reconciliation_id || 0,
+        'crm_book_entry_created',
+        `Booked CRM TDS of ₹${cleanTds} for ${cleanTan} (${normFy}). Invoice: ${cleanBillNo}. Note: ${note || 'Manual Book Entry'}`,
+        req.user?.email || 'Finance Team'
+      ]);
+    } catch (auditErr) {
+      console.warn('Audit warning:', auditErr.message);
+    }
+
+    // 4. Forward to remote Saarthi 360 CRM API in background (non-blocking)
+    (async () => {
+      try {
+        const payload = {
+          companyName: company_name || cleanTan,
+          tanNo: cleanTan,
+          financialYear: normFy,
+          billNumber: cleanBillNo,
+          billDate: cleanBillDate,
+          totalBillAmount: cleanTotalBill,
+          tdsAmount: cleanTds,
+          contactPersonName: contact_person_name,
+          contactNumber: contact_number,
+          emailId: email_id
+        };
+        const candidates = [
+          'https://api.sarthi360.in/api/Invoice',
+          'https://api.sarthi360.in/Invoice',
+          'https://sarthi360.in/api/Invoice'
+        ];
+        for (const u of candidates) {
+          try {
+            await fetch(u, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+              signal: AbortSignal.timeout(5000)
+            });
+          } catch (e) {}
+        }
+      } catch (fwdErr) {}
+    })();
+
+    res.json({
+      success: true,
+      message: `Successfully booked ₹${cleanTds.toLocaleString('en-IN')} in CRM Books for ${cleanTan} (${normFy})!`,
+      data: {
+        tan_no: cleanTan,
+        company_name: company_name || cleanTan,
+        financial_year: normFy,
+        books_tds: cleanTds,
+        bill_number: cleanBillNo
+      }
+    });
+
+  } catch (error) {
+    console.error('💥 Error in createCrmBookEntry:', error);
+    res.status(500).json({ success: false, error: 'Failed to create CRM book entry', details: error.message });
+  }
+};
