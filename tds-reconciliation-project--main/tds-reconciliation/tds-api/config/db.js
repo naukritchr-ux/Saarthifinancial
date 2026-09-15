@@ -105,7 +105,7 @@ if (DB_TYPE === 'sqlite') {
 
   if ((process.env.DB_SSL || 'true').toLowerCase() === 'true') {
     const sslOpts = {
-      rejectUnauthorized: (process.env.DB_SSL_REJECT_UNAUTHORIZED || 'true').toLowerCase() === 'true'
+      rejectUnauthorized: (process.env.DB_SSL_REJECT_UNAUTHORIZED || 'false').toLowerCase() === 'true'
     };
 
     const caPaths = [
