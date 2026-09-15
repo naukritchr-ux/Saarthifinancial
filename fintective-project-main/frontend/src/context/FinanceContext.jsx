@@ -90,7 +90,7 @@ export const normalizeFinancialYear = (fy, dateStr = null) => {
 export const FinanceProvider = ({ children }) => {
   const [transactions, setTransactions] = useState(() => {
     try {
-      const cached = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
+      const cached = sessionStorage.getItem('fintective_cached_txs');
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) {
@@ -107,7 +107,7 @@ export const FinanceProvider = ({ children }) => {
   });
   const [franchisees, setFranchisees] = useState(() => {
     try {
-      const cached = localStorage.getItem('fintective_cached_franchisees');
+      const cached = sessionStorage.getItem('fintective_cached_franchisees');
       return cached ? JSON.parse(cached) : DEFAULT_FRANCHISEES;
     } catch {
       return DEFAULT_FRANCHISEES;
@@ -115,7 +115,7 @@ export const FinanceProvider = ({ children }) => {
   });
   const [bdAgents, setBdAgents] = useState(() => {
     try {
-      const cached = localStorage.getItem('fintective_cached_bd');
+      const cached = sessionStorage.getItem('fintective_cached_bd');
       return cached ? JSON.parse(cached) : DEFAULT_BD_AGENTS;
     } catch {
       return DEFAULT_BD_AGENTS;
@@ -123,7 +123,7 @@ export const FinanceProvider = ({ children }) => {
   });
   const [teamLeaders, setTeamLeaders] = useState(() => {
     try {
-      const cached = localStorage.getItem('fintective_cached_tl');
+      const cached = sessionStorage.getItem('fintective_cached_tl');
       return cached ? JSON.parse(cached) : DEFAULT_TEAM_LEADERS;
     } catch {
       return DEFAULT_TEAM_LEADERS;
@@ -131,7 +131,7 @@ export const FinanceProvider = ({ children }) => {
   });
   const [budgets, setBudgets] = useState(() => {
     try {
-      const cached = localStorage.getItem('fintective_cached_budgets');
+      const cached = sessionStorage.getItem('fintective_cached_budgets');
       return cached ? JSON.parse(cached) : {
         'Salaries': 800000,
         'BD commissions': 120000,
@@ -153,7 +153,7 @@ export const FinanceProvider = ({ children }) => {
   });
 
   const [lastSyncedAt, setLastSyncedAt] = useState(() => {
-    return localStorage.getItem('fintective_last_synced_at') || null;
+    return sessionStorage.getItem('fintective_last_synced_at') || null;
   });
 
   // Helper to compute current dynamic Indian Financial Year (April 1 - March 31)
@@ -290,7 +290,7 @@ export const FinanceProvider = ({ children }) => {
 
   const [mlInsights, setMlInsights] = useState(() => {
     try {
-      const cached = localStorage.getItem('fintective_ml_insights') || sessionStorage.getItem('fintective_ml_insights');
+      const cached = sessionStorage.getItem('fintective_ml_insights');
       return cached ? JSON.parse(cached) : null;
     } catch {
       return null;
@@ -307,7 +307,7 @@ export const FinanceProvider = ({ children }) => {
         const data = await res.json();
         setMlInsights(data);
         try {
-          localStorage.setItem('fintective_ml_insights', JSON.stringify(data));
+          sessionStorage.setItem('fintective_ml_insights', JSON.stringify(data));
         } catch (e) {}
         return data;
       }
@@ -321,7 +321,7 @@ export const FinanceProvider = ({ children }) => {
 
   const [isLoadingData, setIsLoadingData] = useState(() => {
     try {
-      const cached = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
+      const cached = sessionStorage.getItem('fintective_cached_txs');
       return !cached;
     } catch {
       return true;
@@ -369,7 +369,7 @@ export const FinanceProvider = ({ children }) => {
           loadedFromBackend = true;
           setDataSource('backend');
           try {
-            localStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
+            sessionStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
           } catch (e) {}
         }
       }
@@ -378,7 +378,7 @@ export const FinanceProvider = ({ children }) => {
         const franData = await franRes.value.json();
         if (Array.isArray(franData) && franData.length > 0) {
           setFranchisees(franData);
-          try { localStorage.setItem('fintective_cached_franchisees', JSON.stringify(franData)); } catch (e) {}
+          try { sessionStorage.setItem('fintective_cached_franchisees', JSON.stringify(franData)); } catch (e) {}
         }
       }
 
@@ -386,7 +386,7 @@ export const FinanceProvider = ({ children }) => {
         const bdData = await bdRes.value.json();
         if (Array.isArray(bdData) && bdData.length > 0) {
           setBdAgents(bdData);
-          try { localStorage.setItem('fintective_cached_bd', JSON.stringify(bdData)); } catch (e) {}
+          try { sessionStorage.setItem('fintective_cached_bd', JSON.stringify(bdData)); } catch (e) {}
         }
       }
 
@@ -394,7 +394,7 @@ export const FinanceProvider = ({ children }) => {
         const tlData = await tlRes.value.json();
         if (Array.isArray(tlData) && tlData.length > 0) {
           setTeamLeaders(tlData);
-          try { localStorage.setItem('fintective_cached_tl', JSON.stringify(tlData)); } catch (e) {}
+          try { sessionStorage.setItem('fintective_cached_tl', JSON.stringify(tlData)); } catch (e) {}
         }
       }
 
@@ -402,7 +402,7 @@ export const FinanceProvider = ({ children }) => {
         const budgetData = await budgetRes.value.json();
         if (budgetData && Object.keys(budgetData).length > 0) {
           setBudgets(budgetData);
-          try { localStorage.setItem('fintective_cached_budgets', JSON.stringify(budgetData)); } catch (e) {}
+          try { sessionStorage.setItem('fintective_cached_budgets', JSON.stringify(budgetData)); } catch (e) {}
         }
       }
 
@@ -411,7 +411,7 @@ export const FinanceProvider = ({ children }) => {
         if (mlData && typeof mlData === 'object') {
           setMlInsights(mlData);
           try {
-            localStorage.setItem('fintective_ml_insights', JSON.stringify(mlData));
+            sessionStorage.setItem('fintective_ml_insights', JSON.stringify(mlData));
           } catch (e) {}
         }
       }
@@ -419,7 +419,7 @@ export const FinanceProvider = ({ children }) => {
       if (loadedFromBackend) {
         const nowFormatted = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         setLastSyncedAt(nowFormatted);
-        try { localStorage.setItem('fintective_last_synced_at', nowFormatted); } catch (e) {}
+        try { sessionStorage.setItem('fintective_last_synced_at', nowFormatted); } catch (e) {}
       }
     } catch (err) {
       console.warn('Backend connection issue, checking fallback...', err.message);
