@@ -229,7 +229,14 @@ export const Sparkline = ({ points, width = 110, height = 28, positive = true })
  * Trajectory Line Chart for Historical Baseline & Forward Projected Curve
  * Flat, minimal SVG matching Fintective's design tokens
  */
-export const TrajectoryLineChart = ({ historical = [], projected = [], confidence = 'high', height = 140 }) => {
+export const TrajectoryLineChart = ({ 
+  historical = [], 
+  projected = [], 
+  confidence = 'high', 
+  height = 140,
+  isDeclining = false,
+  projLabel = '5-Yr Compounded Path'
+}) => {
   // Normalize historical points
   const histPoints = (historical || []).map(h => ({
     label: h.period || h.label || 'Base',
@@ -248,8 +255,8 @@ export const TrajectoryLineChart = ({ historical = [], projected = [], confidenc
   if (allPoints.length === 0) return null;
 
   const isLowConfidence = confidence === 'low';
-  const projColor = isLowConfidence ? '#eab308' : '#10b981';
-  const projDash = isLowConfidence ? '3 3' : '4 4';
+  const projColor = isLowConfidence ? '#eab308' : (isDeclining ? '#C81E1E' : '#10b981');
+  const projDash = isLowConfidence ? '3 3' : (isDeclining ? '4 4' : '4 4');
 
   const maxVal = Math.max(...allPoints.map(p => p.value), 100000) * 1.15;
   const range = maxVal;
@@ -294,8 +301,8 @@ export const TrajectoryLineChart = ({ historical = [], projected = [], confidenc
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <span style={{ width: '12px', height: '3px', borderTop: `2px dashed ${projColor}`, display: 'inline-block' }}></span>
-            <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', fontWeight: '600' }}>
-              {isLowConfidence ? 'Preliminary Projection' : '5-Yr Compounded Path'}
+            <span style={{ color: isDeclining ? '#C81E1E' : 'var(--text-muted)', fontSize: '0.74rem', fontWeight: '600' }}>
+              {isLowConfidence ? 'Preliminary Projection' : projLabel}
             </span>
           </div>
         </div>

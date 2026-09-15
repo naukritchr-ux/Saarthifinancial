@@ -4,8 +4,17 @@ import { API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency } from '../utils/formatters';
 
-const GoalSetterModal = ({ isOpen, onClose, entityType, entity, onTargetCreated }) => {
-  const [growthPct, setGrowthPct] = useState('20');
+const GoalSetterModal = ({ isOpen, onClose, entityType, entity, initialGrowthPct, initialTargetPlacements, initialTargetRevenue, onTargetCreated }) => {
+  const baseRevenue = entity?.baseRevenue || entity?.revenue || entity?.total_revenue || 1000000;
+  const baseDeals = entity?.total_deals || entity?.deals_count || 20;
+  const avgTicketSize = baseDeals > 0 ? (baseRevenue / baseDeals) : 50000;
+
+  const [targetMode, setTargetMode] = useState(initialTargetPlacements ? 'placements' : 'rate'); // 'rate' | 'placements'
+  const [growthPct, setGrowthPct] = useState(initialGrowthPct ? String(initialGrowthPct) : '20');
+  const [targetPlacements, setTargetPlacements] = useState(
+    initialTargetPlacements ? String(initialTargetPlacements) : String(Math.max(1, Math.round(baseDeals * 1.2)))
+  );
+
   const [salaryTarget, setSalaryTarget] = useState(entityType === 'bd_agent' ? (entity?.baseSalary ? String(Math.round(entity.baseSalary * 1.25)) : '15000') : '');
   const [periodStart, setPeriodStart] = useState('2026-04-01');
   const [periodEnd, setPeriodEnd] = useState('2027-03-31');
@@ -23,9 +32,28 @@ const GoalSetterModal = ({ isOpen, onClose, entityType, entity, onTargetCreated 
 
   if (!isOpen) return null;
 
-  const baseRevenue = entity?.baseRevenue || entity?.revenue || 5000000;
+  // Handle bidirectional sync between growthPct and targetPlacements
+  const handleRateChange = (val) => {
+    setGrowthPct(val);
+    const numG = parseFloat(val) || 0;
+    const computedPlacements = Math.max(1, Math.round(baseDeals * (1 + numG / 100)));
+    setTargetPlacements(String(computedPlacements));
+  };
+
+  const handlePlacementsChange = (val) => {
+    setTargetPlacements(val);
+    const numP = parseFloat(val) || 0;
+    if (baseDeals > 0) {
+      const computedG = ((numP / baseDeals) - 1) * 100;
+      setGrowthPct(computedG.toFixed(1));
+    }
+  };
+
   const numGrowth = parseFloat(growthPct) || 0;
-  const targetRevenue = baseRevenue * (1 + numGrowth / 100);
+  const numPlacements = parseInt(targetPlacements) || Math.max(1, Math.round(baseDeals * (1 + numGrowth / 100)));
+  const targetRevenue = (targetMode === 'placements' && avgTicketSize > 0)
+    ? (numPlacements * avgTicketSize)
+    : (baseRevenue * (1 + numGrowth / 100));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -60,9 +88,10 @@ we are pleased to formalize your agreed performance milestone and revenue target
 
 1. PERFORMANCE TARGET SUMMARY
 --------------------------------------------------------------------------------
-• Current Baseline Billing Revenue : ₹${baseRevenue.toLocaleString()}
+• Current Baseline Revenue        : ₹${baseRevenue.toLocaleString()}
 • Target Growth Rate              : +${numGrowth}%
-• Projected Target Revenue (Gross): ₹${targetRevenue.toLocaleString()}
+• Target Placements / Mandates    : ${numPlacements} closed placements
+• Projected Target Revenue (Gross): ₹${Math.round(targetRevenue).toLocaleString()}
 • Evaluation Horizon              : ${periodStart} through ${periodEnd}${entityType === 'bd_agent' && salaryTarget ? `\n• Target Base Compensation        : ₹${parseFloat(salaryTarget).toLocaleString()} per month (Performance-Linked)` : ''}
 
 2. STRATEGIC GUIDELINES & EXECUTION PRIORITIES
@@ -169,58 +198,147 @@ Fintective Intelligence Network
           {!createdTarget ? (
             <form onSubmit={handleSubmit}>
               {/* Baseline vs Target Summary Banner */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', background: 'var(--bg-card)', padding: '14px', borderRadius: '10px', border: '1px solid var(--border-color)', marginBottom: '18px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', background: 'var(--bg-card)', padding: '14px', borderRadius: '10px', border: '1px solid var(--border-color)', marginBottom: '18px' }}>
                 <div>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600', display: 'block' }}>Baseline Revenue</span>
-                  <span style={{ fontSize: '1.15rem', fontWeight: '700', color: 'var(--text-main)' }}>{formatCurrency(baseRevenue)}</span>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600', display: 'block' }}>Baseline Revenue</span>
+                  <span style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--text-main)' }}>{formatCurrency(baseRevenue)}</span>
                 </div>
                 <div>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600', display: 'block' }}>Target Growth Rate</span>
-                  <span style={{ fontSize: '1.15rem', fontWeight: '700', color: 'var(--accent-teal)' }}>+{numGrowth}%</span>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600', display: 'block' }}>Target Placements</span>
+                  <span style={{ fontSize: '1.05rem', fontWeight: '700', color: '#3b82f6' }}>{numPlacements} deals</span>
                 </div>
                 <div>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600', display: 'block' }}>Projected Target</span>
-                  <span style={{ fontSize: '1.15rem', fontWeight: '700', color: '#10b981' }}>{formatCurrency(targetRevenue)}</span>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600', display: 'block' }}>Target Growth Rate</span>
+                  <span style={{ fontSize: '1.05rem', fontWeight: '700', color: 'var(--accent-teal)' }}>+{numGrowth}%</span>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '600', display: 'block' }}>Projected Target</span>
+                  <span style={{ fontSize: '1.05rem', fontWeight: '700', color: '#10b981' }}>{formatCurrency(targetRevenue)}</span>
                 </div>
               </div>
 
-              {/* Growth Target Inputs */}
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-main)', marginBottom: '6px' }}>
-                  Target Growth Percentage (% over baseline)
-                </label>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="-20"
-                    max="500"
-                    value={growthPct}
-                    onChange={(e) => setGrowthPct(e.target.value)}
-                    style={{ flex: 1, padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.9rem', fontWeight: '600' }}
-                    required
-                  />
-                  {[10, 20, 35, 50, 100].map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setGrowthPct(String(preset))}
-                      style={{
-                        padding: '8px 12px',
-                        borderRadius: '6px',
-                        border: growthPct === String(preset) ? '1px solid var(--accent-teal)' : '1px solid var(--border-color)',
-                        background: growthPct === String(preset) ? 'rgba(15, 110, 86, 0.1)' : 'var(--bg-card)',
-                        color: growthPct === String(preset) ? 'var(--accent-teal)' : 'var(--text-muted)',
-                        fontSize: '0.75rem',
-                        fontWeight: '600',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      +{preset}%
-                    </button>
-                  ))}
+              {/* Goal Mode Switcher */}
+              <div style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)' }}>Goal Setting Mode:</span>
+                <div style={{ display: 'flex', background: 'var(--bg-card)', borderRadius: '6px', padding: '2px', border: '1px solid var(--border-color)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setTargetMode('rate')}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      background: targetMode === 'rate' ? 'var(--accent-teal)' : 'transparent',
+                      color: targetMode === 'rate' ? '#ffffff' : 'var(--text-muted)',
+                      fontSize: '0.74rem',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    📈 Growth Rate %
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTargetMode('placements')}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      background: targetMode === 'placements' ? 'var(--accent-teal)' : 'transparent',
+                      color: targetMode === 'placements' ? '#ffffff' : 'var(--text-muted)',
+                      fontSize: '0.74rem',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🎯 Candidate Placements
+                  </button>
                 </div>
               </div>
+
+              {/* Target Placements Input */}
+              {targetMode === 'placements' ? (
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-main)', marginBottom: '6px' }}>
+                    Target Candidate Placements / Mandates (Deals)
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="number"
+                      step="1"
+                      min="1"
+                      max="2000"
+                      value={targetPlacements}
+                      onChange={(e) => handlePlacementsChange(e.target.value)}
+                      style={{ flex: 1, padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.9rem', fontWeight: '700' }}
+                      required
+                    />
+                    {[25, 50, 75, 100, 150].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => handlePlacementsChange(String(preset))}
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: '6px',
+                          border: targetPlacements === String(preset) ? '1px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                          background: targetPlacements === String(preset) ? 'rgba(15, 110, 86, 0.1)' : 'var(--bg-card)',
+                          color: targetPlacements === String(preset) ? 'var(--accent-teal)' : 'var(--text-muted)',
+                          fontSize: '0.74rem',
+                          fontWeight: '600',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {preset} Deals
+                      </button>
+                    ))}
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                    Calculates to ≈ {formatCurrency(targetRevenue)} gross revenue (+{numGrowth}% growth) based on historical average deal size.
+                  </span>
+                </div>
+              ) : (
+                /* Growth Target Inputs */
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-main)', marginBottom: '6px' }}>
+                    Target Growth Percentage (% over baseline)
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="-20"
+                      max="500"
+                      value={growthPct}
+                      onChange={(e) => handleRateChange(e.target.value)}
+                      style={{ flex: 1, padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: '0.9rem', fontWeight: '600' }}
+                      required
+                    />
+                    {[10, 20, 35, 50, 100].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => handleRateChange(String(preset))}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: '6px',
+                          border: growthPct === String(preset) ? '1px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                          background: growthPct === String(preset) ? 'rgba(15, 110, 86, 0.1)' : 'var(--bg-card)',
+                          color: growthPct === String(preset) ? 'var(--accent-teal)' : 'var(--text-muted)',
+                          fontSize: '0.75rem',
+                          fontWeight: '600',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        +{preset}%
+                      </button>
+                    ))}
+                  </div>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                    Equivalent to ≈ {numPlacements} closed placements for this fiscal target.
+                  </span>
+                </div>
+              )}
 
               {/* Salary Target Field (for BD Agents) */}
               {entityType === 'bd_agent' && (

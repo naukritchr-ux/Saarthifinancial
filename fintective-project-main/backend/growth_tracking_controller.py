@@ -170,6 +170,22 @@ def _resolve_entity_info(cursor, entity_type, entity_id, explicit_name=None):
     return entity_name
 
 
+def _normalize_fy(raw):
+    """Normalizes fiscal year string to standard YYYY-YYYY format (e.g. '2025-26' -> '2025-2026')."""
+    if not raw:
+        return '2025-2026'
+    s = str(raw).strip()
+    if len(s) == 7 and s[4] == '-':
+        p1 = s[:4]
+        p2 = s[5:]
+        if p2.isdigit() and len(p2) == 2:
+            return f"{p1}-20{p2}"
+    if len(s) == 4 and s.isdigit():
+        y = int(s)
+        return f"{y}-{y+1}"
+    return s
+
+
 def _fetch_historical_revenue_and_stats(cursor, entity_type, entity_id, entity_name):
     """
     Pulls historical yearly and monthly revenue metrics, deal volume, and history duration.
@@ -201,14 +217,23 @@ def _fetch_historical_revenue_and_stats(cursor, entity_type, entity_id, entity_n
             """
             cursor.execute(query, aliases + aliases)
             rows = cursor.fetchall()
+            
+            period_map = {}
             for r in rows:
                 if r.get('period'):
-                    historical_series.append({
-                        'period': str(r['period']),
-                        'revenue': float(r['gross_revenue'] or 0.0),
-                        'net_revenue': float(r['net_revenue'] or 0.0),
-                        'deals_count': int(r['deals_count'] or 0)
-                    })
+                    p_norm = _normalize_fy(r['period'])
+                    if p_norm not in period_map:
+                        period_map[p_norm] = {
+                            'period': p_norm,
+                            'revenue': 0.0,
+                            'net_revenue': 0.0,
+                            'deals_count': 0
+                        }
+                    period_map[p_norm]['revenue'] += float(r['gross_revenue'] or 0.0)
+                    period_map[p_norm]['net_revenue'] += float(r['net_revenue'] or 0.0)
+                    period_map[p_norm]['deals_count'] += int(r['deals_count'] or 0)
+            
+            historical_series = sorted(list(period_map.values()), key=lambda x: x['period'])
 
             # Monthly stats for franchisee
             m_query = f"""
@@ -248,14 +273,23 @@ def _fetch_historical_revenue_and_stats(cursor, entity_type, entity_id, entity_n
             """
             cursor.execute(query, aliases + aliases)
             rows = cursor.fetchall()
+            
+            period_map = {}
             for r in rows:
                 if r.get('period'):
-                    historical_series.append({
-                        'period': str(r['period']),
-                        'revenue': float(r['gross_revenue'] or 0.0),
-                        'net_revenue': float(r['net_revenue'] or 0.0),
-                        'deals_count': int(r['deals_count'] or 0)
-                    })
+                    p_norm = _normalize_fy(r['period'])
+                    if p_norm not in period_map:
+                        period_map[p_norm] = {
+                            'period': p_norm,
+                            'revenue': 0.0,
+                            'net_revenue': 0.0,
+                            'deals_count': 0
+                        }
+                    period_map[p_norm]['revenue'] += float(r['gross_revenue'] or 0.0)
+                    period_map[p_norm]['net_revenue'] += float(r['net_revenue'] or 0.0)
+                    period_map[p_norm]['deals_count'] += int(r['deals_count'] or 0)
+            
+            historical_series = sorted(list(period_map.values()), key=lambda x: x['period'])
 
             # Monthly stats for BD/Employee
             m_query = f"""

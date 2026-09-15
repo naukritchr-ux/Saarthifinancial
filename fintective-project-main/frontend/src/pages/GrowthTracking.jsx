@@ -51,7 +51,13 @@ const GrowthTracking = () => {
   const [predictionLoading, setPredictionLoading] = useState(false);
   const [predictionError, setPredictionError] = useState(null);
   const [overrideRate, setOverrideRate] = useState('');
+  const [forecastTab, setForecastTab] = useState('target'); // 'target' (Aspirational Goal) | 'inertia' (Historical Trend)
   const [activeScenarioMultiplier, setActiveScenarioMultiplier] = useState(2); // 1, 2, 3, 4, 5
+
+  // Goal Mode & Interactive Placements Target Controls
+  const [targetControlMode, setTargetControlMode] = useState('rate'); // 'rate' | 'placements'
+  const [targetPlacementCount, setTargetPlacementCount] = useState('');
+  const [goalModalParams, setGoalModalParams] = useState(null);
 
   // Target History & Modals state
   const [targetsList, setTargetsList] = useState([]);
@@ -150,7 +156,10 @@ const GrowthTracking = () => {
         if (data.insufficient_data || data.projection_status === 'insufficient_data') {
           setOverrideRate('');
         } else if (customRateVal === undefined || customRateVal === '') {
-          setOverrideRate(String(data.applied_rate_pct || (data.historical_cagr_pct ?? 15)));
+          // If historical CAGR is positive, use it as default target. If negative, default goal target rate to +15.0% aspirational recovery rate!
+          const histCagr = data.historical_cagr_pct;
+          const defaultTargetRate = (histCagr !== undefined && histCagr !== null && histCagr > 0) ? histCagr : 15;
+          setOverrideRate(String(defaultTargetRate));
         }
       } else {
         const errJson = await res.json().catch(() => ({}));
@@ -196,8 +205,13 @@ const GrowthTracking = () => {
   };
 
   const handleResetRate = () => {
-    const defaultRate = predictionData?.historical_cagr_pct ?? 15;
+    const histCagr = predictionData?.historical_cagr_pct;
+    const defaultRate = (histCagr !== undefined && histCagr !== null && histCagr > 0) ? histCagr : 15;
     setOverrideRate(String(defaultRate));
+    if (baseDealsCount > 0) {
+      const impliedDeals = Math.max(1, Math.round(baseDealsCount * (1 + defaultRate / 100)));
+      setTargetPlacementCount(String(impliedDeals));
+    }
   };
 
   const handleCopyLetter = (text) => {
@@ -229,19 +243,47 @@ const GrowthTracking = () => {
     return 0;
   }, [predictionData, chartHistorical]);
 
-  // Current rate (R) in percentage for forward target projections
-  const currentRatePct = useMemo(() => {
+  // Base deals count
+  const baseDealsCount = useMemo(() => {
+    if (chartHistorical.length > 0) {
+      return chartHistorical[chartHistorical.length - 1].deals_count || 10;
+    }
+    return selectedEntity?.total_deals || 10;
+  }, [chartHistorical, selectedEntity]);
+
+  // Handle placement target change
+  const handlePlacementCountChange = (countVal) => {
+    setTargetPlacementCount(countVal);
+    const count = parseFloat(countVal) || 0;
+    if (baseDealsCount > 0 && count > 0) {
+      const impliedGrowth = ((count / baseDealsCount) - 1) * 100;
+      setOverrideRate(String(parseFloat(impliedGrowth.toFixed(1))));
+    }
+  };
+
+  // Historical CAGR
+  const historicalCagrPct = useMemo(() => {
+    return predictionData?.historical_cagr_pct ?? 0;
+  }, [predictionData]);
+
+  const isHistoricalDeclining = historicalCagrPct < 0;
+
+  // Target Growth Rate (R) in percentage for forward aspirational goal setting
+  const targetRatePct = useMemo(() => {
     if (overrideRate !== '' && overrideRate !== null && overrideRate !== undefined) {
       return parseFloat(overrideRate) || 0;
     }
-    if (predictionData?.applied_rate_pct !== undefined && predictionData?.applied_rate_pct !== null && predictionData.applied_rate_pct > 0) {
-      return predictionData.applied_rate_pct;
+    if (historicalCagrPct > 0) {
+      return historicalCagrPct;
     }
-    if (predictionData?.historical_cagr_pct !== undefined && predictionData?.historical_cagr_pct !== null && predictionData.historical_cagr_pct > 0) {
-      return predictionData.historical_cagr_pct;
-    }
-    return effectiveBaseRevenue > 0 ? 15 : null;
-  }, [overrideRate, predictionData, effectiveBaseRevenue]);
+    return 15;
+  }, [overrideRate, historicalCagrPct]);
+
+  // Inertia Growth Rate (R) in percentage (pure historical extrapolation)
+  const inertiaRatePct = historicalCagrPct;
+
+  // Active Rate for the selected view mode
+  const activeRatePct = forecastTab === 'target' ? targetRatePct : inertiaRatePct;
 
   const isInsufficientData = Boolean(
     predictionData?.insufficient_data || 
@@ -249,20 +291,19 @@ const GrowthTracking = () => {
     effectiveBaseRevenue <= 0
   );
 
-  // 5-Year Projections from API or live formula
-  const chartProjections = useMemo(() => {
-    if (isInsufficientData || effectiveBaseRevenue <= 0 || currentRatePct === null) {
+  // Helper generator for 5-Year Projections
+  const computeProjections = (rateVal) => {
+    if (isInsufficientData || effectiveBaseRevenue <= 0 || rateVal === null || rateVal === undefined) {
       return [];
     }
-    if (predictionData?.projections && predictionData.projections.length > 0) {
-      return predictionData.projections;
-    }
     const base = effectiveBaseRevenue;
-    const r = currentRatePct / 100;
+    const r = rateVal / 100;
+    const baseD = baseDealsCount > 0 ? baseDealsCount : 10;
     let cum = 0;
     return [1, 2, 3, 4, 5].map(t => {
-      const projVal = base * Math.pow(1 + r, t);
-      const growthPct = (Math.pow(1 + r, t) - 1) * 100;
+      const multiplier = Math.pow(1 + r, t);
+      const projVal = base * multiplier;
+      const growthPct = (multiplier - 1) * 100;
       cum += projVal;
       return {
         year_index: t,
@@ -270,11 +311,16 @@ const GrowthTracking = () => {
         projected_revenue: Math.round(projVal),
         growth_pct: parseFloat(growthPct.toFixed(1)),
         incremental_gain: Math.round(projVal - base),
-        projected_deals: Math.max(1, Math.round(5 * Math.pow(1 + r, t))),
+        projected_deals: Math.max(1, Math.round(baseD * multiplier)),
         cumulative_revenue: Math.round(cum)
       };
     });
-  }, [isInsufficientData, effectiveBaseRevenue, currentRatePct, predictionData]);
+  };
+
+  const targetProjections = useMemo(() => computeProjections(targetRatePct), [isInsufficientData, effectiveBaseRevenue, targetRatePct, baseDealsCount]);
+  const inertiaProjections = useMemo(() => computeProjections(inertiaRatePct), [isInsufficientData, effectiveBaseRevenue, inertiaRatePct, baseDealsCount]);
+
+  const activeProjections = forecastTab === 'target' ? targetProjections : inertiaProjections;
 
   // Scale chart data formatted for BarChart (1x to 5x)
   const scaleChartData = useMemo(() => {
@@ -607,62 +653,282 @@ const GrowthTracking = () => {
 
       {/* 5-Year Forward Predictive Model & Scale Simulator */}
       <div className="dashboard-card" style={{ marginBottom: '24px' }}>
+        
+        {/* Performance Acceleration Alert Banner (When historical CAGR is declining) */}
+        {!isInsufficientData && !predictionLoading && !predictionError && isHistoricalDeclining && (
+          <div style={{
+            background: 'linear-gradient(90deg, rgba(239, 68, 68, 0.08) 0%, rgba(249, 115, 22, 0.05) 100%)',
+            border: '1px solid rgba(239, 68, 68, 0.28)',
+            borderRadius: '10px',
+            padding: '14px 18px',
+            marginBottom: '18px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', maxWidth: '720px' }}>
+              <div style={{ padding: '6px', background: 'rgba(239, 68, 68, 0.15)', borderRadius: '6px', color: '#dc2626', marginTop: '2px' }}>
+                <AlertCircle size={20} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.88rem', fontWeight: '800', color: '#991b1b', marginBottom: '2px' }}>
+                  ⚠️ Performance Acceleration Alert: Historical Trajectory is Declining ({historicalCagrPct}%)
+                </div>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: '#7f1d1d', lineHeight: '1.45' }}>
+                  {selectedEntity?.name}'s historical run-rate indicates a compounding volume contraction ({historicalCagrPct}%/yr), projecting annual billing to compress from {formatCurrency(effectiveBaseRevenue)} down to {formatCurrency(inertiaProjections[4]?.projected_revenue || 0)} by Year 5 if no intervention occurs. 
+                  Below, passive inertia is separated from your <strong>Aspirational Target</strong> plan.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {forecastTab === 'inertia' ? (
+                <button
+                  onClick={() => {
+                    setForecastTab('target');
+                    if (overrideRate === '' || parseFloat(overrideRate) <= 0) {
+                      setOverrideRate('15');
+                    }
+                  }}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: 'var(--accent-teal)',
+                    color: '#ffffff',
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <Zap size={13} />
+                  Switch to +15% Recovery Plan
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setGoalModalParams({
+                      growthPct: 15,
+                      placements: Math.max(1, Math.round(baseDealsCount * 1.15)),
+                      targetRevenue: effectiveBaseRevenue * 1.15
+                    });
+                    setIsGoalModalOpen(true);
+                  }}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: '#dc2626',
+                    color: '#ffffff',
+                    fontSize: '0.78rem',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <Target size={13} />
+                  Set +15% Turnaround Target
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Header & Mode Switcher */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Sparkles size={18} color="var(--accent-teal)" />
-              5-Year Forward Compounding Roadmap ($t=1..5$)
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '4px' }}>
+              <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sparkles size={18} color="var(--accent-teal)" />
+                5-Year Forward Horizon ($t=1..5$)
+              </h3>
+
+              {/* Distinct Mode Switcher: Target vs Inertia */}
+              {!isInsufficientData && !predictionLoading && !predictionError && (
+                <div style={{ display: 'inline-flex', background: 'var(--bg-main)', borderRadius: '6px', padding: '3px', border: '1px solid var(--border-color)' }}>
+                  <button
+                    type="button"
+                    onClick={() => setForecastTab('target')}
+                    style={{
+                      padding: '4px 12px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      background: forecastTab === 'target' ? 'var(--accent-teal)' : 'transparent',
+                      color: forecastTab === 'target' ? '#ffffff' : 'var(--text-muted)',
+                      fontSize: '0.74rem',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}
+                  >
+                    <Target size={12} />
+                    🎯 Aspirational Target (Intervention Plan)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForecastTab('inertia')}
+                    style={{
+                      padding: '4px 12px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      background: forecastTab === 'inertia' ? (isHistoricalDeclining ? '#dc2626' : 'var(--accent-teal)') : 'transparent',
+                      color: forecastTab === 'inertia' ? '#ffffff' : 'var(--text-muted)',
+                      fontSize: '0.74rem',
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}
+                  >
+                    <TrendingDown size={12} />
+                    📉 Historical Trend (If Unchanged)
+                  </button>
+                </div>
+              )}
+            </div>
+
             <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Verified Compounding Formula: <code>V(t) = Base × (1 + R)^t</code> spanning 5 forward fiscal years.
+              {forecastTab === 'target'
+                ? `Aspirational growth roadmap ($t=1..5$) calculated from your specified growth velocity (+${targetRatePct}%) or deal placement targets.`
+                : `Passive CAGR run-rate (${historicalCagrPct}%/yr) based on historical performance — showing risk exposure if no intervention occurs.`}
             </span>
           </div>
 
-          {/* Rate Override Controls (only active when data maturity threshold is met) */}
-          {!isInsufficientData && !predictionLoading && !predictionError && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)' }}>Adjust Forward Rate (R):</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <input
-                  type="number"
-                  step="1"
-                  min="-20"
-                  max="200"
-                  value={overrideRate}
-                  onChange={(e) => handleRateChange(e.target.value)}
-                  style={{
-                    width: '74px',
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-main)',
-                    color: 'var(--text-main)',
-                    fontWeight: '700',
-                    fontSize: '0.85rem',
-                    textAlign: 'center'
-                  }}
-                />
-                <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-muted)' }}>%</span>
+          {/* Interactive Target & Rate Controls (Visible in Target Mode) */}
+          {!isInsufficientData && !predictionLoading && !predictionError && forecastTab === 'target' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              {/* Target Mode Toggle */}
+              <div style={{ display: 'flex', background: 'var(--bg-main)', borderRadius: '6px', padding: '2px', border: '1px solid var(--border-color)' }}>
                 <button
-                  onClick={handleResetRate}
-                  title="Reset to Historical CAGR"
+                  type="button"
+                  onClick={() => setTargetControlMode('rate')}
                   style={{
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-main)',
-                    color: 'var(--text-muted)',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
+                    padding: '4px 10px',
+                    borderRadius: '4px',
+                    border: 'none',
+                    background: targetControlMode === 'rate' ? 'var(--accent-teal)' : 'transparent',
+                    color: targetControlMode === 'rate' ? '#ffffff' : 'var(--text-muted)',
+                    fontSize: '0.74rem',
+                    fontWeight: '700',
+                    cursor: 'pointer'
                   }}
                 >
-                  <RotateCcw size={12} />
-                  CAGR
+                  📈 Rate %
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTargetControlMode('placements')}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '4px',
+                    border: 'none',
+                    background: targetControlMode === 'placements' ? 'var(--accent-teal)' : 'transparent',
+                    color: targetControlMode === 'placements' ? '#ffffff' : 'var(--text-muted)',
+                    fontSize: '0.74rem',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🎯 Placements Goal
                 </button>
               </div>
+
+              {targetControlMode === 'placements' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)' }}>Target Deals:</span>
+                  <input
+                    type="number"
+                    step="1"
+                    min="1"
+                    max="5000"
+                    placeholder="e.g. 50"
+                    value={targetPlacementCount}
+                    onChange={(e) => handlePlacementCountChange(e.target.value)}
+                    style={{
+                      width: '74px',
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-main)',
+                      color: 'var(--text-main)',
+                      fontWeight: '700',
+                      fontSize: '0.85rem',
+                      textAlign: 'center'
+                    }}
+                  />
+                  <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-muted)' }}>deals/yr</span>
+                  {[25, 50, 100].map(cnt => (
+                    <button
+                      key={cnt}
+                      onClick={() => handlePlacementCountChange(String(cnt))}
+                      style={{
+                        padding: '5px 8px',
+                        borderRadius: '4px',
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-main)',
+                        color: 'var(--text-main)',
+                        cursor: 'pointer',
+                        fontSize: '0.72rem',
+                        fontWeight: '600'
+                      }}
+                    >
+                      {cnt}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)' }}>Growth Rate (R):</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="-50"
+                    max="500"
+                    value={overrideRate}
+                    onChange={(e) => handleRateChange(e.target.value)}
+                    style={{
+                      width: '78px',
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-main)',
+                      color: 'var(--text-main)',
+                      fontWeight: '700',
+                      fontSize: '0.85rem',
+                      textAlign: 'center'
+                    }}
+                  />
+                  <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-muted)' }}>%</span>
+                  <button
+                    onClick={handleResetRate}
+                    title="Reset to Baseline Target (+15% or positive CAGR)"
+                    style={{
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-main)',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <RotateCcw size={12} />
+                    Reset
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -713,45 +979,164 @@ const GrowthTracking = () => {
             {/* 1. Trajectory Line Chart for Historical Baseline & 5-Year Forward Path */}
             <TrajectoryLineChart
               historical={chartHistorical}
-              projected={chartProjections}
+              projected={activeProjections}
               confidence={predictionData?.confidence || 'high'}
+              isDeclining={forecastTab === 'inertia' && isHistoricalDeclining}
+              projLabel={forecastTab === 'target' ? '5-Yr Target Roadmap' : 'Historical Inertia Path'}
             />
 
             {/* 5-Year Forward Horizon Cards (Year +1 through Year +5) */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '12px', marginBottom: '24px' }}>
-              {chartProjections.map((proj, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    background: 'var(--bg-main)',
-                    padding: '14px',
-                    borderRadius: '10px',
-                    border: '1px solid var(--border-color)',
-                    borderTop: `3px solid ${idx === 4 ? '#8b5cf6' : (idx >= 2 ? '#3b82f6' : 'var(--accent-teal)')}`
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-main)' }}>{proj.period_label}</span>
-                    <span style={{
-                      fontSize: '0.7rem',
-                      fontWeight: '700',
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      backgroundColor: proj.growth_pct >= 0 ? '#E6F4EA' : '#FDE8E8',
-                      color: proj.growth_pct >= 0 ? '#0F6E56' : '#C81E1E'
-                    }}>
-                      {proj.growth_pct >= 0 ? '+' : ''}{proj.growth_pct}%
-                    </span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(195px, 1fr))', gap: '12px', marginBottom: '24px' }}>
+              {activeProjections.map((proj, idx) => {
+                const isDecliningCard = proj.growth_pct < 0;
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      background: 'var(--bg-main)',
+                      padding: '14px',
+                      borderRadius: '10px',
+                      border: '1px solid var(--border-color)',
+                      borderTop: `3px solid ${
+                        isDecliningCard 
+                          ? '#dc2626' 
+                          : (idx === 4 ? '#8b5cf6' : (idx >= 2 ? '#3b82f6' : 'var(--accent-teal)'))
+                      }`,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-main)' }}>
+                          {forecastTab === 'target' ? `${proj.period_label} Target` : `${proj.period_label} Baseline`}
+                        </span>
+                        <span style={{
+                          fontSize: '0.7rem',
+                          fontWeight: '700',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          backgroundColor: isDecliningCard ? '#FDE8E8' : '#E6F4EA',
+                          color: isDecliningCard ? '#C81E1E' : '#0F6E56'
+                        }}>
+                          {proj.growth_pct >= 0 ? '+' : ''}{proj.growth_pct}% {forecastTab === 'target' ? 'Target' : 'Inertia'}
+                        </span>
+                      </div>
+                      
+                      <div style={{ 
+                        fontSize: '1.15rem', 
+                        fontWeight: '800', 
+                        color: isDecliningCard ? '#C81E1E' : '#0F6E56', 
+                        marginBottom: '4px' 
+                      }}>
+                        {formatCurrency(proj.projected_revenue)}
+                      </div>
+
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '3px', marginBottom: '10px' }}>
+                        <span>
+                          {forecastTab === 'target' ? 'Target Deals: ' : 'Projected Volume: '}
+                          <strong style={{ color: isDecliningCard ? '#dc2626' : '#3b82f6' }}>
+                            {proj.projected_deals} placements
+                          </strong>
+                        </span>
+                        
+                        {/* Fix #2: Distinct styling for cumulative totals */}
+                        {forecastTab === 'target' ? (
+                          <span style={{ color: 'var(--text-main)', fontWeight: '600' }}>
+                            5-Yr Cumulative: <strong style={{ color: '#0F6E56' }}>{formatLakhs(proj.cumulative_revenue)}</strong>
+                          </span>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <span style={{ color: '#64748b', fontSize: '0.68rem' }}>
+                              5-Yr Running Total: <strong style={{ color: 'var(--text-main)' }}>{formatLakhs(proj.cumulative_revenue)}</strong>
+                            </span>
+                            {isDecliningCard && (
+                              <span style={{ color: '#dc2626', fontSize: '0.68rem', fontWeight: '600' }}>
+                                Annual Loss vs Base: -{formatLakhs(Math.abs(proj.incremental_gain))}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Direct Goal Setter / Turnaround Button */}
+                    <button
+                      onClick={() => {
+                        setGoalModalParams({
+                          growthPct: forecastTab === 'target' ? proj.growth_pct : 15,
+                          placements: forecastTab === 'target' ? proj.projected_deals : Math.max(1, Math.round(baseDealsCount * 1.15)),
+                          targetRevenue: forecastTab === 'target' ? proj.projected_revenue : effectiveBaseRevenue * 1.15
+                        });
+                        setIsGoalModalOpen(true);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '6px 8px',
+                        borderRadius: '6px',
+                        border: forecastTab === 'target' ? '1px dashed var(--accent-teal)' : '1px solid rgba(220, 38, 38, 0.3)',
+                        background: forecastTab === 'target' ? 'rgba(15, 110, 86, 0.06)' : 'rgba(239, 68, 68, 0.06)',
+                        color: forecastTab === 'target' ? 'var(--accent-teal)' : '#dc2626',
+                        fontSize: '0.72rem',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '4px',
+                        transition: 'background 0.2s'
+                      }}
+                    >
+                      {forecastTab === 'target' ? (
+                        <>
+                          <Target size={12} />
+                          Set Year +{proj.year_index} Goal
+                        </>
+                      ) : (
+                        <>
+                          <Zap size={12} />
+                          Intervene & Set Goal
+                        </>
+                      )}
+                    </button>
                   </div>
-                  <div style={{ fontSize: '1.15rem', fontWeight: '800', color: proj.growth_pct >= 0 ? '#0F6E56' : '#C81E1E', marginBottom: '4px' }}>
-                    {formatCurrency(proj.projected_revenue)}
-                  </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    <span>Target Deals: <strong>{proj.projected_deals} placements</strong></span>
-                    <span>5-Yr Cumulative: <strong>{formatLakhs(proj.cumulative_revenue)}</strong></span>
-                  </div>
+                );
+              })}
+            </div>
+
+            {/* Fix #3: Strategic Scale Simulator Bridge Callout */}
+            <div style={{
+              background: isHistoricalDeclining 
+                ? 'linear-gradient(90deg, rgba(15, 110, 86, 0.08) 0%, rgba(59, 130, 246, 0.05) 100%)'
+                : 'rgba(15, 110, 86, 0.05)',
+              border: '1px solid rgba(15, 110, 86, 0.2)',
+              borderRadius: '8px',
+              padding: '12px 16px',
+              marginBottom: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <div style={{ padding: '6px', background: 'rgba(15, 110, 86, 0.12)', borderRadius: '6px', color: 'var(--accent-teal)' }}>
+                <Sparkles size={18} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.82rem', fontWeight: '800', color: 'var(--text-main)', marginBottom: '2px' }}>
+                  💡 Strategic Scale Bridge: {isHistoricalDeclining ? 'Reversing Historical Decline with Multi-X Velocity' : 'Accelerating Current Momentum with Multi-X Velocity'}
                 </div>
-              ))}
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.45' }}>
+                  {isHistoricalDeclining ? (
+                    <>
+                      While passive inertia projects a <strong>{Math.abs(Math.round(((inertiaProjections[4]?.projected_revenue / (effectiveBaseRevenue || 1)) - 1) * 100))}% 5-year contraction</strong> without intervention, reaching just <strong>2x scale ({formatCurrency(effectiveBaseRevenue * 2)})</strong> completely neutralizes this decline and generates <strong>{formatCurrency(effectiveBaseRevenue * 2 * 0.4375)}</strong> in net retained contribution. Select a velocity scenario below to model the turnaround:
+                    </>
+                  ) : (
+                    <>
+                      Building upon current positive momentum, scaling production velocity from <strong>2x to 5x</strong> elevates annual gross billing up to <strong>{formatCurrency(effectiveBaseRevenue * 5)}</strong> with <strong>{formatCurrency(effectiveBaseRevenue * 5 * 0.4375)}</strong> in net retained margin.
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* 2. Flat Scale Multiplier Scenarios (1x through 5x) */}
@@ -1088,9 +1473,15 @@ const GrowthTracking = () => {
       {isGoalModalOpen && (
         <GoalSetterModal
           isOpen={isGoalModalOpen}
-          onClose={() => setIsGoalModalOpen(false)}
+          onClose={() => {
+            setIsGoalModalOpen(false);
+            setGoalModalParams(null);
+          }}
           entityType={entityType}
           entity={selectedEntity}
+          initialGrowthPct={goalModalParams?.growthPct}
+          initialTargetPlacements={goalModalParams?.placements}
+          initialTargetRevenue={goalModalParams?.targetRevenue}
           onTargetCreated={(newTarget) => {
             setTargetsList(prev => [newTarget, ...prev.filter(t => t.id !== newTarget.id)]);
             fetchTargets();
