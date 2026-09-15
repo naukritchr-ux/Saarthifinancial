@@ -90,7 +90,7 @@ export const normalizeFinancialYear = (fy, dateStr = null) => {
 export const FinanceProvider = ({ children }) => {
   const [transactions, setTransactions] = useState(() => {
     try {
-      const cached = sessionStorage.getItem('fintective_cached_txs');
+      const cached = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) {
@@ -105,16 +105,55 @@ export const FinanceProvider = ({ children }) => {
       return [];
     }
   });
-  const [franchisees, setFranchisees] = useState(DEFAULT_FRANCHISEES);
-  const [bdAgents, setBdAgents] = useState(DEFAULT_BD_AGENTS);
-  const [teamLeaders, setTeamLeaders] = useState(DEFAULT_TEAM_LEADERS);
-  const [budgets, setBudgets] = useState({
-    'Salaries': 800000,
-    'BD commissions': 120000,
-    'Marketing': 50000,
-    'Office & infra': 55000,
-    'Portal subscriptions': 85000,
-    'Other': 50000
+  const [franchisees, setFranchisees] = useState(() => {
+    try {
+      const cached = localStorage.getItem('fintective_cached_franchisees');
+      return cached ? JSON.parse(cached) : DEFAULT_FRANCHISEES;
+    } catch {
+      return DEFAULT_FRANCHISEES;
+    }
+  });
+  const [bdAgents, setBdAgents] = useState(() => {
+    try {
+      const cached = localStorage.getItem('fintective_cached_bd');
+      return cached ? JSON.parse(cached) : DEFAULT_BD_AGENTS;
+    } catch {
+      return DEFAULT_BD_AGENTS;
+    }
+  });
+  const [teamLeaders, setTeamLeaders] = useState(() => {
+    try {
+      const cached = localStorage.getItem('fintective_cached_tl');
+      return cached ? JSON.parse(cached) : DEFAULT_TEAM_LEADERS;
+    } catch {
+      return DEFAULT_TEAM_LEADERS;
+    }
+  });
+  const [budgets, setBudgets] = useState(() => {
+    try {
+      const cached = localStorage.getItem('fintective_cached_budgets');
+      return cached ? JSON.parse(cached) : {
+        'Salaries': 800000,
+        'BD commissions': 120000,
+        'Marketing': 50000,
+        'Office & infra': 55000,
+        'Portal subscriptions': 85000,
+        'Other': 50000
+      };
+    } catch {
+      return {
+        'Salaries': 800000,
+        'BD commissions': 120000,
+        'Marketing': 50000,
+        'Office & infra': 55000,
+        'Portal subscriptions': 85000,
+        'Other': 50000
+      };
+    }
+  });
+
+  const [lastSyncedAt, setLastSyncedAt] = useState(() => {
+    return localStorage.getItem('fintective_last_synced_at') || null;
   });
 
   // Helper to compute current dynamic Indian Financial Year (April 1 - March 31)
@@ -251,7 +290,7 @@ export const FinanceProvider = ({ children }) => {
 
   const [mlInsights, setMlInsights] = useState(() => {
     try {
-      const cached = sessionStorage.getItem('fintective_ml_insights');
+      const cached = localStorage.getItem('fintective_ml_insights') || sessionStorage.getItem('fintective_ml_insights');
       return cached ? JSON.parse(cached) : null;
     } catch {
       return null;
@@ -268,7 +307,7 @@ export const FinanceProvider = ({ children }) => {
         const data = await res.json();
         setMlInsights(data);
         try {
-          sessionStorage.setItem('fintective_ml_insights', JSON.stringify(data));
+          localStorage.setItem('fintective_ml_insights', JSON.stringify(data));
         } catch (e) {}
         return data;
       }
@@ -282,7 +321,7 @@ export const FinanceProvider = ({ children }) => {
 
   const [isLoadingData, setIsLoadingData] = useState(() => {
     try {
-      const cached = sessionStorage.getItem('fintective_cached_txs');
+      const cached = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
       return !cached;
     } catch {
       return true;
@@ -290,19 +329,33 @@ export const FinanceProvider = ({ children }) => {
   });
   const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
 
+  // Helper with fast 12-second abort timeout so user is never stalled
+  const fetchWithTimeout = async (url, options = {}, timeoutMs = 12000) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetchWithApiKey(url, { ...options, signal: controller.signal });
+      clearTimeout(timer);
+      return res;
+    } catch (e) {
+      clearTimeout(timer);
+      throw e;
+    }
+  };
+
   // Re-usable loader to fetch all data from backend (with parallel async fetching)
-  const fetchAllData = async () => {
+  const fetchAllData = async (isManual = false) => {
     setIsBackgroundSyncing(true);
     let loadedFromBackend = false;
     try {
-      // Parallel async fetch for maximum loading speed across all endpoints
+      // Parallel async fetch with 12s timeout
       const [txRes, franRes, bdRes, tlRes, budgetRes, mlRes] = await Promise.allSettled([
-        fetchWithApiKey(`${API_BASE_URL}/transactions`),
-        fetchWithApiKey(`${API_BASE_URL}/franchisees`),
-        fetchWithApiKey(`${API_BASE_URL}/bd-agents`),
-        fetchWithApiKey(`${API_BASE_URL}/team-leaders`),
-        fetchWithApiKey(`${API_BASE_URL}/budgets`),
-        fetchWithApiKey(`${API_BASE_URL}/ml/insights`)
+        fetchWithTimeout(`${API_BASE_URL}/transactions`),
+        fetchWithTimeout(`${API_BASE_URL}/franchisees`),
+        fetchWithTimeout(`${API_BASE_URL}/bd-agents`),
+        fetchWithTimeout(`${API_BASE_URL}/team-leaders`),
+        fetchWithTimeout(`${API_BASE_URL}/budgets`),
+        fetchWithTimeout(`${API_BASE_URL}/ml/insights`)
       ]);
 
       if (txRes.status === 'fulfilled' && txRes.value.ok) {
@@ -316,7 +369,7 @@ export const FinanceProvider = ({ children }) => {
           loadedFromBackend = true;
           setDataSource('backend');
           try {
-            sessionStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
+            localStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
           } catch (e) {}
         }
       }
@@ -325,6 +378,7 @@ export const FinanceProvider = ({ children }) => {
         const franData = await franRes.value.json();
         if (Array.isArray(franData) && franData.length > 0) {
           setFranchisees(franData);
+          try { localStorage.setItem('fintective_cached_franchisees', JSON.stringify(franData)); } catch (e) {}
         }
       }
 
@@ -332,6 +386,7 @@ export const FinanceProvider = ({ children }) => {
         const bdData = await bdRes.value.json();
         if (Array.isArray(bdData) && bdData.length > 0) {
           setBdAgents(bdData);
+          try { localStorage.setItem('fintective_cached_bd', JSON.stringify(bdData)); } catch (e) {}
         }
       }
 
@@ -339,6 +394,7 @@ export const FinanceProvider = ({ children }) => {
         const tlData = await tlRes.value.json();
         if (Array.isArray(tlData) && tlData.length > 0) {
           setTeamLeaders(tlData);
+          try { localStorage.setItem('fintective_cached_tl', JSON.stringify(tlData)); } catch (e) {}
         }
       }
 
@@ -346,6 +402,7 @@ export const FinanceProvider = ({ children }) => {
         const budgetData = await budgetRes.value.json();
         if (budgetData && Object.keys(budgetData).length > 0) {
           setBudgets(budgetData);
+          try { localStorage.setItem('fintective_cached_budgets', JSON.stringify(budgetData)); } catch (e) {}
         }
       }
 
@@ -354,9 +411,15 @@ export const FinanceProvider = ({ children }) => {
         if (mlData && typeof mlData === 'object') {
           setMlInsights(mlData);
           try {
-            sessionStorage.setItem('fintective_ml_insights', JSON.stringify(mlData));
+            localStorage.setItem('fintective_ml_insights', JSON.stringify(mlData));
           } catch (e) {}
         }
+      }
+
+      if (loadedFromBackend) {
+        const nowFormatted = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        setLastSyncedAt(nowFormatted);
+        try { localStorage.setItem('fintective_last_synced_at', nowFormatted); } catch (e) {}
       }
     } catch (err) {
       console.warn('Backend connection issue, checking fallback...', err.message);
@@ -605,13 +668,22 @@ export const FinanceProvider = ({ children }) => {
     }
   };
 
-  // Auto-pool state on mount and periodically every 60 seconds (no manual button click needed)
+  // Auto-poll state on mount and periodically every 60 seconds
   useEffect(() => {
     fetchAllData();
     const interval = setInterval(() => {
       fetchAllData();
     }, 60000);
-    return () => clearInterval(interval);
+
+    // Keep-alive ping to Render backend every 10 minutes to prevent cold-sleep
+    const keepAlive = setInterval(() => {
+      fetch(`${API_BASE_URL}/health`).catch(() => {});
+    }, 10 * 60 * 1000);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(keepAlive);
+    };
   }, []);
 
   useEffect(() => {
@@ -923,6 +995,7 @@ export const FinanceProvider = ({ children }) => {
         toggleSidebar,
         isLoadingData,
         isBackgroundSyncing,
+        lastSyncedAt,
         mlInsights,
         setMlInsights,
         isMlInsightsLoading,

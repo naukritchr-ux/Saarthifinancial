@@ -1,7 +1,7 @@
 import React, { useContext, useState, useMemo } from 'react';
 import { FinanceContext } from '../context/FinanceContext';
 import { formatLakhs } from '../utils/formatters';
-import { Plus, Minus, CloudDownload, PanelLeft } from 'lucide-react';
+import { Plus, Minus, CloudDownload, PanelLeft, RefreshCw } from 'lucide-react';
 import SyncModal from './SyncModal';
 
 const Topbar = ({ activePage, setActivePage }) => {
@@ -18,7 +18,10 @@ const Topbar = ({ activePage, setActivePage }) => {
     currentUser,
     activeModule,
     isSidebarOpen,
-    toggleSidebar
+    toggleSidebar,
+    isBackgroundSyncing,
+    lastSyncedAt,
+    fetchAllData
   } = useContext(FinanceContext);
 
   const [isSyncOpen, setIsSyncOpen] = useState(false);
@@ -109,6 +112,34 @@ const Topbar = ({ activePage, setActivePage }) => {
       </div>
 
       <div className="topbar-actions">
+        {/* Live Sync Status & Refresh */}
+        <button
+          onClick={() => fetchAllData(true)}
+          disabled={isBackgroundSyncing}
+          className="topbar-badge"
+          style={{
+            background: '#ffffff',
+            border: isBackgroundSyncing ? '1.5px solid #0284c7' : '1.5px solid #e2e8f0',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '4px 10px',
+            borderRadius: '8px'
+          }}
+          title={lastSyncedAt ? `Last synced: ${lastSyncedAt}. Click to refresh.` : 'Click to refresh data from server'}
+        >
+          <RefreshCw 
+            size={13} 
+            className={isBackgroundSyncing ? 'animate-spin' : ''} 
+            color={isBackgroundSyncing ? '#0284c7' : '#10b981'}
+            style={{ animation: isBackgroundSyncing ? 'spin 1s linear infinite' : 'none' }}
+          />
+          <span style={{ fontSize: '11px', fontWeight: '700', color: isBackgroundSyncing ? '#0369a1' : '#475569' }}>
+            {isBackgroundSyncing ? 'Syncing...' : (lastSyncedAt ? `Live ${lastSyncedAt}` : 'Live Sync')}
+          </span>
+        </button>
+
         <button 
           className="btn btn-secondary"
           onClick={() => setIsSyncOpen(true)}
