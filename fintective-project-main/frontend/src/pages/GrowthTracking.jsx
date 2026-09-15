@@ -1,4 +1,4 @@
-import React, { useContext, useState, useEffect, useMemo } from 'react';
+import React, { useContext, useState, useEffect, useMemo, useRef } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs } from '../utils/formatters';
@@ -74,15 +74,25 @@ const GrowthTracking = () => {
   const [historyPage, setHistoryPage] = useState(1);
   const ITEMS_PER_PAGE = 6;
 
-  // 1. Fetch Dynamic Roster from backend
+  // In-memory client cache refs for instantaneous rendering
+  const rosterCacheRef = useRef({});
+  const predictionCacheRef = useRef({});
+
+  // 1. Fetch Dynamic Roster from backend with SWR
   const fetchRoster = async () => {
-    setRosterLoading(true);
+    if (rosterCacheRef.current[entityType]) {
+      setServerRoster(rosterCacheRef.current[entityType]);
+    } else {
+      setRosterLoading(true);
+    }
     try {
       const res = await fetchWithApiKey(`${API_BASE_URL}/growth-targets/roster?entity_type=${entityType}`);
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data.roster)) {
-          setServerRoster(data.roster);
+        const list = Array.isArray(data.roster) ? data.roster : (Array.isArray(data) ? data : []);
+        if (list.length > 0) {
+          rosterCacheRef.current[entityType] = list;
+          setServerRoster(list);
         }
       }
     } catch (err) {
@@ -154,10 +164,16 @@ const GrowthTracking = () => {
     return entityOptions.find(e => e.id === selectedEntityId || e.name === selectedEntityId) || entityOptions[0] || null;
   }, [entityOptions, selectedEntityId]);
 
-  // Fetch prediction data (5 years) whenever entity or rate changes
+  // Fetch prediction data (5 years) whenever entity or rate changes with SWR
   const fetchPrediction = async (customRateVal) => {
     if (!selectedEntity) return;
-    setPredictionLoading(true);
+    const cacheKey = `${entityType}_${selectedEntity.id || selectedEntity.name}_${customRateVal !== undefined ? customRateVal : ''}`;
+    
+    if (predictionCacheRef.current[cacheKey]) {
+      setPredictionData(predictionCacheRef.current[cacheKey]);
+    } else {
+      setPredictionLoading(true);
+    }
     setPredictionError(null);
     try {
       const rateParam = (customRateVal !== undefined && customRateVal !== '') ? `&rate=${customRateVal}` : '';
@@ -165,6 +181,7 @@ const GrowthTracking = () => {
       const res = await fetchWithApiKey(url);
       if (res.ok) {
         const data = await res.json();
+        predictionCacheRef.current[cacheKey] = data;
         setPredictionData(data);
         if (data.insufficient_data || data.projection_status === 'insufficient_data') {
           setOverrideRate('');

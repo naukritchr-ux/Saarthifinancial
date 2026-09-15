@@ -3,10 +3,40 @@ import uuid
 import datetime
 import math
 import statistics
+import time
+import threading
 from flask import Blueprint, request, jsonify
 from db import get_db_connection
 
 growth_tracking_bp = Blueprint("growth_tracking", __name__)
+
+# High-performance thread-safe in-memory cache system (TTL 180s)
+_RESPONSE_CACHE = {}
+_CACHE_LOCK = threading.Lock()
+
+def _get_cached(key):
+    with _CACHE_LOCK:
+        entry = _RESPONSE_CACHE.get(key)
+        if entry and entry[1] > time.time():
+            return entry[0]
+        return None
+
+def _set_cached(key, data, ttl_seconds=180):
+    with _CACHE_LOCK:
+        _RESPONSE_CACHE[key] = (data, time.time() + ttl_seconds)
+
+def _clear_cache_prefix(prefix=""):
+    global _RESPONSE_CACHE
+    with _CACHE_LOCK:
+        if not prefix:
+            _RESPONSE_CACHE.clear()
+        else:
+            _RESPONSE_CACHE = {k: v for k, v in _RESPONSE_CACHE.items() if not k.startswith(prefix)}
+
+_ENTITY_CONV_CACHE = {}
+_FRANCHISEE_TRACK_CACHE = {}
+
+
 
 # Fallback seed data in case database is empty or running offline
 FALLBACK_FRANCHISEE_HISTORICAL = {
@@ -629,6 +659,11 @@ def get_entity_roster():
     entity_type = request.args.get("entity_type", "employee").strip().lower()
     include_inactive = request.args.get("include_inactive", "false").strip().lower() in ("true", "1", "yes")
 
+    cache_key = f"roster_{entity_type}_{include_inactive}"
+    cached_val = _get_cached(cache_key)
+    if cached_val is not None:
+        return jsonify(cached_val)
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -833,6 +868,9 @@ def get_entity_roster():
                     'confidence': 'high' if months >= 6 else ('low' if months >= 3 else 'insufficient_data')
                 })
 
+        # Default sort by revenue / deals
+        roster.sort(key=lambda x: (x.get('total_revenue') or 0.0, x.get('total_deals') or 0), reverse=True)
+        _set_cached(cache_key, roster, ttl_seconds=180)
         return jsonify({'entity_type': entity_type, 'roster': roster})
     except Exception as e:
         print(f"[get_entity_roster] Error: {e}")
@@ -850,9 +888,15 @@ def predict_growth():
     entity_id = request.args.get("entity_id", "").strip()
     periods_count = int(request.args.get("periods", "5")) # Default to 5 years
     custom_rate = request.args.get("rate")
+    entity_name_param = request.args.get("entity_name", "")
 
     if not entity_id:
         return jsonify({"error": "Missing required entity_id parameter"}), 400
+
+    cache_key = f"predict_{entity_type}_{entity_id}_{entity_name_param}_{periods_count}_{custom_rate}"
+    cached_val = _get_cached(cache_key)
+    if cached_val is not None:
+        return jsonify(cached_val)
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1060,6 +1104,8 @@ def create_growth_target():
             now_str
         ])
         conn.commit()
+        _clear_cache_prefix("roster_")
+        _clear_cache_prefix("predict_")
 
         return jsonify({
             'success': True,
@@ -1284,15 +1330,23 @@ def _calc_aging_factor(days_outstanding, status='inprogress'):
 
 def _calc_entity_conversion_rate(cursor, entity_col, aliases, lookback_months=12):
     """
-    Calculates historical conversion rate for an entity (TL or BD) over lookback_months.
+    Calculates historical conversion rate for the TL/BD entity over trailing lookback_months.
     Fallback to 70.0% if < 5 resolved deals.
     """
     if isinstance(aliases, str):
         aliases = [aliases]
+    elif aliases is None:
+        aliases = []
     else:
         aliases = list(aliases)
+
     if not aliases:
         return 70.0, 0
+
+    cache_k = (entity_col, tuple(sorted(aliases)), lookback_months)
+    now = time.time()
+    if cache_k in _ENTITY_CONV_CACHE and _ENTITY_CONV_CACHE[cache_k]['exp'] > now:
+        return _ENTITY_CONV_CACHE[cache_k]['val']
 
     placeholders = ", ".join(["%s"] * len(aliases))
     try:
@@ -1310,9 +1364,9 @@ def _calc_entity_conversion_rate(cursor, entity_col, aliases, lookback_months=12
         canc = int(row['cancelled_cnt'] or 0) if row else 0
         total_resolved = rec + canc
 
-        if total_resolved >= 5:
-            return round((rec / total_resolved) * 100.0, 2), total_resolved
-        return 70.0, total_resolved
+        res = (round((rec / total_resolved) * 100.0, 2), total_resolved) if total_resolved >= 5 else (70.0, total_resolved)
+        _ENTITY_CONV_CACHE[cache_k] = {'val': res, 'exp': now + 300}
+        return res
     except Exception as e:
         print(f"[_calc_entity_conversion_rate] Error: {e}")
         return 70.0, 0
@@ -1333,6 +1387,12 @@ def _calc_franchisee_track_record(cursor, franchisee_name, lookback_months=12):
     """
     if not franchisee_name:
         return 70.0, 0
+
+    cache_k = (franchisee_name.strip().lower(), lookback_months)
+    now = time.time()
+    if cache_k in _FRANCHISEE_TRACK_CACHE and _FRANCHISEE_TRACK_CACHE[cache_k]['exp'] > now:
+        return _FRANCHISEE_TRACK_CACHE[cache_k]['val']
+
     try:
         query = """
             SELECT 
@@ -1348,9 +1408,9 @@ def _calc_franchisee_track_record(cursor, franchisee_name, lookback_months=12):
         canc = int(row['cancelled_cnt'] or 0) if row else 0
         total_resolved = rec + canc
 
-        if total_resolved >= 3:
-            return round((rec / total_resolved) * 100.0, 2), total_resolved
-        return 70.0, total_resolved
+        res = (round((rec / total_resolved) * 100.0, 2), total_resolved) if total_resolved >= 3 else (70.0, total_resolved)
+        _FRANCHISEE_TRACK_CACHE[cache_k] = {'val': res, 'exp': now + 300}
+        return res
     except Exception as e:
         print(f"[_calc_franchisee_track_record] Error: {e}")
         return 70.0, 0
@@ -1734,10 +1794,16 @@ def get_tl_portfolio(tl_id):
     lookback_months = int(request.args.get("lookback_months", "12"))
     sort_by = request.args.get("sort_by", "risk").strip().lower()
 
+    cache_key = f"tl_port_{tl_id}_{start_date}_{end_date}_{lookback_months}_{sort_by}"
+    cached_val = _get_cached(cache_key)
+    if cached_val is not None:
+        return jsonify(cached_val)
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         data = _fetch_tl_portfolio(cursor, tl_id, start_date, end_date, lookback_months, sort_by)
+        _set_cached(cache_key, data, ttl_seconds=120)
         return jsonify(data)
     except Exception as e:
         print(f"[get_tl_portfolio] Error: {e}")
@@ -1754,6 +1820,11 @@ def get_tl_tracking_leaderboard():
     start_date = request.args.get("start_date")
     end_date = request.args.get("end_date")
     lookback_months = int(request.args.get("lookback_months", "12"))
+
+    cache_key = f"tl_leaderboard_{start_date}_{end_date}_{lookback_months}"
+    cached_val = _get_cached(cache_key)
+    if cached_val is not None:
+        return jsonify(cached_val)
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1792,10 +1863,12 @@ def get_tl_tracking_leaderboard():
             })
 
         leaderboard.sort(key=lambda x: x['gross'], reverse=True)
-        return jsonify({
+        res_data = {
             'period': {'start_date': start_date, 'end_date': end_date, 'lookback_months': lookback_months},
             'leaderboard': leaderboard
-        })
+        }
+        _set_cached(cache_key, res_data, ttl_seconds=120)
+        return jsonify(res_data)
     except Exception as e:
         print(f"[get_tl_tracking_leaderboard] Error: {e}")
         return jsonify({'error': str(e)}), 500
@@ -1813,10 +1886,16 @@ def get_bd_portfolio(bd_id):
     lookback_months = int(request.args.get("lookback_months", "12"))
     sort_by = request.args.get("sort_by", "risk").strip().lower()
 
+    cache_key = f"bd_port_{bd_id}_{start_date}_{end_date}_{lookback_months}_{sort_by}"
+    cached_val = _get_cached(cache_key)
+    if cached_val is not None:
+        return jsonify(cached_val)
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         data = _fetch_bd_portfolio(cursor, bd_id, start_date, end_date, lookback_months, sort_by)
+        _set_cached(cache_key, data, ttl_seconds=120)
         return jsonify(data)
     except Exception as e:
         print(f"[get_bd_portfolio] Error: {e}")
@@ -1833,6 +1912,11 @@ def get_bd_tracking_leaderboard():
     start_date = request.args.get("start_date")
     end_date = request.args.get("end_date")
     lookback_months = int(request.args.get("lookback_months", "12"))
+
+    cache_key = f"bd_leaderboard_{start_date}_{end_date}_{lookback_months}"
+    cached_val = _get_cached(cache_key)
+    if cached_val is not None:
+        return jsonify(cached_val)
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1870,13 +1954,16 @@ def get_bd_tracking_leaderboard():
             })
 
         leaderboard.sort(key=lambda x: x['gross'], reverse=True)
-        return jsonify({
+        res_data = {
             'period': {'start_date': start_date, 'end_date': end_date, 'lookback_months': lookback_months},
             'leaderboard': leaderboard
-        })
+        }
+        _set_cached(cache_key, res_data, ttl_seconds=120)
+        return jsonify(res_data)
     except Exception as e:
         print(f"[get_bd_tracking_leaderboard] Error: {e}")
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
+
 
