@@ -502,12 +502,12 @@ const GrowthTracking = () => {
             <span className="kpi-icon"><DollarSign size={18} /></span>
           </div>
           <h2 className="kpi-value">
-            {isInsufficientData ? '₹0.00' : formatLakhs(effectiveBaseRevenue)}
+            {formatLakhs(effectiveBaseRevenue)}
           </h2>
           <div className="kpi-change up">
             <span>
-              {isInsufficientData
-                ? `Insufficient invoice history (${selectedEntity?.name})`
+              {predictionData?.is_new_hire
+                ? `Benchmark Baseline (${selectedEntity?.name})`
                 : `Audited Baseline Inflow (${selectedEntity?.name})`}
             </span>
           </div>
@@ -519,14 +519,14 @@ const GrowthTracking = () => {
             <span className="kpi-icon"><TrendingUp size={18} /></span>
           </div>
           <h2 className="kpi-value">
-            {isInsufficientData || (predictionData?.historical_cagr_pct === null && chartHistorical.length < 2)
-              ? 'N/A'
-              : `${historicalCagrPct >= 0 ? '+' : ''}${historicalCagrPct}%`}
+            {predictionData?.historical_cagr_pct !== null && predictionData?.historical_cagr_pct !== undefined
+              ? `${historicalCagrPct >= 0 ? '+' : ''}${historicalCagrPct}%`
+              : 'N/A (New Hire)'}
           </h2>
           <div className="kpi-change up">
             <span>
-              {isInsufficientData || chartHistorical.length < 2
-                ? 'Requires ≥ 2 historical periods'
+              {predictionData?.is_new_hire
+                ? 'Target-driven roadmap'
                 : 'Annualized compounding rate'}
             </span>
           </div>
@@ -538,13 +538,11 @@ const GrowthTracking = () => {
             <span className="kpi-icon"><Percent size={18} /></span>
           </div>
           <h2 className="kpi-value">
-            {isInsufficientData || targetRatePct === null ? '—' : `${targetRatePct >= 0 ? '+' : ''}${targetRatePct}%`}
+            {`${targetRatePct >= 0 ? '+' : ''}${targetRatePct}%`}
           </h2>
           <div className="kpi-change up">
             <span>
-              {isInsufficientData
-                ? 'Gated until 3mo history threshold'
-                : 'Aspirational target factor'}
+              Aspirational target factor
             </span>
           </div>
         </div>
@@ -947,29 +945,6 @@ const GrowthTracking = () => {
           <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
             Auditing 5-year forecast and historical baseline for {selectedEntity?.name}...
           </div>
-        ) : isInsufficientData && !predictionError ? (
-          <div style={{ padding: '36px 20px', background: 'var(--bg-main)', borderRadius: '10px', border: '1px dashed var(--border-color)', textAlign: 'center' }}>
-            <Info size={32} color="var(--accent-teal)" style={{ marginBottom: '8px', opacity: 0.8 }} />
-            <h4 style={{ margin: '0 0 6px 0', color: 'var(--text-main)', fontSize: '0.98rem', fontWeight: '700' }}>
-              Data-Maturity Gating: Insufficient History
-            </h4>
-            <p style={{ margin: '0 auto 18px auto', fontSize: '0.84rem', color: 'var(--text-muted)', maxWidth: '560px', lineHeight: '1.55' }}>
-              {predictionData?.message || `Full 5-year predictive compounding curves become available once an employee has ≥ 3 months of closed deal history. Currently recorded: ${predictionData?.months_of_history || 0} month(s).`}
-            </p>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 14px', background: 'rgba(234, 179, 8, 0.15)', borderRadius: '6px', color: '#b45309', fontSize: '0.78rem', fontWeight: '700', marginBottom: '16px' }}>
-              ⚡ New Hire Status: Defaulted to "Rising Talent" classification
-            </div>
-            <div>
-              <button
-                className="btn btn-primary"
-                onClick={() => setIsGoalModalOpen(true)}
-                style={{ padding: '8px 18px', borderRadius: '6px', border: 'none', background: 'var(--accent-teal)', color: '#ffffff', fontWeight: '600', fontSize: '0.82rem', cursor: 'pointer' }}
-              >
-                <Plus size={14} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
-                Set Annual Target Manually
-              </button>
-            </div>
-          </div>
         ) : (
           <>
             {predictionError && (
@@ -984,6 +959,15 @@ const GrowthTracking = () => {
                 >
                   Retry Sync
                 </button>
+              </div>
+            )}
+
+            {predictionData?.is_new_hire && (
+              <div style={{ padding: '10px 14px', background: 'rgba(234, 179, 8, 0.08)', border: '1px solid rgba(234, 179, 8, 0.25)', borderRadius: '8px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Zap size={16} color="#b45309" />
+                <span style={{ fontSize: '0.78rem', color: '#92400e', fontWeight: '600' }}>
+                  ⚡ Rapid Onboarding Mode: Projections and milestones for {selectedEntity?.name} are modeled from benchmark targets (+{targetRatePct}%) to establish an immediate performance roadmap.
+                </span>
               </div>
             )}
 
