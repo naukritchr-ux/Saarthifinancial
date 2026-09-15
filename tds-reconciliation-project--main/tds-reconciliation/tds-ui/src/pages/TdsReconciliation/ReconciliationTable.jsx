@@ -284,15 +284,14 @@ export default function ReconciliationTable({
                       {/* Actions */}
                       <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
-                          {(!row.saarthiTds && !row.booksTds) && (
-                            <button
-                              onClick={() => onAddToCrmClick && onAddToCrmClick(row)}
-                              className="p-1.5 rounded-lg border border-[#9B87F5]/30 bg-[#9B87F5]/15 text-[#9B87F5] hover:bg-[#9B87F5] hover:text-white transition cursor-pointer"
-                              title="Book Missing Entry in CRM Books"
-                            >
-                              <PlusCircle className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+                          <button
+                            onClick={() => onAddToCrmClick && onAddToCrmClick(row)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[#9B87F5] bg-[#9B87F5]/15 text-[#9B87F5] hover:bg-[#9B87F5] hover:text-white transition cursor-pointer font-bold text-[11px] whitespace-nowrap shadow-2xs"
+                            title="Book Entry into Saarthi 360 CRM Books"
+                          >
+                            <PlusCircle className="w-3.5 h-3.5" />
+                            <span>Book CRM</span>
+                          </button>
                           <button
                             onClick={() => onViewClick && onViewClick(row)}
                             className="p-1.5 rounded-lg border border-[#E9E4FA] text-[#6B6580] hover:bg-[#E8E4FF] transition cursor-pointer"
@@ -436,13 +435,13 @@ export default function ReconciliationTable({
                               </span>
 
                               <div className="flex items-center gap-2">
-                                {(!row.saarthiTds && !row.booksTds) && (
+                                {(parseFloat(row.saarthiTds || row.booksTds || 0) === 0 || isExcess || row.financialStatus === 'Excess') && (
                                   <button
                                     onClick={() => onAddToCrmClick && onAddToCrmClick(row)}
-                                    className="inline-flex items-center gap-1.5 bg-[#4ADE80] hover:bg-[#38C06C] text-[#1F1B2E] font-black text-xs px-3.5 py-1.5 rounded-xl transition cursor-pointer shadow-2xs"
+                                    className="inline-flex items-center gap-1.5 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-black text-xs px-3.5 py-1.5 rounded-xl transition cursor-pointer shadow-md"
                                   >
                                     <PlusCircle className="w-3.5 h-3.5" />
-                                    Book in CRM Books
+                                    <span>➕ Book in Saarthi 360 CRM</span>
                                   </button>
                                 )}
                                 <button

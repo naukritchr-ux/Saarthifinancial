@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Search, Download, Database, CheckCircle, AlertTriangle, X, ShieldCheck } from 'lucide-react';
+import { RefreshCw, Search, Download, Database, CheckCircle, AlertTriangle, X, ShieldCheck, PlusCircle } from 'lucide-react';
 import ReconciliationTable from './ReconciliationTable';
 import EditModal from './EditModal';
 import AddToCrmModal from './AddToCrmModal';
@@ -152,13 +152,23 @@ export default function TdsReconciliation() {
             Reconcile client TDS entries across Tally Ledgers, Form 26AS portal, and Saarthi 360 CRM.
           </p>
         </div>
-        <button
-          onClick={handleRefresh}
-          className="inline-flex items-center gap-2 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-extrabold px-4 py-2 rounded-xl transition text-xs cursor-pointer shadow-sm"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          Refresh Report
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveCrmRow({})}
+            className="inline-flex items-center gap-2 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-extrabold px-4 py-2 rounded-xl transition text-xs cursor-pointer shadow-md"
+            title="Add a missing TDS/Invoice entry into Saarthi 360 CRM Books"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>➕ Book Missing in CRM</span>
+          </button>
+          <button
+            onClick={handleRefresh}
+            className="inline-flex items-center gap-2 bg-white hover:bg-[#E8E4FF] text-[#1F1B2E] border border-[#E9E4FA] font-extrabold px-4 py-2 rounded-xl transition text-xs cursor-pointer shadow-sm"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh Report
+          </button>
+        </div>
       </div>
 
       {/* Statistics Cards */}

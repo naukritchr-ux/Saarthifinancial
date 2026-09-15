@@ -298,9 +298,17 @@ export default function Reports() {
         {/* Action Controls */}
         <div className="flex items-center gap-3">
           <button
+            onClick={() => setSelectedCrmRow({})}
+            className="flex items-center gap-2 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-extrabold px-4 py-2 rounded-xl text-xs transition cursor-pointer shadow-sm"
+            title="Book a missing TDS/Invoice entry directly into Saarthi 360 CRM"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>➕ Book Missing in CRM</span>
+          </button>
+          <button
             onClick={handleExportCSV}
             disabled={loading || data.length === 0}
-            className="flex items-center gap-2 bg-[#9B87F5] hover:bg-[#8572E0] disabled:opacity-50 text-white font-extrabold px-4 py-2 rounded-xl text-xs transition cursor-pointer shadow-xs"
+            className="flex items-center gap-2 bg-white hover:bg-[#E8E4FF] text-[#1F1B2E] border border-[#E9E4FA] disabled:opacity-50 font-extrabold px-4 py-2 rounded-xl text-xs transition cursor-pointer shadow-xs"
             title="Export currently filtered report to CSV"
           >
             <Download className="w-4 h-4" />
