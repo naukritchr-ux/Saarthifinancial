@@ -738,23 +738,24 @@ export const FinanceProvider = ({ children }) => {
     fetchWithApiKey(`${API_BASE_URL}/finance/cash-balance?as_of=${asOf}`)
       .then(res => { if (res.ok) return res.json(); })
       .then(data => {
-        if (data) {
+        if (data && data.cash_balance != null) {
           setCurrentCashBalance(data.cash_balance);
         }
       })
       .catch(err => console.error("Failed to load cash balance:", err));
-  }, [selectedMonth, selectedYear, transactions]);
+  }, [selectedMonth, selectedYear, transactions.length]);
 
   useEffect(() => {
+    if (transactions.length === 0) return;
     fetchWithApiKey(`${API_BASE_URL}/finance/moving-avg-burn`)
       .then(res => { if (res.ok) return res.json(); })
       .then(data => {
-        if (data) {
+        if (data && data.burn != null) {
           setMovingAvgBurn(data.burn);
         }
       })
       .catch(err => console.error("Failed to load moving average burn:", err));
-  }, [transactions]);
+  }, [transactions.length]);
 
 
 
@@ -956,53 +957,77 @@ export const FinanceProvider = ({ children }) => {
     localStorage.removeItem('saarthi_current_user');
   };
 
+  const contextValue = useMemo(() => ({
+    transactions,
+    moduleFilteredTransactions,
+    franchisees,
+    bdAgents,
+    teamLeaders,
+    budgets,
+    setBudgets,
+    selectedMonth,
+    setSelectedMonth,
+    selectedYear,
+    setSelectedYear,
+    userRole,
+    setUserRole,
+    currentUser,
+    login,
+    logout,
+    availableMonths,
+    availableYears,
+    activeModule,
+    setActiveModule,
+    dataSource,
+    addTransaction,
+    deleteTransaction,
+    updateBudget,
+    addFranchisee,
+    addBdAgent,
+    updateBdAgent,
+    syncWithSaarthi,
+    fetchAllData,
+    currentCashBalance,
+    movingAvgBurn,
+    isSidebarOpen,
+    setIsSidebarOpen,
+    toggleSidebar,
+    isLoadingData,
+    isBackgroundSyncing,
+    lastSyncedAt,
+    mlInsights,
+    setMlInsights,
+    isMlInsightsLoading,
+    fetchMlInsights,
+    showToast
+  }), [
+    transactions,
+    moduleFilteredTransactions,
+    franchisees,
+    bdAgents,
+    teamLeaders,
+    budgets,
+    selectedMonth,
+    selectedYear,
+    userRole,
+    currentUser,
+    availableMonths,
+    availableYears,
+    activeModule,
+    dataSource,
+    currentCashBalance,
+    movingAvgBurn,
+    isSidebarOpen,
+    isLoadingData,
+    isBackgroundSyncing,
+    lastSyncedAt,
+    mlInsights,
+    isMlInsightsLoading,
+    toast
+  ]);
+
   return (
-    <FinanceContext.Provider
-      value={{
-        transactions,
-        moduleFilteredTransactions,
-        franchisees,
-        bdAgents,
-        teamLeaders,
-        budgets,
-        setBudgets,
-        selectedMonth,
-        setSelectedMonth,
-        selectedYear,
-        setSelectedYear,
-        userRole,
-        setUserRole,
-        currentUser,
-        login,
-        logout,
-        availableMonths,
-        availableYears,
-        activeModule,
-        setActiveModule,
-        dataSource,
-        addTransaction,
-        deleteTransaction,
-        updateBudget,
-        addFranchisee,
-        addBdAgent,
-        updateBdAgent,
-        syncWithSaarthi,
-        fetchAllData,
-        currentCashBalance,
-        movingAvgBurn,
-        isSidebarOpen,
-        setIsSidebarOpen,
-        toggleSidebar,
-        isLoadingData,
-        isBackgroundSyncing,
-        lastSyncedAt,
-        mlInsights,
-        setMlInsights,
-        isMlInsightsLoading,
-        fetchMlInsights,
-        showToast
-      }}
-    >
+    <FinanceContext.Provider value={contextValue}>
       {children}
       {toast && (
         <div

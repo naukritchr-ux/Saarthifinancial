@@ -67,6 +67,18 @@ const Reports = () => {
         'Other'
       ];
 
+  const bdAgentMap = useMemo(() => {
+    const map = new Map();
+    if (Array.isArray(bdAgents)) bdAgents.forEach(a => { if (a?.id) map.set(a.id, a); });
+    return map;
+  }, [bdAgents]);
+
+  const franchiseeMap = useMemo(() => {
+    const map = new Map();
+    if (Array.isArray(franchisees)) franchisees.forEach(f => { if (f?.id) map.set(f.id, f); });
+    return map;
+  }, [franchisees]);
+
   // Apply filters with useMemo for instantaneous searching and zero UI latency
   const filteredTxs = useMemo(() => {
     if (!Array.isArray(transactions)) return [];
@@ -380,8 +392,8 @@ const Reports = () => {
                     </thead>
                     <tbody>
                       {paginatedTxs.map(tx => {
-                        const agent = bdAgents ? bdAgents.find(a => a.id === tx.bdAgentId) : null;
-                        const franchisee = franchisees ? franchisees.find(f => f.id === tx.franchiseeId) : null;
+                        const agent = tx.bdAgentId ? bdAgentMap.get(tx.bdAgentId) : null;
+                        const franchisee = tx.franchiseeId ? franchiseeMap.get(tx.franchiseeId) : null;
 
                         return (
                           <tr key={tx.id}>
