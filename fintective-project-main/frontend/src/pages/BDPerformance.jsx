@@ -161,7 +161,7 @@ const BDMonthlyTrendChart = ({ trendData = [] }) => {
 };
 
 const BDPerformance = () => {
-  const { bdAgents, transactions, addBdAgent, updateBdAgent, selectedMonth, selectedYear } = useContext(FinanceContext);
+  const { bdAgents, transactions, franchisees, addBdAgent, updateBdAgent, selectedMonth, selectedYear } = useContext(FinanceContext);
   
   // Navigation Sub-Tabs within BD tab: 'portfolio' | 'leaderboard'
   const [activeTab, setActiveTab] = useState('portfolio');

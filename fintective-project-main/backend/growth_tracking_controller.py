@@ -728,6 +728,77 @@ def get_entity_roster():
             # Sort by total revenue and total deals descending so top BDs appear first
             roster.sort(key=lambda x: (x['total_deals'], x['total_revenue']), reverse=True)
 
+        elif entity_type in ('team_leader', 'tl', 'team_leaders'):
+            # 1. Fetch all distinct Team Leader names from enquiries
+            cursor.execute("""
+                SELECT DISTINCT e.teamLeaderName as name, COUNT(*) as deal_cnt
+                FROM enquiries e
+                WHERE e.teamLeaderName IS NOT NULL AND TRIM(e.teamLeaderName) != ''
+                  AND LOWER(TRIM(e.teamLeaderName)) NOT IN ('head office', 'head  - office', 'unknown', 'prospect', '')
+                GROUP BY e.teamLeaderName
+                ORDER BY deal_cnt DESC
+            """)
+            enquiry_tls = cursor.fetchall()
+
+            # 2. Base Team Leaders roster
+            DEFAULT_TLS = [
+                {'id': 'tl-1', 'name': 'Avadai Esakki Muthu Sundaram Marthuvar', 'role': 'Senior Team Leader'},
+                {'id': 'tl-2', 'name': 'Surbhi Vinod Jain', 'role': 'Team Leader'},
+                {'id': 'tl-3', 'name': 'Joyeeta Joydeb Khaskel', 'role': 'Team Leader'},
+                {'id': 'tl-4', 'name': 'Vedika Girish Tolani', 'role': 'Team Leader'},
+                {'id': 'tl-5', 'name': 'Pooja Sharma', 'role': 'Team Leader'},
+                {'id': 'tl-6', 'name': 'Rajesh Patil', 'role': 'Team Leader'}
+            ]
+
+            seen_names = set()
+            tl_candidates = []
+
+            for t in DEFAULT_TLS:
+                cname = t['name'].strip()
+                seen_names.add(cname.lower())
+                tl_candidates.append({
+                    'id': t['id'],
+                    'name': cname,
+                    'role': t['role'],
+                    'status': 'active'
+                })
+
+            for r in enquiry_tls:
+                raw_name = r['name'].strip()
+                if raw_name.lower() not in seen_names:
+                    seen_names.add(raw_name.lower())
+                    tl_candidates.append({
+                        'id': f"tl-{len(tl_candidates)+1}",
+                        'name': raw_name,
+                        'role': 'Team Leader',
+                        'status': 'active'
+                    })
+
+            for tl in tl_candidates:
+                hist, monthly, months = _fetch_historical_revenue_and_stats(cursor, 'tl', tl['id'], tl['name'])
+                tot_rev = sum(h['revenue'] for h in hist)
+                tot_deals = sum(h['deals_count'] for h in hist)
+                cagr = _calculate_cagr(hist)
+                score_data = _compute_productivity_score(monthly, months)
+                roster.append({
+                    'id': str(tl['id']),
+                    'name': tl['name'],
+                    'canonical_name': tl['name'],
+                    'type': 'team_leader',
+                    'role': tl['role'],
+                    'status': tl['status'],
+                    'months_of_history': months,
+                    'total_revenue': tot_rev,
+                    'total_deals': tot_deals,
+                    'historical_cagr': cagr,
+                    'productivity_index': score_data['productivity_index'],
+                    'badge': score_data['badge'],
+                    'badge_key': score_data['badge_key'],
+                    'confidence': 'high' if months >= 6 else ('low' if months >= 3 else 'insufficient_data')
+                })
+
+            roster.sort(key=lambda x: (x['total_deals'], x['total_revenue']), reverse=True)
+
         else: # employee / internal team
             status_clause = "" if include_inactive else "WHERE e.status = 'active'"
             query = f"""

@@ -39,10 +39,10 @@ import OutcomeRecorderModal from '../components/OutcomeRecorderModal';
 import { TrajectoryLineChart, BarChart, Sparkline, TargetVsActualBar } from '../components/CustomCharts';
 
 const GrowthTracking = () => {
-  const { franchisees, bdAgents, transactions } = useContext(FinanceContext);
+  const { franchisees, bdAgents, teamLeaders, transactions } = useContext(FinanceContext);
 
   // Entity selection state
-  const [entityType, setEntityType] = useState('employee'); // 'franchisee' | 'bd_agent' | 'employee'
+  const [entityType, setEntityType] = useState('employee'); // 'franchisee' | 'bd_agent' | 'team_leader' | 'employee'
   const [selectedEntityId, setSelectedEntityId] = useState('');
   
   // Dynamic Roster state
@@ -120,6 +120,16 @@ const GrowthTracking = () => {
             { id: 'bd-2', name: 'Neha Sharma', type: 'bd_agent', role: 'BD Specialist', total_revenue: 0 }
           ];
       return base;
+    } else if (entityType === 'team_leader') {
+      const base = (teamLeaders && teamLeaders.length > 0)
+        ? teamLeaders.map(t => ({ id: String(t.id), name: t.name, type: 'team_leader', role: t.role || 'Team Leader', total_revenue: t.grossRevenue || t.target || 0 }))
+        : [
+            { id: 'tl-1', name: 'Avadai Esakki Muthu Sundaram Marthuvar', type: 'team_leader', role: 'Senior Team Leader', total_deals: 142, total_revenue: 8500000 },
+            { id: 'tl-2', name: 'Surbhi Vinod Jain', type: 'team_leader', role: 'Team Leader', total_deals: 110, total_revenue: 6200000 },
+            { id: 'tl-3', name: 'Joyeeta Joydeb Khaskel', type: 'team_leader', role: 'Team Leader', total_deals: 98, total_revenue: 5400000 },
+            { id: 'tl-4', name: 'Vedika Girish Tolani', type: 'team_leader', role: 'Team Leader', total_deals: 85, total_revenue: 4900000 }
+          ];
+      return base;
     } else {
       return [
         { id: 'emp-aagamkamlesh', name: 'Aagam Kamlesh Sheth', type: 'employee', role: 'Consultant', total_deals: 199, total_revenue: 10132865 },
@@ -128,7 +138,7 @@ const GrowthTracking = () => {
         { id: 'emp-rajalaxmidas', name: 'Rajalaxmi Das Das', type: 'employee', role: 'Consultant', total_deals: 120, total_revenue: 5600000 }
       ];
     }
-  }, [entityType, serverRoster, franchisees, bdAgents]);
+  }, [entityType, serverRoster, franchisees, bdAgents, teamLeaders]);
 
   // Set default selected entity if empty or switched tabs
   useEffect(() => {
@@ -437,12 +447,12 @@ const GrowthTracking = () => {
         </button>
       </div>
 
-      {/* 3-Way Entity Type & Selector Toolbar */}
+      {/* 4-Way Entity Type & Selector Toolbar */}
       <div style={{ background: 'var(--bg-card)', padding: '14px 18px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
-        {/* Type Toggle (Franchisees, BD Specialists, Employees) */}
+        {/* Type Toggle (Franchisees, BD Specialists, Team Leaders, Employees) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Roster View:</span>
-          <div style={{ display: 'flex', background: 'var(--bg-main)', borderRadius: '8px', padding: '3px', border: '1px solid var(--border-color)' }}>
+          <div style={{ display: 'flex', background: 'var(--bg-main)', borderRadius: '8px', padding: '3px', border: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '2px' }}>
             <button
               onClick={() => { setEntityType('franchisee'); setSelectedEntityId(''); }}
               style={{
@@ -481,7 +491,27 @@ const GrowthTracking = () => {
               }}
             >
               <Briefcase size={15} />
-              BD
+              BD Specialists
+            </button>
+            <button
+              onClick={() => { setEntityType('team_leader'); setSelectedEntityId(''); }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 14px',
+                borderRadius: '6px',
+                border: 'none',
+                background: entityType === 'team_leader' ? 'var(--bg-card)' : 'transparent',
+                color: entityType === 'team_leader' ? 'var(--accent-teal)' : 'var(--text-muted)',
+                fontWeight: entityType === 'team_leader' ? '700' : '500',
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                boxShadow: entityType === 'team_leader' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none'
+              }}
+            >
+              <Award size={15} />
+              Team Leaders
             </button>
             <button
               onClick={() => { setEntityType('employee'); setSelectedEntityId(''); }}

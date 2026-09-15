@@ -161,7 +161,7 @@ const TLMonthlyTrendChart = ({ trendData = [] }) => {
 };
 
 const TLPerformance = () => {
-  const { teamLeaders, transactions, selectedMonth, selectedYear } = useContext(FinanceContext);
+  const { teamLeaders, transactions, franchisees, selectedMonth, selectedYear } = useContext(FinanceContext);
   
   // Navigation sub-tabs within TL tab
   const [activeTab, setActiveTab] = useState('portfolio'); // 'portfolio' | 'leaderboard'
