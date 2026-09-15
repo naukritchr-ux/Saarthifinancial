@@ -55,10 +55,6 @@ export const deriveFinancialStatus = ({
   isManuallyEdited = false,
   overallStatus = ''
 }) => {
-  if (isManuallyEdited) {
-    return 'Match';
-  }
-
   const primaryVal = getPrimaryTdsVal(tally, saarthi);
   const as26Val = parseFloat(as26 || 0);
   const diff = as26Val - primaryVal;
@@ -94,16 +90,16 @@ export const getFinancialStatusWhereClause = (status, primarySql = PRIMARY_TDS_S
   if (!status || status === 'All') return null;
 
   if (status === 'Match' || status === 'All Matched') {
-    return `(COALESCE(tr.is_manually_edited, 0) = 1 OR (${primarySql} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND ABS(${primarySql} - COALESCE(tr.as26_tds, 0)) <= ${TDS_TOLERANCE}) OR tr.overall_status IN ('All Matched', 'Match', 'Matched'))`;
+    return `((${primarySql} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND ABS(${primarySql} - COALESCE(tr.as26_tds, 0)) <= ${TDS_TOLERANCE}) OR (tr.overall_status IN ('All Matched', 'Match', 'Matched') AND COALESCE(tr.as26_tds, 0) > 0 AND ABS(${primarySql} - COALESCE(tr.as26_tds, 0)) <= ${TDS_TOLERANCE}))`;
   }
   if (status === 'Less Paid' || status === 'Less') {
-    return `(COALESCE(tr.is_manually_edited, 0) = 0 AND ${primarySql} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND ${primarySql} > COALESCE(tr.as26_tds, 0) + ${TDS_TOLERANCE})`;
+    return `(${primarySql} > 0 AND COALESCE(tr.as26_tds, 0) > 0 AND ${primarySql} > COALESCE(tr.as26_tds, 0) + ${TDS_TOLERANCE})`;
   }
   if (status === 'Excess' || status === 'Excess Paid') {
-    return `(COALESCE(tr.is_manually_edited, 0) = 0 AND COALESCE(tr.as26_tds, 0) > 0 AND (${primarySql} = 0 OR ${primarySql} < COALESCE(tr.as26_tds, 0) - ${TDS_TOLERANCE}))`;
+    return `(COALESCE(tr.as26_tds, 0) > 0 AND (${primarySql} = 0 OR ${primarySql} < COALESCE(tr.as26_tds, 0) - ${TDS_TOLERANCE}))`;
   }
   if (status === 'Not Received' || status === 'No Match' || status === 'Missing') {
-    return `(COALESCE(tr.is_manually_edited, 0) = 0 AND COALESCE(tr.as26_tds, 0) = 0 AND ${primarySql} > 0)`;
+    return `(COALESCE(tr.as26_tds, 0) = 0 AND ${primarySql} > 0)`;
   }
   return 'tr.overall_status = ?';
 };

@@ -92,21 +92,19 @@ export const getDashboardSummary = async (req, res) => {
 
       if (r.is_manually_edited) {
         resolvedCount++;
-        matchCount++;
-      } else {
-        const derived = deriveFinancialStatus({
-          tally,
-          as26,
-          saarthi,
-          isManuallyEdited: false,
-          overallStatus: r.overall_status
-        });
-        if (derived === 'Match') matchCount++;
-        else if (derived === 'Less Paid') lessCount++;
-        else if (derived === 'Excess') excessCount++;
-        else if (derived === 'Pending Review') pendingReviewCount++;
-        else missingCount++;
       }
+      const derived = deriveFinancialStatus({
+        tally,
+        as26,
+        saarthi,
+        isManuallyEdited: false,
+        overallStatus: r.overall_status
+      });
+      if (derived === 'Match') matchCount++;
+      else if (derived === 'Less Paid') lessCount++;
+      else if (derived === 'Excess') excessCount++;
+      else if (derived === 'Pending Review') pendingReviewCount++;
+      else missingCount++;
     });
 
     const primaryTotal = getPrimaryTdsVal(tallyTotal, saarthiTotal);
