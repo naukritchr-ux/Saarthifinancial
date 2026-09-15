@@ -12,7 +12,9 @@ const GoalSetterModal = ({ isOpen, onClose, entityType, entity, onTargetCreated 
   const [guidelines, setGuidelines] = useState(
     entityType === 'franchisee'
       ? 'Expand candidate sourcing across BFSI and IT sectors. Target a minimum of 30 successful client placements while keeping payment collection cycles under 45 days.'
-      : 'Focus on enterprise client acquisition and increase closed mandate conversion from 40% to 65%. Maintain diligent verification of billable invoices.'
+      : (entityType === 'bd_agent'
+          ? 'Focus on enterprise client acquisition and increase closed mandate conversion from 40% to 65%. Maintain diligent verification of billable invoices.'
+          : 'Focus on candidate placements, optimizing pipeline velocity, and maintaining high conversion rates across all allocated recruitment mandates.')
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -42,11 +44,12 @@ const GoalSetterModal = ({ isOpen, onClose, entityType, entity, onTargetCreated 
         guidelines: guidelines.trim()
       };
 
+      const typeLabel = entityType === 'franchisee' ? 'Franchise Partner' : (entityType === 'bd_agent' ? 'BD Specialist' : 'Internal Talent Consultant');
       const fallbackLetter = `================================================================================
 FINTECTIVE FINANCIAL REVENUE NETWORK — PERFORMANCE TARGET MEMO
 ================================================================================
 Date of Issue : ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-Recipient     : ${entity?.name || 'Selected Entity'} (${entityType === 'franchisee' ? 'Franchise Partner' : 'BD Specialist'})
+Recipient     : ${entity?.name || 'Selected Entity'} (${typeLabel})
 Target Period : ${periodStart} to ${periodEnd}
 --------------------------------------------------------------------------------
 

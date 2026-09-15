@@ -229,7 +229,7 @@ export const Sparkline = ({ points, width = 110, height = 28, positive = true })
  * Trajectory Line Chart for Historical Baseline & Forward Projected Curve
  * Flat, minimal SVG matching Fintective's design tokens
  */
-export const TrajectoryLineChart = ({ historical = [], projected = [], height = 140 }) => {
+export const TrajectoryLineChart = ({ historical = [], projected = [], confidence = 'high', height = 140 }) => {
   // Normalize historical points
   const histPoints = (historical || []).map(h => ({
     label: h.period || h.label || 'Base',
@@ -246,6 +246,10 @@ export const TrajectoryLineChart = ({ historical = [], projected = [], height = 
 
   const allPoints = [...histPoints, ...projPoints];
   if (allPoints.length === 0) return null;
+
+  const isLowConfidence = confidence === 'low';
+  const projColor = isLowConfidence ? '#eab308' : '#10b981';
+  const projDash = isLowConfidence ? '3 3' : '4 4';
 
   const maxVal = Math.max(...allPoints.map(p => p.value), 100000) * 1.15;
   const range = maxVal;
@@ -265,7 +269,6 @@ export const TrajectoryLineChart = ({ historical = [], projected = [], height = 
   });
 
   const histCoords = coords.slice(0, histPoints.length);
-  // Projected line starts from the last historical coordinate to maintain continuous line
   const projCoords = histCoords.length > 0 
     ? [histCoords[histCoords.length - 1], ...coords.slice(histPoints.length)]
     : coords.slice(histPoints.length);
@@ -275,16 +278,25 @@ export const TrajectoryLineChart = ({ historical = [], projected = [], height = 
 
   return (
     <div style={{ width: '100%', background: 'var(--bg-main)', borderRadius: '10px', padding: '14px 16px', border: '1px solid var(--border-color)', marginBottom: '16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '0.78rem' }}>
-        <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>Historical Trajectory & Compounded Forward Path</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '0.78rem', flexWrap: 'wrap', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>Historical Trajectory & 5-Year Forward Path</span>
+          {isLowConfidence && (
+            <span style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(234, 179, 8, 0.15)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)', fontWeight: '600' }}>
+              ⚠️ Moderate History (3–6 mo)
+            </span>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: '14px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <span style={{ width: '12px', height: '3px', backgroundColor: '#0F6E56', display: 'inline-block', borderRadius: '2px' }}></span>
             <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', fontWeight: '600' }}>Historical Baseline</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <span style={{ width: '12px', height: '3px', borderTop: '2px dashed #10b981', display: 'inline-block' }}></span>
-            <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', fontWeight: '600' }}>Projected Curve (+R%)</span>
+            <span style={{ width: '12px', height: '3px', borderTop: `2px dashed ${projColor}`, display: 'inline-block' }}></span>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', fontWeight: '600' }}>
+              {isLowConfidence ? 'Preliminary Projection' : '5-Yr Compounded Path'}
+            </span>
           </div>
         </div>
       </div>
@@ -306,7 +318,7 @@ export const TrajectoryLineChart = ({ historical = [], projected = [], height = 
 
         {/* Flat Connecting Lines */}
         {histPathD && <path d={histPathD} fill="none" stroke="#0F6E56" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-        {projPathD && <path d={projPathD} fill="none" stroke="#10b981" strokeWidth="2.5" strokeDasharray="4 4" strokeLinecap="round" strokeLinejoin="round" />}
+        {projPathD && <path d={projPathD} fill="none" stroke={projColor} strokeWidth="2.5" strokeDasharray={projDash} strokeLinecap="round" strokeLinejoin="round" />}
 
         {/* Data Point Dots & Labels */}
         {coords.map((c, idx) => {
@@ -318,7 +330,7 @@ export const TrajectoryLineChart = ({ historical = [], projected = [], height = 
                 cy={c.y}
                 r={isProj ? 3.5 : 4}
                 fill={isProj ? 'var(--bg-card)' : '#0F6E56'}
-                stroke={isProj ? '#10b981' : '#0F6E56'}
+                stroke={isProj ? projColor : '#0F6E56'}
                 strokeWidth={isProj ? 2 : 2.5}
               >
                 <title>{`${c.label}: ₹${c.value.toLocaleString()}`}</title>
@@ -328,7 +340,7 @@ export const TrajectoryLineChart = ({ historical = [], projected = [], height = 
                 x={c.x}
                 y={c.y - 6}
                 textAnchor="middle"
-                fill={isProj ? '#0F6E56' : 'var(--text-main)'}
+                fill={isProj ? (isLowConfidence ? '#eab308' : '#0F6E56') : 'var(--text-main)'}
                 fontSize="8"
                 fontWeight="700"
               >
@@ -339,7 +351,7 @@ export const TrajectoryLineChart = ({ historical = [], projected = [], height = 
                 x={c.x}
                 y={chartHeight + 16}
                 textAnchor="middle"
-                fill={isProj ? '#0F6E56' : 'var(--text-muted)'}
+                fill={isProj ? (isLowConfidence ? '#eab308' : '#0F6E56') : 'var(--text-muted)'}
                 fontSize="8"
                 fontWeight={isProj ? '700' : '600'}
               >
