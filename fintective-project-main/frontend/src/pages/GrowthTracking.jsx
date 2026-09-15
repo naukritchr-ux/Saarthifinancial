@@ -28,7 +28,10 @@ import {
   Target,
   BarChart3,
   ShieldAlert,
-  Info
+  Info,
+  ArrowRight,
+  Clock,
+  Layers
 } from 'lucide-react';
 import Pagination from '../components/Pagination';
 import GoalSetterModal from '../components/GoalSetterModal';
@@ -252,7 +255,7 @@ const GrowthTracking = () => {
     return 1000000;
   }, [predictionData, chartHistorical, selectedEntity]);
 
-  // Base deals count
+  // Base deals count & present actuals
   const baseDealsCount = useMemo(() => {
     if (chartHistorical.length > 0 && chartHistorical[chartHistorical.length - 1].deals_count > 0) {
       return chartHistorical[chartHistorical.length - 1].deals_count;
@@ -260,15 +263,21 @@ const GrowthTracking = () => {
     return selectedEntity?.total_deals || selectedEntity?.deals_count || 10;
   }, [chartHistorical, selectedEntity]);
 
-  // Handle placement target change
-  const handlePlacementCountChange = (countVal) => {
-    setTargetPlacementCount(countVal);
-    const count = parseFloat(countVal) || 0;
-    if (baseDealsCount > 0 && count > 0) {
-      const impliedGrowth = ((count / baseDealsCount) - 1) * 100;
-      setOverrideRate(String(parseFloat(impliedGrowth.toFixed(1))));
+  // Present Closed Deals & Ticket Size Metrics
+  const presentDealsCount = useMemo(() => {
+    if (chartHistorical.length > 0 && chartHistorical[chartHistorical.length - 1].deals_count > 0) {
+      return chartHistorical[chartHistorical.length - 1].deals_count;
     }
-  };
+    return selectedEntity?.total_deals || selectedEntity?.deals_count || baseDealsCount || 10;
+  }, [chartHistorical, selectedEntity, baseDealsCount]);
+
+  const presentMonthlyDeals = useMemo(() => {
+    return (presentDealsCount / 12).toFixed(1);
+  }, [presentDealsCount]);
+
+  const avgDealValue = useMemo(() => {
+    return Math.round(effectiveBaseRevenue / Math.max(1, presentDealsCount));
+  }, [effectiveBaseRevenue, presentDealsCount]);
 
   // Historical CAGR
   const historicalCagrPct = useMemo(() => {
@@ -287,6 +296,36 @@ const GrowthTracking = () => {
     }
     return 15;
   }, [overrideRate, historicalCagrPct]);
+
+  // Handle placement target change
+  const handlePlacementCountChange = (countVal) => {
+    setTargetPlacementCount(countVal);
+    const count = parseFloat(countVal) || 0;
+    if (baseDealsCount > 0 && count > 0) {
+      const impliedGrowth = ((count / baseDealsCount) - 1) * 100;
+      setOverrideRate(String(parseFloat(impliedGrowth.toFixed(1))));
+    }
+  };
+
+  // Sync targetPlacementCount when entity, base deals, or rate changes
+  useEffect(() => {
+    if (presentDealsCount > 0) {
+      const implied = Math.max(1, Math.round(presentDealsCount * (1 + targetRatePct / 100)));
+      setTargetPlacementCount(String(implied));
+    }
+  }, [selectedEntityId, presentDealsCount, targetRatePct]);
+
+  const targetRequiredDeals = useMemo(() => {
+    return Math.max(1, Math.round(presentDealsCount * (1 + targetRatePct / 100)));
+  }, [presentDealsCount, targetRatePct]);
+
+  const targetMonthlyDeals = useMemo(() => {
+    return (targetRequiredDeals / 12).toFixed(1);
+  }, [targetRequiredDeals]);
+
+  const incrementalDeals = useMemo(() => {
+    return targetRequiredDeals - presentDealsCount;
+  }, [targetRequiredDeals, presentDealsCount]);
 
   // Inertia Growth Rate (R) in percentage (pure historical extrapolation)
   const inertiaRatePct = historicalCagrPct;
@@ -495,7 +534,8 @@ const GrowthTracking = () => {
       </div>
 
       {/* KPI Overview Grid */}
-      <section className="kpi-grid" style={{ marginBottom: '24px' }}>
+      <section className="kpi-grid" style={{ marginBottom: '24px', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+        {/* 1. Baseline Revenue */}
         <div className="kpi-card card-blue">
           <div className="kpi-header">
             <span className="kpi-title">Current Baseline Revenue</span>
@@ -513,6 +553,39 @@ const GrowthTracking = () => {
           </div>
         </div>
 
+        {/* 2. Actual Closed Deals (Present) */}
+        <div className="kpi-card card-green" style={{ borderLeft: '4px solid #0F6E56' }}>
+          <div className="kpi-header">
+            <span className="kpi-title" style={{ color: '#0F6E56', fontWeight: '700' }}>Actual Deals Closed (Present)</span>
+            <span className="kpi-icon" style={{ background: 'rgba(15, 110, 86, 0.15)', color: '#0F6E56' }}><Briefcase size={18} /></span>
+          </div>
+          <h2 className="kpi-value" style={{ color: '#0F6E56' }}>
+            {presentDealsCount} <span style={{ fontSize: '0.88rem', fontWeight: '600' }}>deals/yr</span>
+          </h2>
+          <div className="kpi-change up">
+            <span style={{ color: '#0F6E56', fontWeight: '600' }}>
+              ~{presentMonthlyDeals} deals/mo run-rate velocity
+            </span>
+          </div>
+        </div>
+
+        {/* 3. Average Ticket Size per Deal */}
+        <div className="kpi-card card-yellow" style={{ borderLeft: '4px solid #B7791F' }}>
+          <div className="kpi-header">
+            <span className="kpi-title" style={{ color: '#B7791F', fontWeight: '700' }}>Avg Revenue / Deal</span>
+            <span className="kpi-icon" style={{ background: 'rgba(183, 121, 31, 0.15)', color: '#B7791F' }}><Layers size={18} /></span>
+          </div>
+          <h2 className="kpi-value" style={{ color: '#B7791F' }}>
+            {formatCurrency(avgDealValue)}
+          </h2>
+          <div className="kpi-change" style={{ color: 'var(--text-muted)' }}>
+            <span>
+              Average ticket size per closure
+            </span>
+          </div>
+        </div>
+
+        {/* 4. Historical CAGR */}
         <div className="kpi-card card-purple">
           <div className="kpi-header">
             <span className="kpi-title">Historical CAGR</span>
@@ -532,21 +605,7 @@ const GrowthTracking = () => {
           </div>
         </div>
 
-        <div className="kpi-card card-green">
-          <div className="kpi-header">
-            <span className="kpi-title">Target Growth Rate (R)</span>
-            <span className="kpi-icon"><Percent size={18} /></span>
-          </div>
-          <h2 className="kpi-value">
-            {`${targetRatePct >= 0 ? '+' : ''}${targetRatePct}%`}
-          </h2>
-          <div className="kpi-change up">
-            <span>
-              Aspirational target factor
-            </span>
-          </div>
-        </div>
-
+        {/* 5. Active Milestone Target */}
         <div className="kpi-card card-red" style={{ borderColor: activeTarget ? 'rgba(15, 110, 86, 0.3)' : 'var(--border-color)' }}>
           <div className="kpi-header">
             <span className="kpi-title">Active Milestone Target</span>
@@ -658,6 +717,73 @@ const GrowthTracking = () => {
           </div>
         </div>
       )}
+
+      {/* Present Actuals & Deal Velocity Baseline Ribbon */}
+      <div style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-color)',
+        borderLeft: '4px solid var(--accent-teal)',
+        borderRadius: '10px',
+        padding: '14px 18px',
+        marginBottom: '20px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '14px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ padding: '6px', background: 'rgba(15, 110, 86, 0.12)', borderRadius: '6px', color: 'var(--accent-teal)' }}>
+              <Briefcase size={18} />
+            </div>
+            <div>
+              <span style={{ fontSize: '0.88rem', fontWeight: '800', color: 'var(--text-main)', display: 'block' }}>
+                Present Actuals: {selectedEntity?.name} {selectedEntity?.role ? `(${selectedEntity.role})` : ''}
+              </span>
+              <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                Audited baseline metrics used as ground truth for forward target setting
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', fontSize: '0.82rem' }}>
+            <div style={{ background: 'var(--bg-main)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem', fontWeight: '600' }}>ANNUAL VOLUME</span>
+              <strong style={{ color: '#0F6E56', fontSize: '0.95rem' }}>{presentDealsCount} Deals/yr</strong>
+            </div>
+
+            <div style={{ background: 'var(--bg-main)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem', fontWeight: '600' }}>MONTHLY VELOCITY</span>
+              <strong style={{ color: '#2563EB', fontSize: '0.95rem' }}>~{presentMonthlyDeals} deals/mo</strong>
+            </div>
+
+            <div style={{ background: 'var(--bg-main)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem', fontWeight: '600' }}>AVG TICKET SIZE</span>
+              <strong style={{ color: '#B7791F', fontSize: '0.95rem' }}>{formatCurrency(avgDealValue)}/deal</strong>
+            </div>
+
+            <div style={{ background: 'var(--bg-main)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem', fontWeight: '600' }}>ANNUAL BILLING</span>
+              <strong style={{ color: 'var(--text-main)', fontSize: '0.95rem' }}>{formatCurrency(effectiveBaseRevenue)}</strong>
+            </div>
+          </div>
+        </div>
+
+        {/* Year-by-Year Deal Closing Breakdown */}
+        {chartHistorical.length > 0 && (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: '700' }}>History:</span>
+            {chartHistorical.map((h, i) => (
+              <div key={i} style={{ fontSize: '0.74rem', fontWeight: '600', padding: '4px 10px', borderRadius: '6px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'var(--text-main)' }}>
+                <span>{h.period?.replace('FY ', '')}: </span>
+                <strong style={{ color: '#0F6E56' }}>{h.deals_count || 0} deals</strong>
+                <span style={{ color: 'var(--text-muted)', marginLeft: '4px' }}>({formatLakhs(h.revenue)})</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* 5-Year Forward Predictive Model & Scale Simulator */}
       <div className="dashboard-card" style={{ marginBottom: '24px' }}>
@@ -820,12 +946,12 @@ const GrowthTracking = () => {
                   type="button"
                   onClick={() => setTargetControlMode('rate')}
                   style={{
-                    padding: '4px 10px',
+                    padding: '5px 12px',
                     borderRadius: '4px',
                     border: 'none',
                     background: targetControlMode === 'rate' ? 'var(--accent-teal)' : 'transparent',
                     color: targetControlMode === 'rate' ? '#ffffff' : 'var(--text-muted)',
-                    fontSize: '0.74rem',
+                    fontSize: '0.76rem',
                     fontWeight: '700',
                     cursor: 'pointer'
                   }}
@@ -836,12 +962,12 @@ const GrowthTracking = () => {
                   type="button"
                   onClick={() => setTargetControlMode('placements')}
                   style={{
-                    padding: '4px 10px',
+                    padding: '5px 12px',
                     borderRadius: '4px',
                     border: 'none',
                     background: targetControlMode === 'placements' ? 'var(--accent-teal)' : 'transparent',
                     color: targetControlMode === 'placements' ? '#ffffff' : 'var(--text-muted)',
-                    fontSize: '0.74rem',
+                    fontSize: '0.76rem',
                     fontWeight: '700',
                     cursor: 'pointer'
                   }}
@@ -849,97 +975,204 @@ const GrowthTracking = () => {
                   🎯 Placements Goal
                 </button>
               </div>
-
-              {targetControlMode === 'placements' ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)' }}>Target Deals:</span>
-                  <input
-                    type="number"
-                    step="1"
-                    min="1"
-                    max="5000"
-                    placeholder="e.g. 50"
-                    value={targetPlacementCount}
-                    onChange={(e) => handlePlacementCountChange(e.target.value)}
-                    style={{
-                      width: '74px',
-                      padding: '6px 10px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      background: 'var(--bg-main)',
-                      color: 'var(--text-main)',
-                      fontWeight: '700',
-                      fontSize: '0.85rem',
-                      textAlign: 'center'
-                    }}
-                  />
-                  <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-muted)' }}>deals/yr</span>
-                  {[25, 50, 100].map(cnt => (
-                    <button
-                      key={cnt}
-                      onClick={() => handlePlacementCountChange(String(cnt))}
-                      style={{
-                        padding: '5px 8px',
-                        borderRadius: '4px',
-                        border: '1px solid var(--border-color)',
-                        background: 'var(--bg-main)',
-                        color: 'var(--text-main)',
-                        cursor: 'pointer',
-                        fontSize: '0.72rem',
-                        fontWeight: '600'
-                      }}
-                    >
-                      {cnt}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)' }}>Growth Rate (R):</span>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="-50"
-                    max="500"
-                    value={overrideRate}
-                    onChange={(e) => handleRateChange(e.target.value)}
-                    style={{
-                      width: '78px',
-                      padding: '6px 10px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      background: 'var(--bg-main)',
-                      color: 'var(--text-main)',
-                      fontWeight: '700',
-                      fontSize: '0.85rem',
-                      textAlign: 'center'
-                    }}
-                  />
-                  <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-muted)' }}>%</span>
-                  <button
-                    onClick={handleResetRate}
-                    title="Reset to Baseline Target (+15% or positive CAGR)"
-                    style={{
-                      padding: '6px 10px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      background: 'var(--bg-main)',
-                      color: 'var(--text-muted)',
-                      cursor: 'pointer',
-                      fontSize: '0.75rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    <RotateCcw size={12} />
-                    Reset
-                  </button>
-                </div>
-              )}
             </div>
           )}
         </div>
+
+        {/* Extended Deal-Aware Target Controls Bar */}
+        {!isInsufficientData && !predictionLoading && !predictionError && forecastTab === 'target' && (
+          <div style={{
+            background: 'var(--bg-main)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '8px',
+            padding: '12px 16px',
+            marginBottom: '18px'
+          }}>
+            {targetControlMode === 'placements' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-muted)' }}>Current Velocity:</span>
+                      <strong style={{ fontSize: '0.86rem', color: 'var(--text-main)' }}>
+                        {presentDealsCount} deals/yr (~{presentMonthlyDeals}/mo)
+                      </strong>
+                    </div>
+                    <ArrowRight size={15} color="var(--text-muted)" />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--accent-teal)' }}>Target Deals:</span>
+                      <input
+                        type="number"
+                        step="1"
+                        min="1"
+                        max="5000"
+                        placeholder="e.g. 229"
+                        value={targetPlacementCount}
+                        onChange={(e) => handlePlacementCountChange(e.target.value)}
+                        style={{
+                          width: '84px',
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          border: '2px solid var(--accent-teal)',
+                          background: 'var(--bg-card)',
+                          color: 'var(--text-main)',
+                          fontWeight: '800',
+                          fontSize: '0.92rem',
+                          textAlign: 'center'
+                        }}
+                      />
+                      <span style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-main)' }}>deals/yr</span>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: '600' }}>
+                        (~{(Number(targetPlacementCount || presentDealsCount) / 12).toFixed(1)} deals/mo)
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Velocity Delta & Revenue Projection */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.8rem', fontWeight: '700', flexWrap: 'wrap' }}>
+                    <span style={{
+                      padding: '4px 10px',
+                      borderRadius: '5px',
+                      background: Number(targetPlacementCount || presentDealsCount) >= presentDealsCount ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                      color: Number(targetPlacementCount || presentDealsCount) >= presentDealsCount ? '#0F6E56' : '#dc2626'
+                    }}>
+                      {Number(targetPlacementCount || presentDealsCount) >= presentDealsCount ? '+' : ''}
+                      {Number(targetPlacementCount || presentDealsCount) - presentDealsCount} deals ({targetRatePct >= 0 ? '+' : ''}{targetRatePct}% YoY)
+                    </span>
+                    <span style={{ color: 'var(--accent-teal)' }}>
+                      Projected Revenue: {formatLakhs(effectiveBaseRevenue * (1 + targetRatePct / 100))}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Relative Increments Presets from Present Actuals */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', paddingTop: '8px', borderTop: '1px dashed var(--border-color)' }}>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: '600' }}>
+                    Quick Targets from Present ({presentDealsCount} deals):
+                  </span>
+                  {[
+                    { label: `+10% (${Math.round(presentDealsCount * 1.10)} deals)`, count: Math.round(presentDealsCount * 1.10) },
+                    { label: `+15% (${Math.round(presentDealsCount * 1.15)} deals)`, count: Math.round(presentDealsCount * 1.15) },
+                    { label: `+25% (${Math.round(presentDealsCount * 1.25)} deals)`, count: Math.round(presentDealsCount * 1.25) },
+                    { label: `+50% (${Math.round(presentDealsCount * 1.50)} deals)`, count: Math.round(presentDealsCount * 1.50) },
+                    { label: `2x Scale (${Math.round(presentDealsCount * 2.0)} deals)`, count: Math.round(presentDealsCount * 2.0) }
+                  ].map((preset, pIdx) => (
+                    <button
+                      key={pIdx}
+                      type="button"
+                      onClick={() => handlePlacementCountChange(String(preset.count))}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: '4px',
+                        border: targetPlacementCount === String(preset.count) ? '1px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                        background: targetPlacementCount === String(preset.count) ? 'rgba(15, 110, 86, 0.12)' : 'var(--bg-card)',
+                        color: targetPlacementCount === String(preset.count) ? 'var(--accent-teal)' : 'var(--text-main)',
+                        fontSize: '0.74rem',
+                        fontWeight: '600',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-muted)' }}>
+                      Current Baseline: <strong style={{ color: 'var(--text-main)' }}>{presentDealsCount} deals/yr ({formatCurrency(effectiveBaseRevenue)})</strong>
+                    </span>
+                    <ArrowRight size={15} color="var(--text-muted)" />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--accent-teal)' }}>Target Growth (R):</span>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="-50"
+                        max="500"
+                        value={overrideRate}
+                        onChange={(e) => handleRateChange(e.target.value)}
+                        style={{
+                          width: '78px',
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          border: '2px solid var(--accent-teal)',
+                          background: 'var(--bg-card)',
+                          color: 'var(--text-main)',
+                          fontWeight: '800',
+                          fontSize: '0.92rem',
+                          textAlign: 'center'
+                        }}
+                      />
+                      <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-main)' }}>%</span>
+                      <button
+                        type="button"
+                        onClick={handleResetRate}
+                        title="Reset to Baseline Target (+15% or positive CAGR)"
+                        style={{
+                          padding: '5px 8px',
+                          borderRadius: '4px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-card)',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          fontSize: '0.74rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                      >
+                        <RotateCcw size={11} />
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Required Closures Calculation */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.8rem', fontWeight: '700', flexWrap: 'wrap' }}>
+                    <span style={{ color: '#2563EB', background: 'rgba(37, 99, 235, 0.08)', padding: '4px 10px', borderRadius: '5px' }}>
+                      Required Closures: <strong>{targetRequiredDeals} deals/yr</strong> (~{targetMonthlyDeals}/mo)
+                    </span>
+                    <span style={{ color: '#0F6E56' }}>
+                      ({incrementalDeals >= 0 ? '+' : ''}{incrementalDeals} net deals)
+                    </span>
+                  </div>
+                </div>
+
+                {/* Quick Rate Presets */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', paddingTop: '8px', borderTop: '1px dashed var(--border-color)' }}>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: '600' }}>
+                    Target Growth Presets:
+                  </span>
+                  {[10, 15, 20, 25, 50, 100].map(r => {
+                    const reqD = Math.round(presentDealsCount * (1 + r / 100));
+                    return (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => handleRateChange(String(r))}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '4px',
+                          border: overrideRate === String(r) ? '1px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                          background: overrideRate === String(r) ? 'rgba(15, 110, 86, 0.12)' : 'var(--bg-card)',
+                          color: overrideRate === String(r) ? 'var(--accent-teal)' : 'var(--text-main)',
+                          fontSize: '0.74rem',
+                          fontWeight: '600',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        +{r}% ({reqD} deals)
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {predictionLoading ? (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
@@ -1028,12 +1261,19 @@ const GrowthTracking = () => {
                         {formatCurrency(proj.projected_revenue)}
                       </div>
 
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '3px', marginBottom: '10px' }}>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '3px', marginBottom: '10px' }}>
                         <span>
-                          {forecastTab === 'target' ? 'Target Deals: ' : 'Projected Volume: '}
-                          <strong style={{ color: isDecliningCard ? '#dc2626' : '#3b82f6' }}>
-                            {proj.projected_deals} placements
+                          {forecastTab === 'target' ? 'Target Closures: ' : 'Projected Volume: '}
+                          <strong style={{ color: isDecliningCard ? '#dc2626' : '#2563EB', fontSize: '0.8rem' }}>
+                            {proj.projected_deals} deals/yr
                           </strong>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: '4px' }}>
+                            (~{(proj.projected_deals / 12).toFixed(1)}/mo)
+                          </span>
+                        </span>
+                        
+                        <span style={{ color: proj.projected_deals >= presentDealsCount ? '#0F6E56' : '#dc2626', fontSize: '0.68rem', fontWeight: '600' }}>
+                          {proj.projected_deals >= presentDealsCount ? '+' : ''}{proj.projected_deals - presentDealsCount} deals vs present baseline
                         </span>
                         
                         {/* Fix #2: Distinct styling for cumulative totals */}
@@ -1183,12 +1423,13 @@ const GrowthTracking = () => {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
                 {[1, 2, 3, 4, 5].map(mult => {
                   const key = `scale${mult}x`;
+                  const scaledDeals = presentDealsCount * mult;
                   const sc = predictionData?.scenarios?.[key] || {
                     multiplier: mult,
                     label: `${mult}x ${mult === 1 ? 'Current Base' : 'Scale'}`,
                     revenue: effectiveBaseRevenue * mult,
                     estimated_net: effectiveBaseRevenue * mult * 0.4375,
-                    deals_target: mult * 10
+                    deals_target: scaledDeals
                   };
                   const isSelected = activeScenarioMultiplier === sc.multiplier;
 
@@ -1205,9 +1446,14 @@ const GrowthTracking = () => {
                         transition: 'all 0.2s'
                       }}
                     >
-                      <span style={{ fontSize: '0.74rem', fontWeight: '700', color: isSelected ? 'var(--accent-teal)' : 'var(--text-muted)', display: 'block', marginBottom: '3px' }}>
-                        {sc.label}
-                      </span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                        <span style={{ fontSize: '0.74rem', fontWeight: '700', color: isSelected ? 'var(--accent-teal)' : 'var(--text-muted)' }}>
+                          {sc.label}
+                        </span>
+                        <span style={{ fontSize: '0.68rem', fontWeight: '700', color: '#2563EB', background: 'rgba(37, 99, 235, 0.08)', padding: '1px 5px', borderRadius: '3px' }}>
+                          {scaledDeals} deals
+                        </span>
+                      </div>
                       <div style={{ fontSize: '1.05rem', fontWeight: '800', color: 'var(--text-main)', marginBottom: '2px' }}>
                         {formatCurrency(sc.revenue)}
                       </div>
