@@ -1146,3 +1146,402 @@ def record_outcome(target_id):
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
+
+
+# ==========================================================================
+# TL FRANCHISEE PORTFOLIO & PREDICTIVE COLLECTION RISK ENGINE
+# ==========================================================================
+
+def _calc_aging_factor(days_outstanding, status='inprogress'):
+    """
+    Computes AgingFactor (0-100) based on 45-day standard recruitment SLA
+    and applies a 0.70x pipeline risk multiplier for 'revised' status.
+    """
+    days = max(0, int(days_outstanding or 0))
+    if days <= 45:
+        base_score = 100.0
+    elif days <= 75:
+        base_score = 75.0
+    elif days <= 105:
+        base_score = 40.0
+    else:
+        base_score = 15.0
+
+    status_multiplier = 0.70 if str(status).strip().lower() == 'revised' else 1.0
+    return round(base_score * status_multiplier, 2)
+
+
+def _calc_tl_conversion_rate(cursor, tl_aliases, lookback_months=12):
+    """
+    Calculates the historical conversion rate for a TL over trailing lookback_months.
+    HistoricalConversionRate = 100 * (Received / (Received + Cancelled))
+    Fallback to 70.0% if < 5 resolved deals.
+    """
+    if isinstance(tl_aliases, str):
+        tl_aliases = [tl_aliases]
+    else:
+        tl_aliases = list(tl_aliases)
+    if not tl_aliases:
+        return 70.0, 0
+
+    placeholders = ", ".join(["%s"] * len(tl_aliases))
+    try:
+        query = f"""
+            SELECT 
+                SUM(CASE WHEN e.enquiryStatus IN ('closed', 'offered_and_accepted', 'invoiced') THEN 1 ELSE 0 END) as received_cnt,
+                SUM(CASE WHEN e.enquiryStatus IN ('cancelled', 'offered_and_rejected') THEN 1 ELSE 0 END) as cancelled_cnt
+            FROM enquiries e
+            WHERE (LOWER(TRIM(e.teamLeaderName)) IN ({placeholders}) OR e.teamLeaderName IN ({placeholders}))
+              AND e.created_at >= DATE_SUB(CURDATE(), INTERVAL %s MONTH)
+        """
+        cursor.execute(query, tl_aliases + tl_aliases + [lookback_months])
+        row = cursor.fetchone()
+        rec = int(row['received_cnt'] or 0) if row else 0
+        canc = int(row['cancelled_cnt'] or 0) if row else 0
+        total_resolved = rec + canc
+
+        if total_resolved >= 5:
+            return round((rec / total_resolved) * 100.0, 2), total_resolved
+        return 70.0, total_resolved # Gated default benchmark
+    except Exception as e:
+        print(f"[_calc_tl_conversion_rate] Error: {e}")
+        return 70.0, 0
+
+
+def _calc_franchisee_track_record(cursor, franchisee_name, lookback_months=12):
+    """
+    Calculates historical conversion rate for a specific franchisee across all TLs
+    over the same trailing lookback_months. Fallback to 70.0% if < 3 resolved deals.
+    """
+    if not franchisee_name:
+        return 70.0, 0
+    try:
+        query = """
+            SELECT 
+                SUM(CASE WHEN e.enquiryStatus IN ('closed', 'offered_and_accepted', 'invoiced') THEN 1 ELSE 0 END) as received_cnt,
+                SUM(CASE WHEN e.enquiryStatus IN ('cancelled', 'offered_and_rejected') THEN 1 ELSE 0 END) as cancelled_cnt
+            FROM enquiries e
+            WHERE (LOWER(TRIM(e.franchiseeName)) = %s OR e.franchiseeName = %s)
+              AND e.created_at >= DATE_SUB(CURDATE(), INTERVAL %s MONTH)
+        """
+        cursor.execute(query, [franchisee_name.strip().lower(), franchisee_name.strip(), lookback_months])
+        row = cursor.fetchone()
+        rec = int(row['received_cnt'] or 0) if row else 0
+        canc = int(row['cancelled_cnt'] or 0) if row else 0
+        total_resolved = rec + canc
+
+        if total_resolved >= 3:
+            return round((rec / total_resolved) * 100.0, 2), total_resolved
+        return 70.0, total_resolved
+    except Exception as e:
+        print(f"[_calc_franchisee_track_record] Error: {e}")
+        return 70.0, 0
+
+
+def _fetch_tl_portfolio(cursor, tl_id_or_name, start_date=None, end_date=None, lookback_months=12, sort_by='risk'):
+    """
+    Fetches comprehensive franchisee portfolio breakdown for a TL with collection risk forecasting.
+    """
+    aliases = _get_entity_aliases(cursor, 'employee', tl_id_or_name, tl_id_or_name)
+    if not aliases:
+        aliases = [str(tl_id_or_name).strip()]
+
+    placeholders = ", ".join(["%s"] * len(aliases))
+
+    # TL historical conversion rate
+    tl_conv_rate, tl_resolved_deals = _calc_tl_conversion_rate(cursor, aliases, lookback_months)
+
+    # Base date filter on enquiries
+    date_filter = ""
+    date_params = []
+    if start_date and end_date:
+        date_filter = "AND (e.created_at BETWEEN %s AND %s OR i.billDate BETWEEN %s AND %s)"
+        date_params = [start_date, end_date, start_date, end_date]
+
+    # Query all enquiries and invoices under this TL grouped by franchisee
+    query = f"""
+        SELECT 
+            COALESCE(NULLIF(TRIM(e.franchiseeName), ''), 'Direct / Unattributed') AS franchisee_name,
+            e.id AS enquiry_id,
+            e.enquiryStatus AS enquiry_status,
+            COALESCE(e.placementFees, 50000.0) AS enq_amount,
+            i.id AS invoice_id,
+            i.billNumber AS bill_number,
+            i.billDate AS bill_date,
+            COALESCE(i.serviceCharges, 0.0) AS invoice_amount,
+            COALESCE(i.ourShare, i.serviceCharges - COALESCE(i.franchiseeShare, 0.0)) AS net_amount,
+            COALESCE(DATEDIFF(CURDATE(), COALESCE(i.billDate, e.dateOfAllocation, e.created_at)), 30) AS days_outstanding
+        FROM enquiries e
+        LEFT JOIN invoice i ON i.enquiry_id = e.id
+        WHERE (LOWER(TRIM(e.teamLeaderName)) IN ({placeholders}) OR e.teamLeaderName IN ({placeholders}))
+          {date_filter}
+        ORDER BY franchisee_name ASC, days_outstanding DESC
+    """
+    cursor.execute(query, aliases + aliases + date_params)
+    rows = cursor.fetchall()
+
+    franchisee_map = {}
+
+    for r in rows:
+        fname = r['franchisee_name']
+        if fname not in franchisee_map:
+            franchisee_map[fname] = {
+                'name': fname,
+                'deals_count': 0,
+                'gross': 0.0,
+                'received': 0.0,
+                'received_count': 0,
+                'outstanding': 0.0,
+                'outstanding_count': 0,
+                'cancelled': 0.0,
+                'cancelled_count': 0,
+                'credit_notes': 0.0,
+                'credit_notes_count': 0,
+                'admin_closures': 0.0,
+                'admin_closures_count': 0,
+                'outstanding_items': []
+            }
+
+        st = str(r['enquiry_status'] or 'inprogress').strip().lower()
+        inv_amt = float(r['invoice_amount'] or 0.0)
+        enq_amt = float(r['enq_amount'] or 50000.0)
+        eff_amt = inv_amt if inv_amt > 0 else enq_amt
+        days = int(r['days_outstanding'] or 30)
+
+        # 1. Commercial State Classification
+        if st in ('closed', 'offered_and_accepted', 'invoiced') and (r['bill_number'] or inv_amt > 0):
+            franchisee_map[fname]['received'] += eff_amt
+            franchisee_map[fname]['received_count'] += 1
+            franchisee_map[fname]['deals_count'] += 1
+
+        elif st == 'credit_note':
+            franchisee_map[fname]['credit_notes'] += eff_amt
+            franchisee_map[fname]['credit_notes_count'] += 1
+
+        elif st in ('cancelled', 'offered_and_rejected'):
+            franchisee_map[fname]['cancelled'] += eff_amt
+            franchisee_map[fname]['cancelled_count'] += 1
+            franchisee_map[fname]['deals_count'] += 1
+
+        elif st == 'internally_closed':
+            # Excluded from commercial Gross; tracked as admin audit note
+            franchisee_map[fname]['admin_closures'] += eff_amt
+            franchisee_map[fname]['admin_closures_count'] += 1
+
+        else: # inprogress, reallocation, position_hold, revised
+            franchisee_map[fname]['outstanding'] += eff_amt
+            franchisee_map[fname]['outstanding_count'] += 1
+            franchisee_map[fname]['deals_count'] += 1
+            franchisee_map[fname]['outstanding_items'].append({
+                'enquiry_id': r['enquiry_id'],
+                'amount': eff_amt,
+                'status': st,
+                'days_outstanding': days
+            })
+
+    # Calculate metrics and risk scores per franchisee
+    franchisee_list = []
+    tot_gross = 0.0
+    tot_received = 0.0
+    tot_outstanding = 0.0
+    tot_cancelled = 0.0
+    tot_credit_notes = 0.0
+    tot_admin_closures = 0.0
+    tot_admin_closures_cnt = 0
+    tot_expected_collectible = 0.0
+
+    for fname, f in franchisee_map.items():
+        # Commercial Gross = Received + Outstanding + Cancelled - CreditNotes
+        f_gross = round(f['received'] + f['outstanding'] + f['cancelled'] - f['credit_notes'], 2)
+        f_received = round(f['received'], 2)
+        f_outstanding = round(f['outstanding'], 2)
+        f_cancelled = round(f['cancelled'], 2)
+        f_credit_notes = round(f['credit_notes'], 2)
+
+        # Zero-gross division guards
+        rec_pct = round((f_received / f_gross * 100.0) if f_gross > 0 else 0.0, 1)
+        canc_pct = round((f_cancelled / f_gross * 100.0) if f_gross > 0 else 0.0, 1)
+
+        # Franchisee Track Record
+        fran_conv_rate, fran_resolved = _calc_franchisee_track_record(cursor, fname, lookback_months)
+
+        # Evaluate Collection Risk for Outstanding items
+        if f_outstanding > 0 and f['outstanding_items']:
+            # Weighted average aging factor across outstanding items
+            weighted_aging = sum(
+                item['amount'] * _calc_aging_factor(item['days_outstanding'], item['status'])
+                for item in f['outstanding_items']
+            ) / max(1.0, f_outstanding)
+            avg_days = int(sum(item['days_outstanding'] for item in f['outstanding_items']) / len(f['outstanding_items']))
+        else:
+            weighted_aging = 100.0
+            avg_days = 0
+
+        # Collection Risk Score (0-100)
+        risk_score = (0.45 * weighted_aging) + (0.35 * tl_conv_rate) + (0.20 * fran_conv_rate)
+        risk_score = round(max(0.0, min(100.0, risk_score)), 1)
+
+        # Risk Band
+        if risk_score >= 70.0:
+            risk_band = 'Likely to Collect 🟢'
+            risk_band_key = 'likely'
+        elif risk_score >= 40.0:
+            risk_band = 'Needs Follow-up 🟡'
+            risk_band_key = 'follow_up'
+        else:
+            risk_band = 'At Risk of Cancellation 🔴'
+            risk_band_key = 'at_risk'
+
+        # Expected Collectible Amount = Outstanding * (RiskScore / 100)
+        expected_collectible = round(f_outstanding * (risk_score / 100.0), 2)
+
+        franchisee_list.append({
+            'name': fname,
+            'gross': f_gross,
+            'received': f_received,
+            'received_count': f['received_count'],
+            'received_pct': rec_pct,
+            'outstanding': f_outstanding,
+            'outstanding_count': f['outstanding_count'],
+            'avg_days_outstanding': avg_days,
+            'cancelled': f_cancelled,
+            'cancelled_count': f['cancelled_count'],
+            'cancelled_pct': canc_pct,
+            'credit_notes': f_credit_notes,
+            'credit_notes_count': f['credit_notes_count'],
+            'admin_closures': round(f['admin_closures'], 2),
+            'admin_closures_count': f['admin_closures_count'],
+            'collection_risk': {
+                'score': risk_score,
+                'band': risk_band,
+                'band_key': risk_band_key,
+                'aging_factor': round(weighted_aging, 1),
+                'tl_conversion_rate': tl_conv_rate,
+                'franchisee_track_record': fran_conv_rate
+            },
+            'expected_collectible': expected_collectible
+        })
+
+        tot_gross += f_gross
+        tot_received += f_received
+        tot_outstanding += f_outstanding
+        tot_cancelled += f_cancelled
+        tot_credit_notes += f_credit_notes
+        tot_admin_closures += f['admin_closures']
+        tot_admin_closures_cnt += f['admin_closures_count']
+        tot_expected_collectible += expected_collectible
+
+    # Sorting logic
+    if sort_by == 'gross':
+        franchisee_list.sort(key=lambda x: x['gross'], reverse=True)
+    elif sort_by == 'outstanding':
+        franchisee_list.sort(key=lambda x: x['outstanding'], reverse=True)
+    else: # Default: Highest Risk Outstanding First (lowest collection score with outstanding > 0)
+        franchisee_list.sort(key=lambda x: (0 if x['outstanding'] > 0 else 1, x['collection_risk']['score'], -x['outstanding']))
+
+    # Mathematical reconciliation check (tolerance > 5.0 to absorb float rounding)
+    expected_sum = tot_received + tot_outstanding + tot_cancelled - tot_credit_notes
+    variance = round(abs(tot_gross - expected_sum), 2)
+    is_reconciled = variance <= 5.0
+
+    return {
+        'tl_name': tl_id_or_name,
+        'resolved_tl_name': _resolve_entity_info(cursor, 'employee', tl_id_or_name),
+        'lookback_months': lookback_months,
+        'totals': {
+            'gross': round(tot_gross, 2),
+            'received': round(tot_received, 2),
+            'received_pct': round((tot_received / tot_gross * 100.0) if tot_gross > 0 else 0.0, 1),
+            'outstanding': round(tot_outstanding, 2),
+            'outstanding_pct': round((tot_outstanding / tot_gross * 100.0) if tot_gross > 0 else 0.0, 1),
+            'cancelled': round(tot_cancelled, 2),
+            'cancelled_pct': round((tot_cancelled / tot_gross * 100.0) if tot_gross > 0 else 0.0, 1),
+            'credit_notes': round(tot_credit_notes, 2),
+            'admin_closures': round(tot_admin_closures, 2),
+            'admin_closures_count': tot_admin_closures_cnt,
+            'expected_collectible': round(tot_expected_collectible, 2),
+            'expected_loss': round(max(0.0, tot_outstanding - tot_expected_collectible), 2),
+            'reconciled': is_reconciled,
+            'variance': variance
+        },
+        'franchisees': franchisee_list
+    }
+
+
+# --------------------------------------------------------------------------
+# 5. GET /api/tl-tracking/<tl_id>/portfolio
+# --------------------------------------------------------------------------
+@growth_tracking_bp.route("/api/tl-tracking/<tl_id>/portfolio", methods=["GET"])
+def get_tl_portfolio(tl_id):
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+    lookback_months = int(request.args.get("lookback_months", "12"))
+    sort_by = request.args.get("sort_by", "risk").strip().lower()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        data = _fetch_tl_portfolio(cursor, tl_id, start_date, end_date, lookback_months, sort_by)
+        return jsonify(data)
+    except Exception as e:
+        print(f"[get_tl_portfolio] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+
+# --------------------------------------------------------------------------
+# 6. GET /api/tl-tracking/leaderboard
+# --------------------------------------------------------------------------
+@growth_tracking_bp.route("/api/tl-tracking/leaderboard", methods=["GET"])
+def get_tl_tracking_leaderboard():
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+    lookback_months = int(request.args.get("lookback_months", "12"))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Fetch all distinct TLs from enquiries table
+        cursor.execute("""
+            SELECT DISTINCT e.teamLeaderName 
+            FROM enquiries e
+            WHERE e.teamLeaderName IS NOT NULL AND TRIM(e.teamLeaderName) != ''
+              AND LOWER(TRIM(e.teamLeaderName)) NOT IN ('head office', 'head  - office', 'unknown')
+        """)
+        tl_rows = cursor.fetchall()
+        
+        leaderboard = []
+        for r in tl_rows:
+            tl_name = r['teamLeaderName'].strip()
+            port = _fetch_tl_portfolio(cursor, tl_name, start_date, end_date, lookback_months, sort_by='gross')
+            t = port['totals']
+            leaderboard.append({
+                'tl_name': tl_name,
+                'resolved_name': port['resolved_tl_name'],
+                'gross': t['gross'],
+                'received': t['received'],
+                'received_pct': t['received_pct'],
+                'outstanding': t['outstanding'],
+                'outstanding_pct': t['outstanding_pct'],
+                'expected_collectible': t['expected_collectible'],
+                'expected_loss': t['expected_loss'],
+                'cancelled': t['cancelled'],
+                'cancelled_pct': t['cancelled_pct'],
+                'credit_notes': t['credit_notes'],
+                'admin_closures': t['admin_closures'],
+                'admin_closures_count': t['admin_closures_count'],
+                'franchisees_count': len(port['franchisees']),
+                'reconciled': t['reconciled']
+            })
+
+        leaderboard.sort(key=lambda x: x['gross'], reverse=True)
+        return jsonify({
+            'period': {'start_date': start_date, 'end_date': end_date, 'lookback_months': lookback_months},
+            'leaderboard': leaderboard
+        })
+    except Exception as e:
+        print(f"[get_tl_tracking_leaderboard] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
