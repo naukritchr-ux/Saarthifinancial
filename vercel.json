@@ -1,6 +1,13 @@
 {
+  "buildCommand": "cd fintective-project-main/frontend && npm install && npm run build",
+  "outputDirectory": "fintective-project-main/frontend/dist",
+  "framework": "vite",
   "cleanUrls": true,
   "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://saarthifinancial.onrender.com/api/$1"
+    },
     {
       "source": "/(.*)",
       "destination": "/index.html"

@@ -415,17 +415,8 @@ export const FinanceProvider = ({ children }) => {
           } catch (e) {}
         }
       }
-
-      if (loadedFromBackend) {
-        const nowFormatted = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        setLastSyncedAt(nowFormatted);
-        try { sessionStorage.setItem('fintective_last_synced_at', nowFormatted); } catch (e) {}
-      }
     } catch (err) {
       console.warn('Backend connection issue, checking fallback...', err.message);
-    } finally {
-      setIsLoadingData(false);
-      setIsBackgroundSyncing(false);
     }
 
     // Direct live API fetch fallback if backend is unreachable
@@ -640,6 +631,14 @@ export const FinanceProvider = ({ children }) => {
         console.error('Direct HTTPS live API fetch failed:', liveErr);
       }
     }
+
+    // Always update lastSyncedAt and release syncing spinner upon completion
+    const nowFormatted = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setLastSyncedAt(nowFormatted);
+    try { sessionStorage.setItem('fintective_last_synced_at', nowFormatted); } catch (e) {}
+    setIsLoadingData(false);
+    setIsBackgroundSyncing(false);
+
     return loadedFromBackend;
   };
 
