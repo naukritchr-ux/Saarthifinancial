@@ -347,32 +347,30 @@ def get_transactions():
             salary_rows = []
             fran_fee_rows = []
             
-            # A. Get BD agents and Franchisees lists (using stable name-hash IDs so IDs always match /api/bd-agents)
-            bd_agents_list = []
+            # A. Get BD agents and Franchisees maps (using stable name-hash IDs so IDs always match /api/bd-agents)
+            bd_map = {}
             try:
-                cursor.execute("SELECT DISTINCT bdMemberName FROM enquiries WHERE bdMemberName IS NOT NULL AND bdMemberName != '' ORDER BY bdMemberName ASC LIMIT 50")
+                cursor.execute("SELECT DISTINCT bdMemberName FROM enquiries WHERE bdMemberName IS NOT NULL AND bdMemberName != ''")
                 bd_rows = cursor.fetchall()
                 for r in bd_rows:
                     clean_name = r['bdMemberName'].strip()
-                    # Deterministic MD5-based stable ID
-                    stable_id = make_stable_id('bd', clean_name)
-                    bd_agents_list.append({ 'id': stable_id, 'name': clean_name.lower() })
+                    if clean_name:
+                        bd_map[clean_name.lower()] = make_stable_id('bd', clean_name)
             except Exception as e:
                 print('Could not load BD agents for mapping:', str(e))
 
-            franchises_list = []
+            fran_map = {}
             try:
                 cursor.execute("""
                     SELECT DISTINCT nameAsPerAgreement AS name 
                     FROM franchisees_forms 
                     WHERE nameAsPerAgreement IS NOT NULL AND nameAsPerAgreement != '' AND nameAsPerAgreement != 'Unknown'
-                    ORDER BY nameAsPerAgreement ASC
                 """)
                 fran_rows = cursor.fetchall()
                 for r in fran_rows:
                     clean_name = r['name'].strip()
-                    stable_id = make_stable_id('f', clean_name)
-                    franchises_list.append({ 'id': stable_id, 'name': clean_name.lower() })
+                    if clean_name:
+                        fran_map[clean_name.lower()] = make_stable_id('f', clean_name)
             except Exception as e:
                 print('Could not load franchises for mapping from franchisees_forms:', str(e))
 
@@ -452,13 +450,13 @@ def get_transactions():
                     tl_name = (inv.get('teamLeader') or '').strip()
                     date_val = inv.get('date') or '2026-08-01'
                     
-                    # Exact lowercase match first, then partial
-                    bd = next((b for b in bd_agents_list if b['name'] == raw_bd_name.lower()), None)
-                    if not bd:
-                        bd = next((b for b in bd_agents_list if raw_bd_name and raw_bd_name.lower() in b['name']), None)
-                    fran = next((f for f in franchises_list if f['name'] == raw_fran_name.lower()), None)
-                    if not fran:
-                        fran = next((f for f in franchises_list if raw_fran_name and raw_fran_name.lower() in f['name']), None)
+                    # Fast O(1) hash map lookups with deterministic fallback
+                    bd_id = bd_map.get(raw_bd_name.lower()) if raw_bd_name else None
+                    if not bd_id and raw_bd_name:
+                        bd_id = make_stable_id('bd', raw_bd_name)
+                    fran_id = fran_map.get(raw_fran_name.lower()) if raw_fran_name else None
+                    if not fran_id and raw_fran_name:
+                        fran_id = make_stable_id('f', raw_fran_name)
                     
                     # Financial year evaluation
                     fy = inv.get('financialYear')
@@ -487,8 +485,8 @@ def get_transactions():
                         'paymentMode': inv.get('payment_mode') or 'Net Banking',
                         'referenceId': inv.get('billNumber') or f"INV-{inv_id}",
                         'description': f"Placed Candidate: {inv.get('candidateName') or 'Candidate'}",
-                        'bdAgentId': bd['id'] if bd else None,
-                        'franchiseeId': fran['id'] if fran else None,
+                        'bdAgentId': bd_id,
+                        'franchiseeId': fran_id,
                         'bdMemberName': raw_bd_name,
                         'franchiseeName': raw_fran_name,
                         'teamLeaderName': tl_name,
@@ -516,8 +514,8 @@ def get_transactions():
                             'paymentMode': 'Net Banking',
                             'referenceId': f"FP-{inv.get('billNumber') or inv_id}",
                             'description': f"Franchisee royalty share payout for invoice {inv.get('billNumber') or inv_id}",
-                            'bdAgentId': bd['id'] if bd else None,
-                            'franchiseeId': fran['id'] if fran else None,
+                            'bdAgentId': bd_id,
+                            'franchiseeId': fran_id,
                             'financialYear': fy
                         })
 
@@ -548,8 +546,12 @@ def get_transactions():
                             
                         raw_bd = (enq.get('bdMemberName') or '').strip()
                         raw_fran = (enq.get('franchiseeName') or '').strip()
-                        bd = next((b for b in bd_agents_list if b['name'] == raw_bd.lower()), None)
-                        fran = next((f for f in franchises_list if f['name'] == raw_fran.lower()), None)
+                        bd_id = bd_map.get(raw_bd.lower()) if raw_bd else None
+                        if not bd_id and raw_bd:
+                            bd_id = make_stable_id('bd', raw_bd)
+                        fran_id = fran_map.get(raw_fran.lower()) if raw_fran else None
+                        if not fran_id and raw_fran:
+                            fran_id = make_stable_id('f', raw_fran)
                         
                         split_info = get_share_split(e_date, franchise_name=raw_fran)
                         e_r_share = e_amt * split_info['company_pct']
@@ -567,8 +569,8 @@ def get_transactions():
                             'paymentMode': 'Net Banking',
                             'referenceId': enq.get('bill_no') or f"ENQ-{enq['id']}",
                             'description': f"Enquiry Placement: {enq.get('positionName') or 'Position'}",
-                            'bdAgentId': bd['id'] if bd else None,
-                            'franchiseeId': fran['id'] if fran else None,
+                            'bdAgentId': bd_id,
+                            'franchiseeId': fran_id,
                             'bdMemberName': raw_bd,
                             'franchiseeName': raw_fran,
                             'teamLeaderName': enq.get('teamLeaderName') or '',
@@ -732,16 +734,9 @@ def get_transactions():
                     # TL share dynamically calculated
                     tl_comm = service_charges_calc * company_pool * tl_comm_rate
                     
-                    # Map IDs safely
-                    mapped_bd_agent_id = row.get('bdAgentId')
-                    if not mapped_bd_agent_id:
-                        matched_bd = next((b for b in bd_agents_list if b['name'] == (row.get('bdMemberName') or '').strip().lower()), None)
-                        mapped_bd_agent_id = matched_bd['id'] if matched_bd else None
-                    
-                    mapped_franchisee_id = row.get('franchiseeId')
-                    if not mapped_franchisee_id:
-                        matched_fran = next((f for f in franchises_list if f['name'] == (row.get('franchiseeName') or '').strip().lower()), None)
-                        mapped_franchisee_id = matched_fran['id'] if matched_fran else None
+                    # Map IDs safely (O(1))
+                    mapped_bd_agent_id = row.get('bdAgentId') or (bd_map.get((row.get('bdMemberName') or '').strip().lower()) if row.get('bdMemberName') else None)
+                    mapped_franchisee_id = row.get('franchiseeId') or (fran_map.get((row.get('franchiseeName') or '').strip().lower()) if row.get('franchiseeName') else None)
                         
                     # Add BD Accrued Commission Outflow
                     combined.append({
@@ -795,11 +790,8 @@ def get_transactions():
                     for row in salary_rows:
                         emp_name = (row['employee_name'] or '').strip().lower()
                         
-                        # Match employee to active BD agents if applicable
-                        mapped_bd_agent_id = None
-                        matched_bd = next((b for b in bd_agents_list if b['name'] == emp_name), None)
-                        if matched_bd:
-                            mapped_bd_agent_id = matched_bd['id']
+                        # Match employee to active BD agents if applicable (O(1))
+                        mapped_bd_agent_id = bd_map.get(emp_name) if emp_name else None
                         
                         combined.append({
                             'id': f"real-salary-{row['id']}",
