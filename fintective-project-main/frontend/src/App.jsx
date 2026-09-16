@@ -14,6 +14,7 @@ import CashOutflow from './pages/CashOutflow';
 import Reports from './pages/Reports';
 import RunwayRoiTracker from './pages/RunwayRoiTracker';
 import GrowthTracking from './pages/GrowthTracking';
+import IndustryAnalysis from './pages/IndustryAnalysis';
 import Login from './pages/Login';
 
 class ErrorBoundary extends React.Component {
@@ -64,6 +65,8 @@ function AppContent() {
         return <Franchisees />;
       case 'bd-performance':
         return <BDPerformance />;
+      case 'industry-analysis':
+        return <IndustryAnalysis />;
       case 'tl-performance':
         return <TLPerformance />;
       case 'portal-analytics':

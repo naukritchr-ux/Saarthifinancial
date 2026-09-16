@@ -126,13 +126,14 @@ def sync_saarthi_all():
             "error": "A Saarthi sync process is already running. Please wait for it to complete."
         }
 
+    conn = None
     try:
         ensure_tables_exist()
         start_time = datetime.datetime.now()
         log_id = None
         
-        conn = get_db_connection()
         try:
+            conn = get_db_connection()
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO crm_sync_logs (sync_type, status, started_at)
@@ -509,7 +510,11 @@ def sync_saarthi_all():
                 except Exception:
                     pass
         finally:
-            conn.close()
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
         stats["duration_seconds"] = (datetime.datetime.now() - start_time).total_seconds()
         stats["timestamp"] = datetime.datetime.now().isoformat()

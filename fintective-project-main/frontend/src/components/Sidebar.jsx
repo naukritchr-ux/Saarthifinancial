@@ -30,6 +30,7 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
     { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard, section: 'Overview' },
     { id: 'franchisees', name: 'Franchisees', icon: Users, section: 'Analytics' },
     { id: 'bd-performance', name: 'BD performance', icon: TrendingUp, section: 'Analytics' },
+    { id: 'industry-analysis', name: 'Industry & Potential', icon: Briefcase, section: 'Analytics' },
     { id: 'tl-performance', name: 'TL performance', icon: Users, section: 'Analytics' },
     { id: 'roi-tracker', name: 'Runway & ROI', icon: Briefcase, section: 'Analytics' },
     { id: 'growth-tracking', name: 'Growth targets', icon: Award, section: 'Analytics' },
@@ -39,6 +40,7 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
 
   const jobPortalItems = [
     { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard, section: 'Overview' },
+    { id: 'industry-analysis', name: 'Industry & Potential', icon: Briefcase, section: 'Analytics' },
     { id: 'portal-analytics', name: 'Portal Analytics', icon: Globe, section: 'Analytics' },
     { id: 'cash-outflow', name: 'Cash Outflow', icon: TrendingDown, section: 'Analytics' },
     { id: 'reports', name: 'Reports', icon: FileSpreadsheet, section: 'Analytics' }
@@ -49,7 +51,7 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
   // Hide specific admin-only directories if view role is restricted
   const allowedItems = menuItems.filter(item => {
     if (userRole === 'admin') return true;
-    const adminOnlyTabs = ['franchisees', 'bd-performance', 'tl-performance', 'cash-outflow', 'portal-analytics', 'roi-tracker', 'growth-tracking'];
+    const adminOnlyTabs = ['franchisees', 'bd-performance', 'industry-analysis', 'tl-performance', 'cash-outflow', 'portal-analytics', 'roi-tracker', 'growth-tracking'];
     return !adminOnlyTabs.includes(item.id);
   });
 
