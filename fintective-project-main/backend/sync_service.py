@@ -170,18 +170,20 @@ def sync_saarthi_all():
                     name = str(f.get("nameAsPerAgreement") or f.get("franchiseName") or f.get("name") or "").strip()
                     tl = str(f.get("teamLeaderName") or f.get("teamLeader") or "").strip()
                     onboard = normalize_date(f.get("onboardingDate") or f.get("dateOfAgreement") or f.get("createdAt"))
+                    st = str(f.get("status") or "active").strip().lower()
                     if name:
-                        fran_rows.append((name, tl, onboard))
+                        fran_rows.append((name, tl, onboard, st))
                         form_rows.append((name, tl))
 
                 with conn.cursor() as cur:
                     for batch in chunked(fran_rows, 500):
                         cur.executemany("""
                             INSERT INTO franchisees (nameAsPerAgreement, teamLeaderName, onboardingDate, status)
-                            VALUES (%s, %s, %s, 'active')
+                            VALUES (%s, %s, %s, %s)
                             ON DUPLICATE KEY UPDATE
                                 teamLeaderName = VALUES(teamLeaderName),
-                                onboardingDate = COALESCE(VALUES(onboardingDate), onboardingDate)
+                                onboardingDate = COALESCE(VALUES(onboardingDate), onboardingDate),
+                                status = VALUES(status)
                         """, batch)
                     for batch in chunked(form_rows, 500):
                         cur.executemany("""
@@ -327,18 +329,28 @@ def sync_saarthi_all():
                                 billNumber = VALUES(billNumber),
                                 billDate = VALUES(billDate),
                                 serviceCharges = VALUES(serviceCharges),
+                                serviceCharge = VALUES(serviceCharge),
+                                totalGST = VALUES(totalGST),
                                 totalBillAmt = VALUES(totalBillAmt),
                                 franchiseeShare = VALUES(franchiseeShare),
+                                franchiseeGST = VALUES(franchiseeGST),
                                 ourShare = VALUES(ourShare),
                                 amountReceived = VALUES(amountReceived),
                                 amountDue = VALUES(amountDue),
                                 tds = VALUES(tds),
+                                tdsFF = VALUES(tdsFF),
+                                dateReceived = VALUES(dateReceived),
+                                paidOnDate = VALUES(paidOnDate),
+                                payment_mode = VALUES(payment_mode),
+                                uid_transaction_id = VALUES(uid_transaction_id),
                                 nameOfBd = VALUES(nameOfBd),
                                 teamLeader = VALUES(teamLeader),
                                 franchiseName = VALUES(franchiseName),
                                 financialYear = VALUES(financialYear),
+                                candidateName = VALUES(candidateName),
                                 companyName = VALUES(companyName),
                                 postOfCandidate = VALUES(postOfCandidate),
+                                annualSalaryOffered = VALUES(annualSalaryOffered),
                                 info = VALUES(info),
                                 status = VALUES(status)
                         """, batch)
@@ -362,16 +374,17 @@ def sync_saarthi_all():
                     exp_type = str(exp.get("expenseType") or exp.get("type") or "expense").strip()
                     bd_id = str(exp.get("bdAgentId") or "").strip() or None
                     fran_id = str(exp.get("franchiseeId") or "").strip() or None
+                    is_deleted = 1 if exp.get("is_deleted") or exp.get("isDeleted") else 0
 
                     if amt > 0 or part:
-                        exp_rows.append((sr, b_date, part, exp_name, amt, net, exp_type, bd_id, fran_id))
+                        exp_rows.append((sr, b_date, part, exp_name, amt, net, exp_type, bd_id, fran_id, is_deleted))
 
                 with conn.cursor() as cur:
                     for batch in chunked(exp_rows, 500):
                         cur.executemany("""
                             INSERT INTO expenditure (
                                 srNo, billDate, particulars, expenses, amount, net, expenseType, bdAgentId, franchiseeId, is_deleted
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 0)
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             ON DUPLICATE KEY UPDATE
                                 billDate = VALUES(billDate),
                                 particulars = VALUES(particulars),
@@ -380,7 +393,8 @@ def sync_saarthi_all():
                                 net = VALUES(net),
                                 expenseType = VALUES(expenseType),
                                 bdAgentId = VALUES(bdAgentId),
-                                franchiseeId = VALUES(franchiseeId)
+                                franchiseeId = VALUES(franchiseeId),
+                                is_deleted = VALUES(is_deleted)
                         """, batch)
                 stats["expenses"] = len(exp_rows)
                 print(f"[SYNC OK] Synced {stats['expenses']} Expenses.")
