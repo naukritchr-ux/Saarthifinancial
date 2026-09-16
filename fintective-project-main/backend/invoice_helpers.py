@@ -76,6 +76,30 @@ def format_date_for_mysql(date_str):
 # - Franchisees who have NOT completed 3 years (< 3 years tenure): 75% franchisee / 25% company (75 - 25).
 
 _FRANCHISEE_ONBOARD_CACHE = {}
+_FRANCHISEE_CACHE_INITIALIZED = False
+
+
+def _init_franchisee_onboard_cache():
+    global _FRANCHISEE_ONBOARD_CACHE, _FRANCHISEE_CACHE_INITIALIZED
+    if _FRANCHISEE_CACHE_INITIALIZED:
+        return
+    try:
+        from db import get_db_connection
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT LOWER(TRIM(nameAsPerAgreement)) AS name, onboardingDate, created_at FROM franchisees WHERE nameAsPerAgreement IS NOT NULL AND nameAsPerAgreement != ''")
+                rows = cursor.fetchall()
+                for r in rows:
+                    n = r.get('name')
+                    d = r.get('onboardingDate') or r.get('created_at')
+                    if n and d:
+                        _FRANCHISEE_ONBOARD_CACHE[n] = str(d)
+                _FRANCHISEE_CACHE_INITIALIZED = True
+        finally:
+            conn.close()
+    except Exception:
+        pass
 
 
 def get_franchisee_onboarding_date(franchise_name: str):
@@ -86,6 +110,11 @@ def get_franchisee_onboarding_date(franchise_name: str):
     clean_name = franchise_name.strip().lower()
     if clean_name in _FRANCHISEE_ONBOARD_CACHE:
         return _FRANCHISEE_ONBOARD_CACHE[clean_name]
+
+    if not _FRANCHISEE_CACHE_INITIALIZED:
+        _init_franchisee_onboard_cache()
+        if clean_name in _FRANCHISEE_ONBOARD_CACHE:
+            return _FRANCHISEE_ONBOARD_CACHE[clean_name]
 
     try:
         from db import get_db_connection
@@ -100,8 +129,8 @@ def get_franchisee_onboarding_date(franchise_name: str):
                 )
                 row = cursor.fetchone()
                 if row and row.get("onboardingDate"):
-                    _FRANCHISEE_ONBOARD_CACHE[clean_name] = row["onboardingDate"]
-                    return row["onboardingDate"]
+                    _FRANCHISEE_ONBOARD_CACHE[clean_name] = str(row["onboardingDate"])
+                    return _FRANCHISEE_ONBOARD_CACHE[clean_name]
 
                 # 2. Check enquiries table for earliest allocation, bill date, or created_at
                 cursor.execute(
@@ -110,17 +139,18 @@ def get_franchisee_onboarding_date(franchise_name: str):
                 )
                 row_enq = cursor.fetchone()
                 if row_enq and row_enq.get("min_date"):
-                    _FRANCHISEE_ONBOARD_CACHE[clean_name] = row_enq["min_date"]
-                    return row_enq["min_date"]
+                    _FRANCHISEE_ONBOARD_CACHE[clean_name] = str(row_enq["min_date"])
+                    return _FRANCHISEE_ONBOARD_CACHE[clean_name]
 
                 if row and row.get("created_at"):
-                    _FRANCHISEE_ONBOARD_CACHE[clean_name] = row["created_at"]
-                    return row["created_at"]
+                    _FRANCHISEE_ONBOARD_CACHE[clean_name] = str(row["created_at"])
+                    return _FRANCHISEE_ONBOARD_CACHE[clean_name]
         finally:
             conn.close()
     except Exception:
         pass
 
+    _FRANCHISEE_ONBOARD_CACHE[clean_name] = None
     return None
 
 

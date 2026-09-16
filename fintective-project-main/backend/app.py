@@ -1,4 +1,5 @@
 import os
+import re
 import datetime
 import warnings
 warnings.filterwarnings('ignore', category=UserWarning)
@@ -777,84 +778,116 @@ def get_transactions():
                     })
 
                 # B. Fetch Actual Salaries from salaryandattendance table (Fix 6)
-                cursor.execute("""
-                    SELECT 
-                        sa.RecordID AS id,
-                        e.name AS employee_name,
-                        sa.SalaryPaid AS amount,
-                        DATE_FORMAT(sa.PaymentDate, '%Y-%m-%d') AS date,
-                        sa.TransactionID AS referenceId,
-                        sa.FinancialYear AS financialYear
-                    FROM salaryandattendance sa
-                    LEFT JOIN employees e ON e.id = sa.EmployeeID
-                    WHERE sa.SalaryPaid IS NOT NULL AND sa.SalaryPaid > 0 AND sa.PaymentDate IS NOT NULL
-                """)
-                salary_rows = cursor.fetchall()
-                for row in salary_rows:
-                    emp_name = (row['employee_name'] or '').strip().lower()
-                    
-                    # Match employee to active BD agents if applicable
-                    mapped_bd_agent_id = None
-                    matched_bd = next((b for b in bd_agents_list if b['name'] == emp_name), None)
-                    if matched_bd:
-                        mapped_bd_agent_id = matched_bd['id']
-                    
-                    combined.append({
-                        'id': f"real-salary-{row['id']}",
-                        'title': f"Salary Payout - {row['employee_name'] or 'Employee'}",
-                        'amount': float(row['amount']),
-                        'type': 'expense',
-                        'category': 'Salaries',
-                        'subCategory': 'Monthly Salary',
-                        'date': row['date'],
-                        'paymentMode': 'Net Banking',
-                        'referenceId': row['referenceId'] or f"TX-SAL-{row['id']}",
-                        'description': f"Payroll disbursement for {row['employee_name'] or 'Employee'}",
-                        'bdAgentId': mapped_bd_agent_id,
-                        'franchiseeId': None,
-                        'financialYear': row['financialYear'] or 'N/A'
-                    })
+                try:
+                    cursor.execute("""
+                        SELECT 
+                            sa.RecordID AS id,
+                            e.name AS employee_name,
+                            sa.SalaryPaid AS amount,
+                            DATE_FORMAT(sa.PaymentDate, '%Y-%m-%d') AS date,
+                            sa.TransactionID AS referenceId,
+                            sa.FinancialYear AS financialYear
+                        FROM salaryandattendance sa
+                        LEFT JOIN employees e ON e.id = sa.EmployeeID
+                        WHERE sa.SalaryPaid IS NOT NULL AND sa.SalaryPaid > 0 AND sa.PaymentDate IS NOT NULL
+                    """)
+                    salary_rows = cursor.fetchall()
+                    for row in salary_rows:
+                        emp_name = (row['employee_name'] or '').strip().lower()
+                        
+                        # Match employee to active BD agents if applicable
+                        mapped_bd_agent_id = None
+                        matched_bd = next((b for b in bd_agents_list if b['name'] == emp_name), None)
+                        if matched_bd:
+                            mapped_bd_agent_id = matched_bd['id']
+                        
+                        combined.append({
+                            'id': f"real-salary-{row['id']}",
+                            'title': f"Salary Payout - {row['employee_name'] or 'Employee'}",
+                            'amount': float(row['amount']),
+                            'type': 'expense',
+                            'category': 'Salaries',
+                            'subCategory': 'Monthly Salary',
+                            'date': row['date'],
+                            'paymentMode': 'Net Banking',
+                            'referenceId': row['referenceId'] or f"TX-SAL-{row['id']}",
+                            'description': f"Payroll disbursement for {row['employee_name'] or 'Employee'}",
+                            'bdAgentId': mapped_bd_agent_id,
+                            'franchiseeId': None,
+                            'financialYear': row['financialYear'] or 'N/A'
+                        })
+                except Exception as sal_err:
+                    print('salaryandattendance query bypassed:', str(sal_err))
 
                 # C. Fetch Actual Franchisee Setup Fees from franchisees_forms (Fix 3/MoM Pivot)
-                cursor.execute("""
-                    SELECT 
-                        id,
-                        nameAsPerAgreement AS title,
-                        franchiseeFees AS amount,
-                        DATE_FORMAT(COALESCE(franchiseePaymentReceivedOn, dateOfAgreement, createdAt), '%Y-%m-%d') AS date
-                    FROM franchisees_forms
-                    WHERE franchiseeFees IS NOT NULL AND franchiseeFees > 0
-                """)
-                fran_fee_rows = cursor.fetchall()
-                for row in fran_fee_rows:
-                    # Dynamically evaluate financial year from date
-                    fy_calc = 'N/A'
-                    if row['date']:
-                        try:
-                            dt = datetime.datetime.strptime(row['date'], '%Y-%m-%d')
-                            y = dt.year
-                            m = dt.month
-                            fy_calc = f"{y}-{y+1}" if m >= 4 else f"{y-1}-{y}"
-                        except:
-                            pass
-                            
-                    combined.append({
-                        'id': f"fran-fee-{row['id']}",
-                        'title': f"Franchisee Setup Fee - {row['title']}",
-                        'amount': float(row['amount']),
-                        'type': 'income',
-                        'category': 'Franchisee fee',
-                        'subCategory': 'Setup Fee',
-                        'date': row['date'],
-                        'paymentMode': 'Net Banking',
-                        'referenceId': f"FF-{row['id']}",
-                        'description': f"Setup fee received from {row['title']}",
-                        'bdAgentId': None,
-                        'franchiseeId': None,
-                        'financialYear': fy_calc
-                    })
+                try:
+                    cursor.execute("""
+                        SELECT 
+                            id,
+                            nameAsPerAgreement AS title,
+                            franchiseeFees AS amount,
+                            DATE_FORMAT(COALESCE(franchiseePaymentReceivedOn, dateOfAgreement, createdAt), '%Y-%m-%d') AS date
+                        FROM franchisees_forms
+                        WHERE franchiseeFees IS NOT NULL AND franchiseeFees > 0
+                    """)
+                    fran_fee_rows = cursor.fetchall()
+                    for row in fran_fee_rows:
+                        # Dynamically evaluate financial year from date
+                        fy_calc = 'N/A'
+                        if row['date']:
+                            try:
+                                dt = datetime.datetime.strptime(row['date'], '%Y-%m-%d')
+                                y = dt.year
+                                m = dt.month
+                                fy_calc = f"{y}-{y+1}" if m >= 4 else f"{y-1}-{y}"
+                            except:
+                                pass
+                                
+                        combined.append({
+                            'id': f"fran-fee-{row['id']}",
+                            'title': f"Franchisee Setup Fee - {row['title']}",
+                            'amount': float(row['amount']),
+                            'type': 'income',
+                            'category': 'Franchisee fee',
+                            'subCategory': 'Setup Fee',
+                            'date': row['date'],
+                            'paymentMode': 'Net Banking',
+                            'referenceId': f"FF-{row['id']}",
+                            'description': f"Setup fee received from {row['title']}",
+                            'bdAgentId': None,
+                            'franchiseeId': None,
+                            'financialYear': fy_calc
+                        })
+                except Exception as ff_err:
+                    print('franchisees_forms query bypassed:', str(ff_err))
+
             except Exception as err:
-                print('expenditure/franchisee fees query bypassed:', str(err))
+                print('expenditure/commissions query bypassed:', str(err))
+
+            # Standardize financialYear across all combined transaction entries
+            for tx in combined:
+                raw_fy = tx.get('financialYear')
+                d_str = tx.get('date')
+                std_fy = None
+                if raw_fy and raw_fy != 'N/A':
+                    m4 = re.match(r'^(\d{4})-(\d{4})$', str(raw_fy).strip())
+                    if m4 and int(m4.group(2)) == int(m4.group(1)) + 1:
+                        std_fy = f"{m4.group(1)}-{m4.group(2)}"
+                    else:
+                        m2 = re.match(r'^(\d{4})-(\d{2})$', str(raw_fy).strip())
+                        if m2:
+                            y1 = int(m2.group(1))
+                            y2 = (y1 // 100) * 100 + int(m2.group(2))
+                            if y2 == y1 + 1:
+                                std_fy = f"{y1}-{y2}"
+                if not std_fy and d_str:
+                    try:
+                        y = int(str(d_str)[:4])
+                        m = int(str(d_str)[5:7])
+                        std_fy = f"{y}-{y+1}" if m >= 4 else f"{y-1}-{y}"
+                    except:
+                        pass
+                tx['financialYear'] = std_fy or '2026-2027'
 
             # Filter by query parameters
             filtered_result = combined
