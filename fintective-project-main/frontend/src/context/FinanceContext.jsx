@@ -6,7 +6,7 @@ export const FinanceContext = createContext();
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 
   (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '0.0.0.0')
     ? 'http://localhost:5000/api' 
-    : 'https://saarthifinancial.onrender.com/api');
+    : '/api');
 
 const DEFAULT_FRANCHISEES = [
   { id: 'f-1', name: 'Sandeep', owner: 'Avadai Esakki', city: 'Nagpur', teamLeaderName: 'Avadai Esakki Muthu Sundaram Marthuvar', onboardingDate: '2024-04-01', status: 'Active', candidatesPlaced: 12 },
@@ -409,8 +409,8 @@ export const FinanceProvider = ({ children }) => {
   });
   const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
 
-  // Helper with fast 12-second abort timeout so user is never stalled
-  const fetchWithTimeout = async (url, options = {}, timeoutMs = 12000) => {
+  // Helper with 35-second abort timeout for resilient cold-starts
+  const fetchWithTimeout = async (url, options = {}, timeoutMs = 35000) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {

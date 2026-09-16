@@ -129,6 +129,13 @@ def get_enq_exclude_clause(table_prefix=""):
         return f"{prefix}id NOT IN ({ids_str})"
     return "1=1"
 
+def get_collision_filter_and_params():
+    ensure_exclusions_fresh()
+    if COLLIDING_BILL_NUMBERS:
+        placeholders = ', '.join(['%s'] * len(COLLIDING_BILL_NUMBERS))
+        return f"AND billNumber NOT IN ({placeholders})", list(COLLIDING_BILL_NUMBERS)
+    return "", []
+
 def get_potential_loss(cursor, group_by_field=None, start_date=None, end_date=None):
     enq_clause = get_enq_exclude_clause()
     status_clause = "enquiryStatus IN ('cancelled', 'offered_and_rejected', 'internally_closed')"
@@ -394,123 +401,191 @@ def get_transactions():
             except Exception as err:
                 print('franchisePayments table query bypassed:', str(err))
 
-            # 2. Fetch Recruitment Inflows from closed/internally closed Enquiries
+            # 2. Fetch Recruitment Inflows directly from ALL Invoices
             try:
-                placeholders = ', '.join(['%s'] * len(COLLIDING_BILL_NUMBERS))
-                enq_clause = get_enq_exclude_clause("e")
-                query = f"""
+                cursor.execute("""
                     SELECT 
-                        CONCAT('enq-pay-', e.id) AS id,
-                        CONCAT('Recruitment Fee - ', e.companyName) AS title,
-                        e.companyName AS companyName,
-                        COALESCE(i.serviceCharges, e.bill_amount, 0) AS amount,
-                        'income' AS type,
-                        'Recruitment' AS category,
-                        e.positionName AS subCategory,
-                        DATE_FORMAT(COALESCE(i.billDate, e.bill_date, e.dateOfAllocation, e.created_at), '%%Y-%%m-%%d') AS date,
-                        'Net Banking' AS paymentMode,
-                        COALESCE(i.billNumber, e.bill_no, 'N/A') AS referenceId,
-                        CONCAT('Placed Candidate: ', COALESCE(i.candidateName, 'Candidate')) AS description,
-                        e.bdMemberName,
-                        e.franchiseeName,
-                        COALESCE(i.serviceCharges, e.bill_amount, 0) AS serviceAmt,
-                        COALESCE(i.ourShare, e.bill_amount * CASE 
-                            WHEN COALESCE(i.billDate, e.bill_date, e.dateOfAllocation, e.created_at) < '2026-04-01' THEN 0.40 
-                            ELSE 0.25 
-                        END, 0) AS rShare,
-                        COALESCE(i.financialYear, 'N/A') AS financialYear,
-                        e.enquiryStatus,
-                        e.teamLeaderName,
-                        e.info AS info
-                    FROM enquiries e
-                    JOIN (
-                        SELECT 
-                            enquiry_id, 
-                            SUM(serviceCharges) AS serviceCharges, 
-                            SUM(serviceCharges - COALESCE(franchiseeShare, 0)) AS ourShare,
-                            MAX(billNumber) AS billNumber, 
-                            MAX(billDate) AS billDate,
-                            MAX(financialYear) AS financialYear,
-                            MAX(candidateName) AS candidateName
-                        FROM invoice
-                        WHERE billNumber IS NOT NULL AND billNumber != '' AND billDate IS NOT NULL
-                          AND billNumber NOT IN ({placeholders})
-                        GROUP BY enquiry_id
-                    ) i ON e.id = i.enquiry_id
-                    WHERE {enq_clause}
-                    LIMIT 10000
-                """
-                params = COLLIDING_BILL_NUMBERS
-                cursor.execute(query, params)
-                enquiry_inflows = cursor.fetchall()
+                        id,
+                        enquiry_id,
+                        companyName,
+                        serviceCharges,
+                        serviceCharge,
+                        totalBillAmt,
+                        franchiseeShare,
+                        ourShare,
+                        amountReceived,
+                        amountDue,
+                        billNumber,
+                        DATE_FORMAT(COALESCE(billDate, dateReceived, paidOnDate), '%Y-%m-%d') AS date,
+                        payment_mode,
+                        candidateName,
+                        nameOfBd,
+                        franchiseName,
+                        teamLeader,
+                        financialYear,
+                        postOfCandidate,
+                        info,
+                        status
+                    FROM invoice
+                    WHERE (serviceCharges > 0 OR totalBillAmt > 0 OR amountReceived > 0)
+                    ORDER BY COALESCE(billDate, dateReceived, paidOnDate) DESC
+                """)
+                all_invoices = cursor.fetchall()
                 
-                for row in enquiry_inflows:
-                    raw_bd_name = (row.get('bdMemberName') or '').strip().lower()
-                    raw_fran_name = (row.get('franchiseeName') or '').strip().lower()
-                    
-                    # Exact lowercase match first, then partial — prevents false cross-matches
-                    bd = next((b for b in bd_agents_list if b['name'] == raw_bd_name), None)
-                    if not bd:
-                        bd = next((b for b in bd_agents_list if raw_bd_name and raw_bd_name in b['name']), None)
-                    fran = next((f for f in franchises_list if f['name'] == raw_fran_name), None)
-                    if not fran:
-                        fran = next((f for f in franchises_list if raw_fran_name and raw_fran_name in f['name']), None)
-                    
-                    # Dynamically evaluate financialYear from date if missing or N/A
-                    fy = row['financialYear']
-                    if not fy or fy == 'N/A':
-                        if row['date']:
-                            try:
-                                y = int(row['date'][:4])
-                                m = int(row['date'][5:7])
-                                fy = f"{y}-{y+1}" if m >= 4 else f"{y-1}-{y}"
-                            except:
-                                pass
+                enquiry_inflows = []
+                seen_enq_ids = set()
 
-                    combined.append({
-                        'id': row['id'],
-                        'title': row['title'],
-                        'companyName': row.get('companyName') or 'N/A',
-                        'amount': float(row['amount']) if row.get('amount') is not None else 0.0,
-                        'type': row['type'],
-                        'category': row['category'],
-                        'subCategory': row['subCategory'] or 'General',
-                        'date': row['date'],
-                        'paymentMode': row['paymentMode'],
-                        'referenceId': row['referenceId'] or 'N/A',
-                        'description': row['description'],
+                for inv in all_invoices:
+                    inv_id = inv['id']
+                    enq_id = inv.get('enquiry_id')
+                    if enq_id:
+                        seen_enq_ids.add(enq_id)
+                    
+                    comp_name = (inv.get('companyName') or 'Client Placement').strip()
+                    amt = float(inv.get('serviceCharges') or inv.get('totalBillAmt') or inv.get('amountReceived') or 0.0)
+                    if amt <= 0:
+                        continue
+                        
+                    raw_bd_name = (inv.get('nameOfBd') or '').strip()
+                    raw_fran_name = (inv.get('franchiseName') or '').strip()
+                    tl_name = (inv.get('teamLeader') or '').strip()
+                    date_val = inv.get('date') or '2026-08-01'
+                    
+                    # Exact lowercase match first, then partial
+                    bd = next((b for b in bd_agents_list if b['name'] == raw_bd_name.lower()), None)
+                    if not bd:
+                        bd = next((b for b in bd_agents_list if raw_bd_name and raw_bd_name.lower() in b['name']), None)
+                    fran = next((f for f in franchises_list if f['name'] == raw_fran_name.lower()), None)
+                    if not fran:
+                        fran = next((f for f in franchises_list if raw_fran_name and raw_fran_name.lower() in f['name']), None)
+                    
+                    # Financial year evaluation
+                    fy = inv.get('financialYear')
+                    if not fy or fy == 'N/A':
+                        try:
+                            y = int(date_val[:4])
+                            m = int(date_val[5:7])
+                            fy = f"{y}-{y+1}" if m >= 4 else f"{y-1}-{y}"
+                        except:
+                            fy = '2026-2027'
+
+                    # Franchisee / Company share split
+                    split_info = get_share_split(date_val, franchise_name=raw_fran_name)
+                    r_share = float(inv.get('ourShare') or (amt * split_info['company_pct']))
+                    f_share = float(inv.get('franchiseeShare') or (amt - r_share))
+
+                    tx_item = {
+                        'id': f"inv-pay-{inv_id}",
+                        'title': f"Recruitment Fee - {comp_name}",
+                        'companyName': comp_name,
+                        'amount': amt,
+                        'type': 'income',
+                        'category': 'Recruitment',
+                        'subCategory': inv.get('postOfCandidate') or 'Placement Invoice',
+                        'date': date_val,
+                        'paymentMode': inv.get('payment_mode') or 'Net Banking',
+                        'referenceId': inv.get('billNumber') or f"INV-{inv_id}",
+                        'description': f"Placed Candidate: {inv.get('candidateName') or 'Candidate'}",
                         'bdAgentId': bd['id'] if bd else None,
                         'franchiseeId': fran['id'] if fran else None,
-                        'serviceAmt': float(row['serviceAmt']) if row.get('serviceAmt') is not None else 0.0,
-                        'rShare': float(row['rShare']) if row.get('rShare') is not None else 0.0,
-                        'franchiseeShare': float(row['serviceAmt'] or 0.0) - float(row['rShare'] or 0.0),
+                        'bdMemberName': raw_bd_name,
+                        'franchiseeName': raw_fran_name,
+                        'teamLeaderName': tl_name,
+                        'serviceAmt': amt,
+                        'rShare': r_share,
+                        'franchiseeShare': f_share,
                         'financialYear': fy,
-                        'enquiryStatus': row['enquiryStatus'],
-                        'teamLeaderName': row['teamLeaderName'],
-                        'info': row.get('info') or 'N/A'
-                    })
-                    
-                    # Add Franchisee Royalty Outflow (Fix 3/MoM Pivot - corrected to expense/outflow)
-                    f_share = float(row['serviceAmt'] or 0.0) - float(row['rShare'] or 0.0)
+                        'enquiryStatus': 'completed',
+                        'info': inv.get('info') or 'N/A'
+                    }
+                    combined.append(tx_item)
+                    enquiry_inflows.append(tx_item)
+
+                    # Add Franchisee Royalty Outflow expense
                     if f_share > 0:
                         combined.append({
-                            'id': f"fran-royalty-payout-{row['id']}",
-                            'title': f"Franchisee Royalty Payout - {row['title']}",
-                            'companyName': row.get('companyName') or 'N/A',
+                            'id': f"fran-royalty-payout-inv-{inv_id}",
+                            'title': f"Franchisee Royalty Payout - {comp_name}",
+                            'companyName': comp_name,
                             'amount': f_share,
                             'type': 'expense',
                             'category': 'Other',
                             'subCategory': 'Royalty Share Payout',
-                            'date': row['date'],
+                            'date': date_val,
                             'paymentMode': 'Net Banking',
-                            'referenceId': f"FP-{row['referenceId']}",
-                            'description': f"Franchisee royalty share payout generated from invoice {row['referenceId']}",
+                            'referenceId': f"FP-{inv.get('billNumber') or inv_id}",
+                            'description': f"Franchisee royalty share payout for invoice {inv.get('billNumber') or inv_id}",
                             'bdAgentId': bd['id'] if bd else None,
                             'franchiseeId': fran['id'] if fran else None,
                             'financialYear': fy
                         })
+
+                # Also capture any closed enquiries with bill amounts not yet linked to an invoice
+                try:
+                    cursor.execute("""
+                        SELECT 
+                            id, companyName, bdMemberName, teamLeaderName, franchiseeName,
+                            placementFees, positionName, industry, bill_no, bill_date, bill_amount,
+                            dateOfAllocation, created_at, enquiryStatus, info
+                        FROM enquiries
+                        WHERE (bill_amount > 0 OR placementFees > 0)
+                          AND (bill_no IS NOT NULL AND TRIM(bill_no) != '')
+                    """)
+                    extra_enqs = cursor.fetchall()
+                    for enq in extra_enqs:
+                        if enq['id'] in seen_enq_ids:
+                            continue
+                        e_amt = float(enq.get('bill_amount') or enq.get('placementFees') or 0.0)
+                        if e_amt <= 0:
+                            continue
+                        e_date = str(enq.get('bill_date') or enq.get('dateOfAllocation') or enq.get('created_at') or '2026-08-01')[:10]
+                        try:
+                            y = int(e_date[:4])
+                            m = int(e_date[5:7])
+                            e_fy = f"{y}-{y+1}" if m >= 4 else f"{y-1}-{y}"
+                        except:
+                            e_fy = '2026-2027'
+                            
+                        raw_bd = (enq.get('bdMemberName') or '').strip()
+                        raw_fran = (enq.get('franchiseeName') or '').strip()
+                        bd = next((b for b in bd_agents_list if b['name'] == raw_bd.lower()), None)
+                        fran = next((f for f in franchises_list if f['name'] == raw_fran.lower()), None)
+                        
+                        split_info = get_share_split(e_date, franchise_name=raw_fran)
+                        e_r_share = e_amt * split_info['company_pct']
+                        e_f_share = e_amt - e_r_share
+                        
+                        e_item = {
+                            'id': f"enq-pay-{enq['id']}",
+                            'title': f"Recruitment Fee - {enq.get('companyName') or 'Placement'}",
+                            'companyName': enq.get('companyName') or 'N/A',
+                            'amount': e_amt,
+                            'type': 'income',
+                            'category': 'Recruitment',
+                            'subCategory': enq.get('positionName') or 'Placement',
+                            'date': e_date,
+                            'paymentMode': 'Net Banking',
+                            'referenceId': enq.get('bill_no') or f"ENQ-{enq['id']}",
+                            'description': f"Enquiry Placement: {enq.get('positionName') or 'Position'}",
+                            'bdAgentId': bd['id'] if bd else None,
+                            'franchiseeId': fran['id'] if fran else None,
+                            'bdMemberName': raw_bd,
+                            'franchiseeName': raw_fran,
+                            'teamLeaderName': enq.get('teamLeaderName') or '',
+                            'serviceAmt': e_amt,
+                            'rShare': e_r_share,
+                            'franchiseeShare': e_f_share,
+                            'financialYear': e_fy,
+                            'enquiryStatus': enq.get('enquiryStatus') or 'completed',
+                            'info': enq.get('info') or 'N/A'
+                        }
+                        combined.append(e_item)
+                        enquiry_inflows.append(e_item)
+                except Exception as ex_err:
+                    print('Extra enquiries fetch note:', str(ex_err))
+
             except Exception as err:
-                print('enquiries recruitment inflows bypassed:', str(err))
+                print('Recruitment inflows fetch error:', str(err))
 
             # 2B. Fetch Job Portal Inflows from clients_info & employer subscriptions
             try:
@@ -835,20 +910,20 @@ def get_cash_balance():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        placeholders = ', '.join(['%s'] * len(COLLIDING_BILL_NUMBERS))
+        col_filter, col_params = get_collision_filter_and_params()
         query = f"""
             SELECT
               (SELECT COALESCE(SUM(ia.gross_revenue), 0) FROM (
                  SELECT enquiry_id, SUM(serviceCharges) AS gross_revenue, MAX(billDate) AS billDate
                  FROM invoice
                  WHERE billNumber IS NOT NULL AND billNumber != '' AND billDate IS NOT NULL
-                   AND billNumber NOT IN ({placeholders})
+                   {col_filter}
                  GROUP BY enquiry_id
                ) ia WHERE ia.billDate <= %s)
               - (SELECT COALESCE(SUM(amount), 0) FROM expenditure WHERE billDate <= %s AND is_deleted = 0)
             AS cash_balance
         """
-        cursor.execute(query, COLLIDING_BILL_NUMBERS + [as_of, as_of])
+        cursor.execute(query, col_params + [as_of, as_of])
         cash_balance = float(cursor.fetchone()['cash_balance'] or 0.0)
         return jsonify({ 'cash_balance': cash_balance })
     except Exception as e:
@@ -862,7 +937,7 @@ def get_moving_avg_burn():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        placeholders = ', '.join(['%s'] * len(COLLIDING_BILL_NUMBERS))
+        col_filter, col_params = get_collision_filter_and_params()
         cursor.execute(f"""
             SELECT AVG(net_burn) AS burn FROM (
               SELECT months.month,
@@ -881,7 +956,7 @@ def get_moving_avg_burn():
                 SELECT DATE_FORMAT(billDate, '%%Y-%%m') AS month, SUM(serviceCharges) AS income
                 FROM invoice
                 WHERE billNumber IS NOT NULL AND billNumber != '' AND billDate IS NOT NULL
-                  AND billNumber NOT IN ({placeholders})
+                  {col_filter}
                   AND billDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
                 GROUP BY month
               ) inc ON inc.month = months.month
@@ -889,12 +964,12 @@ def get_moving_avg_burn():
                 SELECT DATE_FORMAT(billDate, '%%Y-%%m') AS month, SUM(COALESCE(franchiseeShare,0)) AS royalty
                 FROM invoice
                 WHERE billNumber IS NOT NULL AND billNumber != '' AND billDate IS NOT NULL
-                  AND billNumber NOT IN ({placeholders})
+                  {col_filter}
                   AND billDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
                 GROUP BY month
               ) roy ON roy.month = months.month
             ) x
-        """, COLLIDING_BILL_NUMBERS + COLLIDING_BILL_NUMBERS)
+        """, col_params + col_params)
         row = cursor.fetchone()
         net_burn = float(row['burn'] or 0.0) if row else 0.0
         burn = max(net_burn, 0.0)  # only positive when expenses genuinely exceed income
@@ -1108,13 +1183,13 @@ def get_franchisee_summary():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        placeholders = ', '.join(['%s'] * len(COLLIDING_BILL_NUMBERS))
+        col_filter, col_params = get_collision_filter_and_params()
         enq_clause = get_enq_exclude_clause("e")
         # 1. Franchise Inflow (total billed revenue generated by franchise offices)
         inflow_query = f"""
             SELECT COALESCE(SUM(ia.gross_revenue), 0.0) AS franchise_inflow
             FROM enquiries e
-            JOIN (
+            LEFT JOIN (
                 SELECT
                     enquiry_id,
                     SUM(serviceCharges) AS gross_revenue,
@@ -1122,14 +1197,15 @@ def get_franchisee_summary():
                 FROM invoice
                 WHERE billNumber IS NOT NULL AND billNumber != ''
                   AND billDate IS NOT NULL
-                  AND billNumber NOT IN ({placeholders})
+                  {col_filter}
                 GROUP BY enquiry_id
             ) ia ON e.id = ia.enquiry_id
             WHERE e.franchiseeName IS NOT NULL AND e.franchiseeName != '' AND e.franchiseeName != 'Unknown'
-              AND ia.billDate BETWEEN %s AND %s
+              AND (ia.billDate BETWEEN %s AND %s OR (ia.billDate IS NULL AND e.bill_date BETWEEN %s AND %s))
               AND {enq_clause}
+              AND (ia.enquiry_id IS NOT NULL OR e.bill_amount > 0)
         """
-        params_inflow = COLLIDING_BILL_NUMBERS + [start_date, end_date]
+        params_inflow = col_params + [start_date, end_date, start_date, end_date]
         cursor.execute(inflow_query, params_inflow)
         franchise_inflow = float(cursor.fetchone()['franchise_inflow'] or 0.0)
         
@@ -1164,9 +1240,9 @@ def get_franchisee_summary():
                 SELECT 
                     e.franchiseeName,
                     COUNT(ia.enquiry_id) AS candidates_placed,
-                    SUM(ia.gross_revenue) AS inflow_revenue
+                    SUM(COALESCE(ia.gross_revenue, e.bill_amount, 0.0)) AS inflow_revenue
                 FROM enquiries e
-                JOIN (
+                LEFT JOIN (
                     SELECT
                         enquiry_id,
                         SUM(serviceCharges) AS gross_revenue,
@@ -1174,18 +1250,19 @@ def get_franchisee_summary():
                     FROM invoice
                     WHERE billNumber IS NOT NULL AND billNumber != ''
                       AND billDate IS NOT NULL
-                      AND billNumber NOT IN ({placeholders})
+                      {col_filter}
                     GROUP BY enquiry_id
                 ) ia ON e.id = ia.enquiry_id
-                WHERE ia.billDate BETWEEN %s AND %s
+                WHERE (ia.billDate BETWEEN %s AND %s OR (ia.billDate IS NULL AND e.bill_date BETWEEN %s AND %s))
                   AND {enq_clause}
+                  AND (ia.enquiry_id IS NOT NULL OR e.bill_amount > 0)
                 GROUP BY e.franchiseeName
             ) rev ON TRIM(LOWER(rev.franchiseeName)) = TRIM(LOWER(f.nameAsPerAgreement))
             WHERE f.nameAsPerAgreement IS NOT NULL AND TRIM(f.nameAsPerAgreement) != '' AND TRIM(f.nameAsPerAgreement) != 'Unknown'
             ORDER BY inflow_revenue DESC
             LIMIT 500
         """
-        params_ledger = COLLIDING_BILL_NUMBERS + [start_date, end_date]
+        params_ledger = col_params + [start_date, end_date, start_date, end_date]
         cursor.execute(ledger_query, params_ledger)
         rows = cursor.fetchall()
         
@@ -1443,18 +1520,18 @@ def get_bd_revenue(bd_name=None, start_date=None, end_date=None, aggregate=True)
                 return detail_rows
         else:
             if aggregate:
-                placeholders = ', '.join(['%s'] * len(COLLIDING_BILL_NUMBERS))
+                col_filter, col_params = get_collision_filter_and_params()
                 enq_clause = get_enq_exclude_clause("e")
                 # 1. Fetch Revenue Aggregates from invoice pre-aggregated and joined to enquiries
                 rev_query = f"""
                     SELECT 
                         TRIM(e.bdMemberName) AS name,
                         COUNT(ia.enquiry_id) AS invoices_closed,
-                        SUM(ia.gross_revenue) AS gross_revenue,
-                        SUM(ia.net_revenue) AS net_revenue,
-                        SUM(CASE WHEN i_null.franchiseeShare IS NULL THEN ia.gross_revenue ELSE 0 END) AS unverified_amount
+                        SUM(COALESCE(ia.gross_revenue, e.bill_amount, 0.0)) AS gross_revenue,
+                        SUM(COALESCE(ia.net_revenue, e.bill_amount * 0.25, 0.0)) AS net_revenue,
+                        SUM(CASE WHEN i_null.franchiseeShare IS NULL THEN COALESCE(ia.gross_revenue, e.bill_amount, 0.0) ELSE 0 END) AS unverified_amount
                     FROM enquiries e
-                    JOIN (
+                    LEFT JOIN (
                         SELECT
                             enquiry_id,
                             SUM(serviceCharges) AS gross_revenue,
@@ -1463,17 +1540,18 @@ def get_bd_revenue(bd_name=None, start_date=None, end_date=None, aggregate=True)
                         FROM invoice
                         WHERE billNumber IS NOT NULL AND billNumber != ''
                           AND billDate IS NOT NULL
-                          AND billNumber NOT IN ({placeholders})
+                          {col_filter}
                         GROUP BY enquiry_id
                     ) ia ON ia.enquiry_id = e.id
                     LEFT JOIN invoice i_null ON i_null.enquiry_id = e.id AND i_null.franchiseeShare IS NULL
-                    WHERE ia.billDate BETWEEN %s AND %s
+                    WHERE (ia.billDate BETWEEN %s AND %s OR (ia.billDate IS NULL AND e.bill_date BETWEEN %s AND %s))
                       AND e.bdMemberName IS NOT NULL AND TRIM(e.bdMemberName) != ''
                       AND TRIM(LOWER(e.bdMemberName)) NOT IN ('head office', 'head  - office')
                       AND {enq_clause}
+                      AND (ia.enquiry_id IS NOT NULL OR e.bill_amount > 0)
                     GROUP BY TRIM(e.bdMemberName)
                 """
-                params_rev = COLLIDING_BILL_NUMBERS + [start_date, end_date]
+                params_rev = col_params + [start_date, end_date, start_date, end_date]
                 cursor.execute(rev_query, params_rev)
                 rev_rows = cursor.fetchall()
                 
@@ -1608,17 +1686,17 @@ def get_tl_revenue_leaderboard():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        placeholders = ', '.join(['%s'] * len(COLLIDING_BILL_NUMBERS))
+        col_filter, col_params = get_collision_filter_and_params()
         enq_clause = get_enq_exclude_clause("e")
         # 1. Fetch Revenue Aggregates from invoice pre-aggregated and joined to enquiries for TL
         rev_query = f"""
             SELECT 
                 TRIM(e.teamLeaderName) AS name,
                 COUNT(ia.enquiry_id) AS invoices_closed,
-                SUM(ia.gross_revenue) AS gross_revenue,
-                SUM(ia.net_revenue) AS net_revenue
+                SUM(COALESCE(ia.gross_revenue, e.bill_amount, 0.0)) AS gross_revenue,
+                SUM(COALESCE(ia.net_revenue, e.bill_amount * 0.25, 0.0)) AS net_revenue
             FROM enquiries e
-            JOIN (
+            LEFT JOIN (
                 SELECT
                     enquiry_id,
                     SUM(serviceCharges) AS gross_revenue,
@@ -1627,16 +1705,17 @@ def get_tl_revenue_leaderboard():
                 FROM invoice
                 WHERE billNumber IS NOT NULL AND billNumber != ''
                   AND billDate IS NOT NULL
-                  AND billNumber NOT IN ({placeholders})
+                  {col_filter}
                 GROUP BY enquiry_id
             ) ia ON ia.enquiry_id = e.id
-            WHERE ia.billDate BETWEEN %s AND %s
+            WHERE (ia.billDate BETWEEN %s AND %s OR (ia.billDate IS NULL AND e.bill_date BETWEEN %s AND %s))
               AND e.teamLeaderName IS NOT NULL AND TRIM(e.teamLeaderName) != ''
               AND TRIM(LOWER(e.teamLeaderName)) NOT IN ('head office', 'head  - office')
               AND {enq_clause}
+              AND (ia.enquiry_id IS NOT NULL OR e.bill_amount > 0)
             GROUP BY TRIM(e.teamLeaderName)
         """
-        params_rev = COLLIDING_BILL_NUMBERS + [start_date, end_date]
+        params_rev = col_params + [start_date, end_date, start_date, end_date]
         cursor.execute(rev_query, params_rev)
         rev_rows = cursor.fetchall()
         
