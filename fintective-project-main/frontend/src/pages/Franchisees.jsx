@@ -2,13 +2,17 @@ import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
-import { Users, Plus, ShieldCheck, MapPin, X, AlertTriangle, Award } from 'lucide-react';
+import { Users, Plus, ShieldCheck, MapPin, X, AlertTriangle, Award, Layers, Briefcase, Sparkles, TrendingUp } from 'lucide-react';
 import Pagination from '../components/Pagination';
+import { IndustryPredictiveTab } from '../components/IndustryPredictiveTab';
 
 const Franchisees = () => {
   const { franchisees, transactions, addFranchisee, selectedMonth, selectedYear } = useContext(FinanceContext);
   const [showAddForm, setShowAddForm] = useState(false);
   const [activeFranchiseeDetails, setActiveFranchiseeDetails] = useState(null); // Click detailed modal state
+  const [pageTab, setPageTab] = useState('ledger'); // 'ledger' | 'industry_potential'
+  const [selectedFranForIndustry, setSelectedFranForIndustry] = useState('all');
+  const [modalSubTab, setModalSubTab] = useState('ledger'); // 'ledger' | 'industry'
   const [page, setPage] = useState(1);
   const [modalPage, setModalPage] = useState(1);
   const ITEMS_PER_PAGE = 8;
@@ -375,147 +379,245 @@ const Franchisees = () => {
         </div>
       )}
 
-      {/* Main Table section */}
-      <div className="dashboard-card">
-        <div className="card-header-flex">
-          <h3 className="card-title">Franchise Locations Ledger</h3>
-          <button 
-            className="btn btn-primary"
-            onClick={() => setShowAddForm(!showAddForm)}
+      {/* View Switcher: Locations Ledger vs Industry Predictive Potential */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-card)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+          <button
+            onClick={() => setPageTab('ledger')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              border: 'none',
+              background: pageTab === 'ledger' ? 'var(--accent-teal, #0f766e)' : 'transparent',
+              color: pageTab === 'ledger' ? '#ffffff' : 'var(--text-muted)',
+              fontWeight: pageTab === 'ledger' ? '700' : '500',
+              fontSize: '0.88rem',
+              cursor: 'pointer',
+              boxShadow: pageTab === 'ledger' ? '0 2px 4px rgba(15, 110, 86, 0.2)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
           >
-            <Plus size={16} />
-            <span>Add Franchisee</span>
+            <Layers size={16} />
+            Franchise Locations Ledger
+          </button>
+          <button
+            onClick={() => setPageTab('industry_potential')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              border: 'none',
+              background: pageTab === 'industry_potential' ? 'var(--accent-teal, #0f766e)' : 'transparent',
+              color: pageTab === 'industry_potential' ? '#ffffff' : 'var(--text-muted)',
+              fontWeight: pageTab === 'industry_potential' ? '700' : '500',
+              fontSize: '0.88rem',
+              cursor: 'pointer',
+              boxShadow: pageTab === 'industry_potential' ? '0 2px 4px rgba(15, 110, 86, 0.2)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <Briefcase size={16} />
+            Industry Analysis & Predictive Potential
           </button>
         </div>
 
-        {/* Dynamic Add Form */}
-        {showAddForm && (
-          <form onSubmit={handleSubmit} className="inline-add-form animate-fade-in">
-            <h4>Onboard New Franchise Location</h4>
-            <div className="form-row">
-              <div className="form-group flex-1">
-                <label>Hub Name</label>
-                <input 
-                  type="text" 
-                  value={name} 
-                  onChange={(e) => setName(e.target.value)} 
-                  placeholder="e.g. Pune West Hub" 
-                  required 
-                />
-              </div>
-              <div className="form-group flex-1">
-                <label>City</label>
-                <input 
-                  type="text" 
-                  value={city} 
-                  onChange={(e) => setCity(e.target.value)} 
-                  placeholder="e.g. Pune" 
-                  required 
-                />
-              </div>
-              <div className="form-group flex-1">
-                <label>Owner Name</label>
-                <input 
-                  type="text" 
-                  value={owner} 
-                  onChange={(e) => setOwner(e.target.value)} 
-                  placeholder="e.g. Rahul Patil" 
-                  required 
-                />
-              </div>
-            </div>
-            <div className="form-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setShowAddForm(false)}>Cancel</button>
-              <button type="submit" className="btn btn-primary">Create Hub</button>
-            </div>
-          </form>
+        {pageTab === 'industry_potential' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Filter Franchisee:</span>
+            <select
+              value={selectedFranForIndustry}
+              onChange={(e) => setSelectedFranForIndustry(e.target.value)}
+              style={{
+                padding: '8px 14px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-main)',
+                fontSize: '0.88rem',
+                fontWeight: '600',
+                cursor: 'pointer',
+                minWidth: '220px'
+              }}
+            >
+              <option value="all">Network-wide (All Franchisees)</option>
+              {franchiseSummaries.map(f => (
+                <option key={f.id || f.name} value={f.name}>
+                  {f.name} ({f.candidatesPlaced || 0} placed)
+                </option>
+              ))}
+            </select>
+          </div>
         )}
-
-        <div className="table-responsive">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Location / Hub</th>
-                <th>City</th>
-                <th>Owner</th>
-                <th>Candidates Placed</th>
-                <th>Inflow (Revenue)</th>
-                <th>Outflow (Local Ads)</th>
-                <th>Net Contribution</th>
-                <th>MoM Trend</th>
-                <th>AI Segment</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                const totalPages = Math.max(1, Math.ceil(franchiseSummaries.length / ITEMS_PER_PAGE));
-                const safePage = Math.min(Math.max(1, page), totalPages);
-                const paginatedFrans = franchiseSummaries.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
-
-                return paginatedFrans.map(fran => (
-                  <tr 
-                    key={fran.id} 
-                    onClick={() => { setActiveFranchiseeDetails(fran); setModalPage(1); }}
-                    className="clickable-row-item"
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <td className="font-bold">
-                      <div>{fran.name}</div>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--accent-teal)', fontWeight: 'normal' }}>Click to audit ledger</span>
-                    </td>
-                    <td>{fran.city}</td>
-                    <td>{fran.owner}</td>
-                    <td className="text-center">{fran.candidatesPlaced}</td>
-                    <td className="font-bold text-teal text-right">{formatCurrency(fran.revenuePaid)}</td>
-                    <td className="text-red text-right">
-                      {fran.costsIncurred === 0 ? (
-                        <span style={{ color: '#64748b', fontSize: '0.8rem' }}>Not tracked</span>
-                      ) : (
-                        formatCurrency(fran.costsIncurred, true)
-                      )}
-                    </td>
-                    <td className={`font-bold text-right ${fran.netContribution >= 0 ? 'text-teal' : 'text-red'}`}>
-                      {formatCurrency(fran.netContribution)}
-                    </td>
-                    <td>
-                      <span className={`trend-badge-tag ${fran.trend.positive ? 'positive' : 'negative'}`} style={{ color: fran.trend.positive ? 'var(--accent-teal)' : '#ef4444', fontWeight: 'bold' }}>
-                        {fran.trend.text}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="status-badge" style={{
-                        backgroundColor: fran.mlCluster === 0 ? 'rgba(16, 185, 129, 0.1)' : (fran.mlCluster === 1 ? 'rgba(37, 99, 235, 0.1)' : 'rgba(239, 68, 68, 0.1)'),
-                        color: fran.mlCluster === 0 ? '#10b981' : (fran.mlCluster === 1 ? '#3b82f6' : '#ef4444')
-                      }}>
-                        {fran.mlSegment.split(' ')[0]}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`status-badge ${fran.status.toLowerCase()}`}>
-                        {fran.status}
-                      </span>
-                    </td>
-                  </tr>
-                ));
-              })()}
-            </tbody>
-          </table>
-        </div>
-
-        <Pagination
-          currentPage={page}
-          totalItems={franchiseSummaries.length}
-          pageSize={ITEMS_PER_PAGE}
-          onPageChange={setPage}
-          itemName="franchise hubs"
-        />
       </div>
+
+      {pageTab === 'industry_potential' ? (
+        <div className="dashboard-card animate-fade-in" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sparkles size={18} color="var(--accent-teal, #0f766e)" /> 
+                {selectedFranForIndustry === 'all' ? 'Network-Wide Industry Analysis & Growth Projections' : `Industry Breakdown: ${selectedFranForIndustry}`}
+              </h3>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Sector revenue share, conversion velocity, and forward potential modeling based on historical placement metrics
+              </span>
+            </div>
+          </div>
+          <IndustryPredictiveTab 
+            transactions={transactions}
+            entityType="franchisee"
+            entityName={selectedFranForIndustry === 'all' ? '' : selectedFranForIndustry}
+            onboardingDate={franchisees.find(f => f.name?.toLowerCase() === selectedFranForIndustry?.toLowerCase())?.onboardingDate}
+          />
+        </div>
+      ) : (
+        /* Main Table section */
+        <div className="dashboard-card">
+          <div className="card-header-flex">
+            <h3 className="card-title">Franchise Locations Ledger</h3>
+            <button 
+              className="btn btn-primary"
+              onClick={() => setShowAddForm(!showAddForm)}
+            >
+              <Plus size={16} />
+              <span>Add Franchisee</span>
+            </button>
+          </div>
+
+          {/* Dynamic Add Form */}
+          {showAddForm && (
+            <form onSubmit={handleSubmit} className="inline-add-form animate-fade-in">
+              <h4>Onboard New Franchise Location</h4>
+              <div className="form-row">
+                <div className="form-group flex-1">
+                  <label>Hub Name</label>
+                  <input 
+                    type="text" 
+                    value={name} 
+                    onChange={(e) => setName(e.target.value)} 
+                    placeholder="e.g. Pune West Hub" 
+                    required 
+                  />
+                </div>
+                <div className="form-group flex-1">
+                  <label>City</label>
+                  <input 
+                    type="text" 
+                    value={city} 
+                    onChange={(e) => setCity(e.target.value)} 
+                    placeholder="e.g. Pune" 
+                    required 
+                  />
+                </div>
+                <div className="form-group flex-1">
+                  <label>Owner Name</label>
+                  <input 
+                    type="text" 
+                    value={owner} 
+                    onChange={(e) => setOwner(e.target.value)} 
+                    placeholder="e.g. Rahul Patil" 
+                    required 
+                  />
+                </div>
+              </div>
+              <div className="form-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowAddForm(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Create Hub</button>
+              </div>
+            </form>
+          )}
+
+          <div className="table-responsive">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Location / Hub</th>
+                  <th>City</th>
+                  <th>Owner</th>
+                  <th>Candidates Placed</th>
+                  <th>Inflow (Revenue)</th>
+                  <th>Outflow (Local Ads)</th>
+                  <th>Net Contribution</th>
+                  <th>MoM Trend</th>
+                  <th>AI Segment</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const totalPages = Math.max(1, Math.ceil(franchiseSummaries.length / ITEMS_PER_PAGE));
+                  const safePage = Math.min(Math.max(1, page), totalPages);
+                  const paginatedFrans = franchiseSummaries.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
+
+                  return paginatedFrans.map(fran => (
+                    <tr 
+                      key={fran.id} 
+                      onClick={() => { setActiveFranchiseeDetails(fran); setModalPage(1); setModalSubTab('ledger'); }}
+                      className="clickable-row-item"
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td className="font-bold">
+                        <div>{fran.name}</div>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--accent-teal)', fontWeight: 'normal' }}>Click to audit ledger</span>
+                      </td>
+                      <td>{fran.city}</td>
+                      <td>{fran.owner}</td>
+                      <td className="text-center">{fran.candidatesPlaced}</td>
+                      <td className="font-bold text-teal text-right">{formatCurrency(fran.revenuePaid)}</td>
+                      <td className="text-red text-right">
+                        {fran.costsIncurred === 0 ? (
+                          <span style={{ color: '#64748b', fontSize: '0.8rem' }}>Not tracked</span>
+                        ) : (
+                          formatCurrency(fran.costsIncurred, true)
+                        )}
+                      </td>
+                      <td className={`font-bold text-right ${fran.netContribution >= 0 ? 'text-teal' : 'text-red'}`}>
+                        {formatCurrency(fran.netContribution)}
+                      </td>
+                      <td>
+                        <span className={`trend-badge-tag ${fran.trend.positive ? 'positive' : 'negative'}`} style={{ color: fran.trend.positive ? 'var(--accent-teal)' : '#ef4444', fontWeight: 'bold' }}>
+                          {fran.trend.text}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="status-badge" style={{
+                          backgroundColor: fran.mlCluster === 0 ? 'rgba(16, 185, 129, 0.1)' : (fran.mlCluster === 1 ? 'rgba(37, 99, 235, 0.1)' : 'rgba(239, 68, 68, 0.1)'),
+                          color: fran.mlCluster === 0 ? '#10b981' : (fran.mlCluster === 1 ? '#3b82f6' : '#ef4444')
+                        }}>
+                          {fran.mlSegment.split(' ')[0]}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`status-badge ${fran.status.toLowerCase()}`}>
+                          {fran.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ));
+                })()}
+              </tbody>
+            </table>
+          </div>
+
+          <Pagination
+            currentPage={page}
+            totalItems={franchiseSummaries.length}
+            pageSize={ITEMS_PER_PAGE}
+            onPageChange={setPage}
+            itemName="franchise hubs"
+          />
+        </div>
+      )}
 
       {/* Franchise Detail Audit Modal Popup overlay */}
       {activeFranchiseeDetails && (() => {
         const detailTxs = transactions.filter(t => {
-          if (t.franchiseeId !== activeFranchiseeDetails.id) return false;
+          if (t.franchiseeId !== activeFranchiseeDetails.id && (t.franchiseeName || '').toLowerCase() !== (activeFranchiseeDetails.name || '').toLowerCase()) return false;
           if (selectedMonth === 'All Months') return true;
           const date = new Date(t.date);
           const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -529,7 +631,7 @@ const Franchisees = () => {
 
         return (
           <div className="modal-backdrop" onClick={() => setActiveFranchiseeDetails(null)}>
-            <div className="modal-container auditor-modal animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '820px', width: '92%' }}>
+            <div className="modal-container auditor-modal animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '860px', width: '92%' }}>
               <div className="modal-header">
                 <div className="modal-header-title">
                   <h3>Franchise Audit: {activeFranchiseeDetails.name}</h3>
@@ -540,40 +642,59 @@ const Franchisees = () => {
                 </button>
               </div>
               
-              <div className="modal-body" style={{ maxHeight: '72vh', overflowY: 'auto', padding: '20px 24px' }}>
-                <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '1.5rem' }}>
-                  <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
-                    <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Total Inflows (Revenue)</span>
-                    <h4 style={{ color: '#0F6E56', margin: '6px 0 0 0', fontSize: '1.25rem', fontWeight: '700' }}>{formatCurrency(activeFranchiseeDetails.revenuePaid)}</h4>
-                  </div>
-                  <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
-                    <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Local Support Costs</span>
-                    <h4 style={{ color: '#A8402E', margin: '6px 0 0 0', fontSize: '1.25rem', fontWeight: '700' }}>
-                      {activeFranchiseeDetails.costsIncurred === 0 ? (
-                        <span style={{ color: '#6B7268', fontSize: '0.85rem', fontWeight: 'normal' }}>Not tracked per-location</span>
-                      ) : (
-                        formatCurrency(activeFranchiseeDetails.costsIncurred, true)
-                      )}
-                    </h4>
-                  </div>
-                  <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
-                    <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Net Contribution</span>
-                    <h4 style={{ color: activeFranchiseeDetails.netContribution >= 0 ? '#0F6E56' : '#A8402E', margin: '6px 0 0 0', fontSize: '1.25rem', fontWeight: '700' }}>{formatCurrency(activeFranchiseeDetails.netContribution)}</h4>
-                  </div>
+              <div className="modal-body" style={{ maxHeight: '76vh', overflowY: 'auto', padding: '20px 24px' }}>
+                {/* Modal Sub-Tab Selector */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '18px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                  <button
+                    type="button"
+                    style={{
+                      padding: '6px 14px',
+                      fontSize: '0.8rem',
+                      fontWeight: '600',
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: modalSubTab === 'ledger' ? 'var(--accent-teal, #0f766e)' : 'var(--bg-card)',
+                      color: modalSubTab === 'ledger' ? '#ffffff' : 'var(--text-muted)'
+                    }}
+                    onClick={() => setModalSubTab('ledger')}
+                  >
+                    Ledger & Financials
+                  </button>
+                  <button
+                    type="button"
+                    style={{
+                      padding: '6px 14px',
+                      fontSize: '0.8rem',
+                      fontWeight: '600',
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: modalSubTab === 'industry' ? 'var(--accent-teal, #0f766e)' : 'var(--bg-card)',
+                      color: modalSubTab === 'industry' ? '#ffffff' : 'var(--text-muted)'
+                    }}
+                    onClick={() => setModalSubTab('industry')}
+                  >
+                    Industry Potential & Predictions
+                  </button>
                 </div>
 
-                <h4 style={{ color: '#1B2321', marginBottom: '0.75rem', fontWeight: '700', fontSize: '0.92rem' }}>Transaction History ({detailTxs.length}) • {selectedMonth}</h4>
-                {detailTxs.length === 0 ? (
-                  <p style={{ color: '#6B7268', fontSize: '0.85rem', padding: '20px 0', textAlign: 'center' }}>No transaction history found for this franchisee location.</p>
+                {modalSubTab === 'industry' ? (
+                  <IndustryPredictiveTab 
+                    transactions={transactions}
+                    entityType="franchisee"
+                    entityName={activeFranchiseeDetails.name}
+                    onboardingDate={activeFranchiseeDetails.onboardingDate}
+                  />
                 ) : (
                   <div>
-                    <div className="table-responsive" style={{ border: '1px solid #E3E5E0', borderRadius: '8px', overflow: 'hidden' }}>
-                      <table className="data-table" style={{ fontSize: '0.82rem', width: '100%', margin: 0 }}>
+                    <div className="table-responsive">
+                      <table className="data-table" style={{ width: '100%', fontSize: '0.82rem' }}>
                         <thead>
-                          <tr style={{ background: '#FAFAF8', borderBottom: '1px solid #E3E5E0' }}>
-                            <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', width: '110px' }}>Date</th>
-                            <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600' }}>Title / Category</th>
-                            <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', width: '100px' }}>Type</th>
+                          <tr style={{ borderBottom: '1px solid #E3E5E0', textAlign: 'left' }}>
+                            <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600' }}>Date</th>
+                            <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600' }}>Description</th>
+                            <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600' }}>Type</th>
                             <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', textAlign: 'right', width: '120px' }}>Amount</th>
                           </tr>
                         </thead>
