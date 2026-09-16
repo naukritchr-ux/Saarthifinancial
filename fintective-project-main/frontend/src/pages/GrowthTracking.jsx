@@ -186,9 +186,9 @@ const GrowthTracking = () => {
         if (data.insufficient_data || data.projection_status === 'insufficient_data') {
           setOverrideRate('');
         } else if (customRateVal === undefined || customRateVal === '') {
-          // If historical CAGR is positive, use it as default target. If negative, default goal target rate to +15.0% aspirational recovery rate!
+          // If historical CAGR is positive, use it as default target (capped at +35% for initial baseline). If negative, default goal target rate to +15.0%
           const histCagr = data.historical_cagr_pct;
-          const defaultTargetRate = (histCagr !== undefined && histCagr !== null && histCagr > 0) ? histCagr : 15;
+          const defaultTargetRate = (histCagr !== undefined && histCagr !== null && histCagr > 0) ? Math.min(35, histCagr) : 15;
           setOverrideRate(String(defaultTargetRate));
         }
       } else {
@@ -261,12 +261,16 @@ const GrowthTracking = () => {
 
   const handleRateChange = (newRate) => {
     setOverrideRate(newRate);
+    if (newRate !== '' && !isNaN(Number(newRate))) {
+      fetchPrediction(newRate);
+    }
   };
 
   const handleResetRate = () => {
     const histCagr = predictionData?.historical_cagr_pct;
-    const defaultRate = (histCagr !== undefined && histCagr !== null && histCagr > 0) ? histCagr : 15;
+    const defaultRate = (histCagr !== undefined && histCagr !== null && histCagr > 0) ? Math.min(35, histCagr) : 15;
     setOverrideRate(String(defaultRate));
+    fetchPrediction(String(defaultRate));
     if (baseDealsCount > 0) {
       const impliedDeals = Math.max(1, Math.round(baseDealsCount * (1 + defaultRate / 100)));
       setTargetPlacementCount(String(impliedDeals));
@@ -361,7 +365,9 @@ const GrowthTracking = () => {
     const count = parseFloat(countVal) || 0;
     if (baseDealsCount > 0 && count > 0) {
       const impliedGrowth = ((count / baseDealsCount) - 1) * 100;
-      setOverrideRate(String(parseFloat(impliedGrowth.toFixed(1))));
+      const roundedRate = String(parseFloat(impliedGrowth.toFixed(1)));
+      setOverrideRate(roundedRate);
+      fetchPrediction(roundedRate);
     }
   };
 

@@ -438,7 +438,8 @@ def _calculate_cagr(historical_series):
 
     try:
         cagr = math.pow(last_val / first_val, 1.0 / periods) - 1.0
-        return max(-0.50, min(2.0, cagr))
+        # Realistic CAGR clamping to [-50%, +50%] to prevent early bootstrap distortions
+        return max(-0.50, min(0.50, cagr))
     except Exception:
         return None
 
@@ -887,11 +888,13 @@ def predict_growth():
     entity_type = request.args.get("entity_type", "employee").strip().lower()
     entity_id = request.args.get("entity_id", "").strip()
     periods_count = int(request.args.get("periods", "5")) # Default to 5 years
-    custom_rate = request.args.get("rate")
+    custom_rate = request.args.get("rate") or request.args.get("growth_rate") or request.args.get("target_rate") or request.args.get("custom_rate")
     entity_name_param = request.args.get("entity_name", "")
 
     if not entity_id:
         return jsonify({"error": "Missing required entity_id parameter"}), 400
+
+    print(f"[predict_growth] entity_type={entity_type}, entity_id={entity_id}, received rate param: {custom_rate!r}")
 
     cache_key = f"predict_{entity_type}_{entity_id}_{entity_name_param}_{periods_count}_{custom_rate}"
     cached_val = _get_cached(cache_key)
@@ -928,15 +931,19 @@ def predict_growth():
             ]
 
         # Target growth rate R
-        if custom_rate is not None and custom_rate != "":
+        if custom_rate is not None and str(custom_rate).strip() != "":
             try:
-                selected_r = float(custom_rate)
-                if selected_r > 1.0 and selected_r <= 100.0:
-                    selected_r = selected_r / 100.0
+                val = float(custom_rate)
+                if val > 1.0 and val <= 500.0:
+                    selected_r = val / 100.0
+                else:
+                    selected_r = val
             except ValueError:
                 selected_r = historical_cagr if (historical_cagr is not None and historical_cagr > 0) else 0.15
         else:
             selected_r = historical_cagr if (historical_cagr is not None and historical_cagr > 0) else 0.15
+
+        print(f"[predict_growth] Computed selected_r={selected_r:.4f} ({selected_r*100:.1f}%) for entity={entity_name}")
 
         # 5-Year Forward Projections (t=1..5): projected[t] = base * (1 + R)^t
         projections = []
