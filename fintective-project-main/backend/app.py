@@ -520,7 +520,7 @@ def get_transactions():
                             'financialYear': fy
                         })
 
-                # Also capture any closed enquiries with bill amounts not yet linked to an invoice
+                # Also capture all closed enquiries and fee-bearing deals not already linked to an invoice
                 try:
                     cursor.execute("""
                         SELECT 
@@ -528,8 +528,7 @@ def get_transactions():
                             placementFees, positionName, industry, bill_no, bill_date, bill_amount,
                             dateOfAllocation, created_at, enquiryStatus, info
                         FROM enquiries
-                        WHERE (bill_amount > 0 OR placementFees > 0)
-                          AND (bill_no IS NOT NULL AND TRIM(bill_no) != '')
+                        WHERE (bill_amount > 0 OR placementFees > 0 OR enquiryStatus IN ('closed', 'offered_and_accepted', 'internally_closed'))
                     """)
                     extra_enqs = cursor.fetchall()
                     for enq in extra_enqs:
