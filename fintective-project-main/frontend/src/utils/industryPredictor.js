@@ -1,3 +1,5 @@
+import { formatCurrency, formatLakhs } from './formatters';
+
 /**
  * Industry Analytics & Predictive Potential Engine
  * Classifies transactions into standard industry sectors, computes conversion velocity,
