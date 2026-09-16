@@ -296,3 +296,5 @@ export const IndustryPredictiveTab = ({
     </div>
   );
 };
+
+export default IndustryPredictiveTab;
