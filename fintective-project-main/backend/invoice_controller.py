@@ -268,7 +268,7 @@ def update_invoice(invoice_id):
         # Fetch current values from DB to support partial updates
         with conn.cursor() as cursor:
             cursor.execute(
-                "SELECT serviceCharges, info, billDate, franchiseeShare, ourShare, isManualShareOverride FROM invoice WHERE id = %s",
+                "SELECT serviceCharges, info, billDate, franchiseName, franchiseeShare, ourShare, isManualShareOverride FROM invoice WHERE id = %s",
                 [invoice_id],
             )
             current_row = cursor.fetchone()
@@ -288,7 +288,7 @@ def update_invoice(invoice_id):
 
         if (
             is_manual_override
-            or any(k in update_fields for k in ("serviceCharges", "info", "billDate"))
+            or any(k in update_fields for k in ("serviceCharges", "info", "billDate", "franchiseName"))
         ):
             effective_service_charges = update_fields.get(
                 "serviceCharges", current_row.get("serviceCharges")
@@ -296,6 +296,9 @@ def update_invoice(invoice_id):
             effective_info = update_fields.get("info", current_row.get("info"))
             effective_bill_date = update_fields.get(
                 "billDate", current_row.get("billDate")
+            )
+            effective_franchise_name = update_fields.get(
+                "franchiseName", current_row.get("franchiseName")
             )
             effective_franchisee_share = update_fields.get(
                 "franchiseeShare", current_row.get("franchiseeShare")
@@ -310,7 +313,8 @@ def update_invoice(invoice_id):
                 effective_bill_date,
                 is_manual_override,
                 effective_franchisee_share,
-                effective_our_share
+                effective_our_share,
+                franchise_name=effective_franchise_name,
             )
             # Force these two fields regardless of what the client sent for them.
             update_fields["franchiseeShare"] = shares["franchisee_share"]
@@ -491,6 +495,7 @@ def create_invoice(invoice_data: dict) -> dict:
                 invoice_data.get("isManualShareOverride", False),
                 invoice_data.get("franchiseeShare"),
                 invoice_data.get("ourShare"),
+                franchise_name=invoice_data.get("franchiseName"),
             )
             invoice_data["franchiseeShare"] = shares["franchisee_share"]
             invoice_data["ourShare"] = shares["our_share"]

@@ -165,7 +165,12 @@ def _handle_candidate_to_invoice(candidate_form_data: dict, response_data: dict)
         # the franchisee/company split consistent regardless of which path
         # created the invoice, and respects the April 2026 rate change
         # automatically via invoice_data["billDate"].
-        shares = calculate_shares(service_charges, invoice_data["info"], invoice_data["billDate"])
+        shares = calculate_shares(
+            service_charges,
+            invoice_data["info"],
+            invoice_data["billDate"],
+            franchise_name=invoice_data.get("franchiseName"),
+        )
 
         invoice_data.update({
             "serviceCharges": service_charges,

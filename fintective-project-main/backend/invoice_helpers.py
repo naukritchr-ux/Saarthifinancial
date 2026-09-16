@@ -71,34 +71,126 @@ def format_date_for_mysql(date_str):
 
 
 # --- SHARE SPLIT (single source of truth for franchiseeShare / ourShare) ---
-# Confirmed business rule: 60% franchisee / 40% company for invoices before
-# the April 2026 rate change, 75% franchisee / 25% company from April 2026
-# onward. Effective date is the invoice's billDate (falls back to today if
-# billDate is missing, so brand-new invoices always get the current rate).
-# NOTE: this does NOT touch the pre-existing ~56.25%/18.75% rows already in
-# the DB for the pre-April period — those are known-bad historical data,
-# explicitly left alone for now per product decision; this function only
-# governs invoices computed/recomputed going forward.
-RATE_CHANGE_DATE = datetime(2026, 4, 1, tzinfo=timezone.utc)
+# Business rule:
+# - Franchisees who have completed 3 years (>= 3 years tenure): 70% franchisee / 30% company (70 - 30).
+# - Franchisees who have NOT completed 3 years (< 3 years tenure): 75% franchisee / 25% company (75 - 25).
+
+_FRANCHISEE_ONBOARD_CACHE = {}
 
 
-def get_share_split(bill_date) -> dict:
+def get_franchisee_onboarding_date(franchise_name: str):
+    """Looks up onboardingDate or earliest record date for a franchisee from DB."""
+    if not franchise_name:
+        return None
+
+    clean_name = franchise_name.strip().lower()
+    if clean_name in _FRANCHISEE_ONBOARD_CACHE:
+        return _FRANCHISEE_ONBOARD_CACHE[clean_name]
+
+    try:
+        from db import get_db_connection
+
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                # 1. Check franchisees table
+                cursor.execute(
+                    "SELECT onboardingDate, created_at FROM franchisees WHERE LOWER(TRIM(nameAsPerAgreement)) = %s LIMIT 1",
+                    [clean_name],
+                )
+                row = cursor.fetchone()
+                if row and row.get("onboardingDate"):
+                    _FRANCHISEE_ONBOARD_CACHE[clean_name] = row["onboardingDate"]
+                    return row["onboardingDate"]
+
+                # 2. Check enquiries table for earliest allocation, bill date, or created_at
+                cursor.execute(
+                    "SELECT MIN(COALESCE(bill_date, dateOfAllocation, created_at)) AS min_date FROM enquiries WHERE LOWER(TRIM(franchiseeName)) = %s",
+                    [clean_name],
+                )
+                row_enq = cursor.fetchone()
+                if row_enq and row_enq.get("min_date"):
+                    _FRANCHISEE_ONBOARD_CACHE[clean_name] = row_enq["min_date"]
+                    return row_enq["min_date"]
+
+                if row and row.get("created_at"):
+                    _FRANCHISEE_ONBOARD_CACHE[clean_name] = row["created_at"]
+                    return row["created_at"]
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    return None
+
+
+def get_share_split(
+    bill_date=None,
+    franchise_name=None,
+    onboarding_date=None,
+    years_completed=None,
+) -> dict:
+    """Returns {'franchisee_pct': float, 'company_pct': float}.
+    Business rule:
+    - Completed 3 years (>= 3 years tenure): 70% franchisee / 30% company (70 - 30).
+    - Not completed 3 years (< 3 years tenure): 75% franchisee / 25% company (75 - 25).
+    """
+    if years_completed is not None:
+        try:
+            if float(years_completed) >= 3.0:
+                return {"franchisee_pct": 0.70, "company_pct": 0.30}
+            return {"franchisee_pct": 0.75, "company_pct": 0.25}
+        except (TypeError, ValueError):
+            pass
+
     effective_date = _parse_date(bill_date) or datetime.now(timezone.utc)
-    if effective_date.tzinfo is None:
-        effective_date = effective_date.replace(tzinfo=timezone.utc)
+    if hasattr(effective_date, "tzinfo") and effective_date.tzinfo is not None:
+        effective_date = effective_date.astimezone(timezone.utc).replace(tzinfo=None)
 
-    is_pre_april_2026 = effective_date < RATE_CHANGE_DATE
-    if is_pre_april_2026:
-        return {"franchisee_pct": 0.6, "company_pct": 0.4}
+    start_dt = _parse_date(onboarding_date)
+    if start_dt is None and franchise_name:
+        resolved_onboard = get_franchisee_onboarding_date(franchise_name)
+        start_dt = _parse_date(resolved_onboard)
+
+    if start_dt:
+        if hasattr(start_dt, "tzinfo") and start_dt.tzinfo is not None:
+            start_dt = start_dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+        # Full completed years
+        years = (
+            effective_date.year
+            - start_dt.year
+            - (
+                (effective_date.month, effective_date.day)
+                < (start_dt.month, start_dt.day)
+            )
+        )
+        if years >= 3:
+            return {"franchisee_pct": 0.70, "company_pct": 0.30}
+        else:
+            return {"franchisee_pct": 0.75, "company_pct": 0.25}
+
+    # Default for franchisees who haven't completed 3 years (or new onboarding)
     return {"franchisee_pct": 0.75, "company_pct": 0.25}
 
 
 from decimal import Decimal, ROUND_HALF_UP
 
-def calculate_shares(service_charges, info, bill_date, is_manual_override=False, manual_franchisee_share=None, manual_our_share=None) -> dict:
+
+def calculate_shares(
+    service_charges,
+    info,
+    bill_date=None,
+    is_manual_override=False,
+    manual_franchisee_share=None,
+    manual_our_share=None,
+    franchise_name=None,
+    onboarding_date=None,
+    years_completed=None,
+) -> dict:
     """Computes franchiseeShare and ourShare from serviceCharges, respecting
     the info-status overrides (cancelled/reversed/legal = 0 company share,
-    PP = half company share) that already existed in the create-invoice logic.
+    PP = half company share) and franchisee tenure (70-30 for >= 3 years, 75-25 for < 3 years).
     franchiseeShare is always the full franchisee percentage regardless of
     info status — only the company (ourShare) side varies by status.
 
@@ -108,11 +200,19 @@ def calculate_shares(service_charges, info, bill_date, is_manual_override=False,
     """
     if is_manual_override:
         try:
-            f_share = int(round(float(manual_franchisee_share))) if manual_franchisee_share is not None else 0
+            f_share = (
+                int(round(float(manual_franchisee_share)))
+                if manual_franchisee_share is not None
+                else 0
+            )
         except (TypeError, ValueError):
             f_share = 0
         try:
-            o_share = int(round(float(manual_our_share))) if manual_our_share is not None else 0
+            o_share = (
+                int(round(float(manual_our_share)))
+                if manual_our_share is not None
+                else 0
+            )
         except (TypeError, ValueError):
             o_share = 0
         return {"franchisee_share": f_share, "our_share": o_share}
@@ -120,28 +220,37 @@ def calculate_shares(service_charges, info, bill_date, is_manual_override=False,
     try:
         sc_dec = Decimal(str(service_charges or 0))
     except Exception:
-        sc_dec = Decimal('0')
+        sc_dec = Decimal("0")
 
-    if sc_dec <= Decimal('0'):
+    if sc_dec <= Decimal("0"):
         return {"franchisee_share": 0, "our_share": 0}
 
-    split = get_share_split(bill_date)
+    split = get_share_split(
+        bill_date=bill_date,
+        franchise_name=franchise_name,
+        onboarding_date=onboarding_date,
+        years_completed=years_completed,
+    )
     franchisee_pct = Decimal(str(split["franchisee_pct"]))
     company_pct = Decimal(str(split["company_pct"]))
 
     # Standard accounting rounding (round half up)
     f_share_exact = sc_dec * franchisee_pct
-    franchisee_share = int(f_share_exact.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+    franchisee_share = int(
+        f_share_exact.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    )
 
     if info in ("CN", "RV", "LEGAL-CN", "LEGAL"):
         our_share = 0
     elif info == "PP":
-        o_share_exact = sc_dec * company_pct * Decimal('0.5')
-        our_share = int(o_share_exact.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+        o_share_exact = sc_dec * company_pct * Decimal("0.5")
+        our_share = int(
+            o_share_exact.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
     else:
         # "0", "PR", "R", and any other/default status
         # Remainder ensures franchiseeShare + ourShare always sums to exactly `sc`
-        sc_int = int(sc_dec.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+        sc_int = int(sc_dec.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
         our_share = int(sc_int - franchisee_share)
 
     return {"franchisee_share": franchisee_share, "our_share": our_share}

@@ -43,36 +43,61 @@ export function formatDateForMySQL(dateStr) {
 }
 
 // --- SHARE SPLIT (single source of truth for franchiseeShare / ourShare) ---
-// Confirmed business rule: 60% franchisee / 40% company for invoices before
-// the April 2026 rate change, 75% franchisee / 25% company from April 2026
-// onward. Effective date is the invoice's billDate (falls back to today if
-// billDate is missing, so brand-new invoices always get the current rate).
-// NOTE: this does NOT touch the pre-existing ~56.25%/18.75% rows already in
-// the DB for the pre-April period — those are known-bad historical data,
-// explicitly left alone for now per product decision; this function only
-// governs invoices computed/recomputed going forward.
-const RATE_CHANGE_DATE = new Date("2026-04-01T00:00:00Z");
+// Business rule:
+// - Franchisees who have completed 3 years (>= 3 years tenure): 70% franchisee / 30% company (70 - 30).
+// - Franchisees who have NOT completed 3 years (< 3 years tenure): 75% franchisee / 25% company (75 - 25).
 
-export function getShareSplit(billDate) {
+export function getShareSplit(billDate, onboardingDate = null, yearsCompleted = null) {
+  if (yearsCompleted !== null && yearsCompleted !== undefined) {
+    return Number(yearsCompleted) >= 3
+      ? { franchiseePct: 0.70, companyPct: 0.30 }
+      : { franchiseePct: 0.75, companyPct: 0.25 };
+  }
+
   const effectiveDate = billDate ? new Date(billDate) : new Date();
-  const isPreApril2026 = !isNaN(effectiveDate.getTime()) && effectiveDate < RATE_CHANGE_DATE;
-  return isPreApril2026
-    ? { franchiseePct: 0.6, companyPct: 0.4 }
-    : { franchiseePct: 0.75, companyPct: 0.25 };
+  if (onboardingDate) {
+    const startDate = new Date(onboardingDate);
+    if (!isNaN(startDate.getTime()) && !isNaN(effectiveDate.getTime())) {
+      let years = effectiveDate.getFullYear() - startDate.getFullYear();
+      const monthDiff = effectiveDate.getMonth() - startDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && effectiveDate.getDate() < startDate.getDate())) {
+        years--;
+      }
+      return years >= 3
+        ? { franchiseePct: 0.70, companyPct: 0.30 }
+        : { franchiseePct: 0.75, companyPct: 0.25 };
+    }
+  }
+
+  return { franchiseePct: 0.75, companyPct: 0.25 };
 }
 
 // Computes franchiseeShare and ourShare from serviceCharges, respecting the
 // info-status overrides (cancelled/reversed/legal = 0 company share, PP =
-// half company share) that already existed in the create-invoice logic.
-// franchiseeShare is always the full franchisee percentage regardless of
-// info status — only the company (`ourShare`) side varies by status.
-export function calculateShares(serviceCharges, info, billDate) {
+// half company share) and tenure (70-30 for >= 3 years, 75-25 for < 3 years).
+export function calculateShares(
+  serviceCharges,
+  info,
+  billDate,
+  isManualOverride = false,
+  manualFranchiseeShare = null,
+  manualOurShare = null,
+  onboardingDate = null,
+  yearsCompleted = null
+) {
+  if (isManualOverride) {
+    return {
+      franchiseeShare: manualFranchiseeShare !== null ? Math.round(Number(manualFranchiseeShare)) : 0,
+      ourShare: manualOurShare !== null ? Math.round(Number(manualOurShare)) : 0
+    };
+  }
+
   const sc = Number.parseFloat(serviceCharges);
   if (!sc || Number.isNaN(sc)) {
     return { franchiseeShare: 0, ourShare: 0 };
   }
 
-  const { franchiseePct, companyPct } = getShareSplit(billDate);
+  const { franchiseePct, companyPct } = getShareSplit(billDate, onboardingDate, yearsCompleted);
   const franchiseeShare = Math.round(sc * franchiseePct);
 
   let ourShare;
@@ -82,7 +107,7 @@ export function calculateShares(serviceCharges, info, billDate) {
     ourShare = Math.round(sc * companyPct * 0.5);
   } else {
     // "0", "PR", "R", and any other/default status
-    ourShare = Math.round(sc * companyPct);
+    ourShare = Math.round(sc - franchiseeShare);
   }
 
   return { franchiseeShare, ourShare };

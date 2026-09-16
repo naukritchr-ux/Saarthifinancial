@@ -650,7 +650,7 @@ def get_transactions():
 
                 for row in enquiry_inflows:
                     service_charges_calc = float(row['serviceAmt'] or 0.0)
-                    company_pool = get_share_split(row.get('date'))["company_pct"]
+                    company_pool = get_share_split(row.get('date'), franchise_name=row.get('franchiseeName'))["company_pct"]
                     
                     # BD share dynamically calculated
                     bd_comm = service_charges_calc * company_pool * bd_comm_rate
@@ -1405,7 +1405,7 @@ def get_bd_revenue(bd_name=None, start_date=None, end_date=None, aggregate=True)
                         aggregates[name] = {'invoices_closed': 0, 'gross_revenue': 0.0, 'net_revenue': 0.0}
                     aggregates[name]['invoices_closed'] += 1
                     aggregates[name]['gross_revenue'] += float(r['amount'] or 0.0)
-                    aggregates[name]['net_revenue'] += float(r['amount'] or 0.0) * get_share_split(r.get('date'))['company_pct']
+                    aggregates[name]['net_revenue'] += float(r['amount'] or 0.0) * get_share_split(r.get('date'), franchise_name=r.get('franchiseeName') or r.get('franchiseName'))['company_pct']
                 
                 result = []
                 for name, vals in aggregates.items():
@@ -1436,7 +1436,7 @@ def get_bd_revenue(bd_name=None, start_date=None, end_date=None, aggregate=True)
                         'invoice_no': r['referenceId'],
                         'bill_date': r['date'],
                         'gross_revenue': float(r['amount'] or 0.0),
-                        'net_revenue': float(r['amount'] or 0.0) * get_share_split(r.get('date'))['company_pct'],
+                        'net_revenue': float(r['amount'] or 0.0) * get_share_split(r.get('date'), franchise_name=r.get('franchiseeName') or r.get('franchiseName'))['company_pct'],
                         'payment_mode': r['paymentMode'],
                         'description': r['description']
                     })
@@ -2245,7 +2245,8 @@ def resolve_action_item(id):
                         service_charges=inv_sc,
                         info=inv_info,
                         bill_date=bill_date,
-                        is_manual_override=False
+                        is_manual_override=False,
+                        franchise_name=old_row.get('franchiseeName'),
                     )
                     cursor.execute("""
                         UPDATE invoice 
@@ -2268,7 +2269,8 @@ def resolve_action_item(id):
                     service_charges=bill_amount,
                     info=info_status,
                     bill_date=bill_date,
-                    is_manual_override=False
+                    is_manual_override=False,
+                    franchise_name=old_row.get('franchiseeName'),
                 )
                 f_share = shares['franchisee_share']
                 o_share = shares['our_share']
