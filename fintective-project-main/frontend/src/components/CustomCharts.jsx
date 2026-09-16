@@ -3,17 +3,19 @@ import React from 'react';
 /**
  * Donut Chart Component using SVG
  */
-export const DonutChart = ({ data }) => {
-  const total = data.reduce((sum, item) => sum + item.value, 0);
+export const DonutChart = ({ data, totalLabel = 'TOTAL' }) => {
+  const total = data.reduce((sum, item) => sum + (Number(item.value) || 0), 0);
   
   // Calculate segments
   let accumulatedPercent = 0;
   const segments = data.map(item => {
-    const percent = total > 0 ? (item.value / total) * 100 : 0;
+    const val = Number(item.value) || 0;
+    const percent = total > 0 ? (val / total) * 100 : 0;
     const startPercent = accumulatedPercent;
     accumulatedPercent += percent;
     return {
       ...item,
+      value: val,
       percent,
       startPercent
     };
@@ -21,7 +23,7 @@ export const DonutChart = ({ data }) => {
 
   // SVG parameters
   const radius = 30;
-  const circumference = 2 * Math.PI * radius;
+  const circumference = 2 * Math.PI * radius; // ~188.495
 
   return (
     <div className="donut-chart-container">
@@ -37,42 +39,43 @@ export const DonutChart = ({ data }) => {
               strokeWidth="12"
             />
           ) : (
-            segments.map((seg, i) => {
-              const strokeDasharray = `${(seg.percent / 100) * circumference} ${circumference}`;
-              const strokeDashoffset = `${circumference - (seg.startPercent / 100) * circumference + (circumference / 4)}`; // Rotate by 90deg so starts at top
-              return (
-                <circle
-                  key={i}
-                  cx="50"
-                  cy="50"
-                  r={radius}
-                  fill="transparent"
-                  stroke={seg.color}
-                  strokeWidth="12"
-                  strokeDasharray={strokeDasharray}
-                  strokeDashoffset={strokeDashoffset}
-                  strokeLinecap="round"
-                  className="donut-segment"
-                >
-                  <title>{`${seg.label}: ${seg.percent.toFixed(1)}%`}</title>
-                </circle>
-              );
-            })
+            <g transform="rotate(-90 50 50)">
+              {segments.map((seg, i) => {
+                const strokeDasharray = `${(seg.percent / 100) * circumference} ${circumference}`;
+                const strokeDashoffset = `${-(seg.startPercent / 100) * circumference}`;
+                return (
+                  <circle
+                    key={i}
+                    cx="50"
+                    cy="50"
+                    r={radius}
+                    fill="transparent"
+                    stroke={seg.color}
+                    strokeWidth="12"
+                    strokeDasharray={strokeDasharray}
+                    strokeDashoffset={strokeDashoffset}
+                    className="donut-segment"
+                  >
+                    <title>{`${seg.label}: ₹${Math.round(seg.value).toLocaleString()} (${seg.percent.toFixed(1)}%)`}</title>
+                  </circle>
+                );
+              })}
+            </g>
           )}
           {/* Inner Text */}
           <circle cx="50" cy="50" r="22" fill="#151d30" />
-          <text x="50" y="47" textAnchor="middle" fill="#94a3b8" fontSize="6" fontWeight="bold">
-            TOTAL
+          <text x="50" y="46" textAnchor="middle" fill="#94a3b8" fontSize="5.5" fontWeight="600" letterSpacing="0.5">
+            {totalLabel}
           </text>
-          <text x="50" y="58" textAnchor="middle" fill="#ffffff" fontSize="9" fontWeight="bold">
-            {total >= 100000 ? `₹${(total / 100000).toFixed(1)}L` : `₹${(total / 1000).toFixed(0)}K`}
+          <text x="50" y="58" textAnchor="middle" fill="#ffffff" fontSize="8.5" fontWeight="bold">
+            {total >= 10000000 ? `₹${(total / 10000000).toFixed(2)}Cr` : (total >= 100000 ? `₹${(total / 100000).toFixed(1)}L` : `₹${(total / 1000).toFixed(0)}K`)}
           </text>
         </svg>
       </div>
 
       <div className="donut-legend">
         {segments.map((seg, i) => (
-          <div className="legend-item" key={i}>
+          <div className="legend-item" key={i} title={seg.subText || `${seg.label}: ₹${Math.round(seg.value).toLocaleString()}`}>
             <span className="legend-dot" style={{ backgroundColor: seg.color }}></span>
             <span className="legend-label">{seg.label}</span>
             <span className="legend-value">{seg.percent.toFixed(0)}%</span>

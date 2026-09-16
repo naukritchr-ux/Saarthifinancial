@@ -7,6 +7,7 @@ import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Activity, Percent
 const Dashboard = ({ setActivePage }) => {
   const { moduleFilteredTransactions: transactions, selectedMonth, selectedYear, budgets, userRole, franchisees, bdAgents, activeModule } = useContext(FinanceContext);
   const [selectedTx, setSelectedTx] = useState(null); // Auditor Modal state
+  const [breakdownView, setBreakdownView] = useState('shares'); // 'shares' | 'franchisees' | 'streams'
 
   // Month parse helper
   const getMonthAndYear = (dateStr) => {
@@ -144,35 +145,144 @@ const Dashboard = ({ setActivePage }) => {
   const profitChange = getChange(profit, prevProfit);
   const marginChange = getMarginChange(margin, prevMargin);
 
-  // Income Donut Chart
-  const incomeCategories = {};
-  currentTxs.filter(t => t.type === 'income').forEach(tx => {
-    const cat = tx.category || 'Other';
-    incomeCategories[cat] = (incomeCategories[cat] || 0) + tx.amount;
-  });
+  // Income Breakdown by Revenue Shares, Franchise Divisions, and Streams
+  const { sharesDonutData, franchiseDonutData, streamDonutData } = useMemo(() => {
+    const incomeTxs = currentTxs.filter(t => t.type === 'income');
+    
+    let fShareTotal = 0;
+    let ourShareTotal = 0;
+    let setupFeeTotal = 0;
+    let portalTotal = 0;
 
-  const donutColors = {
-    'Recruitment': '#2563eb',
-    'Franchisee fee': '#0d9488',
-    'Job portal': '#ea580c',
-    'Other': '#64748b'
-  };
+    const franTotals = {};
+    const streamTotals = {};
 
-  const donutData = Object.keys(incomeCategories).map(cat => ({
-    label: cat,
-    value: incomeCategories[cat],
-    color: donutColors[cat] || '#8b5cf6'
-  })).sort((a, b) => b.value - a.value);
+    incomeTxs.forEach(tx => {
+      const amt = Number(tx.amount || 0);
+      const cat = tx.category || 'Other';
+      streamTotals[cat] = (streamTotals[cat] || 0) + amt;
 
-  const finalDonutData = donutData.length > 0 ? donutData : (
-    activeModule === 'job_portal' ? [
-      { label: 'Job portal sales', value: 112000, color: '#ea580c' },
-      { label: 'Portal Subscriptions', value: 19000, color: '#10b981' }
-    ] : [
-      { label: 'Recruitment', value: 249600, color: '#2563eb' },
-      { label: 'Franchisee fee', value: 187200, color: '#0d9488' }
-    ]
-  );
+      if (cat === 'Franchisee fee' || (tx.subCategory && tx.subCategory.toLowerCase().includes('setup'))) {
+        setupFeeTotal += amt;
+      } else if (cat === 'Job portal' || (tx.subCategory && tx.subCategory.toLowerCase().includes('portal'))) {
+        portalTotal += amt;
+      } else {
+        // Recruitment / placement revenue
+        const fShare = Number(
+          tx.franchiseeShare !== undefined && tx.franchiseeShare !== null
+            ? tx.franchiseeShare
+            : (tx.serviceAmt ? tx.serviceAmt - (tx.rShare || 0) : amt * 0.73)
+        );
+        const oShare = Number(
+          tx.rShare !== undefined && tx.rShare !== null
+            ? tx.rShare
+            : (tx.ourShare !== undefined && tx.ourShare !== null ? tx.ourShare : amt - fShare)
+        );
+        fShareTotal += fShare;
+        ourShareTotal += oShare;
+      }
+
+      const fName = (tx.franchiseeName || tx.owner || 'Direct / Head Office').trim();
+      if (fName && fName !== 'Unknown') {
+        franTotals[fName] = (franTotals[fName] || 0) + amt;
+      } else {
+        franTotals['Direct / Head Office'] = (franTotals['Direct / Head Office'] || 0) + amt;
+      }
+    });
+
+    // 1. Shares Split Data (Franchisee 70-75% vs Company 25-30% vs Setup vs Portal)
+    const sharesList = [];
+    if (fShareTotal > 0) {
+      sharesList.push({
+        label: 'Franchisee Share',
+        value: fShareTotal,
+        color: '#2563eb', // Blue
+        subText: 'Franchisee Partner share (70% - 75%)'
+      });
+    }
+    if (ourShareTotal > 0) {
+      sharesList.push({
+        label: 'Company Retained',
+        value: ourShareTotal,
+        color: '#10b981', // Emerald Green
+        subText: 'Company net retained margin (25% - 30%)'
+      });
+    }
+    if (setupFeeTotal > 0) {
+      sharesList.push({
+        label: 'Franchisee Setup Fee',
+        value: setupFeeTotal,
+        color: '#f59e0b', // Amber
+        subText: 'New franchisee onboarding fees'
+      });
+    }
+    if (portalTotal > 0) {
+      sharesList.push({
+        label: 'Job Portal Revenue',
+        value: portalTotal,
+        color: '#ea580c', // Orange
+        subText: 'Employer package subscriptions'
+      });
+    }
+
+    if (sharesList.length === 0) {
+      sharesList.push(
+        { label: 'Franchisee Share', value: 38800000, color: '#2563eb' },
+        { label: 'Company Retained', value: 14360000, color: '#10b981' }
+      );
+    }
+
+    // 2. Franchisee Divisions Data
+    const sortedFrans = Object.keys(franTotals).map(name => ({
+      name,
+      value: franTotals[name]
+    })).sort((a, b) => b.value - a.value);
+
+    const franPalette = ['#2563eb', '#10b981', '#0d9488', '#8b5cf6', '#f59e0b', '#ea580c', '#3b82f6'];
+    let franList = [];
+    if (sortedFrans.length > 5) {
+      const top5 = sortedFrans.slice(0, 5);
+      const otherVal = sortedFrans.slice(5).reduce((s, x) => s + x.value, 0);
+      franList = top5.map((f, i) => ({
+        label: f.name,
+        value: f.value,
+        color: franPalette[i % franPalette.length]
+      }));
+      if (otherVal > 0) {
+        franList.push({
+          label: 'Other Franchisees',
+          value: otherVal,
+          color: '#64748b'
+        });
+      }
+    } else {
+      franList = sortedFrans.map((f, i) => ({
+        label: f.name,
+        value: f.value,
+        color: franPalette[i % franPalette.length]
+      }));
+    }
+
+    // 3. Streams Data
+    const streamPalette = {
+      'Recruitment': '#2563eb',
+      'Recruitment Fee': '#2563eb',
+      'Franchisee fee': '#0d9488',
+      'Job portal': '#ea580c',
+      'Other': '#64748b'
+    };
+    const streamList = Object.keys(streamTotals).map(cat => ({
+      label: cat,
+      value: streamTotals[cat],
+      color: streamPalette[cat] || '#8b5cf6'
+    })).sort((a, b) => b.value - a.value);
+
+    return {
+      sharesDonutData: sharesList,
+      franchiseDonutData: franList.length > 0 ? franList : sharesList,
+      streamDonutData: streamList.length > 0 ? streamList : sharesList
+    };
+  }, [currentTxs]);
 
   // Budget vs Actual Spend Calculations
   const expenseCategories = {};
@@ -685,11 +795,77 @@ const Dashboard = ({ setActivePage }) => {
             </div>
           </div>
 
-          {/* Right: Income Sources */}
+          {/* Right: Income Sources & Divisions */}
           <div className="dashboard-card chart-card flex-1">
-            <h3 className="card-title">Income Sources Breakdown</h3>
+            <div className="card-header-flex" style={{ alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div>
+                <h3 className="card-title" style={{ margin: 0 }}>Revenue & Share Breakdown</h3>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                  {breakdownView === 'shares' ? 'Franchisee Partner (70-75%) vs Company (25-30%)' : (breakdownView === 'franchisees' ? 'Division breakdown across Franchisee partners' : 'Breakdown across business revenue streams')}
+                </span>
+              </div>
+              <div style={{ display: 'inline-flex', gap: '3px', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border-color, rgba(255,255,255,0.1))', padding: '3px', borderRadius: '8px' }}>
+                <button
+                  type="button"
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '0.72rem',
+                    fontWeight: '600',
+                    borderRadius: '5px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    background: breakdownView === 'shares' ? '#2563eb' : 'transparent',
+                    color: breakdownView === 'shares' ? '#ffffff' : 'var(--text-muted)'
+                  }}
+                  onClick={() => setBreakdownView('shares')}
+                >
+                  Share Split
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '0.72rem',
+                    fontWeight: '600',
+                    borderRadius: '5px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    background: breakdownView === 'franchisees' ? '#2563eb' : 'transparent',
+                    color: breakdownView === 'franchisees' ? '#ffffff' : 'var(--text-muted)'
+                  }}
+                  onClick={() => setBreakdownView('franchisees')}
+                >
+                  Franchisees
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '0.72rem',
+                    fontWeight: '600',
+                    borderRadius: '5px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    background: breakdownView === 'streams' ? '#2563eb' : 'transparent',
+                    color: breakdownView === 'streams' ? '#ffffff' : 'var(--text-muted)'
+                  }}
+                  onClick={() => setBreakdownView('streams')}
+                >
+                  Streams
+                </button>
+              </div>
+            </div>
             <div className="card-content-center">
-              <DonutChart data={finalDonutData} />
+              <DonutChart 
+                data={
+                  breakdownView === 'shares' 
+                    ? sharesDonutData 
+                    : (breakdownView === 'franchisees' ? franchiseDonutData : streamDonutData)
+                } 
+              />
             </div>
           </div>
 
