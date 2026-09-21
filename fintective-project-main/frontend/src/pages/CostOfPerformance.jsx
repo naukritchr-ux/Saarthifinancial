@@ -11,24 +11,25 @@ import {
   MapPin, 
   Briefcase, 
   Layers, 
-  Sliders, 
+  SlidersHorizontal, 
   Download, 
   Search, 
   ArrowUpDown, 
   ChevronRight, 
   X, 
   Info, 
-  Sparkles,
-  BarChart3,
-  LayoutGrid,
-  Activity,
-  Target,
-  Zap,
-  Flame,
-  Compass,
-  ArrowRight,
-  UserCheck,
-  Scale
+  Sparkles, 
+  BarChart3, 
+  LayoutGrid, 
+  Activity, 
+  Target, 
+  Zap, 
+  Flame, 
+  Compass, 
+  UserCheck, 
+  Scale, 
+  Store, 
+  PieChart 
 } from 'lucide-react';
 import Pagination from '../components/Pagination';
 
@@ -998,7 +999,7 @@ const CostOfPerformance = () => {
                 transition: 'all 0.15s ease'
               }}
             >
-              <Sliders size={15} />
+              <SlidersHorizontal size={15} />
               <span>Cost Inputs</span>
             </button>
           )}
