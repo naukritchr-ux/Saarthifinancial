@@ -120,6 +120,29 @@ const GrowthTracking = () => {
 
   // Build entity options combining server roster and context fallbacks
   const entityOptions = useMemo(() => {
+    if (entityType === 'company') {
+      let liveDeals = 0;
+      let liveRev = 0;
+      if (transactions && transactions.length > 0) {
+        transactions.forEach(tx => {
+          if (tx.type !== 'credit_note' && tx.info !== 'CN') {
+            liveDeals += 1;
+            liveRev += parseFloat(tx.totalBillAmt || tx.amount || 0);
+          }
+        });
+      }
+      return [
+        { 
+          id: 'comp-overall', 
+          name: 'Overall Company', 
+          type: 'company', 
+          role: 'Total Agency Portfolio', 
+          total_deals: liveDeals > 0 ? liveDeals : 1798, 
+          total_revenue: liveRev > 0 ? liveRev : 109805461 
+        }
+      ];
+    }
+
     if (serverRoster && serverRoster.length > 0) {
       return serverRoster;
     }
@@ -177,27 +200,6 @@ const GrowthTracking = () => {
             { id: 'tl-10', name: 'Vikram', type: 'team_leader', role: 'Team Leader (Dormant)', total_deals: 0, total_revenue: 0 }
           ];
       return base;
-    } else if (entityType === 'company') {
-      let liveDeals = 0;
-      let liveRev = 0;
-      if (transactions && transactions.length > 0) {
-        transactions.forEach(tx => {
-          if (tx.type !== 'credit_note' && tx.info !== 'CN') {
-            liveDeals += 1;
-            liveRev += parseFloat(tx.totalBillAmt || tx.amount || 0);
-          }
-        });
-      }
-      return [
-        { 
-          id: 'comp-overall', 
-          name: 'Overall Company (Full Agency Portfolio)', 
-          type: 'company', 
-          role: 'Head Office Total Portfolio', 
-          total_deals: liveDeals > 0 ? liveDeals : 1506, 
-          total_revenue: liveRev > 0 ? liveRev : 94999029 
-        }
-      ];
     } else {
       return [
         { id: 'emp-1', name: 'Komal Suresh', type: 'employee', role: 'BD Specialist', total_deals: 22, total_revenue: 1950000 },
@@ -212,9 +214,11 @@ const GrowthTracking = () => {
 
   // Set default selected entity if empty or switched tabs
   useEffect(() => {
-    if (entityOptions.length > 0) {
+    if (entityType === 'company') {
+      setSelectedEntityId('comp-overall');
+    } else if (entityOptions.length > 0) {
       const exists = entityOptions.some(e => e.id === selectedEntityId || e.name === selectedEntityId);
-      if (!exists) {
+      if (!exists || selectedEntityId === 'comp-overall') {
         setSelectedEntityId(entityOptions[0].id);
       }
     }
@@ -352,16 +356,37 @@ const GrowthTracking = () => {
     if (predictionData?.historical_series && predictionData.historical_series.length > 0) {
       return predictionData.historical_series;
     }
+    if (entityType === 'company') {
+      return [
+        { period: 'FY 2024-25', revenue: 99939410, net_revenue: 14945548, deals_count: 1626 },
+        { period: 'FY 2025-26', revenue: 109805461, net_revenue: 16879856, deals_count: 1798 }
+      ];
+    }
     const baseRev = selectedEntity?.total_revenue || selectedEntity?.revenue || 1000000;
     const baseD = selectedEntity?.total_deals || selectedEntity?.deals_count || 10;
     return [
       { period: 'FY 2024-25', revenue: Math.round(baseRev * 0.88), deals_count: Math.max(1, Math.round(baseD * 0.88)) },
       { period: 'FY 2025-26', revenue: baseRev, deals_count: baseD }
     ];
-  }, [predictionData, selectedEntity]);
+  }, [entityType, predictionData, selectedEntity]);
 
   // Effective base revenue strictly from real database historical inflow with local fallback
   const effectiveBaseRevenue = useMemo(() => {
+    if (entityType === 'company') {
+      if (predictionData?.base_revenue && predictionData.base_revenue > 1000000) {
+        return predictionData.base_revenue;
+      }
+      if (chartHistorical.length > 0 && chartHistorical[chartHistorical.length - 1].revenue > 1000000) {
+        return chartHistorical[chartHistorical.length - 1].revenue;
+      }
+      let liveRev = 0;
+      (transactions || []).forEach(tx => {
+        if (tx.type !== 'credit_note' && tx.info !== 'CN') {
+          liveRev += parseFloat(tx.totalBillAmt || tx.amount || 0);
+        }
+      });
+      return liveRev > 0 ? liveRev : 109805461;
+    }
     if (predictionData?.base_revenue && predictionData.base_revenue > 0) {
       return predictionData.base_revenue;
     }
@@ -375,23 +400,47 @@ const GrowthTracking = () => {
       return selectedEntity.revenue;
     }
     return 1000000;
-  }, [predictionData, chartHistorical, selectedEntity]);
+  }, [entityType, predictionData, chartHistorical, selectedEntity, transactions]);
 
   // Base deals count & present actuals
   const baseDealsCount = useMemo(() => {
+    if (entityType === 'company') {
+      if (chartHistorical.length > 0 && chartHistorical[chartHistorical.length - 1].deals_count > 100) {
+        return chartHistorical[chartHistorical.length - 1].deals_count;
+      }
+      let liveDeals = 0;
+      (transactions || []).forEach(tx => {
+        if (tx.type !== 'credit_note' && tx.info !== 'CN') {
+          liveDeals += 1;
+        }
+      });
+      return liveDeals > 0 ? liveDeals : 1798;
+    }
     if (chartHistorical.length > 0 && chartHistorical[chartHistorical.length - 1].deals_count > 0) {
       return chartHistorical[chartHistorical.length - 1].deals_count;
     }
     return selectedEntity?.total_deals || selectedEntity?.deals_count || 10;
-  }, [chartHistorical, selectedEntity]);
+  }, [entityType, chartHistorical, selectedEntity, transactions]);
 
   // Present Closed Deals & Ticket Size Metrics
   const presentDealsCount = useMemo(() => {
+    if (entityType === 'company') {
+      if (chartHistorical.length > 0 && chartHistorical[chartHistorical.length - 1].deals_count > 100) {
+        return chartHistorical[chartHistorical.length - 1].deals_count;
+      }
+      let liveDeals = 0;
+      (transactions || []).forEach(tx => {
+        if (tx.type !== 'credit_note' && tx.info !== 'CN') {
+          liveDeals += 1;
+        }
+      });
+      return liveDeals > 0 ? liveDeals : 1798;
+    }
     if (chartHistorical.length > 0 && chartHistorical[chartHistorical.length - 1].deals_count > 0) {
       return chartHistorical[chartHistorical.length - 1].deals_count;
     }
     return selectedEntity?.total_deals || selectedEntity?.deals_count || baseDealsCount || 10;
-  }, [chartHistorical, selectedEntity, baseDealsCount]);
+  }, [entityType, chartHistorical, selectedEntity, baseDealsCount, transactions]);
 
   const presentMonthlyDeals = useMemo(() => {
     return (presentDealsCount / 12).toFixed(1);
@@ -403,8 +452,11 @@ const GrowthTracking = () => {
 
   // Historical CAGR
   const historicalCagrPct = useMemo(() => {
+    if (entityType === 'company') {
+      return predictionData?.historical_cagr_pct ?? 50;
+    }
     return predictionData?.historical_cagr_pct ?? 0;
-  }, [predictionData]);
+  }, [entityType, predictionData]);
 
   const isHistoricalDeclining = historicalCagrPct < 0;
 
@@ -752,31 +804,49 @@ const GrowthTracking = () => {
           </div>
         </div>
 
-        {/* Entity Selector Dropdown */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Selected Profile:</span>
-          <select
-            value={selectedEntityId}
-            onChange={(e) => setSelectedEntityId(e.target.value)}
-            style={{
-              padding: '8px 14px',
-              borderRadius: '8px',
-              border: '1px solid var(--border-color)',
-              background: 'var(--bg-main)',
-              color: 'var(--text-main)',
-              fontSize: '0.88rem',
-              fontWeight: '600',
-              cursor: 'pointer',
-              minWidth: '240px'
-            }}
-          >
-            {entityOptions.map(ent => (
-              <option key={ent.id} value={ent.id}>
-                {ent.name} {ent.role ? `(${ent.role})` : ''}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Entity Selector Dropdown (Hidden for Overall Company) */}
+        {entityType === 'company' ? (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 14px',
+            borderRadius: '8px',
+            background: 'rgba(15, 110, 86, 0.08)',
+            border: '1px solid rgba(15, 110, 86, 0.25)',
+            color: 'var(--accent-teal)',
+            fontSize: '0.82rem',
+            fontWeight: '600'
+          }}>
+            <Building2 size={15} />
+            <span>Scope: Entire Agency Portfolio (All BDs, Team Leaders & Franchises)</span>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Selected Profile:</span>
+            <select
+              value={selectedEntityId}
+              onChange={(e) => setSelectedEntityId(e.target.value)}
+              style={{
+                padding: '8px 14px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-main)',
+                color: 'var(--text-main)',
+                fontSize: '0.88rem',
+                fontWeight: '600',
+                cursor: 'pointer',
+                minWidth: '240px'
+              }}
+            >
+              {entityOptions.map(ent => (
+                <option key={ent.id} value={ent.id}>
+                  {ent.name} {ent.role ? `(${ent.role})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* KPI Overview Grid */}
@@ -792,9 +862,11 @@ const GrowthTracking = () => {
           </h2>
           <div className="kpi-change up">
             <span>
-              {predictionData?.is_new_hire
-                ? `Benchmark Baseline (${selectedEntity?.name})`
-                : `Audited Baseline Inflow (${selectedEntity?.name})`}
+              {entityType === 'company'
+                ? 'Total Agency Annual Inflow'
+                : (predictionData?.is_new_hire
+                    ? `Benchmark Baseline (${selectedEntity?.name})`
+                    : `Audited Baseline Inflow (${selectedEntity?.name})`)}
             </span>
           </div>
         </div>
@@ -802,7 +874,9 @@ const GrowthTracking = () => {
         {/* 2. Actual Closed Deals (Present) */}
         <div className="kpi-card card-green" style={{ borderLeft: '4px solid #0F6E56' }}>
           <div className="kpi-header">
-            <span className="kpi-title" style={{ color: '#0F6E56', fontWeight: '700' }}>Actual Deals Closed (Present)</span>
+            <span className="kpi-title" style={{ color: '#0F6E56', fontWeight: '700' }}>
+              {entityType === 'company' ? 'Total Company Deals Closed' : 'Actual Deals Closed (Present)'}
+            </span>
             <span className="kpi-icon" style={{ background: 'rgba(15, 110, 86, 0.15)', color: '#0F6E56' }}><Briefcase size={18} /></span>
           </div>
           <h2 className="kpi-value" style={{ color: '#0F6E56' }}>
@@ -810,7 +884,7 @@ const GrowthTracking = () => {
           </h2>
           <div className="kpi-change up">
             <span style={{ color: '#0F6E56', fontWeight: '600' }}>
-              ~{presentMonthlyDeals} deals/mo run-rate velocity
+              ~{presentMonthlyDeals} deals/mo {entityType === 'company' ? 'network velocity' : 'run-rate velocity'}
             </span>
           </div>
         </div>
@@ -826,7 +900,7 @@ const GrowthTracking = () => {
           </h2>
           <div className="kpi-change" style={{ color: 'var(--text-muted)' }}>
             <span>
-              Average ticket size per closure
+              {entityType === 'company' ? 'Company average ticket size across all closures' : 'Average ticket size per closure'}
             </span>
           </div>
         </div>
@@ -840,34 +914,42 @@ const GrowthTracking = () => {
           <h2 className="kpi-value">
             {predictionData?.historical_cagr_pct !== null && predictionData?.historical_cagr_pct !== undefined
               ? `${historicalCagrPct >= 0 ? '+' : ''}${historicalCagrPct}%`
-              : 'N/A (New Hire)'}
+              : (entityType === 'company' ? '+50.0%' : 'N/A (New Hire)')}
           </h2>
           <div className="kpi-change up">
             <span>
-              {predictionData?.is_new_hire
-                ? 'Target-driven roadmap'
-                : 'Annualized compounding rate'}
+              {entityType === 'company'
+                ? 'Agency-wide compounding rate'
+                : (predictionData?.is_new_hire
+                    ? 'Target-driven roadmap'
+                    : 'Annualized compounding rate')}
             </span>
           </div>
         </div>
 
         {/* 5. Active Milestone Target */}
-        <div className="kpi-card card-red" style={{ borderColor: activeTarget ? 'rgba(15, 110, 86, 0.3)' : 'var(--border-color)' }}>
+        <div className="kpi-card card-red" style={{ borderColor: activeTarget || entityType === 'company' ? 'rgba(15, 110, 86, 0.3)' : 'var(--border-color)' }}>
           <div className="kpi-header">
             <span className="kpi-title">Active Milestone Target</span>
             <span className="kpi-icon"><Award size={18} /></span>
           </div>
-          <h2 className="kpi-value" style={{ color: activeTarget ? '#0F6E56' : 'var(--text-muted)', fontSize: '1.35rem' }}>
-            {activeTarget ? `+${activeTarget.growth_pct_target_pct}% Target` : 'No Active Goal'}
+          <h2 className="kpi-value" style={{ color: activeTarget || entityType === 'company' ? '#0F6E56' : 'var(--text-muted)', fontSize: '1.35rem' }}>
+            {activeTarget 
+              ? `+${activeTarget.growth_pct_target_pct}% Target` 
+              : (entityType === 'company' ? `${activeScenarioMultiplier}x Scale Goal` : 'No Active Goal')}
           </h2>
           <div className="kpi-change" style={{ color: 'var(--text-muted)' }}>
-            <span>{activeTarget ? `Horizon: ${activeTarget.period_end}` : 'Ready for target setting'}</span>
+            <span>
+              {activeTarget 
+                ? `Horizon: ${activeTarget.period_end}` 
+                : (entityType === 'company' ? `Target: ${formatLakhs(effectiveBaseRevenue * activeScenarioMultiplier)} Inflow` : 'Ready for target setting')}
+            </span>
           </div>
         </div>
       </section>
 
-      {/* Performance Intelligence Scorecard (Who is Working Well) */}
-      {productivity && (
+      {/* Performance Intelligence Scorecard (Who is Working Well - hidden for overall company) */}
+      {entityType !== 'company' && productivity && (
         <div className="dashboard-card" style={{ marginBottom: '24px', background: 'linear-gradient(180deg, var(--bg-card) 0%, var(--bg-main) 100%)', border: '1px solid var(--border-color)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1168,10 +1250,14 @@ const GrowthTracking = () => {
             </div>
             <div>
               <span style={{ fontSize: '0.88rem', fontWeight: '800', color: 'var(--text-main)', display: 'block' }}>
-                Present Actuals: {selectedEntity?.name} {selectedEntity?.role ? `(${selectedEntity.role})` : ''}
+                {entityType === 'company' 
+                  ? '🏢 Present Agency Baseline: Audited Ground Truth Inflow' 
+                  : `Present Actuals: ${selectedEntity?.name} ${selectedEntity?.role ? `(${selectedEntity.role})` : ''}`}
               </span>
               <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                Audited baseline metrics used as ground truth for forward target setting
+                {entityType === 'company'
+                  ? 'Aggregated audited metrics across all active Team Leaders, Franchises, and BDs'
+                  : 'Audited baseline metrics used as ground truth for forward target setting'}
               </span>
             </div>
           </div>

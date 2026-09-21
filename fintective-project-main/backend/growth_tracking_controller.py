@@ -132,6 +132,9 @@ def _get_entity_aliases(cursor, entity_type, entity_id, explicit_name=None):
 
 def _resolve_entity_info(cursor, entity_type, entity_id, explicit_name=None):
     """Resolves human-readable entity name and details."""
+    if entity_type == 'company':
+        return "Overall Company (Full Agency Portfolio)"
+
     if explicit_name and explicit_name.strip() and explicit_name.strip().lower() != 'undefined':
         return explicit_name.strip()
 
@@ -231,7 +234,62 @@ def _fetch_historical_revenue_and_stats(cursor, entity_type, entity_id, entity_n
     placeholders = ", ".join(["%s"] * len(aliases))
 
     try:
-        if entity_type == 'franchisee':
+        if entity_type == 'company':
+            query = """
+                SELECT 
+                    COALESCE(financialYear, SUBSTRING(billDate, 1, 4)) AS period,
+                    SUM(COALESCE(totalBillAmt, serviceCharges, 0.0)) AS gross_revenue,
+                    SUM(COALESCE(franchiseeShare, 0.0)) AS franchisee_share,
+                    SUM(COALESCE(ourShare, totalBillAmt * 0.25, 0.0)) AS net_revenue,
+                    COUNT(*) AS deals_count
+                FROM invoice
+                WHERE billNumber IS NOT NULL AND billNumber != ''
+                GROUP BY period
+                ORDER BY period ASC
+            """
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            
+            period_map = {}
+            for r in rows:
+                if r.get('period'):
+                    p_norm = _normalize_fy(r['period'])
+                    if p_norm not in period_map:
+                        period_map[p_norm] = {
+                            'period': p_norm,
+                            'revenue': 0.0,
+                            'net_revenue': 0.0,
+                            'deals_count': 0
+                        }
+                    period_map[p_norm]['revenue'] += float(r['gross_revenue'] or 0.0)
+                    period_map[p_norm]['net_revenue'] += float(r['net_revenue'] or 0.0)
+                    period_map[p_norm]['deals_count'] += int(r['deals_count'] or 0)
+            
+            historical_series = sorted(list(period_map.values()), key=lambda x: x['period'])
+
+            # Monthly stats for entire company
+            m_query = """
+                SELECT 
+                    SUBSTRING(billDate, 1, 7) AS month_str,
+                    COUNT(*) AS deals_count,
+                    SUM(COALESCE(totalBillAmt, serviceCharges, 0.0)) AS monthly_revenue
+                FROM invoice
+                WHERE billNumber IS NOT NULL AND billNumber != '' AND billDate IS NOT NULL AND billDate != ''
+                GROUP BY month_str
+                ORDER BY month_str ASC
+            """
+            cursor.execute(m_query)
+            m_rows = cursor.fetchall()
+            for mr in m_rows:
+                if mr.get('month_str'):
+                    monthly_series.append({
+                        'month': str(mr['month_str']),
+                        'deals': int(mr['deals_count'] or 0),
+                        'revenue': float(mr['monthly_revenue'] or 0.0)
+                    })
+            months_of_history = len(monthly_series)
+
+        elif entity_type == 'franchisee':
             query = f"""
                 SELECT 
                     COALESCE(financialYear, SUBSTRING(billDate, 1, 4)) AS period,
