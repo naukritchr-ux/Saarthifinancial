@@ -1589,7 +1589,9 @@ const GrowthTracking = () => {
               </div>
             </div>
           )}
-        </div>
+        </>
+      )}
+    </div>
 
       {/* Target History & Outcome Tracking Table */}
       <div className="dashboard-card">
