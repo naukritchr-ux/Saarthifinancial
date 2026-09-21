@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useMemo, useContext } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
-import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
+import { formatCurrency, formatDate } from '../utils/formatters';
 import { 
   DollarSign, 
   TrendingUp, 
-  TrendingDown, 
   AlertTriangle, 
-  CheckCircle2, 
   Users, 
   Building, 
   MapPin, 
@@ -20,30 +18,17 @@ import {
   ChevronRight, 
   X, 
   Info, 
-  ShieldAlert, 
   Sparkles,
   BarChart3,
-  PieChart,
   LayoutGrid,
   Activity,
   Target,
   Zap,
-  Award,
-  HelpCircle,
-  RefreshCw,
   Flame,
   Compass,
-  Play,
   ArrowRight,
-  ShieldCheck,
-  Check,
   UserCheck,
-  UserX,
-  Store,
-  SlidersHorizontal,
-  Edit3,
-  Scale,
-  CheckSquare
+  Scale
 } from 'lucide-react';
 import Pagination from '../components/Pagination';
 
@@ -163,14 +148,13 @@ const ALL_INDUSTRY_BENCHMARKS = [
 ];
 
 const CostOfPerformance = () => {
-  const { currentUser, transactions, bdAgents, teamLeaders, franchisees } = useContext(FinanceContext);
+  const { currentUser, transactions } = useContext(FinanceContext);
 
   // Core State
   const [costMainTab, setCostMainTab] = useState('profiles'); // 'profiles' | 'compare' | 'company_goals'
   const [activeDimension, setActiveDimension] = useState('bd'); // 'bd' | 'tl' | 'franchise' | 'city' | 'industry'
   const [selectedMonth, setSelectedMonth] = useState('2026-08');
   const [availableMonths, setAvailableMonths] = useState(['2026-08', '2026-07', '2026-06', '2026-05', '2026-04', '2026-03']);
-  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState('both'); // 'both' | 'charts' | 'table'
   const [selectedCompareProfiles, setSelectedCompareProfiles] = useState([]);
@@ -185,11 +169,8 @@ const CostOfPerformance = () => {
   const [activationPlaybookEntity, setActivationPlaybookEntity] = useState(null);
   const [simulatedReactivations, setSimulatedReactivations] = useState({});
 
-  // TARGET SETTER STATE: Multiplier Mode vs Revenue Mode
-  const [targetMode, setTargetMode] = useState('multiple'); // 'multiple' | 'revenue'
-  const [globalTargetMultiplier, setGlobalTargetMultiplier] = useState(3.0); // Default target 3.0x ROI
-  const [targetGoalRevenue, setTargetGoalRevenue] = useState(5000000); // Default ₹50L revenue
-  const [perProfileTargets, setPerProfileTargets] = useState({}); // Custom target multiple per profile
+  // OVERALL COMPANY TARGET SETTER STATE
+  const [globalTargetMultiplier, setGlobalTargetMultiplier] = useState(3.0); // Default company target 3.0x ROI
 
   // Sorting
   const [sortField, setSortField] = useState('net_contribution');
@@ -594,7 +575,7 @@ const CostOfPerformance = () => {
   // 2. Stable, Instant Memoized Report Data Generation
   const reportData = useMemo(() => {
     return synthesizeReport();
-  }, [activeDimension, selectedMonth, transactions, simulatedReactivations, globalTargetMultiplier, perProfileTargets]);
+  }, [activeDimension, selectedMonth, transactions, simulatedReactivations, globalTargetMultiplier]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -802,25 +783,7 @@ const CostOfPerformance = () => {
     }, { billed: 0, companyShare: 0, executionCost: 0, churnCost: 0, netContribution: 0, totalEnquiries: 0, totalTargetRevenue: 0 });
   }, [reportData]);
 
-  const avgSurplusPerEnquiry = totals.totalEnquiries > 0 ? (totals.netContribution / totals.totalEnquiries) : 0;
   const companyRoiMultiple = totals.executionCost > 0 ? (totals.companyShare / totals.executionCost) : 0;
-
-  // Profile-by-Profile Target Multiplier Stats
-  const targetMultiplierStats = useMemo(() => {
-    if (!reportData || !reportData.rows) return { achievingCount: 0, shortfallCount: 0, requiredPortfolioRevenue: 0 };
-    const achievingCount = reportData.rows.filter(r => r.isTargetAchieved && !r.isDormant).length;
-    const shortfallCount = reportData.rows.length - achievingCount;
-    const requiredPortfolioRevenue = reportData.rows.reduce((s, r) => s + (r.targetRevenueRequired || 0), 0);
-    return { achievingCount, shortfallCount, requiredPortfolioRevenue };
-  }, [reportData]);
-
-  // Set Profile Specific Target Multiple
-  const handleSetProfileTarget = (name, multiple) => {
-    setPerProfileTargets(prev => ({
-      ...prev,
-      [name]: parseFloat(multiple) || 3.0
-    }));
-  };
 
   // Sorting Toggle Handler
   const handleSort = (field) => {
@@ -892,33 +855,32 @@ const CostOfPerformance = () => {
 
     let headers = [];
     if (activeDimension === 'bd') {
-      headers = ['BD Specialist', 'Role', 'Status', 'Current ROI Multiple', 'Target ROI Multiple', 'Target Status', 'Required Revenue (INR)', 'Required Placements', 'Actual Revenue (INR)', 'Actual Placements', 'Cost of Execution (INR)', 'Net Contribution (INR)'];
+      headers = ['BD Specialist', 'Role', 'Status', 'Delivered Revenue (INR)', 'Operating Seat Cost (INR)', 'Loss Write-Offs (INR)', 'Net Bank Surplus (INR)', 'Actual ROI Multiple', 'Performance Tier'];
     } else if (activeDimension === 'tl') {
-      headers = ['Team Leader', 'Status', 'Current ROI Multiple', 'Target ROI Multiple', 'Target Status', 'Required Revenue (INR)', 'Actual Revenue (INR)', 'Active Franchises', 'Net Contribution/Franchise (INR)'];
+      headers = ['Team Leader', 'Status', 'Delivered Revenue (INR)', 'Operating Seat Cost (INR)', 'Loss Write-Offs (INR)', 'Net Bank Surplus (INR)', 'Active Franchises', 'Actual ROI Multiple', 'Performance Tier'];
     } else if (activeDimension === 'franchise') {
-      headers = ['Franchise Partner', 'Status', 'City', 'Team Leader', 'Placements', 'Total Billed (INR)', 'Company Share (INR)', 'Target Multiple', 'Target Status'];
+      headers = ['Franchise Partner', 'Status', 'City', 'Team Leader', 'Placements', 'Total Billed (INR)', 'Delivered Revenue (INR)', 'Actual ROI Multiple', 'Performance Tier'];
     } else {
-      headers = [activeDimension === 'city' ? 'Client City' : 'Industry Sector', 'Status', 'Placements', 'Company Share (INR)', 'Current ROI', 'Target ROI', 'Target Status'];
+      headers = [activeDimension === 'city' ? 'Client City' : 'Industry Sector', 'Status', 'Placements', 'Delivered Revenue (INR)', 'Actual ROI Multiple', 'Performance Tier'];
     }
 
     const rows = filteredRows.map(r => {
       const st = r.isDormant ? 'Dormant' : 'Active';
-      const targetSt = r.isTargetAchieved ? 'Achieved' : 'Shortfall';
       if (activeDimension === 'bd') {
         return [
-          `"${r.dimension_value}"`, `"${r.role || 'BD Specialist'}"`, st, `${r.roi_multiple}x`, `${r.targetMultiple}x`, targetSt, r.targetRevenueRequired, r.targetPlacementsRequired, r.company_share, r.placements, r.total_cost, r.net_contribution
+          `"${r.dimension_value}"`, `"${r.role || 'BD Specialist'}"`, st, r.company_share, r.total_cost, r.churn_cost, r.net_contribution, `${r.roi_multiple}x`, `"${r.tier}"`
         ];
       } else if (activeDimension === 'tl') {
         return [
-          `"${r.dimension_value}"`, st, `${r.roi_multiple}x`, `${r.targetMultiple}x`, targetSt, r.targetRevenueRequired, r.company_share, r.active_franchise_count, r.net_contribution_per_franchise
+          `"${r.dimension_value}"`, st, r.company_share, r.total_cost, r.churn_cost, r.net_contribution, r.active_franchise_count, `${r.roi_multiple}x`, `"${r.tier}"`
         ];
       } else if (activeDimension === 'franchise') {
         return [
-          `"${r.dimension_value}"`, st, `"${r.city || 'N/A'}"`, `"${r.teamLeader || 'N/A'}"`, r.placements, r.total_billed, r.company_share, `${r.targetMultiple}x`, targetSt
+          `"${r.dimension_value}"`, st, `"${r.city || 'N/A'}"`, `"${r.teamLeader || 'N/A'}"`, r.placements, r.total_billed, r.company_share, `${r.roi_multiple}x`, `"${r.tier}"`
         ];
       } else {
         return [
-          `"${r.dimension_value}"`, st, r.placements, r.company_share, `${r.roi_multiple}x`, `${r.targetMultiple}x`, targetSt
+          `"${r.dimension_value}"`, st, r.placements, r.company_share, `${r.roi_multiple}x`, `"${r.tier}"`
         ];
       }
     });
@@ -1817,9 +1779,56 @@ const CostOfPerformance = () => {
           ))}
         </div>
 
-        {/* Right Controls: View Mode Switcher + Search */}
+        {/* Right Controls: Profile Filter + View Mode Switcher + Search */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           
+          {/* Prominent Profile Selector Dropdown */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: selectedProfile !== 'all' ? 'rgba(15, 110, 86, 0.12)' : 'var(--bg-card)',
+            padding: '5px 12px',
+            borderRadius: '8px',
+            border: selectedProfile !== 'all' ? '1.5px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
+            transition: 'all 0.15s ease'
+          }}>
+            <UserCheck size={15} color="var(--accent-teal, #0F6E56)" />
+            <span style={{ fontSize: '0.76rem', fontWeight: '800', color: selectedProfile !== 'all' ? 'var(--accent-teal, #0F6E56)' : 'var(--text-muted)', textTransform: 'uppercase' }}>
+              Profile:
+            </span>
+            <select
+              value={selectedProfile}
+              onChange={(e) => { setSelectedProfile(e.target.value); setCurrentPage(1); }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-main)',
+                fontSize: '0.84rem',
+                fontWeight: '700',
+                cursor: 'pointer',
+                outline: 'none',
+                maxWidth: '200px'
+              }}
+            >
+              <option value="all">All {activeDimension.toUpperCase()}s ({reportData?.rows?.length || 0})</option>
+              {reportData?.rows?.map(r => (
+                <option key={r.dimension_value} value={r.dimension_value}>
+                  {r.dimension_value} {r.isDormant ? ' (💤 Dormant)' : ` (${r.roi_multiple}x ROI)`}
+                </option>
+              ))}
+            </select>
+            {selectedProfile !== 'all' && (
+              <button
+                onClick={() => setSelectedProfile('all')}
+                title="Clear profile filter"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '2px', color: 'var(--text-muted)' }}
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
           {/* View Mode Switcher */}
           <div style={{ display: 'flex', background: 'var(--bg-card)', padding: '3px', borderRadius: '8px', border: '1px solid var(--border-color)', gap: '2px' }}>
             {[
@@ -1878,6 +1887,49 @@ const CostOfPerformance = () => {
           </div>
         </div>
       </div>
+
+      {/* Selected Profile Banner Indicator */}
+      {selectedProfile !== 'all' && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: 'rgba(15, 110, 86, 0.09)',
+          border: '1px solid rgba(15, 110, 86, 0.25)',
+          borderRadius: '10px',
+          padding: '10px 16px',
+          marginBottom: '18px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--accent-teal, #0F6E56)', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '0.8rem' }}>
+              👤
+            </div>
+            <div>
+              <span style={{ fontSize: '0.86rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                Viewing individual profile metrics for: <span style={{ color: 'var(--accent-teal, #0F6E56)' }}>{selectedProfile}</span>
+              </span>
+              <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
+                (Table, ledger and matrix are filtered exclusively to this profile)
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={() => setSelectedProfile('all')}
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px',
+              padding: '5px 12px',
+              fontSize: '0.76rem',
+              fontWeight: '700',
+              color: 'var(--text-main)',
+              cursor: 'pointer'
+            }}
+          >
+            ✕ Reset & Show All {activeDimension.toUpperCase()}s
+          </button>
+        </div>
+      )}
 
       {/* 6. VISUAL ANALYTICS & INTERACTIVE GRAPHS SECTION */}
       {(viewMode === 'charts' || viewMode === 'both') && (
@@ -2292,46 +2344,13 @@ const CostOfPerformance = () => {
                     Status
                   </th>
 
-                  {/* Actual vs Target ROI Multiple */}
-                  <th 
-                    onClick={() => handleSort('roi_multiple')}
-                    style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '800', color: 'var(--accent-teal, #0F6E56)', cursor: 'pointer' }}
-                    title="Actual Company Share / Execution Cost"
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                      <span>Actual ROI</span>
-                      <ArrowUpDown size={12} />
-                    </div>
-                  </th>
-
-                  {/* Target ROI Multiplier Setter */}
-                  <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '800', color: '#10B981', width: '130px' }}>
-                    Target Multiplier
-                  </th>
-
-                  {/* Required Revenue to hit Target */}
-                  <th 
-                    onClick={() => handleSort('targetRevenueRequired')}
-                    style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)', cursor: 'pointer' }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                      <span>Req. Revenue</span>
-                      <ArrowUpDown size={12} />
-                    </div>
-                  </th>
-
-                  {/* Target Closures Needed */}
-                  <th style={{ padding: '12px 12px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)' }}>
-                    Req. Closures
-                  </th>
-
                   {/* Actual Delivered Company Share */}
                   <th 
                     onClick={() => handleSort('company_share')}
-                    style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-main)', cursor: 'pointer' }}
+                    style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '800', color: 'var(--text-main)', cursor: 'pointer' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                      <span>Actual Share</span>
+                      <span>Delivered Revenue</span>
                       <ArrowUpDown size={12} />
                     </div>
                   </th>
@@ -2343,15 +2362,15 @@ const CostOfPerformance = () => {
                       style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: '#3B82F6', cursor: 'pointer' }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                        <span>Seat Cost</span>
+                        <span>Operating Seat Cost</span>
                         <ArrowUpDown size={12} />
                       </div>
                     </th>
                   )}
 
-                  {/* Target Achievement Status */}
-                  <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '800', width: '170px' }}>
-                    Target ROI Health
+                  {/* Loss Forensics / Churn */}
+                  <th style={{ padding: '12px 12px', textAlign: 'right', fontWeight: '700', color: '#A8402E' }}>
+                    Loss Write-Offs
                   </th>
 
                   {/* Net Contribution */}
@@ -2366,6 +2385,23 @@ const CostOfPerformance = () => {
                       </div>
                     </th>
                   )}
+
+                  {/* Actual ROI Multiple */}
+                  <th 
+                    onClick={() => handleSort('roi_multiple')}
+                    style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '800', color: 'var(--accent-teal, #0F6E56)', cursor: 'pointer' }}
+                    title="Actual Company Share / Execution Cost"
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                      <span>Actual ROI Multiple</span>
+                      <ArrowUpDown size={12} />
+                    </div>
+                  </th>
+
+                  {/* Tier / Health */}
+                  <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '800', width: '160px' }}>
+                    Performance Tier
+                  </th>
 
                   {/* Action */}
                   <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '600', color: 'var(--text-muted)', width: '110px' }}>
@@ -2398,7 +2434,12 @@ const CostOfPerformance = () => {
                         </div>
                         {activeDimension === 'bd' && (
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                            {r.role || 'BD Specialist'} {r.cancelled_losses > 0 ? `• Lost Deals: ${formatCurrency(r.cancelled_losses)}` : ''}
+                            {r.role || 'BD Specialist'} • {r.placements} placements ({r.enquiries_handled || 0} leads)
+                          </div>
+                        )}
+                        {activeDimension === 'tl' && (
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            {r.active_franchise_count || 45} Active Franchisees Managed
                           </div>
                         )}
                         {activeDimension === 'franchise' && (
@@ -2423,82 +2464,58 @@ const CostOfPerformance = () => {
                         </span>
                       </td>
 
-                      {/* Actual ROI Multiple */}
-                      <td style={{ padding: '14px 14px', textAlign: 'right', fontWeight: '800', fontSize: '0.92rem', color: r.roi_multiple >= 3.0 ? '#10B981' : r.roi_multiple >= 1.5 ? '#3B82F6' : '#A8402E' }}>
-                        {r.roi_multiple}x
-                      </td>
-
-                      {/* Target ROI Multiplier Selector (2x, 3x, 4x, 5x) */}
-                      <td style={{ padding: '14px 14px', textAlign: 'center' }}>
-                        <select
-                          value={r.targetMultiple}
-                          onChange={(e) => handleSetProfileTarget(r.dimension_value, e.target.value)}
-                          style={{
-                            background: 'var(--bg-main)',
-                            border: '1.5px solid #10B981',
-                            borderRadius: '6px',
-                            color: '#10B981',
-                            fontWeight: '800',
-                            fontSize: '0.78rem',
-                            padding: '3px 6px',
-                            cursor: 'pointer',
-                            outline: 'none'
-                          }}
-                        >
-                          <option value="2.0">2.0x Target</option>
-                          <option value="2.5">2.5x Target</option>
-                          <option value="3.0">3.0x Target</option>
-                          <option value="4.0">4.0x Target</option>
-                          <option value="5.0">5.0x Target</option>
-                          <option value="7.0">7.0x Target</option>
-                        </select>
-                      </td>
-
-                      {/* Required Revenue */}
-                      <td style={{ padding: '14px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
-                        {formatCurrency(r.targetRevenueRequired)}
-                      </td>
-
-                      {/* Required Closures */}
-                      <td style={{ padding: '14px 12px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: '600' }}>
-                        {r.targetPlacementsRequired} pl
-                      </td>
-
-                      {/* Actual Company Share */}
+                      {/* Actual Delivered Revenue */}
                       <td style={{ padding: '14px 14px', textAlign: 'right', fontWeight: '800', color: 'var(--text-main)' }}>
-                        {formatCurrency(r.company_share)}
+                        <div>{formatCurrency(r.company_share)}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 'normal' }}>
+                          Gross: {formatCurrency(r.total_billed)}
+                        </div>
                       </td>
 
                       {/* Execution Seat Cost */}
                       {userRole !== 'franchise_partner' && (
-                        <td style={{ padding: '14px 14px', textAlign: 'right', color: '#3B82F6', fontWeight: '600' }}>
+                        <td style={{ padding: '14px 14px', textAlign: 'right', color: '#3B82F6', fontWeight: '700' }}>
                           {formatCurrency(r.total_cost)}
                         </td>
                       )}
 
-                      {/* Target Achievement Health */}
-                      <td style={{ padding: '14px 14px', textAlign: 'center' }}>
-                        {r.isDormant ? (
-                          <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#A8402E', background: 'rgba(239,68,68,0.1)', padding: '3px 8px', borderRadius: '6px', display: 'inline-block' }}>
-                            💤 0x (Req: {r.targetPlacementsRequired} pl)
-                          </span>
-                        ) : r.isTargetAchieved ? (
-                          <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#10B981', background: 'rgba(16,185,129,0.12)', padding: '3px 8px', borderRadius: '6px', display: 'inline-block' }}>
-                            ✅ +{r.multipleGap}x Surplus
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#B7791F', background: 'rgba(234,179,8,0.12)', padding: '3px 8px', borderRadius: '6px', display: 'inline-block' }}>
-                            ⚠️ Needs {r.placementsGap} pl ({formatCurrency(r.revenueGap)})
-                          </span>
-                        )}
+                      {/* Loss Write-Offs */}
+                      <td style={{ padding: '14px 12px', textAlign: 'right', color: r.churn_cost > 0 ? '#A8402E' : 'var(--text-muted)', fontWeight: '600' }}>
+                        {r.churn_cost > 0 ? `-${formatCurrency(r.churn_cost)}` : '₹0'}
                       </td>
 
-                      {/* Net Bank Surplus */}
+                      {/* Net Commercial Surplus */}
                       {userRole !== 'franchise_partner' && (
                         <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: '800', color: isNetPositive ? '#10B981' : '#A8402E', fontSize: '0.92rem' }}>
                           {isNetPositive ? '+' : ''}{formatCurrency(r.net_contribution)}
                         </td>
                       )}
+
+                      {/* Actual Delivered ROI Multiple */}
+                      <td style={{ padding: '14px 14px', textAlign: 'right', fontWeight: '800', fontSize: '0.92rem', color: r.roi_multiple >= 3.0 ? '#10B981' : r.roi_multiple >= 1.5 ? '#3B82F6' : '#A8402E' }}>
+                        {r.roi_multiple}x ROI
+                      </td>
+
+                      {/* Performance Tier Badge */}
+                      <td style={{ padding: '14px 14px', textAlign: 'center' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          fontSize: '0.72rem',
+                          fontWeight: '800',
+                          background: r.tier_badge === 'star' ? 'rgba(16, 185, 129, 0.15)' :
+                                      r.tier_badge === 'profitable' ? 'rgba(59, 130, 246, 0.12)' :
+                                      r.tier_badge === 'diluter' ? 'rgba(245, 158, 11, 0.12)' :
+                                      'rgba(239, 68, 68, 0.12)',
+                          color: r.tier_badge === 'star' ? '#0F6E56' :
+                                 r.tier_badge === 'profitable' ? '#2563EB' :
+                                 r.tier_badge === 'diluter' ? '#B45309' :
+                                 '#A8402E'
+                        }}>
+                          {r.tier}
+                        </span>
+                      </td>
 
                       {/* Action Button */}
                       <td style={{ padding: '14px 14px', textAlign: 'center' }}>

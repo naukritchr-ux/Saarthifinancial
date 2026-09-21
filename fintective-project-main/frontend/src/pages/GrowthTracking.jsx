@@ -7,6 +7,7 @@ import {
   TrendingDown, 
   Award, 
   Users, 
+  Building,
   Building2, 
   Briefcase,
   Plus, 
@@ -18,7 +19,7 @@ import {
   Check, 
   X, 
   Sliders, 
-  RotateCcw,
+  RotateCcw, 
   Percent,
   DollarSign,
   ChevronRight,
@@ -39,7 +40,7 @@ import OutcomeRecorderModal from '../components/OutcomeRecorderModal';
 import { TrajectoryLineChart, BarChart, Sparkline, TargetVsActualBar } from '../components/CustomCharts';
 
 const GrowthTracking = () => {
-  const { franchisees, bdAgents, teamLeaders, transactions } = useContext(FinanceContext);
+  const { franchisees, bdAgents, teamLeaders } = useContext(FinanceContext);
 
   // Entity selection state
   const [entityType, setEntityType] = useState('employee'); // 'franchisee' | 'bd_agent' | 'team_leader' | 'employee'
@@ -425,10 +426,6 @@ const GrowthTracking = () => {
   // Inertia Growth Rate (R) in percentage (pure historical extrapolation)
   const inertiaRatePct = historicalCagrPct;
 
-  // Active Rate for the selected view mode
-  const activeRatePct = forecastTab === 'target' ? targetRatePct : inertiaRatePct;
-  const currentRatePct = targetRatePct;
-
   const isInsufficientData = Boolean(
     predictionData?.insufficient_data || 
     predictionData?.projection_status === 'insufficient_data' ||
@@ -463,8 +460,20 @@ const GrowthTracking = () => {
 
   const targetProjections = useMemo(() => computeProjections(targetRatePct), [isInsufficientData, effectiveBaseRevenue, targetRatePct, baseDealsCount]);
   const inertiaProjections = useMemo(() => computeProjections(inertiaRatePct), [isInsufficientData, effectiveBaseRevenue, inertiaRatePct, baseDealsCount]);
-
   const activeProjections = forecastTab === 'target' ? targetProjections : inertiaProjections;
+
+  // Trajectory Sparkline points for each target milestone
+  const getTargetSparklinePoints = (target) => {
+    const targetPct = Number(target.growth_pct_target_pct) || 15;
+    if (target.status === 'completed' && target.actual_growth_pct_pct !== null) {
+      const act = Number(target.actual_growth_pct_pct);
+      const start = 100;
+      return [start, start + act * 0.25, start + act * 0.55, start + act * 0.85, start + act];
+    }
+    return [100, 100 + targetPct * 0.2, 100 + targetPct * 0.45, 100 + targetPct * 0.7];
+  };
+
+  const productivity = predictionData?.productivity_score;
 
   // Scale chart data formatted for BarChart (1x to 5x)
   const scaleChartData = useMemo(() => {
@@ -480,19 +489,6 @@ const GrowthTracking = () => {
       };
     });
   }, [isInsufficientData, effectiveBaseRevenue]);
-
-  // Trajectory Sparkline points for each target milestone
-  const getTargetSparklinePoints = (target) => {
-    const targetPct = Number(target.growth_pct_target_pct) || 15;
-    if (target.status === 'completed' && target.actual_growth_pct_pct !== null) {
-      const act = Number(target.actual_growth_pct_pct);
-      const start = 100;
-      return [start, start + act * 0.25, start + act * 0.55, start + act * 0.85, start + act];
-    }
-    return [100, 100 + targetPct * 0.2, 100 + targetPct * 0.45, 100 + targetPct * 0.7];
-  };
-
-  const productivity = predictionData?.productivity_score;
 
   return (
     <div className="bd-performance-page animate-fade-in" style={{ paddingBottom: '40px' }}>
@@ -1190,7 +1186,7 @@ const GrowthTracking = () => {
                     { label: `+15% (${Math.round(presentDealsCount * 1.15)} deals)`, count: Math.round(presentDealsCount * 1.15) },
                     { label: `+25% (${Math.round(presentDealsCount * 1.25)} deals)`, count: Math.round(presentDealsCount * 1.25) },
                     { label: `+50% (${Math.round(presentDealsCount * 1.50)} deals)`, count: Math.round(presentDealsCount * 1.50) },
-                    { label: `2x Scale (${Math.round(presentDealsCount * 2.0)} deals)`, count: Math.round(presentDealsCount * 2.0) }
+                    { label: `+75% (${Math.round(presentDealsCount * 1.75)} deals)`, count: Math.round(presentDealsCount * 1.75) }
                   ].map((preset, pIdx) => (
                     <button
                       key={pIdx}
@@ -1475,7 +1471,7 @@ const GrowthTracking = () => {
               })}
             </div>
 
-            {/* Fix #3: Strategic Scale Simulator Bridge Callout */}
+            {/* Strategic Scale Simulator Callout */}
             <div style={{
               background: isHistoricalDeclining 
                 ? 'linear-gradient(90deg, rgba(15, 110, 86, 0.08) 0%, rgba(59, 130, 246, 0.05) 100%)'
@@ -1493,27 +1489,30 @@ const GrowthTracking = () => {
               </div>
               <div>
                 <div style={{ fontSize: '0.82rem', fontWeight: '800', color: 'var(--text-main)', marginBottom: '2px' }}>
-                  💡 Strategic Scale Bridge: {isHistoricalDeclining ? 'Reversing Historical Decline with Multi-X Velocity' : 'Accelerating Current Momentum with Multi-X Velocity'}
+                  {entityType === 'company' 
+                    ? '🏢 Overall Company Scale Goal (2x, 3x, 5x Portfolio Growth)' 
+                    : `💡 Individual Growth Roadmap (${selectedEntity?.name || 'Selected Profile'})`}
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.45' }}>
-                  {isHistoricalDeclining ? (
+                  {entityType === 'company' ? (
                     <>
-                      While passive inertia projects a <strong>{Math.abs(Math.round(((inertiaProjections[4]?.projected_revenue / (effectiveBaseRevenue || 1)) - 1) * 100))}% 5-year contraction</strong> without intervention, reaching just <strong>2x scale ({formatCurrency(effectiveBaseRevenue * 2)})</strong> completely neutralizes this decline and generates <strong>{formatCurrency(effectiveBaseRevenue * 2 * 0.4375)}</strong> in net retained contribution. Select a velocity scenario below to model the turnaround:
+                      Sets macro growth multiplier across the total agency portfolio. Scaling from <strong>2x to 5x</strong> elevates annual gross billing up to <strong>{formatCurrency(effectiveBaseRevenue * 5)}</strong> with <strong>{formatCurrency(effectiveBaseRevenue * 5 * 0.4375)}</strong> in net retained company margin.
                     </>
                   ) : (
                     <>
-                      Building upon current positive momentum, scaling production velocity from <strong>2x to 5x</strong> elevates annual gross billing up to <strong>{formatCurrency(effectiveBaseRevenue * 5)}</strong> with <strong>{formatCurrency(effectiveBaseRevenue * 5 * 0.4375)}</strong> in net retained margin.
+                      Targeting a {targetRatePct}% YoY growth rate requires closing <strong>{targetRequiredDeals} deals/year</strong> (~{targetMonthlyDeals} deals/month), generating an incremental <strong>+{formatCurrency(Math.max(0, effectiveBaseRevenue * (targetRatePct / 100)))}</strong> in revenue contribution.
                     </>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* 2. Flat Scale Multiplier Scenarios (1x through 5x) */}
+            {/* 2. Flat Scale Multiplier Scenarios (Exclusively for Overall Company) */}
+            {entityType === 'company' && (
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
                 <h5 style={{ margin: 0, fontSize: '0.88rem', fontWeight: '700', color: 'var(--text-main)' }}>
-                  Scale Multiplier Scenarios (1x → 5x Production Velocity)
+                  🏢 Overall Company Scale Multiplier Scenarios (1x → 5x Production Velocity)
                 </h5>
                 <div style={{ display: 'flex', gap: '6px' }}>
                   {[1, 2, 3, 4, 5].map(mult => (
@@ -1531,7 +1530,7 @@ const GrowthTracking = () => {
                         cursor: 'pointer'
                       }}
                     >
-                      {mult}x Scale
+                      {mult}x Company Scale
                     </button>
                   ))}
                 </div>
@@ -1600,9 +1599,8 @@ const GrowthTracking = () => {
                 })}
               </div>
             </div>
-          </>
-        )}
-      </div>
+          )}
+        </div>
 
       {/* Target History & Outcome Tracking Table */}
       <div className="dashboard-card">
