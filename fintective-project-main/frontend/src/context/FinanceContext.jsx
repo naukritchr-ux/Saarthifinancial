@@ -549,11 +549,13 @@ export const FinanceProvider = ({ children }) => {
           if (amt > 0 && dateStr) {
             const franName = inv.franchiseName || '';
             const bdName = inv.nameOfBd || '';
+            const ourShareVal = parseFloat(inv.ourShare || 0) || (amt * 0.25);
+            const franShareVal = parseFloat(inv.franchiseeShare || 0) || (amt * 0.75);
             liveTxs.push({
               id: `inv-${inv.id}`,
               title: `${inv.companyName || 'Client Placement'} - ${inv.postOfCandidate || 'Recruitment'}`,
               amount: amt,
-              type: 'income',
+              type: (inv.info === 'CN' || inv.enquiryStatus === 'credit_note') ? 'credit_note' : 'income',
               category: 'Recruitment Fee',
               subCategory: 'Placement Invoice',
               date: dateStr,
@@ -563,7 +565,12 @@ export const FinanceProvider = ({ children }) => {
               franchiseeName: franName,
               franchiseeId: matchFranchiseeId(franName, currentFranList),
               bdAgentId: matchBdAgentId(bdName, bdAgents),
-              financialYear: inv.financialYear || 'N/A'
+              financialYear: inv.financialYear || 'N/A',
+              city: inv.companyCity || inv.city || 'Mumbai',
+              industry: inv.industry || 'Information Technology & Software',
+              ourShare: ourShareVal,
+              franchiseeShare: franShareVal,
+              info: inv.info || 'RV'
             });
           }
         });
