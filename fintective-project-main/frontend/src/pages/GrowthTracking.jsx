@@ -564,6 +564,16 @@ const GrowthTracking = () => {
 
   const productivity = predictionData?.productivity_score;
 
+  // Live audited net retention rate from CRM (ourShare / totalBillAmt)
+  // Replaces the inaccurate 43.75% hardcoded placeholder
+  // Formula: SUM(ourShare) / SUM(totalBillAmt) across all invoices with filled ourShare
+  const netRetentionRate = useMemo(() => {
+    if (companyBreakdown?.net_retention_rate && companyBreakdown.net_retention_rate > 0) {
+      return companyBreakdown.net_retention_rate;  // live from DB e.g. 0.1913
+    }
+    return 0.191;  // fallback: 19.1% — audited historical average from live invoices
+  }, [companyBreakdown]);
+
   // Scale chart data formatted for BarChart (1x to 5x)
   const scaleChartData = useMemo(() => {
     if (isInsufficientData || effectiveBaseRevenue <= 0) {
@@ -574,10 +584,10 @@ const GrowthTracking = () => {
       return {
         label: `${mult}x`,
         revenue: base * mult,
-        netRetention: Math.round(base * mult * 0.4375)
+        netRetention: Math.round(base * mult * netRetentionRate)
       };
     });
-  }, [isInsufficientData, effectiveBaseRevenue]);
+  }, [isInsufficientData, effectiveBaseRevenue, netRetentionRate]);
 
   // Live Team Leader Quotas and Franchise Distribution for Macro Multiplier
   const liveTeamLeaderQuotas = useMemo(() => {
@@ -1889,7 +1899,7 @@ const GrowthTracking = () => {
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.45' }}>
                   {entityType === 'company' ? (
                     <>
-                      Sets macro growth multiplier across the total agency portfolio. Scaling from <strong>2x to 5x</strong> elevates annual gross billing up to <strong>{formatCurrency(effectiveBaseRevenue * 5)}</strong> with <strong>{formatCurrency(effectiveBaseRevenue * 5 * 0.4375)}</strong> in net retained company margin.
+                      Sets macro growth multiplier across the total agency portfolio. Scaling from <strong>2x to 5x</strong> elevates annual gross billing up to <strong>{formatCurrency(effectiveBaseRevenue * 5)}</strong> with <strong>{formatCurrency(Math.round(effectiveBaseRevenue * 5 * netRetentionRate))}</strong> in audited net retained company margin ({(netRetentionRate * 100).toFixed(1)}% live retention rate).
                     </>
                   ) : (
                     <>
@@ -1952,7 +1962,7 @@ const GrowthTracking = () => {
                   const key = `scale${mult}x`;
                   const scaledDeals = presentDealsCount * mult;
                   const scRevenue = effectiveBaseRevenue * mult;
-                  const scNet = Math.round(scRevenue * 0.4375);
+                  const scNet = Math.round(scRevenue * netRetentionRate);
                   const isSelected = activeScenarioMultiplier === mult;
 
                   return (
