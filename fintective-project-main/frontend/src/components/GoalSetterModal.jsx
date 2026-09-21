@@ -4,12 +4,13 @@ import { API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency } from '../utils/formatters';
 
-const GoalSetterModal = ({ isOpen, onClose, entityType, entity, initialGrowthPct, initialTargetPlacements, initialTargetRevenue, onTargetCreated }) => {
+const GoalSetterModal = ({ isOpen, onClose, entityType, entity, initialGrowthPct, initialTargetPlacements, initialTargetRevenue, initialTargetAuthor, onTargetCreated }) => {
   const baseRevenue = entity?.baseRevenue || entity?.revenue || entity?.total_revenue || 1000000;
   const baseDeals = entity?.total_deals || entity?.deals_count || 20;
   const avgTicketSize = baseDeals > 0 ? (baseRevenue / baseDeals) : 50000;
 
   const [targetMode, setTargetMode] = useState(initialTargetPlacements ? 'placements' : 'rate'); // 'rate' | 'placements'
+  const [targetAuthor, setTargetAuthor] = useState(initialTargetAuthor || 'owner'); // 'owner' (Management Quota) | 'self' (BD Self-Commitment)
   const [growthPct, setGrowthPct] = useState(initialGrowthPct ? String(initialGrowthPct) : '20');
   const [targetPlacements, setTargetPlacements] = useState(
     initialTargetPlacements ? String(initialTargetPlacements) : String(Math.max(1, Math.round(baseDeals * 1.2)))
@@ -69,43 +70,79 @@ const GoalSetterModal = ({ isOpen, onClose, entityType, entity, initialGrowthPct
         salary_target: entityType === 'bd_agent' && salaryTarget ? parseFloat(salaryTarget) : null,
         period_start: periodStart,
         period_end: periodEnd,
-        guidelines: guidelines.trim()
+        guidelines: guidelines.trim(),
+        target_author: targetAuthor,
+        target_placements: numPlacements,
+        target_revenue: Math.round(targetRevenue)
       };
 
       const typeLabel = entityType === 'franchisee' ? 'Franchise Partner' : (entityType === 'bd_agent' ? 'BD Specialist' : 'Internal Talent Consultant');
-      const fallbackLetter = `================================================================================
-FINTECTIVE FINANCIAL REVENUE NETWORK — PERFORMANCE TARGET MEMO
+      
+      const fallbackLetter = targetAuthor === 'self' 
+        ? `================================================================================
+TALENT CORNER HR SERVICES — EMPLOYEE PERFORMANCE COMMITMENT PLEDGE
+================================================================================
+Date of Issue : ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+Pledged By    : ${entity?.name || 'Selected Entity'} (${typeLabel})
+Target Period : ${periodStart} to ${periodEnd}
+Target Type   : 👤 Employee Self-Commitment (Personal Performance Pledge)
+--------------------------------------------------------------------------------
+
+I, ${entity?.name || 'Partner'}, hereby commit and pledge the following performance milestones for the upcoming fiscal cycle:
+
+1. PERSONAL TARGET COMMITMENT
+--------------------------------------------------------------------------------
+• Current Baseline Revenue        : ₹${baseRevenue.toLocaleString()}
+• Self-Pledged Growth Rate        : +${numGrowth}%
+• Target Placements Pledged       : ${numPlacements} closed placements
+• Self-Projected Revenue Billing  : ₹${Math.round(targetRevenue).toLocaleString()}
+• Target Period                   : ${periodStart} through ${periodEnd}${entityType === 'bd_agent' && salaryTarget ? `\n• Desired Compensation Increment  : ₹${parseFloat(salaryTarget).toLocaleString()} per month (Subject to target realization)` : ''}
+
+2. MY ACTION PLAN & COMMITMENT NOTES
+--------------------------------------------------------------------------------
+${guidelines.trim() || 'Focusing on high-probability mandate closures, proactive candidate submittals, and client engagement.'}
+
+3. COMMITMENT DECLARATION
+--------------------------------------------------------------------------------
+I confirm this represents my personal professional commitment to Talent Corner HR Services.
+
+Committed by:
+${entity?.name || 'Employee'}
+Talent Corner HR Services
+================================================================================`
+        : `================================================================================
+TALENT CORNER HR SERVICES — MANAGEMENT EXECUTIVE TARGET DIRECTIVE
 ================================================================================
 Date of Issue : ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
 Recipient     : ${entity?.name || 'Selected Entity'} (${typeLabel})
 Target Period : ${periodStart} to ${periodEnd}
+Target Type   : 👑 Owner / Leadership Quota (Management Benchmark)
 --------------------------------------------------------------------------------
 
 Dear ${entity?.name || 'Partner'},
 
-As part of Fintective's growth acceleration strategy for the upcoming fiscal cycle,
-we are pleased to formalize your agreed performance milestone and revenue targets.
+As part of Talent Corner's agency growth and unit economics roadmap for the upcoming fiscal cycle, the Management Board has established your performance quota:
 
-1. PERFORMANCE TARGET SUMMARY
+1. MANAGEMENT TARGET DIRECTIVE
 --------------------------------------------------------------------------------
 • Current Baseline Revenue        : ₹${baseRevenue.toLocaleString()}
-• Target Growth Rate              : +${numGrowth}%
-• Target Placements / Mandates    : ${numPlacements} closed placements
-• Projected Target Revenue (Gross): ₹${Math.round(targetRevenue).toLocaleString()}
+• Required Growth Velocity        : +${numGrowth}%
+• Required Placements Quota       : ${numPlacements} closed placements
+• Mandatory Target Revenue (Gross): ₹${Math.round(targetRevenue).toLocaleString()}
 • Evaluation Horizon              : ${periodStart} through ${periodEnd}${entityType === 'bd_agent' && salaryTarget ? `\n• Target Base Compensation        : ₹${parseFloat(salaryTarget).toLocaleString()} per month (Performance-Linked)` : ''}
 
-2. STRATEGIC GUIDELINES & EXECUTION PRIORITIES
+2. STRATEGIC GUIDELINES & DIRECTIVES
 --------------------------------------------------------------------------------
-${guidelines.trim() || 'Focus on candidate placements, maintaining high client retention, and optimizing realization.'}
+${guidelines.trim() || 'Focus on enterprise client acquisition, mandate conversion speed, and payment realization.'}
 
-3. TERMS OF PERFORMANCE EVALUATION
+3. TERMS OF PERFORMANCE AUDIT
 --------------------------------------------------------------------------------
 Upon completion of the period ending ${periodEnd}, actual revenue achievement
-will be audited against this target.
+will be audited against this benchmark for annual performance and incentive reviews.
 
 Authorized Signatory,
-Management Board & Finance Committee
-Fintective Intelligence Network
+Management Board & Leadership
+Talent Corner HR Services
 ================================================================================`;
 
       let data;
@@ -139,6 +176,9 @@ Fintective Intelligence Network
           period_start: periodStart,
           period_end: periodEnd,
           guidelines: guidelines.trim(),
+          target_author: targetAuthor,
+          target_placements: numPlacements,
+          target_revenue: Math.round(targetRevenue),
           status: 'active',
           target_letter_text: fallbackLetter,
           created_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
@@ -207,6 +247,47 @@ Fintective Intelligence Network
 
           {!createdTarget ? (
             <form onSubmit={handleSubmit}>
+              {/* Target Originator / Goal Type Selector */}
+              <div style={{ marginBottom: '16px' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-main)', display: 'block', marginBottom: '6px' }}>
+                  Target Originator / Goal Type:
+                </span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setTargetAuthor('owner')}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: targetAuthor === 'owner' ? '2px solid #2563EB' : '1px solid var(--border-color)',
+                      background: targetAuthor === 'owner' ? 'rgba(37, 99, 235, 0.08)' : 'var(--bg-card)',
+                      color: targetAuthor === 'owner' ? '#1D4ED8' : 'var(--text-main)',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <div style={{ fontWeight: '800', fontSize: '0.84rem' }}>👑 Owner / Leadership Quota</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Assigned by Management as company benchmark</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTargetAuthor('self')}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: targetAuthor === 'self' ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                      background: targetAuthor === 'self' ? 'rgba(15, 110, 86, 0.08)' : 'var(--bg-card)',
+                      color: targetAuthor === 'self' ? 'var(--accent-teal)' : 'var(--text-main)',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <div style={{ fontWeight: '800', fontSize: '0.84rem' }}>👤 BD Self-Commitment</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>Pledged personally by {entity?.name || 'the employee'}</div>
+                  </button>
+                </div>
+              </div>
+
               {/* Baseline vs Target Summary Banner */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', background: 'var(--bg-card)', padding: '14px', borderRadius: '10px', border: '1px solid var(--border-color)', marginBottom: '18px' }}>
                 <div>

@@ -838,6 +838,189 @@ const GrowthTracking = () => {
         </div>
       )}
 
+      {/* Dual Goal Alignment & Appraisal Review (Self-Commitment vs. Owner Quota) */}
+      {entityType !== 'company' && selectedEntity && (() => {
+        const selfTarget = targetsList.find(t => t.target_author === 'self') || null;
+        const ownerTarget = targetsList.find(t => t.target_author === 'owner' || (!t.target_author && t.entity_type !== 'company')) || null;
+        const selfDealsTarget = selfTarget?.target_placements || Math.round(presentDealsCount * 1.2);
+        const selfRevTarget = selfTarget?.target_revenue || Math.round(effectiveBaseRevenue * 1.2);
+        const ownerDealsTarget = ownerTarget?.target_placements || Math.round(presentDealsCount * 1.25);
+        const ownerRevTarget = ownerTarget?.target_revenue || Math.round(effectiveBaseRevenue * 1.25);
+
+        const selfPctAchieved = Math.round((presentDealsCount / Math.max(1, selfDealsTarget)) * 100);
+        const ownerPctAchieved = Math.round((presentDealsCount / Math.max(1, ownerDealsTarget)) * 100);
+
+        return (
+          <div className="dashboard-card" style={{ marginBottom: '22px', border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1rem' }}>
+                  <Target size={18} color="var(--accent-teal)" />
+                  <span>Dual Goal Alignment: Self-Commitment vs. Owner Quota</span>
+                </h3>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Appraisal alignment between {selectedEntity?.name}'s personal pledge and Management's benchmark.
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => {
+                    setGoalModalParams({ growthPct: 20, placements: Math.round(presentDealsCount * 1.2), targetAuthor: 'self' });
+                    setIsGoalModalOpen(true);
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--accent-teal)',
+                    background: 'rgba(15, 110, 86, 0.08)',
+                    color: 'var(--accent-teal)',
+                    fontSize: '0.76rem',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px'
+                  }}
+                >
+                  👤 {selfTarget ? 'Update Self-Goal' : '+ Log Self-Goal'}
+                </button>
+                <button
+                  onClick={() => {
+                    setGoalModalParams({ growthPct: 25, placements: Math.round(presentDealsCount * 1.25), targetAuthor: 'owner' });
+                    setIsGoalModalOpen(true);
+                  }}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: '#2563EB',
+                    color: '#ffffff',
+                    fontSize: '0.76rem',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px'
+                  }}
+                >
+                  👑 {ownerTarget ? 'Update Owner Quota' : '+ Assign Owner Quota'}
+                </button>
+              </div>
+            </div>
+
+            {/* Side-by-Side Dual Goal Comparison Columns */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '14px', marginBottom: '16px' }}>
+              
+              {/* Column 1: BD Self-Commitment */}
+              <div style={{ background: 'var(--bg-main)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-color)', borderLeft: '4px solid var(--accent-teal)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '0.84rem', fontWeight: '800', color: 'var(--accent-teal)' }}>
+                      👤 BD Self-Commitment
+                    </span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(Personal Pledge)</span>
+                  </div>
+                  <span style={{ fontSize: '0.68rem', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: selfTarget ? 'rgba(15, 110, 86, 0.12)' : 'rgba(0,0,0,0.06)', color: selfTarget ? 'var(--accent-teal)' : 'var(--text-muted)' }}>
+                    {selfTarget ? 'Active Pledge' : 'Default Model (+20%)'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '1.45rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                    {selfDealsTarget} deals
+                  </span>
+                  <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--accent-teal)' }}>
+                    ({formatCurrency(selfRevTarget)})
+                  </span>
+                </div>
+
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '4px 0 10px 0', lineHeight: '1.4', fontStyle: selfTarget ? 'italic' : 'normal' }}>
+                  "{selfTarget?.guidelines || 'Personal commitment to scale candidate submissions and convert high-probability mandates.'}"
+                </p>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.74rem', borderTop: '1px solid var(--border-color)', paddingTop: '8px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Self-Pledge Progress:</span>
+                  <strong style={{ color: presentDealsCount >= selfDealsTarget ? '#10B981' : '#F59E0B' }}>
+                    {presentDealsCount} / {selfDealsTarget} ({selfPctAchieved}%)
+                  </strong>
+                </div>
+              </div>
+
+              {/* Column 2: Owner / Leadership Quota */}
+              <div style={{ background: 'var(--bg-main)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-color)', borderLeft: '4px solid #2563EB' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '0.84rem', fontWeight: '800', color: '#1D4ED8' }}>
+                      👑 Owner / Leadership Quota
+                    </span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(Company Directive)</span>
+                  </div>
+                  <span style={{ fontSize: '0.68rem', fontWeight: '700', padding: '2px 8px', borderRadius: '4px', background: ownerTarget ? 'rgba(37, 99, 235, 0.12)' : 'rgba(0,0,0,0.06)', color: ownerTarget ? '#1D4ED8' : 'var(--text-muted)' }}>
+                    {ownerTarget ? 'Executive Quota' : 'Standard Quota (+25%)'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '1.45rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                    {ownerDealsTarget} deals
+                  </span>
+                  <span style={{ fontSize: '0.82rem', fontWeight: '600', color: '#2563EB' }}>
+                    ({formatCurrency(ownerRevTarget)})
+                  </span>
+                </div>
+
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '4px 0 10px 0', lineHeight: '1.4', fontStyle: ownerTarget ? 'italic' : 'normal' }}>
+                  "{ownerTarget?.guidelines || 'Required commercial volume to justify annual compensation increment and star bonus bracket.'}"
+                </p>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.74rem', borderTop: '1px solid var(--border-color)', paddingTop: '8px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Management Quota Progress:</span>
+                  <strong style={{ color: presentDealsCount >= ownerDealsTarget ? '#10B981' : '#2563EB' }}>
+                    {presentDealsCount} / {ownerDealsTarget} ({ownerPctAchieved}%)
+                  </strong>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Performance Variance & Alignment Summary Ribbon */}
+            <div style={{
+              background: presentDealsCount >= ownerDealsTarget 
+                ? 'rgba(16, 185, 129, 0.08)' 
+                : (presentDealsCount >= selfDealsTarget ? 'rgba(15, 110, 86, 0.05)' : 'rgba(234, 179, 8, 0.06)'),
+              borderRadius: '8px',
+              border: `1px solid ${presentDealsCount >= ownerDealsTarget ? 'rgba(16, 185, 129, 0.25)' : 'var(--border-color)'}`,
+              padding: '10px 14px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '10px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem' }}>
+                <Sparkles size={16} color="var(--accent-teal)" />
+                <span style={{ color: 'var(--text-main)', fontWeight: '600' }}>
+                  Actual Performance: <strong>{presentDealsCount} closed deals</strong> ({formatCurrency(effectiveBaseRevenue)} billing)
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '16px', fontSize: '0.76rem' }}>
+                <span>
+                  Self-Goal Alignment: <strong style={{ color: selfPctAchieved >= 100 ? '#10B981' : '#F59E0B' }}>
+                    {selfPctAchieved >= 100 ? `Exceeded Self Pledge (+${selfPctAchieved - 100}%) 🎉` : `${selfPctAchieved}% of Self Target`}
+                  </strong>
+                </span>
+                <span>
+                  Owner Quota Alignment: <strong style={{ color: ownerPctAchieved >= 100 ? '#10B981' : '#2563EB' }}>
+                    {ownerPctAchieved >= 100 ? `Exceeded Management Quota (+${ownerPctAchieved - 100}%) ⭐` : `${ownerPctAchieved}% of Leadership Quota`}
+                  </strong>
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Present Actuals & Deal Velocity Baseline Ribbon */}
       <div style={{
         background: 'var(--bg-card)',
@@ -1587,6 +1770,61 @@ const GrowthTracking = () => {
                   );
                 })}
               </div>
+
+              {/* Company Macro Multiplier Execution Plan across Team Leaders */}
+              <div style={{ background: 'var(--bg-card)', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '16px', marginTop: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                  <div>
+                    <h6 style={{ margin: 0, fontSize: '0.86rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                      🎯 Execution Plan: How Team Leaders Deliver {activeScenarioMultiplier}x Scale ({formatCurrency(effectiveBaseRevenue * activeScenarioMultiplier)})
+                    </h6>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                      Target quotas allocated across network clusters to achieve {presentDealsCount * activeScenarioMultiplier} annual placements (~{Math.round((presentDealsCount * activeScenarioMultiplier) / 12)} deals/month)
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '4px', background: 'rgba(15, 110, 86, 0.12)', color: 'var(--accent-teal)', fontWeight: '700' }}>
+                    Macro Multiplier: {activeScenarioMultiplier}.0x
+                  </span>
+                </div>
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-main)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', textAlign: 'left' }}>
+                        <th style={{ padding: '8px 10px' }}>Team Leader</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'center' }}>Active Franchises</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'center' }}>Current Deals</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'center' }}>{activeScenarioMultiplier}x Target Deals</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'right' }}>Target Billing</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'center' }}>Franchise Productivity Needed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { name: 'Vedika Girish Tolani', franchises: 55, baseDeals: 36, share: 0.32 },
+                        { name: 'Surbhi Vinod Jain', franchises: 55, baseDeals: 32, share: 0.30 },
+                        { name: 'Joyeeta Joydeb Khaskel', franchises: 40, baseDeals: 24, share: 0.22 },
+                        { name: 'Avadai Esakki Muthu Sundaram', franchises: 35, baseDeals: 19, share: 0.16 }
+                      ].map((tl, idx) => {
+                        const targetDeals = Math.round(tl.baseDeals * activeScenarioMultiplier);
+                        const targetBilling = Math.round(effectiveBaseRevenue * activeScenarioMultiplier * tl.share);
+                        const monthlyPerStore = (targetDeals / tl.franchises / 12).toFixed(2);
+
+                        return (
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                            <td style={{ padding: '10px', fontWeight: '700', color: 'var(--text-main)' }}>{tl.name}</td>
+                            <td style={{ padding: '10px', textAlign: 'center', color: '#2563EB', fontWeight: '600' }}>{tl.franchises} stores</td>
+                            <td style={{ padding: '10px', textAlign: 'center' }}>{tl.baseDeals} deals</td>
+                            <td style={{ padding: '10px', textAlign: 'center', fontWeight: '800', color: '#10B981' }}>{targetDeals} deals</td>
+                            <td style={{ padding: '10px', textAlign: 'right', fontWeight: '700' }}>{formatCurrency(targetBilling)}</td>
+                            <td style={{ padding: '10px', textAlign: 'center', color: 'var(--text-muted)' }}>{monthlyPerStore} deals/store/mo</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
         </>
@@ -1655,6 +1893,7 @@ const GrowthTracking = () => {
                   <thead>
                     <tr>
                       <th>Period Horizon</th>
+                      <th>Goal Type</th>
                       <th>Growth Target & Progress</th>
                       <th>Trajectory</th>
                       {entityType === 'bd_agent' && <th>Target Salary</th>}
@@ -1675,6 +1914,22 @@ const GrowthTracking = () => {
                           <td className="font-bold">
                             <div style={{ color: 'var(--text-main)' }}>{t.period_start} → {t.period_end}</div>
                             <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>ID: {t.id}</span>
+                          </td>
+                          <td>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              fontSize: '0.7rem',
+                              fontWeight: '700',
+                              background: t.target_author === 'self' ? 'rgba(15, 110, 86, 0.1)' : 'rgba(37, 99, 235, 0.1)',
+                              color: t.target_author === 'self' ? 'var(--accent-teal)' : '#2563EB',
+                              border: `1px solid ${t.target_author === 'self' ? 'rgba(15, 110, 86, 0.2)' : 'rgba(37, 99, 235, 0.2)'}`
+                            }}>
+                              {t.target_author === 'self' ? '👤 Self-Pledge' : '👑 Owner Quota'}
+                            </span>
                           </td>
                           <td>
                             {isCompleted ? (
@@ -1847,6 +2102,7 @@ const GrowthTracking = () => {
           initialGrowthPct={goalModalParams?.growthPct}
           initialTargetPlacements={goalModalParams?.placements}
           initialTargetRevenue={goalModalParams?.targetRevenue}
+          initialTargetAuthor={goalModalParams?.targetAuthor}
           onTargetCreated={(newTarget) => {
             setTargetsList(prev => [newTarget, ...prev.filter(t => t.id !== newTarget.id)]);
             fetchTargets();
