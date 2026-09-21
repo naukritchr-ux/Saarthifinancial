@@ -409,8 +409,8 @@ export const FinanceProvider = ({ children }) => {
   });
   const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
 
-  // Helper with 35-second abort timeout for resilient cold-starts
-  const fetchWithTimeout = async (url, options = {}, timeoutMs = 35000) => {
+  // Helper with 60-second abort timeout — accounts for Render cold-start (up to 50s)
+  const fetchWithTimeout = async (url, options = {}, timeoutMs = 60000) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -423,19 +423,47 @@ export const FinanceProvider = ({ children }) => {
     }
   };
 
-  // Re-usable loader to fetch all data from backend (with parallel async fetching)
+  // Retry wrapper with exponential back-off: 3 attempts, 2s → 4s → 8s gaps
+  const fetchWithRetry = async (url, options = {}, maxAttempts = 3, baseDelayMs = 2000) => {
+    let lastErr;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const res = await fetchWithTimeout(url, options);
+        if (res.ok || res.status < 500) return res;  // treat 4xx as definitive (no retry)
+        lastErr = new Error(`HTTP ${res.status}`);
+      } catch (e) {
+        lastErr = e;
+      }
+      if (attempt < maxAttempts) {
+        const delay = baseDelayMs * Math.pow(2, attempt - 1);  // 2s, 4s, 8s
+        console.warn(`[Fetch] Attempt ${attempt}/${maxAttempts} failed for ${url}. Retrying in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+    throw lastErr;
+  };
+
+  // Re-usable loader to fetch all data from backend (with parallel async fetching + retry)
   const fetchAllData = async (isManual = false) => {
     setIsBackgroundSyncing(true);
     let loadedFromBackend = false;
     try {
-      // Parallel async fetch with 12s timeout
+      // Fire warmup ping first so the server wakes up before the heavy parallel fetch
+      try {
+        await fetch(`${API_BASE_URL}/warmup`, { method: 'GET', signal: AbortSignal.timeout(5000) });
+        console.log('[Warmup] Server is awake.');
+      } catch (we) {
+        console.warn('[Warmup] Warmup ping failed (server may still be waking up):', we.message);
+      }
+
+      // Parallel async fetch with retry fallback
       const [txRes, franRes, bdRes, tlRes, budgetRes, mlRes] = await Promise.allSettled([
-        fetchWithTimeout(`${API_BASE_URL}/transactions`),
-        fetchWithTimeout(`${API_BASE_URL}/franchisees`),
-        fetchWithTimeout(`${API_BASE_URL}/bd-agents`),
-        fetchWithTimeout(`${API_BASE_URL}/team-leaders`),
-        fetchWithTimeout(`${API_BASE_URL}/budgets`),
-        fetchWithTimeout(`${API_BASE_URL}/ml/insights`)
+        fetchWithRetry(`${API_BASE_URL}/transactions`),
+        fetchWithRetry(`${API_BASE_URL}/franchisees`),
+        fetchWithRetry(`${API_BASE_URL}/bd-agents`),
+        fetchWithRetry(`${API_BASE_URL}/team-leaders`),
+        fetchWithRetry(`${API_BASE_URL}/budgets`),
+        fetchWithRetry(`${API_BASE_URL}/ml/insights`)
       ]);
 
       if (txRes.status === 'fulfilled' && txRes.value.ok) {
@@ -809,17 +837,20 @@ export const FinanceProvider = ({ children }) => {
     }
   };
 
-  // Auto-poll state on mount and periodically every 60 seconds
+  // Auto-poll on mount and every 90s; keep-alive every 8 min to prevent Render cold-sleep
   useEffect(() => {
+    // First attempt — server may be cold-starting, warmup fires inside fetchAllData
     fetchAllData();
+
+    // Periodic background refresh (90s — balanced between freshness and server load)
     const interval = setInterval(() => {
       fetchAllData();
-    }, 60000);
+    }, 90000);
 
-    // Keep-alive ping to Render backend every 10 minutes to prevent cold-sleep
+    // Keep-alive ping every 8 minutes so Render never hits its 15-min inactivity sleep
     const keepAlive = setInterval(() => {
-      fetch(`${API_BASE_URL}/health`).catch(() => {});
-    }, 10 * 60 * 1000);
+      fetch(`${API_BASE_URL}/warmup`).catch(() => {});
+    }, 8 * 60 * 1000);
 
     return () => {
       clearInterval(interval);

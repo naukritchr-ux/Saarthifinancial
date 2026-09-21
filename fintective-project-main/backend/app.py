@@ -213,8 +213,8 @@ def handle_preflight_and_api_key():
         res.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-API-Key, Authorization, Accept, Origin'
         return res
 
-    # Allow health diagnostic endpoints without auth
-    if request.path in ['/health', '/api/health', '/api/health/sync-debug']:
+    # Allow health diagnostic and warmup endpoints without auth
+    if request.path in ['/health', '/api/health', '/api/health/sync-debug', '/api/warmup']:
         return None
 
     incoming_key = request.headers.get('X-API-Key')
@@ -3250,6 +3250,61 @@ def get_active_predictions():
 # --------------------------------------------------------------------------
 # Saarthi Live CRM API Sync Routes
 # --------------------------------------------------------------------------
+
+@app.route('/api/warmup', methods=['GET'])
+def warmup():
+    """
+    Lightweight pre-warm endpoint. Hits the DB with a trivial query and primes
+    the exclusion cache so the first heavy /api/transactions call doesn't cold-start.
+    Returns in < 300 ms even from a cold Render instance.
+    """
+    t0 = time.time()
+    status = {'db': False, 'cache': False, 'exclusions': False}
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as c:
+            c.execute('SELECT 1')
+        conn.close()
+        status['db'] = True
+    except Exception as e:
+        status['db_error'] = str(e)
+
+    try:
+        # Prime the TX cache if it's cold
+        with _tx_cache_lock:
+            cache_stale = (time.time() - _tx_cache_time) > TX_CACHE_TTL_SECONDS
+        if cache_stale:
+            # Run in background thread so warmup returns fast
+            import threading
+            def _prime():
+                try:
+                    import requests as req
+                    req.get(
+                        f"http://localhost:{os.environ.get('PORT', 5000)}/api/transactions",
+                        headers={'X-API-Key': os.environ.get('API_KEY', '')},
+                        timeout=30
+                    )
+                except Exception:
+                    pass
+            threading.Thread(target=_prime, daemon=True).start()
+            status['cache'] = 'priming_in_background'
+        else:
+            status['cache'] = 'already_warm'
+    except Exception as e:
+        status['cache_error'] = str(e)
+
+    try:
+        refresh_live_exclusions(force=False)
+        status['exclusions'] = True
+    except Exception as e:
+        status['exclusions_error'] = str(e)
+
+    elapsed = round((time.time() - t0) * 1000)
+    return jsonify({
+        'ok': True,
+        'status': status,
+        'elapsed_ms': elapsed
+    })
 
 @app.route('/health', methods=['GET'])
 @app.route('/api/health', methods=['GET'])
