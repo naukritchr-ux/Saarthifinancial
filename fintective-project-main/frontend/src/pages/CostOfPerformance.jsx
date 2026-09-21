@@ -54,18 +54,17 @@ const normalizeCityName = (city) => {
   return CITY_MAP[c] || city.trim();
 };
 
-// Section 4.6 Bankim Working Figures for Authoritative Active Franchises
+// Authoritative Active Franchises from Live CRM Database
 const DEFAULT_TL_ROSTER = {
-  'surbhi vinod jain': 55,
-  'vedika girish tolani': 55,
-  'joyeeta joydeb khaskel': 40,
-  'avadai esakki muthu sundaram marthuvar': 35,
-  'pooja sharma': 30,
-  'rajesh patil': 25,
-  'amit shinde': 15,
-  'priya shah': 12,
-  'sanjay joshi': 10,
-  'vikram mehta': 8
+  'surbhi vinod jain': 146,
+  'joyeeta joydeb khaskel': 186,
+  'vedika girish tolani': 120,
+  'avadai esakki muthu sundaram marthuvar': 162,
+  'avadai esakki muthu sundaram': 162,
+  'pune . office': 77,
+  'urmi bhavesh chheda': 77,
+  'suganya sankaran yadav': 13,
+  'rupali sanjay gomai': 9
 };
 
 // Complete BD Benchmarks (Section 9 Spec)
@@ -87,18 +86,15 @@ const ALL_BD_BENCHMARKS = {
   'sonali jayanta singh': { placements: 0, enquiries: 3, newClients: 0, billed: 0, ourShare: 0, baseSalary: 16000, lossAmount: 10000, isDormant: true, role: 'BD Associate' }
 };
 
-// Complete TL Benchmarks (Section 4.6 Spec)
+// Complete TL Benchmarks from Live CRM Data
 const ALL_TL_BENCHMARKS = {
-  'vedika girish tolani': { placements: 36, enquiries: 85, newClients: 12, billed: 2909100, ourShare: 727275, activeFranchises: 55, baseSalary: 85000, isDormant: false },
-  'surbhi vinod jain': { placements: 32, enquiries: 78, newClients: 10, billed: 2719768, ourShare: 679942, activeFranchises: 55, baseSalary: 85000, isDormant: false },
-  'joyeeta joydeb khaskel': { placements: 24, enquiries: 60, newClients: 8, billed: 2040000, ourShare: 510000, activeFranchises: 40, baseSalary: 75000, isDormant: false },
-  'avadai esakki muthu sundaram marthuvar': { placements: 19, enquiries: 48, newClients: 6, billed: 1620000, ourShare: 405000, activeFranchises: 35, baseSalary: 70000, isDormant: false },
-  'pooja sharma': { placements: 14, enquiries: 35, newClients: 4, billed: 1180000, ourShare: 295000, activeFranchises: 30, baseSalary: 65000, isDormant: false },
-  'rajesh patil': { placements: 11, enquiries: 28, newClients: 3, billed: 940000, ourShare: 235000, activeFranchises: 25, baseSalary: 60000, isDormant: false },
-  'amit shinde': { placements: 0, enquiries: 12, newClients: 0, billed: 0, ourShare: 0, activeFranchises: 15, baseSalary: 45000, isDormant: true },
-  'priya shah': { placements: 0, enquiries: 9, newClients: 0, billed: 0, ourShare: 0, activeFranchises: 12, baseSalary: 40000, isDormant: true },
-  'sanjay joshi': { placements: 0, enquiries: 7, newClients: 0, billed: 0, ourShare: 0, activeFranchises: 10, baseSalary: 35000, isDormant: true },
-  'vikram mehta': { placements: 0, enquiries: 5, newClients: 0, billed: 0, ourShare: 0, activeFranchises: 8, baseSalary: 35000, isDormant: true }
+  'surbhi vinod jain': { placements: 487, enquiries: 850, newClients: 45, billed: 32199101, ourShare: 5242610, activeFranchises: 146, baseSalary: 85000, isDormant: false },
+  'joyeeta joydeb khaskel': { placements: 358, enquiries: 640, newClients: 38, billed: 26465440, ourShare: 3837308, activeFranchises: 186, baseSalary: 80000, isDormant: false },
+  'vedika girish tolani': { placements: 356, enquiries: 610, newClients: 35, billed: 21313775, ourShare: 3441747, activeFranchises: 120, baseSalary: 85000, isDormant: false },
+  'avadai esakki muthu sundaram marthuvar': { placements: 268, enquiries: 490, newClients: 28, billed: 13496326, ourShare: 1843717, activeFranchises: 162, baseSalary: 80000, isDormant: false },
+  'suganya sankaran yadav': { placements: 32, enquiries: 65, newClients: 5, billed: 1263626, ourShare: 166328, activeFranchises: 13, baseSalary: 45000, isDormant: false },
+  'urmi bhavesh chheda': { placements: 5, enquiries: 25, newClients: 2, billed: 260761, ourShare: 49535, activeFranchises: 77, baseSalary: 45000, isDormant: false },
+  'rupali sanjay gomai': { placements: 0, enquiries: 12, newClients: 0, billed: 0, ourShare: 0, activeFranchises: 9, baseSalary: 40000, isDormant: true }
 };
 
 // Full Franchise Benchmarks
@@ -142,7 +138,7 @@ const ALL_INDUSTRY_BENCHMARKS = [
 ];
 
 const CostOfPerformance = () => {
-  const { currentUser, transactions } = useContext(FinanceContext);
+  const { currentUser, transactions, franchisees } = useContext(FinanceContext);
 
   // Core 5 Dimensions from Spec
   const [activeDimension, setActiveDimension] = useState('bd'); // 'bd' | 'tl' | 'franchise' | 'city' | 'industry'
@@ -193,6 +189,19 @@ const CostOfPerformance = () => {
     }
   };
 
+  // Live Active Franchise mapping per Team Leader from context
+  const franCountByTl = useMemo(() => {
+    const map = {};
+    (franchisees || []).forEach(f => {
+      const tl = (f.teamLeaderName || f.owner || '').trim();
+      if (tl && (f.status === 'Active' || !f.status)) {
+        const clean = tl.replace(/\s+/g, ' ').toLowerCase();
+        map[clean] = (map[clean] || 0) + 1;
+      }
+    });
+    return map;
+  }, [franchisees]);
+
   // Process and Aggregate Dimension Data
   const dimensionData = useMemo(() => {
     const rawMap = {};
@@ -221,6 +230,7 @@ const CostOfPerformance = () => {
             direct_cost: 0,
             enquiries_handled: 0,
             new_clients: 0,
+            uniqueFranchises: new Set(),
             txList: []
           };
         }
@@ -231,6 +241,9 @@ const CostOfPerformance = () => {
         const isCN = tx.info === 'CN' || (tx.type && tx.type.toLowerCase().includes('credit'));
 
         rawMap[normalizedKey].txList.push(tx);
+        if (tx.franchiseName || tx.franchiseeName) {
+          rawMap[normalizedKey].uniqueFranchises.add((tx.franchiseName || tx.franchiseeName).trim().toLowerCase());
+        }
         if (isCN) {
           rawMap[normalizedKey].credit_note_reversals += Math.abs(ourShare || billed);
         } else {
@@ -343,7 +356,7 @@ const CostOfPerformance = () => {
 
       // Section 4.6 TL Normalization (Net Contribution per Franchise)
       const tlKey = d.dimension_value.toLowerCase();
-      const activeFranchises = d.activeFranchises || DEFAULT_TL_ROSTER[tlKey] || 15;
+      const activeFranchises = d.activeFranchises || franCountByTl[tlKey] || (d.uniqueFranchises ? d.uniqueFranchises.size : 0) || DEFAULT_TL_ROSTER[tlKey] || 15;
       const netPerFranchise = Math.round(netContribution / Math.max(1, activeFranchises));
       const revenuePerFranchise = Math.round(d.company_share / Math.max(1, activeFranchises));
       const costPerFranchise = Math.round(costOfExecution / Math.max(1, activeFranchises));

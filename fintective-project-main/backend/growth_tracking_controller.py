@@ -881,6 +881,101 @@ def get_entity_roster():
 
 
 # --------------------------------------------------------------------------
+# 1B. GET /api/growth-targets/company-breakdown (Live Team Leader Breakdown for Macro Multiplier)
+# --------------------------------------------------------------------------
+@growth_tracking_bp.route("/api/growth-targets/company-breakdown", methods=["GET"])
+def get_company_growth_breakdown():
+    """
+    Computes live company-wide breakdown by Team Leader from actual invoices & franchisees.
+    Provides live deals, total billing, company share, and registered active franchises.
+    """
+    fy = request.args.get("financial_year", "").strip()
+    cache_key = f"company_breakdown_{fy}"
+    cached_val = _get_cached(cache_key)
+    if cached_val is not None:
+        return jsonify(cached_val)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # 1. Registered active franchises per TL
+        cursor.execute("""
+            SELECT 
+                TRIM(teamLeaderName) as tl_name,
+                COUNT(*) as active_franchises
+            FROM franchisees
+            WHERE status = 'Active' AND teamLeaderName IS NOT NULL AND TRIM(teamLeaderName) != ''
+            GROUP BY TRIM(teamLeaderName)
+        """)
+        franchise_map = {}
+        for r in cursor.fetchall():
+            cname = " ".join(r['tl_name'].split()).lower()
+            franchise_map[cname] = r['active_franchises']
+
+        # 2. Deals and billing from invoices
+        fy_clause = f"AND financialYear = '{fy}'" if fy else ""
+        cursor.execute(f"""
+            SELECT 
+                TRIM(teamLeader) as tl_name,
+                COUNT(*) as deals_all,
+                SUM(totalBillAmt) as billing_all,
+                SUM(ourShare) as our_share_all,
+                COUNT(CASE WHEN financialYear = '2025-2026' THEN 1 END) as deals_fy26,
+                SUM(CASE WHEN financialYear = '2025-2026' THEN totalBillAmt ELSE 0 END) as billing_fy26,
+                SUM(CASE WHEN financialYear = '2025-2026' THEN ourShare ELSE 0 END) as our_share_fy26,
+                COUNT(DISTINCT CASE WHEN financialYear = '2025-2026' THEN franchiseName END) as billing_stores_fy26,
+                COUNT(DISTINCT franchiseName) as billing_stores_all
+            FROM invoice
+            WHERE teamLeader IS NOT NULL AND TRIM(teamLeader) != ''
+              AND LOWER(TRIM(teamLeader)) NOT IN ('head office', 'head  - office', 'unknown', 'prospect', 'old . tl', 'pune . office')
+              {fy_clause}
+            GROUP BY TRIM(teamLeader)
+            ORDER BY deals_fy26 DESC
+        """)
+        tl_rows = cursor.fetchall()
+
+        total_billing_fy26 = sum(float(r['billing_fy26'] or 0) for r in tl_rows) or 1.0
+        total_deals_fy26 = sum(int(r['deals_fy26'] or 0) for r in tl_rows)
+
+        results = []
+        for r in tl_rows:
+            raw_name = r['tl_name']
+            cleaned_name = " ".join(raw_name.split())
+            active_f = franchise_map.get(cleaned_name.lower()) or r['billing_stores_fy26'] or 1
+            billing = float(r['billing_fy26'] or 0)
+            deals = int(r['deals_fy26'] or 0)
+            share = round(billing / total_billing_fy26, 4) if total_billing_fy26 > 0 else 0.0
+
+            results.append({
+                'name': cleaned_name,
+                'raw_name': raw_name,
+                'active_franchises': active_f,
+                'billing_stores': int(r['billing_stores_fy26'] or 0),
+                'deals': deals,
+                'deals_all_time': int(r['deals_all'] or 0),
+                'billing': billing,
+                'billing_all_time': float(r['billing_all'] or 0),
+                'our_share': float(r['our_share_fy26'] or 0),
+                'share_of_billing': share
+            })
+
+        response_data = {
+            'success': True,
+            'financial_year': fy or '2025-2026',
+            'total_deals': total_deals_fy26,
+            'total_billing': total_billing_fy26,
+            'team_leaders': results
+        }
+        _set_cached(cache_key, response_data, ttl_seconds=180)
+        return jsonify(response_data)
+    except Exception as e:
+        print(f"[get_company_growth_breakdown] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+
+# --------------------------------------------------------------------------
 # 2. GET /api/growth-targets/predict (5-Year Predictive Horizon & Scorecard)
 # --------------------------------------------------------------------------
 @growth_tracking_bp.route("/api/growth-targets/predict", methods=["GET"])
