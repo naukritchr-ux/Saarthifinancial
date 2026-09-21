@@ -12,6 +12,7 @@ import {
   Briefcase,
   Globe,
   Award,
+  Scale,
   LogOut,
   ChevronLeft,
   ChevronRight
@@ -28,6 +29,7 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
   // Define menu items for each module
   const franchiseBdItems = [
     { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard, section: 'Overview' },
+    { id: 'cost-performance', name: 'Cost of Performance', icon: Scale, section: 'Analytics' },
     { id: 'franchisees', name: 'Franchisees', icon: Users, section: 'Analytics' },
     { id: 'bd-performance', name: 'BD performance', icon: TrendingUp, section: 'Analytics' },
     { id: 'industry-analysis', name: 'Industry & Potential', icon: Briefcase, section: 'Analytics' },
@@ -51,7 +53,7 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
   // Hide specific admin-only directories if view role is restricted
   const allowedItems = menuItems.filter(item => {
     if (userRole === 'admin') return true;
-    const adminOnlyTabs = ['franchisees', 'bd-performance', 'industry-analysis', 'tl-performance', 'cash-outflow', 'portal-analytics', 'roi-tracker', 'growth-tracking'];
+    const adminOnlyTabs = ['cost-performance', 'franchisees', 'bd-performance', 'industry-analysis', 'tl-performance', 'cash-outflow', 'portal-analytics', 'roi-tracker', 'growth-tracking'];
     return !adminOnlyTabs.includes(item.id);
   });
 

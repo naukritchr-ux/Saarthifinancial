@@ -234,10 +234,12 @@ def add_cors_headers(response):
 
 from invoice_controller import invoice_bp
 from growth_tracking_controller import growth_tracking_bp
+from cost_performance_controller import cost_performance_bp
 from enquiry_to_invoice_middleware import enquiry_to_invoice_after_request
 
 app.register_blueprint(invoice_bp)
 app.register_blueprint(growth_tracking_bp)
+app.register_blueprint(cost_performance_bp)
 app.after_request(enquiry_to_invoice_after_request)
 
 @app.after_request

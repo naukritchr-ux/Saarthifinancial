@@ -15,6 +15,7 @@ import Reports from './pages/Reports';
 import RunwayRoiTracker from './pages/RunwayRoiTracker';
 import GrowthTracking from './pages/GrowthTracking';
 import IndustryAnalysis from './pages/IndustryAnalysis';
+import CostOfPerformance from './pages/CostOfPerformance';
 import Login from './pages/Login';
 
 class ErrorBoundary extends React.Component {
@@ -61,6 +62,8 @@ function AppContent() {
     switch (activePage) {
       case 'dashboard':
         return <Dashboard setActivePage={setActivePage} />;
+      case 'cost-performance':
+        return <CostOfPerformance />;
       case 'franchisees':
         return <Franchisees />;
       case 'bd-performance':

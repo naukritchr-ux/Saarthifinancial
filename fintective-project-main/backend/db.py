@@ -417,6 +417,113 @@ def ensure_tables_exist():
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
 
+            # 11. Cost of Performance & BD Worth Module Tables (TCHR Spec v1.0)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS cost_bd_monthly (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    bd_id VARCHAR(100) NULL,
+                    bd_name VARCHAR(255) NOT NULL,
+                    month VARCHAR(20) NOT NULL,
+                    fixed_salary DECIMAL(15, 2) DEFAULT 0.00,
+                    incentive_paid DECIMAL(15, 2) DEFAULT 0.00,
+                    travel_expense DECIMAL(15, 2) DEFAULT 0.00,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_bd_cost_month (bd_name, month),
+                    INDEX idx_bd_cost_m (month)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS cost_tl_monthly (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    tl_id VARCHAR(100) NULL,
+                    tl_name VARCHAR(255) NOT NULL,
+                    month VARCHAR(20) NOT NULL,
+                    fixed_salary DECIMAL(15, 2) DEFAULT 0.00,
+                    incentive_paid DECIMAL(15, 2) DEFAULT 0.00,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_tl_cost_month (tl_name, month),
+                    INDEX idx_tl_cost_m (month)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS overhead_monthly (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    month VARCHAR(20) NOT NULL UNIQUE,
+                    admin_team_salary DECIMAL(15, 2) DEFAULT 0.00,
+                    marketing_team_salary DECIMAL(15, 2) DEFAULT 0.00,
+                    rent DECIMAL(15, 2) DEFAULT 0.00,
+                    other_admin_expense DECIMAL(15, 2) DEFAULT 0.00,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS cost_allocation_rule (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    basis VARCHAR(50) DEFAULT 'revenue_share',
+                    effective_from VARCHAR(50) DEFAULT '2018-01-01',
+                    is_active TINYINT DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # Seed default cost allocation rule if empty
+            cur.execute("SELECT COUNT(*) as cnt FROM cost_allocation_rule;")
+            if cur.fetchone()["cnt"] == 0:
+                cur.execute("INSERT INTO cost_allocation_rule (basis, effective_from, is_active) VALUES ('revenue_share', '2018-01-01', 1);")
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS franchise_roster_monthly (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    tl_id VARCHAR(100) NULL,
+                    tl_name VARCHAR(255) NOT NULL,
+                    month VARCHAR(20) NOT NULL,
+                    active_franchise_count INT DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_tl_roster_month (tl_name, month)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS cost_performance_monthly (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    dimension_type VARCHAR(50) NOT NULL,
+                    dimension_value VARCHAR(255) NOT NULL,
+                    month VARCHAR(20) NOT NULL,
+                    placements_count INT DEFAULT 0,
+                    enquiries_handled INT DEFAULT 0,
+                    new_clients_count INT DEFAULT 0,
+                    total_billed DECIMAL(15, 2) DEFAULT 0.00,
+                    company_share DECIMAL(15, 2) DEFAULT 0.00,
+                    franchisee_payout DECIMAL(15, 2) DEFAULT 0.00,
+                    credit_note_reversals DECIMAL(15, 2) DEFAULT 0.00,
+                    bd_cost DECIMAL(15, 2) DEFAULT 0.00,
+                    tl_allocated_cost DECIMAL(15, 2) DEFAULT 0.00,
+                    overhead_allocated_cost DECIMAL(15, 2) DEFAULT 0.00,
+                    cac DECIMAL(15, 2) DEFAULT 0.00,
+                    cost_of_execution DECIMAL(15, 2) DEFAULT 0.00,
+                    churn_cost DECIMAL(15, 2) DEFAULT 0.00,
+                    net_contribution DECIMAL(15, 2) DEFAULT 0.00,
+                    rev_per_enquiry DECIMAL(15, 2) DEFAULT 0.00,
+                    exp_per_enquiry DECIMAL(15, 2) DEFAULT 0.00,
+                    net_surplus_per_enquiry DECIMAL(15, 2) DEFAULT 0.00,
+                    active_franchise_count INT DEFAULT 0,
+                    rev_per_franchise DECIMAL(15, 2) DEFAULT 0.00,
+                    cost_per_franchise DECIMAL(15, 2) DEFAULT 0.00,
+                    net_contribution_per_franchise DECIMAL(15, 2) DEFAULT 0.00,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_dim_month (dimension_type, dimension_value, month),
+                    INDEX idx_cp_dim (dimension_type, month)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
             # Migration: Ensure unique constraints exist on active existing database tables
             def add_unique_key_if_missing(table_name, key_name, col_name):
                 try:
