@@ -487,7 +487,7 @@ const CostOfPerformance = () => {
       const netMarginPct = d.company_share > 0 ? ((netContribution / d.company_share) * 100).toFixed(1) : '-100.0';
 
       // Profile Target ROI Multiple Computations
-      const targetMultiple = perProfileTargets[d.dimension_value] || globalTargetMultiplier;
+      const targetMultiple = globalTargetMultiplier;
       const targetRevenueRequired = Math.round(totalCost * targetMultiple);
       const avgPlacementTicket = d.placements > 0 ? (d.company_share / d.placements) : (activeDimension === 'bd' ? 39500 : activeDimension === 'tl' ? 20200 : 25000);
       const targetPlacementsRequired = Math.ceil(targetRevenueRequired / Math.max(1000, avgPlacementTicket));
