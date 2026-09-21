@@ -1899,7 +1899,7 @@ const GrowthTracking = () => {
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.45' }}>
                   {entityType === 'company' ? (
                     <>
-                      Sets macro growth multiplier across the total agency portfolio. Scaling from <strong>2x to 5x</strong> elevates annual gross billing up to <strong>{formatCurrency(effectiveBaseRevenue * 5)}</strong> with <strong>{formatCurrency(Math.round(effectiveBaseRevenue * 5 * netRetentionRate))}</strong> in audited net retained company margin ({(netRetentionRate * 100).toFixed(1)}% live retention rate).
+                      Sets macro growth multiplier across the total agency portfolio. Scaling from <strong>2x to 5x</strong> grows the gross billing target up to <strong>{formatCurrency(effectiveBaseRevenue * 5)}</strong>. The company margin (ourShare) at 5x = <strong>{formatCurrency(Math.round(effectiveBaseRevenue * 5 * netRetentionRate))}</strong> — Saarthi's cut after franchisee royalties ({(netRetentionRate * 100).toFixed(1)}% of gross).
                     </>
                   ) : (
                     <>
@@ -1949,8 +1949,8 @@ const GrowthTracking = () => {
                   data={scaleChartData}
                   series1Key="revenue"
                   series2Key="netRetention"
-                  series1Label="Gross Revenue"
-                  series2Label="Net Retention"
+                  series1Label="Gross Billing Target"
+                  series2Label="Company Margin (ourShare)"
                   series1Color="#10b981"
                   series2Color="#0F6E56"
                   height={120}
@@ -1990,7 +1990,7 @@ const GrowthTracking = () => {
                         {formatCurrency(scRevenue)}
                       </div>
                       <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block' }}>
-                        Net Retention: {formatCurrency(scNet)}
+                        Company Margin: {formatCurrency(scNet)} <span style={{ opacity: 0.7 }}>({(netRetentionRate * 100).toFixed(1)}%)</span>
                       </span>
                     </div>
                   );
