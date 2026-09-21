@@ -15,8 +15,9 @@ import {
   Layers,
   CheckCircle2,
   AlertTriangle,
-  CheckSquare,
-  Square,
+  CreditCard,
+  Building2,
+  Calendar,
   PlusCircle
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -31,18 +32,16 @@ export default function ReconciliationTable({
   onEditClick,
   onViewClick,
   onAddToCrmClick,
-  onToggleFollowup,
+  onFollowupDoneToggle,
   onFollowupClick
 }) {
   const { navigateTo } = useApp();
   const [expandedRow, setExpandedRow] = useState(null);
 
   const handleToggleFollowupDone = async (row, e) => {
-    if (e) {
-      if (e.stopPropagation) e.stopPropagation();
-    }
-    if (onToggleFollowup) {
-      onToggleFollowup(row.id);
+    if (e && e.stopPropagation) e.stopPropagation();
+    if (onFollowupDoneToggle) {
+      onFollowupDoneToggle(row.id);
     } else {
       try {
         await toggleFollowupDone(row.id);
@@ -60,6 +59,18 @@ export default function ReconciliationTable({
     }).format(parseFloat(val || 0));
   };
 
+  const isSaarthiEraRow = (fy = '') => {
+    if (!fy) return false;
+    const match = String(fy).match(/(\d{4})/);
+    if (match) return parseInt(match[1], 10) >= 2026;
+    const shortMatch = String(fy).match(/(\d{2})[-/](\d{2})/);
+    if (shortMatch) {
+      const yr = parseInt(shortMatch[1], 10);
+      return yr >= 26 && yr < 90;
+    }
+    return false;
+  };
+
   const getFinancialStatusPill = (status) => {
     switch (status) {
       case 'Match':
@@ -68,9 +79,11 @@ export default function ReconciliationTable({
         return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-[#4ADE80]/15 text-[#2E8B57] border border-[#4ADE80]/30">Match</span>;
       case 'Less':
       case 'Less Paid':
+      case 'Less Payment':
         return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-[#FBBF77]/20 text-[#D97706] border border-[#FBBF77]/40">Less Paid</span>;
       case 'Excess':
       case 'Excess Paid':
+      case 'Excess Payment':
         return <span className="px-2.5 py-1 rounded-full text-xs font-black bg-[#F87A9E]/15 text-[#E11D48] border border-[#F87A9E]/30">Excess</span>;
       case 'Missing':
       case 'Not Received':
@@ -95,7 +108,7 @@ export default function ReconciliationTable({
     if (tally && as26 && saarthi) {
       return (
         <span className="px-2.5 py-1 rounded-full text-[11px] font-black border bg-[#4ADE80]/15 text-[#2E8B57] border-[#4ADE80]/30">
-          3/3 · All 3 (Sarthi + Tally + 26AS)
+          3/3 · All 3
         </span>
       );
     } else if (tally && as26) {
@@ -107,20 +120,20 @@ export default function ReconciliationTable({
     } else if (saarthi && tally) {
       return (
         <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold border bg-[#9B87F5]/15 text-[#9B87F5] border-[#9B87F5]/30">
-          2/3 · Sarthi + Tally
+          2/3 · Saarthi + Tally
         </span>
       );
     } else if (as26 && saarthi) {
       return (
         <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold border bg-indigo-50 text-indigo-700 border-indigo-200">
-          2/3 · 26AS + Sarthi
+          2/3 · 26AS + Saarthi
         </span>
       );
     } else {
-      const activeName = tally ? 'Tally' : as26 ? '26AS' : saarthi ? 'Sarthi' : 'Single';
+      const activeName = tally ? 'Tally' : as26 ? '26AS' : saarthi ? 'Saarthi' : 'Single';
       return (
         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold border bg-[#FBBF77]/20 text-[#D97706] border-[#FBBF77]/40">
-          1/3 · {activeName} Only
+          1/3 · {activeName}
         </span>
       );
     }
@@ -130,27 +143,27 @@ export default function ReconciliationTable({
     setExpandedRow(expandedRow === id ? null : id);
   };
 
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return (
-    <div className="bg-white rounded-2xl border border-[#E9E4FA] shadow-xs overflow-hidden mb-6 text-[#1F1B2E]">
+    <div className="bg-white rounded-3xl border border-[#E9E4FA] shadow-xs overflow-hidden mb-6 text-[#1F1B2E]">
       <div className="overflow-x-auto">
         <table className="w-full text-left border-collapse text-xs">
           <thead>
-            <tr className="bg-[#E8E4FF]/50 text-[#6B6580] border-b border-[#E9E4FA] font-black uppercase tracking-wider text-[11px]">
-              <th className="px-3 py-3 text-center"></th>
-              <th className="px-4 py-3">Company</th>
-              <th className="px-4 py-3">TAN</th>
-              <th className="px-4 py-3">FY</th>
-              <th className="px-4 py-3 text-right">Tally TDS</th>
-              <th className="px-4 py-3 text-right">26AS TDS</th>
-              <th className="px-4 py-3 text-right">Sarthi TDS</th>
-              <th className="px-4 py-3 text-right">Difference (26AS - Tally)</th>
-              <th className="px-4 py-3 text-center">Financial Status</th>
-              <th className="px-4 py-3 text-center">Source Coverage</th>
-              <th className="px-4 py-3 text-center">Follow-up Done</th>
-              <th className="px-4 py-3 text-center">Log Call</th>
-              <th className="px-4 py-3 text-center">Action</th>
+            <tr className="bg-[#E8E4FF]/60 text-[#6B6580] border-b border-[#E9E4FA] font-black uppercase tracking-wider text-[11px]">
+              <th className="px-3 py-3.5 text-center"></th>
+              <th className="px-4 py-3.5">Company Name</th>
+              <th className="px-4 py-3.5">TAN No.</th>
+              <th className="px-4 py-3.5">PAN No.</th>
+              <th className="px-4 py-3.5">FY</th>
+              <th className="px-4 py-3.5 text-right">Tally TDS</th>
+              <th className="px-4 py-3.5 text-right">26AS TDS</th>
+              <th className="px-4 py-3.5 text-right">Saarthi 360 TDS</th>
+              <th className="px-4 py-3.5 text-right">Balance</th>
+              <th className="px-4 py-3.5 text-center">Financial Status</th>
+              <th className="px-4 py-3.5 text-center">Coverage</th>
+              <th className="px-4 py-3.5 text-center">Follow-up</th>
+              <th className="px-4 py-3.5 text-center">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#E9E4FA] font-medium text-[#1F1B2E]">
@@ -160,7 +173,7 @@ export default function ReconciliationTable({
                   <div className="flex flex-col items-center justify-center gap-2">
                     <AlertCircle className="w-8 h-8 text-[#B4A7F5]" />
                     <span className="font-bold text-[#1F1B2E]">No reconciliation records match the selected filters.</span>
-                    <p className="text-xs text-[#6B6580]">Try clearing the FY or Source Coverage filters.</p>
+                    <p className="text-xs text-[#6B6580]">Try clearing or adjusting the FY, Company, or PAN filters above.</p>
                   </div>
                 </td>
               </tr>
@@ -169,12 +182,20 @@ export default function ReconciliationTable({
                 const tallyVal = parseFloat(row.tallyTds || 0);
                 const as26Val = parseFloat(row.as26Tds || 0);
                 const saarthiVal = parseFloat(row.saarthiTds || row.booksTds || 0);
-                const primaryVal = tallyVal > 0 ? tallyVal : saarthiVal;
-                const diff = as26Val - primaryVal;   // positive = 26AS surplus (good for company)
-                const isShort = diff < -1.0;        // 26AS < primary = client under-deposited
-                const isExcess = diff > 1.0;        // 26AS > primary = surplus / over-deposit
+                const fy = row.financialYear || '';
+                const isSaarthiEra = isSaarthiEraRow(fy);
 
-                const validCompany = row.companyName && !['Client Entity', 'Unknown Client', 'Unknown Company'].includes(row.companyName.trim());
+                // User Rule:
+                // FY 2019-20 to 2025-26: Balance = Tally - 26AS
+                // FY 2026-27 onwards: Balance = Saarthi 360 - 26AS
+                const baselineVal = isSaarthiEra ? (saarthiVal > 0 ? saarthiVal : tallyVal) : (tallyVal > 0 ? tallyVal : saarthiVal);
+                const balance = row.balance !== undefined ? parseFloat(row.balance) : (baselineVal - as26Val);
+                const baselineLabel = isSaarthiEra ? 'Saarthi 360' : 'Tally';
+
+                const isShort = balance > 1.0;     // baseline > 26AS (under-deposited)
+                const isExcess = balance < -1.0;   // 26AS > baseline (excess deposited)
+
+                const validCompany = row.companyName && !['Client Entity', 'Unknown Client', 'Unknown Company', 'Unassigned Entity'].includes(row.companyName.trim());
                 const displayName = validCompany 
                   ? row.companyName 
                   : (row.tallyPartyName || row.as26DeductorName || row.deductorName || row.partyName || 'Company Name Not Specified');
@@ -196,51 +217,81 @@ export default function ReconciliationTable({
                         )}
                       </td>
 
+                      {/* Company Name */}
                       <td className="px-4 py-3.5">
                         <div className="font-extrabold text-[#1F1B2E]">{displayName}</div>
-                        <div className="text-[10px] text-[#6B6580] mt-0.5">
-                          Bill: {row.billNumber || 'N/A'}
+                        <div className="text-[10px] text-[#6B6580] mt-0.5 flex items-center gap-1.5">
+                          <span>Bill: {row.billNumber || 'N/A'}</span>
                         </div>
                       </td>
 
                       {/* TAN */}
                       <td className="px-4 py-3.5 font-mono font-bold text-[#1F1B2E]">
                         {(!row.tanNo || row.tanNo.startsWith('NO_TAN_') || row.tanNo === 'Pending TAN' || row.tanNo === 'Not Available' || row.tanNo.includes('UNKNOWN')) ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                             Pending TAN
                           </span>
                         ) : (
                           row.tanNo
                         )}
                       </td>
+
+                      {/* PAN Number */}
+                      <td className="px-4 py-3.5 font-mono font-bold text-[#6B6580]">
+                        {row.panNo && row.panNo !== 'N/A' && row.panNo !== '' ? (
+                          <span className="inline-flex items-center gap-1 text-[#1F1B2E]">
+                            <CreditCard className="w-3 h-3 text-[#9B87F5]" />
+                            {row.panNo}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">N/A</span>
+                        )}
+                      </td>
                       
-                      <td className="px-4 py-3.5 text-[#6B6580] font-semibold">{row.financialYear || 'Unspecified'}</td>
+                      {/* FY */}
+                      <td className="px-4 py-3.5 text-[#1F1B2E] font-bold whitespace-nowrap">
+                        <span className="px-2 py-0.5 bg-[#F6F8FA] border border-[#E9E4FA] rounded-md">
+                          {row.financialYear || 'Unspecified'}
+                        </span>
+                      </td>
 
-                      <td className="px-4 py-3.5 text-right font-bold text-[#9B87F5]">{formatCurrency(row.tallyTds)}</td>
+                      {/* Tally TDS */}
+                      <td className="px-4 py-3.5 text-right font-bold text-[#9B87F5]">
+                        {formatCurrency(row.tallyTds)}
+                      </td>
 
-                      <td className="px-4 py-3.5 text-right font-bold text-[#8572E0]">{formatCurrency(row.as26Tds)}</td>
+                      {/* 26AS TDS */}
+                      <td className="px-4 py-3.5 text-right font-bold text-[#8572E0]">
+                        {formatCurrency(row.as26Tds)}
+                      </td>
 
-                      <td className="px-4 py-3.5 text-right font-bold text-[#B4A7F5]">{formatCurrency(row.saarthiTds || row.booksTds)}</td>
+                      {/* Saarthi 360 TDS */}
+                      <td className="px-4 py-3.5 text-right font-bold text-[#B4A7F5]">
+                        {formatCurrency(row.saarthiTds || row.booksTds)}
+                      </td>
 
-                      {/* Difference: (26AS - Primary) */}
+                      {/* Dynamic Balance Column: Tally - 26AS (2019-2026) or Saarthi - 26AS (2026-2027+) */}
                       <td className="px-4 py-3.5 text-right font-black">
-                        <div className={`inline-flex items-center gap-0.5 ${isShort ? 'text-[#E11D48]' : isExcess ? 'text-[#D97706]' : 'text-[#2E8B57]'}`}>
-                          {isShort ? <ArrowDownRight className="w-3.5 h-3.5 flex-shrink-0" /> : isExcess ? <ArrowUpRight className="w-3.5 h-3.5 flex-shrink-0" /> : null}
-                          <span>{formatCurrency(diff)}</span>
+                        <div className={`inline-flex items-center gap-0.5 ${isShort ? 'text-[#D97706]' : isExcess ? 'text-[#E11D48]' : 'text-[#2E8B57]'}`}>
+                          {isShort ? <ArrowUpRight className="w-3.5 h-3.5 flex-shrink-0" /> : isExcess ? <ArrowDownRight className="w-3.5 h-3.5 flex-shrink-0" /> : null}
+                          <span>{formatCurrency(balance)}</span>
+                        </div>
+                        <div className="text-[9px] text-[#6B6580] font-semibold">
+                          ({baselineLabel} − 26AS)
                         </div>
                       </td>
 
                       {/* Financial Status */}
                       <td className="px-4 py-3.5 text-center">
                         <div className="flex flex-col items-center gap-1">
-                          {getFinancialStatusPill(
-                            row.financialStatus || row.overallStatus
-                          )}
+                          {getFinancialStatusPill(row.financialStatus || row.overallStatus)}
                         </div>
                       </td>
 
                       {/* Source Coverage */}
-                      <td className="px-4 py-3.5 text-center">{getCoveragePill(row.sourceCoverage, row)}</td>
+                      <td className="px-4 py-3.5 text-center">
+                        {getCoveragePill(row.sourceCoverage, row)}
+                      </td>
 
                       {/* Follow-up Done Checkbox */}
                       <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
@@ -263,48 +314,32 @@ export default function ReconciliationTable({
                         </label>
                       </td>
 
-                      {/* Log Follow-up Call button */}
-                      <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => {
-                            const cleanTan = (!row.tanNo || row.tanNo.startsWith('NO_TAN_') || row.tanNo.includes('UNKNOWN')) ? '' : row.tanNo;
-                            if (onFollowupClick) {
-                              onFollowupClick({ ...row, tanNo: cleanTan });
-                            } else {
-                              navigateTo('follow-up', { tan: cleanTan, company: displayName });
-                            }
-                          }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#FBBF77]/20 text-[#D97706] border border-[#FBBF77]/40 font-black hover:bg-[#FBBF77]/30 transition text-[11px] cursor-pointer shadow-2xs"
-                        >
-                          <PhoneCall className="w-3 h-3" />
-                          Follow Up
-                        </button>
-                      </td>
-
                       {/* Actions */}
                       <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
                           <button
-                            onClick={() => onAddToCrmClick && onAddToCrmClick(row)}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[#9B87F5] bg-[#9B87F5]/15 text-[#9B87F5] hover:bg-[#9B87F5] hover:text-white transition cursor-pointer font-bold text-[11px] whitespace-nowrap shadow-2xs"
-                            title="Book Entry into Saarthi 360 CRM Books"
-                          >
-                            <PlusCircle className="w-3.5 h-3.5" />
-                            <span>Book CRM</span>
-                          </button>
-                          <button
-                            onClick={() => onViewClick && onViewClick(row)}
-                            className="p-1.5 rounded-lg border border-[#E9E4FA] text-[#6B6580] hover:bg-[#E8E4FF] transition cursor-pointer"
-                            title="View Details"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-                          <button
                             onClick={() => onEditClick(row)}
-                            className="p-1.5 rounded-lg border border-[#E9E4FA] text-[#9B87F5] hover:bg-[#9B87F5]/10 transition cursor-pointer"
-                            title="Clean / Manual Override"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-[#9B87F5] bg-[#9B87F5] text-white hover:bg-[#8572E0] transition cursor-pointer font-bold text-[11px] shadow-xs"
+                            title="Edit Record & Multi-entry Records for this Company"
                           >
                             <Wrench className="w-3.5 h-3.5" />
+                            <span>Edit</span>
+                          </button>
+                          
+                          <button
+                            onClick={() => onAddToCrmClick && onAddToCrmClick(row)}
+                            className="p-1.5 rounded-xl border border-[#E9E4FA] text-[#9B87F5] hover:bg-[#E8E4FF] transition cursor-pointer"
+                            title="Book Entry into Saarthi 360 CRM"
+                          >
+                            <PlusCircle className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => onViewClick && onViewClick(row)}
+                            className="p-1.5 rounded-xl border border-[#E9E4FA] text-[#6B6580] hover:bg-[#E8E4FF] transition cursor-pointer"
+                            title="View Full Details"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
@@ -316,7 +351,7 @@ export default function ReconciliationTable({
                         <td colSpan="13" className="px-6 py-4">
                           <div className="bg-white p-5 rounded-2xl border border-[#E9E4FA] space-y-4 shadow-sm text-xs">
                             
-                            {/* HR Contact & Designation Card */}
+                            {/* Contact Details Card */}
                             <div className="space-y-2">
                               <div className="flex items-center justify-between text-[10px] font-black uppercase text-[#9B87F5] tracking-wider">
                                 <span className="flex items-center gap-1.5">
@@ -324,7 +359,7 @@ export default function ReconciliationTable({
                                   Client Contact Details
                                 </span>
                                 <span className="text-[#6B6580]">
-                                  TAN: {(!row.tanNo || row.tanNo.startsWith('NO_TAN_') || row.tanNo === 'Pending TAN' || row.tanNo === 'Not Available' || row.tanNo.includes('UNKNOWN')) ? 'Not Available' : row.tanNo}
+                                  TAN: {row.tanNo || 'N/A'} · PAN: {row.panNo || 'N/A'}
                                 </span>
                               </div>
 
@@ -332,9 +367,9 @@ export default function ReconciliationTable({
                                 <div className="flex items-center gap-2 p-2.5 rounded-xl border border-[#E9E4FA] bg-[#F6F8FA]">
                                   <User className="w-4 h-4 text-[#6B6580] flex-shrink-0" />
                                   <div className="truncate">
-                                    <div className="text-[9px] text-[#6B6580] uppercase font-bold">Contact Name</div>
+                                    <div className="text-[9px] text-[#6B6580] uppercase font-bold">Contact Person</div>
                                     <div className="font-bold text-[#1F1B2E] text-xs truncate">
-                                      {row.contactPersonName || row.duesContactPerson || row.hrName || 'Not recorded'}
+                                      {row.contactPersonName || 'Not recorded'}
                                     </div>
                                   </div>
                                 </div>
@@ -344,7 +379,7 @@ export default function ReconciliationTable({
                                   <div className="truncate">
                                     <div className="text-[9px] text-[#6B6580] uppercase font-bold">Phone Number</div>
                                     <div className="font-bold text-[#1F1B2E] text-xs truncate">
-                                      {row.contactNumber || row.duesContactNumber || row.contactNo || 'Not recorded'}
+                                      {row.contactNumber || 'Not recorded'}
                                     </div>
                                   </div>
                                 </div>
@@ -361,58 +396,52 @@ export default function ReconciliationTable({
                               </div>
                             </div>
 
-                            {/* Financial Variance Analysis & Sub-statuses */}
+                            {/* Financial Variance Assessment Box */}
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-1">
-                              
-                              {/* Excess / Less / Match Summary Box */}
                               <div className="md:col-span-1 p-3.5 rounded-xl border flex flex-col justify-between space-y-2 bg-[#F6F8FA] border-[#E9E4FA]">
                                 <span className="text-[10px] font-black uppercase text-[#6B6580] tracking-wider">
-                                  TDS Variance Assessment
+                                  TDS Balance Rule ({isSaarthiEra ? '2026-27+ Era' : '2019-2026 Era'})
                                 </span>
-                                {isShort ? (
-                                  <div className="space-y-1">
-                                    <span className="inline-flex items-center gap-1 text-[#E11D48] font-black text-xs">
-                                      <AlertTriangle className="w-4 h-4 text-[#F87A9E]" />
-                                      Less Paid: {formatCurrency(Math.abs(diff))}
-                                    </span>
-                                    <p className="text-[11px] text-[#6B6580] font-medium leading-tight">
-                                      26AS portal deduction is lower than internal books. Client deductor under-deposited tax.
-                                    </p>
-                                  </div>
-                                ) : isExcess ? (
-                                  <div className="space-y-1">
-                                    <span className="inline-flex items-center gap-1 text-[#D97706] font-black text-xs">
-                                      <AlertTriangle className="w-4 h-4 text-[#FBBF77]" />
-                                      Excess Deducted: {formatCurrency(Math.abs(diff))}
-                                    </span>
-                                    <p className="text-[11px] text-[#6B6580] font-medium leading-tight">
-                                      26AS portal reflects higher deduction than recorded in internal books.
-                                    </p>
-                                  </div>
-                                ) : (
-                                  <div className="space-y-1">
-                                    <span className="inline-flex items-center gap-1 text-[#2E8B57] font-black text-xs">
-                                      <CheckCircle2 className="w-4 h-4 text-[#4ADE80]" />
-                                      Fully Matched (Zero Gap)
-                                    </span>
-                                    <p className="text-[11px] text-[#6B6580] font-medium leading-tight">
-                                      Internal books (Tally / Saarthi) and 26AS portal TDS figures align perfectly.
-                                    </p>
-                                  </div>
-                                )}
+                                <div className="space-y-1">
+                                  <span className={`inline-flex items-center gap-1 font-black text-xs ${
+                                    Math.abs(balance) <= 1.0 ? 'text-[#2E8B57]' : isShort ? 'text-[#D97706]' : 'text-[#E11D48]'
+                                  }`}>
+                                    {Math.abs(balance) <= 1.0 ? (
+                                      <>
+                                        <CheckCircle2 className="w-4 h-4 text-[#4ADE80]" />
+                                        Fully Matched (₹0 Variance)
+                                      </>
+                                    ) : isShort ? (
+                                      <>
+                                        <AlertTriangle className="w-4 h-4 text-[#FBBF77]" />
+                                        Less Paid: {formatCurrency(Math.abs(balance))}
+                                      </>
+                                    ) : (
+                                      <>
+                                        <AlertTriangle className="w-4 h-4 text-[#F87A9E]" />
+                                        Excess: {formatCurrency(Math.abs(balance))}
+                                      </>
+                                    )}
+                                  </span>
+                                  <p className="text-[11px] text-[#6B6580] font-medium leading-tight">
+                                    {isSaarthiEra 
+                                      ? 'Calculated as Saarthi 360 CRM TDS − Form 26AS TDS.'
+                                      : 'Calculated as Tally Ledger TDS − Form 26AS TDS.'}
+                                  </p>
+                                </div>
                               </div>
 
-                              {/* 3-Way Sub Status Cards */}
+                              {/* 3-Way Breakdown Cards */}
                               <div className="md:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
                                 <div className="p-3 rounded-xl border border-[#E9E4FA] bg-white flex flex-col justify-between">
-                                  <span className="text-[10px] font-bold text-[#6B6580] uppercase">Sarthi 360 vs 26AS</span>
+                                  <span className="text-[10px] font-bold text-[#6B6580] uppercase">Saarthi 360 vs 26AS</span>
                                   <div className="font-extrabold text-[#9B87F5] text-xs mt-1">
                                     {row.booksVs26asStatus || 'Matched'}
                                   </div>
                                 </div>
 
                                 <div className="p-3 rounded-xl border border-[#E9E4FA] bg-white flex flex-col justify-between">
-                                  <span className="text-[10px] font-bold text-[#6B6580] uppercase">Sarthi 360 vs Tally</span>
+                                  <span className="text-[10px] font-bold text-[#6B6580] uppercase">Saarthi 360 vs Tally</span>
                                   <div className="font-extrabold text-[#9B87F5] text-xs mt-1">
                                     {row.booksVsTallyStatus || 'Matched'}
                                   </div>
@@ -425,41 +454,32 @@ export default function ReconciliationTable({
                                   </div>
                                 </div>
                               </div>
-
                             </div>
 
-                            {/* Quick Action Footer inside Expanded Panel */}
+                            {/* Panel Footer */}
                             <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#E9E4FA]">
                               <span className="text-[11px] text-[#6B6580] font-medium">
-                                Last updated: <span className="font-bold text-[#1F1B2E]">{row.updatedAt ? new Date(row.updatedAt).toLocaleString('en-IN') : 'Recently'}</span>
+                                Last modified: <span className="font-bold text-[#1F1B2E]">{row.updatedAt ? new Date(row.updatedAt).toLocaleString('en-IN') : 'Recently'}</span>
                               </span>
 
                               <div className="flex items-center gap-2">
-                                {(parseFloat(row.saarthiTds || row.booksTds || 0) === 0 || isExcess || row.financialStatus === 'Excess') && (
-                                  <button
-                                    onClick={() => onAddToCrmClick && onAddToCrmClick(row)}
-                                    className="inline-flex items-center gap-1.5 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-black text-xs px-3.5 py-1.5 rounded-xl transition cursor-pointer shadow-md"
-                                  >
-                                    <PlusCircle className="w-3.5 h-3.5" />
-                                    <span>➕ Book in Saarthi 360 CRM</span>
-                                  </button>
-                                )}
+                                <button
+                                  onClick={() => onEditClick(row)}
+                                  className="inline-flex items-center gap-1.5 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-extrabold text-xs px-3.5 py-1.5 rounded-xl transition cursor-pointer shadow-xs"
+                                >
+                                  <Wrench className="w-3.5 h-3.5" />
+                                  <span>Edit / Multi-Entry Update</span>
+                                </button>
+                                
                                 <button
                                   onClick={() => {
                                     const cleanTan = (!row.tanNo || row.tanNo.startsWith('NO_TAN_') || row.tanNo.includes('UNKNOWN')) ? '' : row.tanNo;
                                     navigateTo('follow-up', { tan: cleanTan, company: displayName });
                                   }}
-                                  className="inline-flex items-center gap-1.5 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-bold text-xs px-3.5 py-1.5 rounded-xl transition cursor-pointer shadow-2xs"
+                                  className="inline-flex items-center gap-1.5 bg-white border border-[#E9E4FA] hover:bg-[#E8E4FF] text-[#1F1B2E] font-extrabold text-xs px-3 py-1.5 rounded-xl transition cursor-pointer"
                                 >
-                                  <PhoneCall className="w-3.5 h-3.5" />
-                                  Log Follow-up Call
-                                </button>
-                                <button
-                                  onClick={() => onEditClick(row)}
-                                  className="inline-flex items-center gap-1.5 bg-white hover:bg-[#E8E4FF] text-[#1F1B2E] border border-[#E9E4FA] font-bold text-xs px-3.5 py-1.5 rounded-xl transition cursor-pointer"
-                                >
-                                  <Wrench className="w-3.5 h-3.5 text-[#9B87F5]" />
-                                  Override / Clean Status
+                                  <PhoneCall className="w-3.5 h-3.5 text-[#D97706]" />
+                                  <span>Open Follow-up</span>
                                 </button>
                               </div>
                             </div>
@@ -476,32 +496,34 @@ export default function ReconciliationTable({
         </table>
       </div>
 
-      {/* Pagination Controls */}
-      {totalPages > 1 && (
-        <div className="flex justify-between items-center border-t border-[#E9E4FA] bg-[#E8E4FF]/30 px-6 py-4 text-xs font-medium text-[#6B6580]">
-          <div>
-            Showing <span className="font-bold text-[#1F1B2E]">{(page - 1) * limit + 1}</span> to{' '}
-            <span className="font-bold text-[#1F1B2E]">{Math.min(page * limit, total)}</span> of{' '}
-            <span className="font-bold text-[#1F1B2E]">{total}</span> records
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => onPageChange(page - 1)}
-              disabled={page === 1}
-              className="px-3.5 py-1.5 rounded-xl border border-[#E9E4FA] bg-white hover:bg-[#E8E4FF] transition disabled:opacity-50 disabled:cursor-not-allowed font-bold cursor-pointer text-[#1F1B2E]"
-            >
-              Previous
-            </button>
-            <button
-              onClick={() => onPageChange(page + 1)}
-              disabled={page === totalPages}
-              className="px-3.5 py-1.5 rounded-xl border border-[#E9E4FA] bg-white hover:bg-[#E8E4FF] transition disabled:opacity-50 disabled:cursor-not-allowed font-bold cursor-pointer text-[#1F1B2E]"
-            >
-              Next
-            </button>
-          </div>
+      {/* Pagination Bar */}
+      <div className="p-4 border-t border-[#E9E4FA] bg-[#F6F8FA] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+        <div className="text-[#6B6580] font-medium">
+          Showing <span className="font-bold text-[#1F1B2E]">{total === 0 ? 0 : (page - 1) * limit + 1}</span> to{' '}
+          <span className="font-bold text-[#1F1B2E]">{Math.min(page * limit, total)}</span> of{' '}
+          <span className="font-bold text-[#1F1B2E]">{total}</span> records
         </div>
-      )}
+
+        <div className="flex items-center gap-2">
+          <button
+            disabled={page <= 1}
+            onClick={() => onPageChange(page - 1)}
+            className="px-3 py-1.5 rounded-xl border border-[#E9E4FA] bg-white text-[#1F1B2E] disabled:opacity-40 font-bold hover:bg-[#E8E4FF] transition cursor-pointer"
+          >
+            Previous
+          </button>
+          <span className="font-bold text-[#1F1B2E]">
+            Page {page} of {totalPages}
+          </span>
+          <button
+            disabled={page >= totalPages}
+            onClick={() => onPageChange(page + 1)}
+            className="px-3 py-1.5 rounded-xl border border-[#E9E4FA] bg-white text-[#1F1B2E] disabled:opacity-40 font-bold hover:bg-[#E8E4FF] transition cursor-pointer"
+          >
+            Next
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

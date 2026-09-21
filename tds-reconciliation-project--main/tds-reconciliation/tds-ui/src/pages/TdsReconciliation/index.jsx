@@ -1,10 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Search, Download, Database, CheckCircle, AlertTriangle, X, ShieldCheck, PlusCircle } from 'lucide-react';
+import { 
+  RefreshCw, 
+  Search, 
+  Download, 
+  Database, 
+  CheckCircle, 
+  AlertTriangle, 
+  X, 
+  Building2, 
+  CreditCard, 
+  Calendar, 
+  Filter, 
+  RotateCcw,
+  PlusCircle 
+} from 'lucide-react';
 import ReconciliationTable from './ReconciliationTable';
 import EditModal from './EditModal';
 import AddToCrmModal from './AddToCrmModal';
 import AddFollowupModal from '../FollowUp/AddFollowupModal';
-import { getReconciliationReport, getCsvExportUrl, triggerSeed, toggleFollowupDone } from '../../api/tdsApi';
+import { 
+  getReconciliationReport, 
+  getCsvExportUrl, 
+  toggleFollowupDone,
+  getFilterOptions 
+} from '../../api/tdsApi';
 import { useApp } from '../../context/AppContext';
 
 export default function TdsReconciliation() {
@@ -15,11 +34,21 @@ export default function TdsReconciliation() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(25);
   
+  // Filtering & Search states
   const [search, setSearch] = useState('');
+  const [companyFilter, setCompanyFilter] = useState('All');
+  const [panFilter, setPanFilter] = useState('All');
   const [overallStatus, setOverallStatus] = useState('All');
   const [coverageFilter, setCoverageFilter] = useState('All');
   const [sortBy, setSortBy] = useState('updated_at');
   const [responseFilter, setResponseFilter] = useState('All');  // 'All' | 'done' | 'pending'
+
+  // Dynamic filter options lists
+  const [filterOptions, setFilterOptions] = useState({
+    financialYears: [],
+    companies: [],
+    pans: []
+  });
 
   const [loading, setLoading] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -31,6 +60,25 @@ export default function TdsReconciliation() {
   // Statistics counters
   const [stats, setStats] = useState({ total: 0, matched: 0, less: 0, excess: 0, notReceived: 0 });
 
+  // Load distinct filter options once and on refresh
+  useEffect(() => {
+    const fetchOptions = async () => {
+      try {
+        const res = await getFilterOptions();
+        if (res && res.success) {
+          setFilterOptions({
+            financialYears: res.financialYears || [],
+            companies: res.companies || [],
+            pans: res.pans || []
+          });
+        }
+      } catch (err) {
+        console.warn('Could not load filter options:', err);
+      }
+    };
+    fetchOptions();
+  }, [refreshTrigger, refreshKey]);
+
   const fetchReport = async () => {
     setLoading(true);
     try {
@@ -38,6 +86,8 @@ export default function TdsReconciliation() {
         page,
         limit,
         search,
+        company: companyFilter === 'All' ? '' : companyFilter,
+        pan: panFilter === 'All' ? '' : panFilter,
         overallStatus: overallStatus === 'All' ? '' : overallStatus,
         coverageFilter: coverageFilter === 'All' ? '' : coverageFilter,
         fy: fyFilter,
@@ -49,7 +99,6 @@ export default function TdsReconciliation() {
         setRows(res.data);
         setTotal(res.total ?? res.data.length);
         
-        // Prefer server-computed stats (covers all pages), fall back to page-level tally
         if (res.stats && typeof res.stats.total === 'number') {
           setStats({
             total: res.stats.total,
@@ -59,7 +108,6 @@ export default function TdsReconciliation() {
             notReceived: res.stats.notReceived || 0
           });
         } else {
-          // Legacy fallback: tally from current page only
           const tempStats = { total: res.total ?? res.data.length, matched: 0, less: 0, excess: 0, notReceived: 0 };
           res.data.forEach(r => {
             const as26 = parseFloat(r.as26Tds || 0);
@@ -69,9 +117,9 @@ export default function TdsReconciliation() {
 
             if (as26 === 0 || effectiveStatus === 'Not Received') {
               tempStats.notReceived++;
-            } else if (effectiveStatus === 'Match') {
+            } else if (effectiveStatus === 'Match' || effectiveStatus === 'Matched') {
               tempStats.matched++;
-            } else if (effectiveStatus === 'Less Paid') {
+            } else if (effectiveStatus === 'Less Paid' || effectiveStatus === 'Less') {
               tempStats.less++;
             } else if (effectiveStatus === 'Excess') {
               tempStats.excess++;
@@ -91,7 +139,18 @@ export default function TdsReconciliation() {
 
   useEffect(() => {
     fetchReport();
-  }, [page, overallStatus, coverageFilter, sortBy, refreshTrigger, refreshKey, fyFilter, responseFilter]);
+  }, [
+    page, 
+    companyFilter, 
+    panFilter, 
+    overallStatus, 
+    coverageFilter, 
+    sortBy, 
+    refreshTrigger, 
+    refreshKey, 
+    fyFilter, 
+    responseFilter
+  ]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -103,9 +162,22 @@ export default function TdsReconciliation() {
     setRefreshTrigger(prev => prev + 1);
   };
 
+  const handleResetFilters = () => {
+    setSearch('');
+    setCompanyFilter('All');
+    setPanFilter('All');
+    setOverallStatus('All');
+    setCoverageFilter('All');
+    setResponseFilter('All');
+    setFyFilter('All Financial Years');
+    setPage(1);
+  };
+
   const handleCsvExport = () => {
     const exportUrl = getCsvExportUrl({
       search,
+      company: companyFilter === 'All' ? '' : companyFilter,
+      pan: panFilter === 'All' ? '' : panFilter,
       overallStatus: overallStatus === 'All' ? '' : overallStatus,
       coverageFilter: coverageFilter === 'All' ? '' : coverageFilter,
       fy: fyFilter
@@ -114,14 +186,12 @@ export default function TdsReconciliation() {
   };
 
   const handleToggleFollowup = async (rowId) => {
-    // Optimistic toggle in parent rows state
     setRows(prevRows => prevRows.map(r => 
       r.id === rowId ? { ...r, isFollowupDone: r.isFollowupDone ? 0 : 1 } : r
     ));
     try {
       const res = await toggleFollowupDone(rowId);
       if (!res || !res.success) {
-        // Revert on failure
         setRows(prevRows => prevRows.map(r => 
           r.id === rowId ? { ...r, isFollowupDone: r.isFollowupDone ? 0 : 1 } : r
         ));
@@ -132,27 +202,28 @@ export default function TdsReconciliation() {
       }
     } catch (err) {
       console.error('Failed to toggle followup:', err);
-      // Revert on error
       setRows(prevRows => prevRows.map(r => 
         r.id === rowId ? { ...r, isFollowupDone: r.isFollowupDone ? 0 : 1 } : r
       ));
     }
   };
 
+  const hasActiveFilters = search || companyFilter !== 'All' || panFilter !== 'All' || overallStatus !== 'All' || coverageFilter !== 'All' || (fyFilter && fyFilter !== 'All Financial Years') || responseFilter !== 'All';
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-[#E9E4FA] shadow-sm">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-3xl border border-[#E9E4FA] shadow-sm">
         <div>
           <h1 className="text-2xl font-black text-[#1F1B2E] tracking-tight flex items-center gap-2">
             <Database className="w-7 h-7 text-[#9B87F5]" />
             3-Way TDS Reconciliation Workbench
           </h1>
           <p className="text-xs text-[#6B6580] mt-1">
-            Reconcile client TDS entries across Tally Ledgers, Form 26AS portal, and Saarthi 360 CRM.
+            Reconcile client TDS across Tally Ledgers, Form 26AS, and Saarthi 360 CRM with year-based balance rules.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setActiveCrmRow({})}
             className="inline-flex items-center gap-2 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-extrabold px-4 py-2 rounded-xl transition text-xs cursor-pointer shadow-md"
@@ -166,7 +237,7 @@ export default function TdsReconciliation() {
             className="inline-flex items-center gap-2 bg-white hover:bg-[#E8E4FF] text-[#1F1B2E] border border-[#E9E4FA] font-extrabold px-4 py-2 rounded-xl transition text-xs cursor-pointer shadow-sm"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            Refresh Report
+            Refresh
           </button>
         </div>
       </div>
@@ -224,10 +295,11 @@ export default function TdsReconciliation() {
         </div>
       </div>
 
-      {/* Query Bar */}
-      <div className="bg-white rounded-2xl border border-[#E9E4FA] p-5 shadow-sm space-y-4">
+      {/* Advanced Filter Toolbar: Year-wise + Company-wise + PAN-wise + Search */}
+      <div className="bg-white rounded-3xl border border-[#E9E4FA] p-5 shadow-sm space-y-4">
+        
+        {/* Top Search Bar & CSV Action */}
         <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-          {/* Search Form */}
           <form onSubmit={handleSearchSubmit} className="flex w-full md:max-w-md gap-2">
             <div className="relative flex-grow">
               <Search className="w-4 h-4 text-[#6B6580] absolute left-3.5 top-3" />
@@ -235,7 +307,7 @@ export default function TdsReconciliation() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by Company Name or TAN..."
+                placeholder="Search across Company Name, TAN, or PAN..."
                 className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl pl-10 pr-4 py-2 text-xs focus:outline-none focus:border-[#9B87F5] font-medium"
               />
             </div>
@@ -247,20 +319,97 @@ export default function TdsReconciliation() {
             </button>
           </form>
 
-          {/* CSV Export Button */}
-          <button
-            onClick={handleCsvExport}
-            className="w-full md:w-auto inline-flex items-center justify-center gap-2 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-bold py-2 px-4 rounded-xl transition text-xs cursor-pointer shadow-2xs"
-          >
-            <Download className="w-4 h-4" />
-            Export Selected to CSV
-          </button>
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-[#E11D48] bg-[#F87A9E]/10 hover:bg-[#F87A9E]/20 border border-[#F87A9E]/30 transition cursor-pointer"
+                title="Reset all applied filters"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Reset Filters
+              </button>
+            )}
+
+            <button
+              onClick={handleCsvExport}
+              className="w-full md:w-auto inline-flex items-center justify-center gap-2 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-bold py-2 px-4 rounded-xl transition text-xs cursor-pointer shadow-2xs"
+            >
+              <Download className="w-4 h-4" />
+              Export CSV
+            </button>
+          </div>
         </div>
 
-        {/* Filter & Sort Controls Row */}
+        {/* 3 Core Requested Filters Row: Year-Wise, Company-Wise, PAN-Wise */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-[#E9E4FA] text-xs">
+          
+          {/* 1. Year-Wise Filter */}
+          <div>
+            <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1 flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5 text-[#9B87F5]" />
+              Filter 1: Financial Year
+            </label>
+            <select
+              value={fyFilter}
+              onChange={(e) => { setPage(1); setFyFilter(e.target.value); }}
+              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-bold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
+            >
+              <option value="All Financial Years">All Financial Years</option>
+              <option value="FY 2026-27">FY 2026-27 (Saarthi 360 Era)</option>
+              <option value="FY 2025-26">FY 2025-26</option>
+              <option value="FY 2024-25">FY 2024-25</option>
+              <option value="FY 2023-24">FY 2023-24</option>
+              <option value="FY 2022-23">FY 2022-23</option>
+              <option value="FY 2021-22">FY 2021-22</option>
+              <option value="FY 2020-21">FY 2020-21</option>
+              <option value="FY 2019-20">FY 2019-20</option>
+              {filterOptions.financialYears.filter(fy => !['FY 2026-27', 'FY 2025-26', 'FY 2024-25', 'FY 2023-24', 'FY 2022-23', 'FY 2021-22', 'FY 2020-21', 'FY 2019-20'].includes(fy)).map(fy => (
+                <option key={fy} value={fy}>{fy}</option>
+              ))}
+            </select>
+          </div>
 
-          {/* Coverage Filter */}
+          {/* 2. Company-Wise Filter */}
+          <div>
+            <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1 flex items-center gap-1">
+              <Building2 className="w-3.5 h-3.5 text-[#9B87F5]" />
+              Filter 2: Company Name
+            </label>
+            <select
+              value={companyFilter}
+              onChange={(e) => { setPage(1); setCompanyFilter(e.target.value); }}
+              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
+            >
+              <option value="All">All Companies ({filterOptions.companies.length})</option>
+              {filterOptions.companies.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* 3. PAN-Wise Filter */}
+          <div>
+            <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1 flex items-center gap-1">
+              <CreditCard className="w-3.5 h-3.5 text-[#9B87F5]" />
+              Filter 3: PAN Number
+            </label>
+            <select
+              value={panFilter}
+              onChange={(e) => { setPage(1); setPanFilter(e.target.value); }}
+              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-mono font-bold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
+            >
+              <option value="All">All PAN Numbers ({filterOptions.pans.length})</option>
+              {filterOptions.pans.map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Secondary Filters Row: Coverage, Sort, Follow-up status */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-[#E9E4FA] text-xs">
           <div>
             <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1">
               Source Coverage Filter
@@ -270,17 +419,16 @@ export default function TdsReconciliation() {
               onChange={(e) => { setPage(1); setCoverageFilter(e.target.value); }}
               className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
             >
-              <option value="All">Coverage: All Coverage</option>
-              <option value="3/3">All 3 (Sarthi + Tally + 26AS)</option>
+              <option value="All">Coverage: All Records</option>
+              <option value="3/3">All 3 (Saarthi + Tally + 26AS)</option>
               <option value="2/3">Any 2 Sources (2/3)</option>
-              <option value="saarthi_tally">Sarthi + Tally</option>
+              <option value="saarthi_tally">Saarthi + Tally</option>
               <option value="tally_26as">Tally + 26AS</option>
-              <option value="as26_saarthi">26AS + Sarthi</option>
+              <option value="as26_saarthi">26AS + Saarthi</option>
               <option value="1/3">Single Source Only</option>
             </select>
           </div>
 
-          {/* Sort By */}
           <div>
             <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1">
               Sort Order
@@ -290,23 +438,22 @@ export default function TdsReconciliation() {
               onChange={(e) => { setPage(1); setSortBy(e.target.value); }}
               className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
             >
-              <option value="updated_at">Sort: Recently Updated</option>
-              <option value="difference_desc">Sort: Difference (High → Low)</option>
+              <option value="updated_at">Recently Updated</option>
+              <option value="difference_desc">Difference (High → Low)</option>
             </select>
           </div>
 
-          {/* Custom Response / Follow-up Filter */}
           <div>
             <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1">
-              Follow-up Status Filter
+              Follow-up Action Status
             </label>
             <select
               value={responseFilter}
               onChange={(e) => { setPage(1); setResponseFilter(e.target.value); }}
               className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
             >
-              <option value="All">All Records</option>
-              <option value="done">✅ Follow-up Done</option>
+              <option value="All">All Follow-up Statuses</option>
+              <option value="done">✅ Follow-up Completed</option>
               <option value="pending">⏳ Follow-up Pending</option>
             </select>
           </div>
@@ -364,7 +511,7 @@ export default function TdsReconciliation() {
         />
       )}
 
-      {/* Manual Edit Modal */}
+      {/* Manual Data Edit & Multi-Entry Sequential Modal */}
       {activeEditRow && (
         <EditModal
           row={activeEditRow}
@@ -387,7 +534,7 @@ export default function TdsReconciliation() {
               <div>
                 <h3 className="font-bold text-base text-white">Reconciliation Detail Record</h3>
                 <p className="text-xs text-[#E8E4FF] mt-0.5">
-                  {activeViewRow.companyName} {(!activeViewRow.tanNo || activeViewRow.tanNo.startsWith('NO_TAN_') || activeViewRow.tanNo === 'Pending TAN' || activeViewRow.tanNo.includes('UNKNOWN')) ? '' : `(${activeViewRow.tanNo})`}
+                  {activeViewRow.companyName} {activeViewRow.tanNo ? `(${activeViewRow.tanNo})` : ''}
                 </p>
               </div>
               <button
@@ -414,27 +561,25 @@ export default function TdsReconciliation() {
                   <div className="font-black text-[#9B87F5] text-base">₹{Number(activeViewRow.saarthiTds || activeViewRow.booksTds || 0).toLocaleString('en-IN')}</div>
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-[#6B6580] uppercase">Financial Status</span>
-                  <div className="font-extrabold text-[#1F1B2E] mt-1">
-                    {(parseFloat(activeViewRow.tallyTds || 0) === 0 && parseFloat(activeViewRow.saarthiTds || activeViewRow.booksTds || 0) === 0 && parseFloat(activeViewRow.as26Tds || 0) > 0)
-                      ? 'Excess'
-                      : (activeViewRow.financialStatus || activeViewRow.overallStatus)}
+                  <span className="text-[10px] font-bold text-[#6B6580] uppercase">Calculated Balance</span>
+                  <div className="font-black text-[#1F1B2E] text-base">
+                    ₹{Number(activeViewRow.balance !== undefined ? activeViewRow.balance : activeViewRow.difference || 0).toLocaleString('en-IN')}
                   </div>
                 </div>
               </div>
 
               <div className="space-y-2">
                 <div className="flex justify-between py-1 border-b border-[#E9E4FA]">
-                  <span className="text-[#6B6580] font-semibold">Source Coverage:</span>
-                  <span className="font-bold text-[#1F1B2E]">{activeViewRow.sourceCoverage?.label || '3/3 Match'}</span>
-                </div>
-                <div className="flex justify-between py-1 border-b border-[#E9E4FA]">
-                  <span className="text-[#6B6580] font-semibold">Bill Number:</span>
-                  <span className="font-bold text-[#1F1B2E]">{activeViewRow.billNumber || 'N/A'}</span>
+                  <span className="text-[#6B6580] font-semibold">PAN Number:</span>
+                  <span className="font-mono font-bold text-[#1F1B2E]">{activeViewRow.panNo || 'N/A'}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-[#E9E4FA]">
                   <span className="text-[#6B6580] font-semibold">Financial Year:</span>
-                  <span className="font-bold text-[#1F1B2E]">{activeViewRow.financialYear || '2024-25'}</span>
+                  <span className="font-bold text-[#1F1B2E]">{activeViewRow.financialYear || 'Unspecified'}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-[#E9E4FA]">
+                  <span className="text-[#6B6580] font-semibold">Source Coverage:</span>
+                  <span className="font-bold text-[#1F1B2E]">{activeViewRow.sourceCoverage?.label || '3/3 Match'}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-[#E9E4FA]">
                   <span className="text-[#6B6580] font-semibold">Is Manually Overridden:</span>

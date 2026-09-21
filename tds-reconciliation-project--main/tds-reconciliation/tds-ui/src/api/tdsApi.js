@@ -379,6 +379,42 @@ export const purgeFollowups = async () => {
 };
 
 /** Aggregated Reports API */
+export const getTallyReport = async ({ fy = '', company = '', pan = '', view = 'all', search = '' } = {}) => {
+  try {
+    const q = buildQuery({ fy, company, pan, view, search });
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/reports/tally?${q}`);
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to load Tally report', data: [] };
+  } catch (err) {
+    return { success: false, error: err.message || 'Error connecting to reports service', data: [] };
+  }
+};
+
+export const getAs26Report = async ({ fy = '', company = '', pan = '', view = 'all', search = '' } = {}) => {
+  try {
+    const q = buildQuery({ fy, company, pan, view, search });
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/reports/26as?${q}`);
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to load 26AS report', data: [] };
+  } catch (err) {
+    return { success: false, error: err.message || 'Error connecting to reports service', data: [] };
+  }
+};
+
+export const getSaarthi360Report = async ({ fy = '', company = '', pan = '', view = 'all', search = '' } = {}) => {
+  try {
+    const q = buildQuery({ fy, company, pan, view, search });
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/reports/saarthi360?${q}`);
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to load Saarthi 360 report', data: [] };
+  } catch (err) {
+    return { success: false, error: err.message || 'Error connecting to reports service', data: [] };
+  }
+};
+
 export const getFyWiseReport = async (view = 'all', fy = '') => {
   try {
     const q = buildQuery({ view, fy });
@@ -415,6 +451,47 @@ export const getTanWiseByFyReport = async (view = 'all', fy = '', search = '') =
   }
 };
 
+/** Distinct Filter Options */
+export const getFilterOptions = async () => {
+  try {
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/filter-options`);
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, financialYears: [], companies: [], pans: [] };
+  } catch (err) {
+    return { success: false, error: err.message, financialYears: [], companies: [], pans: [] };
+  }
+};
+
+/** Multi-Entry Company Records */
+export const getCompanyEntries = async (params = {}) => {
+  try {
+    const q = buildQuery(params);
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/company-entries?${q}`);
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to load company entries', count: 0, data: [] };
+  } catch (err) {
+    return { success: false, error: err.message || 'Error connecting to company entries service', count: 0, data: [] };
+  }
+};
+
+/** Full Reconciliation Entry Update */
+export const updateReconciliationEntry = async (id, payload) => {
+  try {
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/entry/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to update reconciliation entry' };
+  } catch (err) {
+    return { success: false, error: err.message || 'Error updating reconciliation entry' };
+  }
+};
+
 /** Create Missing CRM Book Entry */
 export const createCrmBookEntry = async (payload) => {
   try {
@@ -430,5 +507,6 @@ export const createCrmBookEntry = async (payload) => {
     return { success: false, error: err.message || 'Error connecting to CRM booking service' };
   }
 };
+
 
 

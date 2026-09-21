@@ -14,17 +14,23 @@ import {
   toggleFollowupDone,
   syncSaarthiLiveApi,
   syncSarthiLiveApi,
-  createCrmBookEntry
+  createCrmBookEntry,
+  getFilterOptions,
+  getCompanyEntries,
+  updateReconciliationEntry
 } from '../controllers/tds26asController.js';
 
 const router = express.Router();
 
-// ── Dashboard ─────────────────────────────────────────────────────────────────
+// ── Dashboard & Filters ───────────────────────────────────────────────────────
 router.get('/dashboard-summary', asyncHandler(getDashboardSummary));
+router.get('/filter-options',    asyncHandler(getFilterOptions));
+router.get('/company-entries',   asyncHandler(getCompanyEntries));
 
-// ── Reconciliation report & overrides ─────────────────────────────────────────
-router.get('/report',    asyncHandler(getReconciliationReport));
-router.put('/override',  asyncHandler(overrideReconciliationStatus));
+// ── Reconciliation report & updates ───────────────────────────────────────────
+router.get('/report',          asyncHandler(getReconciliationReport));
+router.put('/entry/:id',       validateId, asyncHandler(updateReconciliationEntry));
+router.put('/override',        asyncHandler(overrideReconciliationStatus));
 router.post('/crm-book-entry', asyncHandler(createCrmBookEntry));
 
 // Follow-up done toggle — support both PUT and PATCH for backward compat
@@ -39,3 +45,4 @@ router.post('/sync-saarthi', asyncHandler(syncSaarthiLiveApi));
 router.post('/sync-sarthi',  asyncHandler(syncSarthiLiveApi));
 
 export default router;
+
