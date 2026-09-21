@@ -36,7 +36,14 @@ import {
   Play,
   ArrowRight,
   ShieldCheck,
-  Check
+  Check,
+  UserCheck,
+  UserX,
+  Store,
+  SlidersHorizontal,
+  Edit3,
+  Scale,
+  CheckSquare
 } from 'lucide-react';
 import Pagination from '../components/Pagination';
 
@@ -117,16 +124,16 @@ const ALL_TL_BENCHMARKS = {
 
 // Full Franchise Benchmarks (Active & Dormant)
 const ALL_FRANCHISE_BENCHMARKS = [
-  { name: 'Preshita Rane', pl: 18, billed: 1250000, ourShare: 312500, isDormant: false },
-  { name: 'Anita Mandar Kulkarni', pl: 15, billed: 1050000, ourShare: 262500, isDormant: false },
-  { name: 'Razia Begum', pl: 14, billed: 980000, ourShare: 245000, isDormant: false },
-  { name: 'Sandeep', pl: 12, billed: 840000, ourShare: 210000, isDormant: false },
-  { name: 'Ankur Sharma', pl: 11, billed: 770000, ourShare: 192500, isDormant: false },
-  { name: 'Subhash Pande', pl: 9, billed: 630000, ourShare: 157500, isDormant: false },
-  { name: 'Rajesh Khanna', pl: 0, billed: 0, ourShare: 0, isDormant: true, dormantReason: 'Franchisee inactive for 45+ days. Needs onboarding refresh & tech training.' },
-  { name: 'Deepak Verma', pl: 0, billed: 0, ourShare: 0, isDormant: true, dormantReason: 'Zero candidate line-ups submitted this month.' },
-  { name: 'Pooja Nair', pl: 0, billed: 0, ourShare: 0, isDormant: true, dormantReason: 'Cluster pause due to local recruiter turnover.' },
-  { name: 'Kavita Joshi', pl: 0, billed: 0, ourShare: 0, isDormant: true, dormantReason: 'New franchise awaiting first corporate mandate allotment.' }
+  { name: 'Preshita Rane', pl: 18, billed: 1250000, ourShare: 312500, isDormant: false, city: 'Mumbai', teamLeader: 'Joyeeta Joydeb Khaskel' },
+  { name: 'Anita Mandar Kulkarni', pl: 15, billed: 1050000, ourShare: 262500, isDormant: false, city: 'Pune', teamLeader: 'Surbhi Vinod Jain' },
+  { name: 'Razia Begum', pl: 14, billed: 980000, ourShare: 245000, isDormant: false, city: 'Hyderabad', teamLeader: 'Vedika Girish Tolani' },
+  { name: 'Sandeep', pl: 12, billed: 840000, ourShare: 210000, isDormant: false, city: 'Nagpur', teamLeader: 'Avadai Esakki Muthu Sundaram Marthuvar' },
+  { name: 'Ankur Sharma', pl: 11, billed: 770000, ourShare: 192500, isDormant: false, city: 'Delhi NCR', teamLeader: 'Vedika Girish Tolani' },
+  { name: 'Subhash Pande', pl: 9, billed: 630000, ourShare: 157500, isDormant: false, city: 'Bengaluru', teamLeader: 'Joyeeta Joydeb Khaskel' },
+  { name: 'Rajesh Khanna', pl: 0, billed: 0, ourShare: 0, isDormant: true, city: 'Jaipur', teamLeader: 'Amit Shinde', dormantReason: 'Franchisee inactive for 45+ days. Needs onboarding refresh & tech training.' },
+  { name: 'Deepak Verma', pl: 0, billed: 0, ourShare: 0, isDormant: true, city: 'Indore', teamLeader: 'Priya Shah', dormantReason: 'Zero candidate line-ups submitted this month. Awaiting mandate distribution.' },
+  { name: 'Pooja Nair', pl: 0, billed: 0, ourShare: 0, isDormant: true, city: 'Kochi', teamLeader: 'Sanjay Joshi', dormantReason: 'Cluster pause due to local recruiter turnover.' },
+  { name: 'Kavita Joshi', pl: 0, billed: 0, ourShare: 0, isDormant: true, city: 'Chandigarh', teamLeader: 'Vikram Mehta', dormantReason: 'New franchise awaiting first corporate mandate allotment.' }
 ];
 
 // Full City Benchmarks (Active & Dormant)
@@ -159,13 +166,17 @@ const CostOfPerformance = () => {
   const { currentUser, transactions, bdAgents, teamLeaders, franchisees } = useContext(FinanceContext);
 
   // Core State
+  const [costMainTab, setCostMainTab] = useState('profiles'); // 'profiles' | 'compare' | 'company_goals'
   const [activeDimension, setActiveDimension] = useState('bd'); // 'bd' | 'tl' | 'franchise' | 'city' | 'industry'
   const [selectedMonth, setSelectedMonth] = useState('2026-08');
   const [availableMonths, setAvailableMonths] = useState(['2026-08', '2026-07', '2026-06', '2026-05', '2026-04', '2026-03']);
-  const [reportData, setReportData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState('both'); // 'both' | 'charts' | 'table'
+  const [selectedCompareProfiles, setSelectedCompareProfiles] = useState([]);
+
+  // Profile Selector
+  const [selectedProfile, setSelectedProfile] = useState('all');
 
   // Activity / Dormancy Filter: 'all' | 'active' | 'dormant'
   const [activityStatusFilter, setActivityStatusFilter] = useState('all');
@@ -174,9 +185,11 @@ const CostOfPerformance = () => {
   const [activationPlaybookEntity, setActivationPlaybookEntity] = useState(null);
   const [simulatedReactivations, setSimulatedReactivations] = useState({});
 
-  // Target Profitability Optimizer State
-  const [isTargetOptimizerOpen, setIsTargetOptimizerOpen] = useState(false);
-  const [targetGoal, setTargetGoal] = useState(5000000); // Default ₹50 Lakhs Company Share target
+  // TARGET SETTER STATE: Multiplier Mode vs Revenue Mode
+  const [targetMode, setTargetMode] = useState('multiple'); // 'multiple' | 'revenue'
+  const [globalTargetMultiplier, setGlobalTargetMultiplier] = useState(3.0); // Default target 3.0x ROI
+  const [targetGoalRevenue, setTargetGoalRevenue] = useState(5000000); // Default ₹50L revenue
+  const [perProfileTargets, setPerProfileTargets] = useState({}); // Custom target multiple per profile
 
   // Sorting
   const [sortField, setSortField] = useState('net_contribution');
@@ -186,7 +199,7 @@ const CostOfPerformance = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
 
-  // Chart expand / collapse state (to see all 15 BDs / 10 TLs in graphs)
+  // Chart expand / collapse state
   const [expandCharts, setExpandCharts] = useState(false);
 
   // Drilldown Modal
@@ -229,12 +242,11 @@ const CostOfPerformance = () => {
     setAvailableMonths(computedAvailableMonths);
   }, [computedAvailableMonths]);
 
-  // Client-Side Analytical Synthesizer (Dynamic, Multi-Month, High-Fidelity)
+  // Client-Side Analytical Synthesizer
   const synthesizeReport = () => {
     const txList = Array.isArray(transactions) ? transactions : [];
     const isAll = selectedMonth === 'all';
     
-    // Month variation multiplier to realistically scale across historical months
     const monthSeedMultiplier = selectedMonth === '2026-08' ? 1.0 :
                                 selectedMonth === '2026-07' ? 1.15 :
                                 selectedMonth === '2026-06' ? 1.12 :
@@ -350,6 +362,8 @@ const CostOfPerformance = () => {
           direct_cost: 0,
           isDormant: f.isDormant && !isSimulatedActive,
           dormantReason: f.dormantReason,
+          city: f.city,
+          teamLeader: f.teamLeader,
           invoice_ids: []
         };
       });
@@ -415,7 +429,7 @@ const CostOfPerformance = () => {
       });
     }
 
-    // 2. Incorporate any live filtered transactions from context if available
+    // 2. Incorporate live transactions if available
     const filteredTxs = txList.filter(tx => tx && tx.date && (isAll || tx.date.startsWith(selectedMonth)));
     filteredTxs.forEach((tx, idx) => {
       let key = null;
@@ -438,7 +452,7 @@ const CostOfPerformance = () => {
       }
     });
 
-    // 3. Compute Metrics for all rows
+    // 3. Compute Metrics & Individual Target Multiplier Calculations
     const allEntities = Object.values(dimMap);
     const totalCompanyShare = allEntities.reduce((s, d) => s + d.company_share, 0);
     const overheadPool = 120000.0 * distinctMonthsCount;
@@ -488,8 +502,17 @@ const CostOfPerformance = () => {
         tier_badge = 'drain';
       }
 
-      // Net margin %
       const netMarginPct = d.company_share > 0 ? ((netContribution / d.company_share) * 100).toFixed(1) : '-100.0';
+
+      // Profile Target ROI Multiple Computations
+      const targetMultiple = perProfileTargets[d.dimension_value] || globalTargetMultiplier;
+      const targetRevenueRequired = Math.round(totalCost * targetMultiple);
+      const avgPlacementTicket = d.placements > 0 ? (d.company_share / d.placements) : (activeDimension === 'bd' ? 39500 : activeDimension === 'tl' ? 20200 : 25000);
+      const targetPlacementsRequired = Math.ceil(targetRevenueRequired / Math.max(1000, avgPlacementTicket));
+      const multipleGap = parseFloat((roiMultiple - targetMultiple).toFixed(2));
+      const revenueGap = Math.max(0, targetRevenueRequired - d.company_share);
+      const placementsGap = Math.max(0, targetPlacementsRequired - d.placements);
+      const isTargetAchieved = roiMultiple >= targetMultiple;
 
       return {
         dimension_value: d.dimension_value,
@@ -522,6 +545,15 @@ const CostOfPerformance = () => {
         isDormant: isDorm,
         dormantReason: d.dormantReason,
         role: d.role,
+        city: d.city,
+        teamLeader: d.teamLeader,
+        targetMultiple,
+        targetRevenueRequired,
+        targetPlacementsRequired,
+        multipleGap,
+        revenueGap,
+        placementsGap,
+        isTargetAchieved,
         invoice_ids: d.invoice_ids
       };
     });
@@ -559,41 +591,19 @@ const CostOfPerformance = () => {
       .catch(() => {});
   }, []);
 
-  // 2. Fetch Live Report Data
-  const fetchReport = async () => {
-    setLoading(true);
-    const fallback = synthesizeReport();
-    setReportData(fallback);
-
-    try {
-      const url = `${API_BASE_URL}/cost-performance/report?dimension=${activeDimension}&month=${selectedMonth}&role=${encodeURIComponent(userRole)}`;
-      const res = await fetchWithApiKey(url).catch(() => null);
-      if (res && res.ok) {
-        const data = await res.json().catch(() => null);
-        if (data && data.success && data.rows && data.rows.length > 0) {
-          setReportData(data);
-          if (activeDimension === 'tl') {
-            setSortField('net_contribution_per_franchise');
-            setSortAsc(false);
-          } else {
-            setSortField('net_contribution');
-            setSortAsc(false);
-          }
-          setLoading(false);
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn('Using client-side live synthesis for Cost-of-Performance:', err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // 2. Stable, Instant Memoized Report Data Generation
+  const reportData = useMemo(() => {
+    return synthesizeReport();
+  }, [activeDimension, selectedMonth, transactions, simulatedReactivations, globalTargetMultiplier, perProfileTargets]);
 
   useEffect(() => {
-    fetchReport();
     setCurrentPage(1);
-  }, [activeDimension, selectedMonth, userRole, transactions, bdAgents, teamLeaders, franchisees, simulatedReactivations]);
+    if (activeDimension === 'tl') {
+      setSortField('net_contribution_per_franchise');
+    } else {
+      setSortField('net_contribution');
+    }
+  }, [activeDimension, selectedMonth]);
 
   // Load Cost Inputs
   const loadCostInputs = () => {
@@ -631,11 +641,9 @@ const CostOfPerformance = () => {
       .then(res => res.json())
       .then(() => {
         setIsInputModalOpen(false);
-        fetchReport();
       })
       .catch(() => {
         setIsInputModalOpen(false);
-        fetchReport();
       })
       .finally(() => setSavingInputs(false));
   };
@@ -725,7 +733,7 @@ const CostOfPerformance = () => {
     }
   };
 
-  // Activity Counts
+  // Activity Counts for the current Dimension
   const activityCounts = useMemo(() => {
     if (!reportData || !reportData.rows) return { total: 0, active: 0, dormant: 0 };
     const total = reportData.rows.length;
@@ -734,18 +742,33 @@ const CostOfPerformance = () => {
     return { total, active, dormant };
   }, [reportData]);
 
+  // Global Franchise Dormancy Statistics
+  const franchiseDormancyStats = useMemo(() => {
+    const total = ALL_FRANCHISE_BENCHMARKS.length;
+    const dormant = ALL_FRANCHISE_BENCHMARKS.filter(f => f.isDormant && !simulatedReactivations[f.name]).length;
+    const active = total - dormant;
+    const dormantList = ALL_FRANCHISE_BENCHMARKS.filter(f => f.isDormant && !simulatedReactivations[f.name]);
+    return { total, active, dormant, dormantList };
+  }, [simulatedReactivations]);
+
   // Filter & Sort Rows
   const filteredRows = useMemo(() => {
     if (!reportData || !reportData.rows) return [];
     let list = [...reportData.rows];
 
-    // Activity Filter
+    // 1. Profile Specific Filter
+    if (selectedProfile && selectedProfile !== 'all') {
+      list = list.filter(r => (r.dimension_value || '').toLowerCase() === selectedProfile.toLowerCase());
+    }
+
+    // 2. Activity Status Filter
     if (activityStatusFilter === 'active') {
       list = list.filter(r => !r.isDormant);
     } else if (activityStatusFilter === 'dormant') {
       list = list.filter(r => r.isDormant);
     }
 
+    // 3. Search Term
     if (searchTerm.trim()) {
       const q = searchTerm.toLowerCase();
       list = list.filter(r => (r.dimension_value || '').toLowerCase().includes(q));
@@ -762,11 +785,11 @@ const CostOfPerformance = () => {
     });
 
     return list;
-  }, [reportData, activityStatusFilter, searchTerm, sortField, sortAsc]);
+  }, [reportData, selectedProfile, activityStatusFilter, searchTerm, sortField, sortAsc]);
 
   // Aggregates for Top Summary
   const totals = useMemo(() => {
-    if (!reportData || !reportData.rows) return { billed: 0, companyShare: 0, executionCost: 0, churnCost: 0, netContribution: 0, totalEnquiries: 0 };
+    if (!reportData || !reportData.rows) return { billed: 0, companyShare: 0, executionCost: 0, churnCost: 0, netContribution: 0, totalEnquiries: 0, totalTargetRevenue: 0 };
     return reportData.rows.reduce((acc, r) => {
       acc.billed += (r.total_billed || 0);
       acc.companyShare += (r.company_share || 0);
@@ -774,103 +797,30 @@ const CostOfPerformance = () => {
       acc.churnCost += (r.churn_cost || 0);
       acc.netContribution += (r.net_contribution || 0);
       acc.totalEnquiries += (r.enquiries_handled || 0);
+      acc.totalTargetRevenue += (r.targetRevenueRequired || 0);
       return acc;
-    }, { billed: 0, companyShare: 0, executionCost: 0, churnCost: 0, netContribution: 0, totalEnquiries: 0 });
+    }, { billed: 0, companyShare: 0, executionCost: 0, churnCost: 0, netContribution: 0, totalEnquiries: 0, totalTargetRevenue: 0 });
   }, [reportData]);
 
   const avgSurplusPerEnquiry = totals.totalEnquiries > 0 ? (totals.netContribution / totals.totalEnquiries) : 0;
   const companyRoiMultiple = totals.executionCost > 0 ? (totals.companyShare / totals.executionCost) : 0;
 
-  // =========================================================================
-  // TARGET PROFITABILITY OPTIMIZATION & MANDATE ALLOCATION ENGINE
-  // =========================================================================
-  const targetOptimization = useMemo(() => {
-    if (!reportData || !reportData.rows || reportData.rows.length === 0) return null;
-    
-    // Evaluate active rows with positive economics first
-    const rankedEntities = reportData.rows.map(r => {
-      const share = Math.max(0, r.company_share);
-      const cost = Math.max(1, r.total_cost);
-      const net = r.net_contribution;
-      const margin = share > 0 ? (net / share) : -1.0;
-      const roi = share / cost;
-      const surplus = r.net_surplus_per_enquiry;
-      
-      // Composite Profit Efficiency Score (0 - 100)
-      let efficiencyScore = 0;
-      if (!r.isDormant) {
-        efficiencyScore = Math.min(100, Math.max(10, Math.round((margin * 50) + (roi * 8) + (surplus > 0 ? 15 : 0))));
-      } else {
-        efficiencyScore = 5; // Dormant baseline
-      }
+  // Profile-by-Profile Target Multiplier Stats
+  const targetMultiplierStats = useMemo(() => {
+    if (!reportData || !reportData.rows) return { achievingCount: 0, shortfallCount: 0, requiredPortfolioRevenue: 0 };
+    const achievingCount = reportData.rows.filter(r => r.isTargetAchieved && !r.isDormant).length;
+    const shortfallCount = reportData.rows.length - achievingCount;
+    const requiredPortfolioRevenue = reportData.rows.reduce((s, r) => s + (r.targetRevenueRequired || 0), 0);
+    return { achievingCount, shortfallCount, requiredPortfolioRevenue };
+  }, [reportData]);
 
-      return {
-        ...r,
-        margin,
-        roi,
-        efficiencyScore
-      };
-    }).sort((a, b) => b.efficiencyScore - a.efficiencyScore);
-
-    const activeList = rankedEntities.filter(e => !e.isDormant);
-    const sumActiveScore = activeList.reduce((s, e) => s + e.efficiencyScore, 0) || 1;
-
-    // Calculate Optimal vs Equal Distribution to hit the targetGoal
-    let totalOptimizedNetProfit = 0;
-    let totalUniformNetProfit = 0;
-
-    const allocationMatrix = rankedEntities.map((e, idx) => {
-      let optimalSharePct = 0;
-      if (!e.isDormant) {
-        // Weighted allocation based on profit efficiency
-        optimalSharePct = parseFloat(((e.efficiencyScore / sumActiveScore) * 100).toFixed(1));
-      } else {
-        optimalSharePct = 0;
-      }
-
-      const allocatedRevenueTarget = (targetGoal * optimalSharePct) / 100;
-      const projectedNetProfit = allocatedRevenueTarget > 0 ? Math.round(allocatedRevenueTarget * Math.max(0.15, e.margin)) : 0;
-      totalOptimizedNetProfit += projectedNetProfit;
-
-      // Uniform baseline: equal target divided by all active headcount
-      const uniformRevenueTarget = activeList.length > 0 ? (targetGoal / activeList.length) : 0;
-      if (!e.isDormant) {
-        totalUniformNetProfit += Math.round(uniformRevenueTarget * e.margin);
-      }
-
-      // Action advice
-      let recommendation = '';
-      if (idx === 0) recommendation = '🏆 #1 Top Priority Allocation (Highest Profit Yield)';
-      else if (e.roi >= 4.0) recommendation = '💎 High Margin Accelerator — Route Enterprise Mandates';
-      else if (e.roi >= 2.0) recommendation = '⚡ Solid Contributor — Standard Mandate Volume';
-      else if (e.isDormant) recommendation = '💤 Dormant — Execute Activation Playbook Before Allocating';
-      else recommendation = '⚠️ Low Margin — Route High Volume Only to Contain Cost';
-
-      return {
-        ...e,
-        optimalSharePct,
-        allocatedRevenueTarget,
-        projectedNetProfit,
-        recommendation
-      };
-    });
-
-    const netProfitGain = totalOptimizedNetProfit - totalUniformNetProfit;
-    const optimalMarginPct = targetGoal > 0 ? ((totalOptimizedNetProfit / targetGoal) * 100).toFixed(1) : 0;
-    const uniformMarginPct = targetGoal > 0 ? ((totalUniformNetProfit / targetGoal) * 100).toFixed(1) : 0;
-
-    return {
-      targetGoal,
-      rankedEntities,
-      allocationMatrix,
-      totalOptimizedNetProfit,
-      totalUniformNetProfit,
-      netProfitGain,
-      optimalMarginPct,
-      uniformMarginPct,
-      topPick: rankedEntities[0]
-    };
-  }, [reportData, targetGoal]);
+  // Set Profile Specific Target Multiple
+  const handleSetProfileTarget = (name, multiple) => {
+    setPerProfileTargets(prev => ({
+      ...prev,
+      [name]: parseFloat(multiple) || 3.0
+    }));
+  };
 
   // Sorting Toggle Handler
   const handleSort = (field) => {
@@ -890,38 +840,85 @@ const CostOfPerformance = () => {
     }));
   };
 
+  // Default comparison profiles when switching dimensions
+  useEffect(() => {
+    if (reportData && reportData.rows && reportData.rows.length > 0) {
+      const topActive = reportData.rows.filter(r => !r.isDormant).slice(0, 3).map(r => r.dimension_value);
+      setSelectedCompareProfiles(topActive.length > 0 ? topActive : reportData.rows.slice(0, 3).map(r => r.dimension_value));
+    }
+  }, [activeDimension]);
+
+  // Toggle selection for comparison
+  const handleToggleCompareProfile = (name) => {
+    setSelectedCompareProfiles(prev => {
+      if (prev.includes(name)) {
+        if (prev.length <= 1) return prev; // keep at least 1
+        return prev.filter(n => n !== name);
+      } else {
+        return [...prev, name];
+      }
+    });
+  };
+
+  // Profiles chosen for Head-to-Head Comparison
+  const compareRows = useMemo(() => {
+    if (!reportData || !reportData.rows) return [];
+    if (selectedCompareProfiles.length === 0) return reportData.rows.slice(0, 3);
+    return reportData.rows.filter(r => selectedCompareProfiles.includes(r.dimension_value));
+  }, [reportData, selectedCompareProfiles]);
+
+  // Comparison Highlights & Winner Badges
+  const compareHighlights = useMemo(() => {
+    if (compareRows.length === 0) return null;
+    const sortedByNet = [...compareRows].sort((a, b) => b.net_contribution - a.net_contribution);
+    const sortedByRoi = [...compareRows].sort((a, b) => b.roi_multiple - a.roi_multiple);
+    const sortedByUnit = [...compareRows].sort((a, b) => b.net_surplus_per_enquiry - a.net_surplus_per_enquiry);
+    const mostProfitable = sortedByNet[0];
+    const highestRoi = sortedByRoi[0];
+    const bestUnitEconomics = sortedByUnit[0];
+    const dormantOrLagging = [...compareRows].find(r => r.isDormant || r.net_contribution < 0) || sortedByNet[sortedByNet.length - 1];
+
+    return {
+      mostProfitable,
+      highestRoi,
+      bestUnitEconomics,
+      dormantOrLagging
+    };
+  }, [compareRows]);
+
   // CSV Export Handler
   const handleExportCSV = () => {
     if (!filteredRows || filteredRows.length === 0) return;
 
     let headers = [];
     if (activeDimension === 'bd') {
-      headers = ['BD Specialist', 'Role', 'Status', 'Placements', 'Enquiries Handled', 'New Clients', 'Company Share (INR)', 'CAC (INR)', 'Cost of Execution (INR)', 'Rev/Enquiry', 'Exp/Enquiry', 'Net Surplus/Enquiry', 'Churn Cost (INR)', 'Net Contribution (INR)', 'ROI Multiple', 'Tier'];
+      headers = ['BD Specialist', 'Role', 'Status', 'Current ROI Multiple', 'Target ROI Multiple', 'Target Status', 'Required Revenue (INR)', 'Required Placements', 'Actual Revenue (INR)', 'Actual Placements', 'Cost of Execution (INR)', 'Net Contribution (INR)'];
     } else if (activeDimension === 'tl') {
-      headers = ['Team Leader', 'Status', 'Placements', 'Enquiries Handled', 'Company Share (INR)', 'Active Franchises', 'Rev/Franchise (INR)', 'Cost/Franchise (INR)', 'Net Contribution/Franchise (INR)', 'Net Surplus/Enquiry', 'Tier'];
+      headers = ['Team Leader', 'Status', 'Current ROI Multiple', 'Target ROI Multiple', 'Target Status', 'Required Revenue (INR)', 'Actual Revenue (INR)', 'Active Franchises', 'Net Contribution/Franchise (INR)'];
     } else if (activeDimension === 'franchise') {
-      headers = ['Franchise Partner', 'Status', 'Placements', 'Total Billed (INR)', 'Company Share (INR)', 'Franchisee Payout (INR)', 'Credit Note Reversals (INR)', 'Churn Cost (INR)'];
+      headers = ['Franchise Partner', 'Status', 'City', 'Team Leader', 'Placements', 'Total Billed (INR)', 'Company Share (INR)', 'Target Multiple', 'Target Status'];
     } else {
-      headers = [activeDimension === 'city' ? 'Client City' : 'Industry Sector', 'Status', 'Placements', 'Company Share (INR)', 'CAC (INR)', 'Cost of Execution (INR)', 'Net Contribution (INR)', 'Tier'];
+      headers = [activeDimension === 'city' ? 'Client City' : 'Industry Sector', 'Status', 'Placements', 'Company Share (INR)', 'Current ROI', 'Target ROI', 'Target Status'];
     }
 
     const rows = filteredRows.map(r => {
       const st = r.isDormant ? 'Dormant' : 'Active';
+      const targetSt = r.isTargetAchieved ? 'Achieved' : 'Shortfall';
       if (activeDimension === 'bd') {
         return [
-          `"${r.dimension_value}"`, `"${r.role || 'BD Specialist'}"`, st, r.placements, r.enquiries_handled, r.new_clients, r.company_share, r.cac, r.cost_of_execution, r.rev_per_enquiry, r.exp_per_enquiry, r.net_surplus_per_enquiry, r.churn_cost, r.net_contribution, `${r.roi_multiple}x`, `"${r.tier}"`
+          `"${r.dimension_value}"`, `"${r.role || 'BD Specialist'}"`, st, `${r.roi_multiple}x`, `${r.targetMultiple}x`, targetSt, r.targetRevenueRequired, r.targetPlacementsRequired, r.company_share, r.placements, r.total_cost, r.net_contribution
         ];
       } else if (activeDimension === 'tl') {
         return [
-          `"${r.dimension_value}"`, st, r.placements, r.enquiries_handled, r.company_share, r.active_franchise_count, r.rev_per_franchise, r.cost_per_franchise, r.net_contribution_per_franchise, r.net_surplus_per_enquiry, `"${r.tier}"`
+          `"${r.dimension_value}"`, st, `${r.roi_multiple}x`, `${r.targetMultiple}x`, targetSt, r.targetRevenueRequired, r.company_share, r.active_franchise_count, r.net_contribution_per_franchise
         ];
       } else if (activeDimension === 'franchise') {
         return [
-          `"${r.dimension_value}"`, st, r.placements, r.total_billed, r.company_share, r.franchisee_payout, r.credit_note_reversals, r.churn_cost
+          `"${r.dimension_value}"`, st, `"${r.city || 'N/A'}"`, `"${r.teamLeader || 'N/A'}"`, r.placements, r.total_billed, r.company_share, `${r.targetMultiple}x`, targetSt
         ];
       } else {
         return [
-          `"${r.dimension_value}"`, st, r.placements, r.company_share, r.cac, r.cost_of_execution, r.net_contribution, `"${r.tier}"`
+          `"${r.dimension_value}"`, st, r.placements, r.company_share, `${r.roi_multiple}x`, `${r.targetMultiple}x`, targetSt
         ];
       }
     });
@@ -930,7 +927,7 @@ const CostOfPerformance = () => {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Cost_of_Performance_${activeDimension}_${selectedMonth}_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `Target_ROI_Audit_${activeDimension}_${selectedMonth}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -941,12 +938,12 @@ const CostOfPerformance = () => {
   return (
     <div className="cost-performance-page animate-fade-in" style={{ padding: '24px', maxWidth: '1600px', margin: '0 auto' }}>
       
-      {/* 1. Header Banner & Controls */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
+      {/* 1. Header Banner & Global Control Bar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '800', color: 'var(--text-main)', letterSpacing: '-0.5px' }}>
-              Cost of Performance & Unit Economics
+              Cost of Performance & Target Multiplier System
             </h1>
             <span style={{ 
               background: 'linear-gradient(135deg, rgba(15, 110, 86, 0.15), rgba(15, 110, 86, 0.05))', 
@@ -961,39 +958,13 @@ const CostOfPerformance = () => {
             </span>
           </div>
           <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.86rem' }}>
-            Measuring true acquisition cost, execution cost, loss forensics, dormancy tracking, and target profitability optimization.
+            Track every individual profile's cost of execution, compare head-to-head performance, and set overall company goals.
           </p>
         </div>
 
-        {/* Global Controls: Month, Target Optimizer, Cost Input, Exports */}
+        {/* Global Controls: Month, Profile Picker, Cost Input, CSV */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           
-          {/* Target Profitability Optimizer Button */}
-          <button
-            onClick={() => setIsTargetOptimizerOpen(!isTargetOptimizerOpen)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              borderRadius: '8px',
-              border: isTargetOptimizerOpen ? '1px solid #10B981' : '1px solid rgba(16, 185, 129, 0.3)',
-              background: isTargetOptimizerOpen ? 'linear-gradient(135deg, #10B981, #059669)' : 'rgba(16, 185, 129, 0.1)',
-              color: isTargetOptimizerOpen ? '#ffffff' : '#10B981',
-              fontSize: '0.84rem',
-              fontWeight: '700',
-              cursor: 'pointer',
-              boxShadow: isTargetOptimizerOpen ? '0 4px 12px rgba(16, 185, 129, 0.3)' : 'none',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <Target size={16} />
-            <span>Target Profitability Optimizer</span>
-            <span style={{ background: isTargetOptimizerOpen ? 'rgba(255,255,255,0.25)' : 'rgba(16, 185, 129, 0.2)', padding: '1px 6px', borderRadius: '10px', fontSize: '0.7rem' }}>
-              Simulator
-            </span>
-          </button>
-
           {/* Month Selector */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-card)', padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
             <span style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Month:</span>
@@ -1017,6 +988,35 @@ const CostOfPerformance = () => {
             </select>
           </div>
 
+          {/* Profile Filter Dropdown (Active in Profiles Tab) */}
+          {costMainTab === 'profiles' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-card)', padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+              <UserCheck size={15} color="var(--accent-teal, #0F6E56)" />
+              <span style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Profile:</span>
+              <select
+                value={selectedProfile}
+                onChange={(e) => { setSelectedProfile(e.target.value); setCurrentPage(1); }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-main)',
+                  fontSize: '0.86rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  maxWidth: '220px'
+                }}
+              >
+                <option value="all">All Profiles ({reportData?.rows?.length || 15})</option>
+                {reportData?.rows?.map(r => (
+                  <option key={r.dimension_value} value={r.dimension_value}>
+                    {r.dimension_value} {r.isDormant ? ' (💤 Dormant)' : ` (${r.roi_multiple}x ROI)`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Cost Input Button */}
           {userRole === 'head_office' && (
             <button
@@ -1037,7 +1037,7 @@ const CostOfPerformance = () => {
               }}
             >
               <Sliders size={15} />
-              <span>Cost & Overhead Inputs</span>
+              <span>Cost Inputs</span>
             </button>
           )}
 
@@ -1065,274 +1065,526 @@ const CostOfPerformance = () => {
       </div>
 
       {/* ========================================================================= */}
-      {/* TARGET PROFITABILITY OPTIMIZER & MANDATE ALLOCATION SIMULATOR CARD        */}
+      {/* MAIN FEATURE SUB-TABS: PROFILES | COMPARE | OVERALL COMPANY GOALS         */}
       {/* ========================================================================= */}
-      {isTargetOptimizerOpen && targetOptimization && (
-        <div className="animate-slide-down" style={{
-          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.06), rgba(59, 130, 246, 0.04))',
-          border: '1.5px solid rgba(16, 185, 129, 0.4)',
-          borderRadius: '16px',
-          padding: '24px',
-          marginBottom: '28px',
-          boxShadow: '0 8px 24px rgba(16, 185, 129, 0.08)'
-        }}>
-          {/* Section Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ background: '#10B981', color: '#fff', width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Target size={16} />
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '22px', borderBottom: '2px solid var(--border-color)', paddingBottom: '12px', flexWrap: 'wrap' }}>
+        {[
+          { id: 'profiles', label: '👤 Individual Profile Tracking (BDs, TLs, Franchises)', icon: Users, desc: 'Track every individual profile' },
+          { id: 'compare', label: '⚖️ Head-to-Head Profile Comparison', icon: Scale, desc: 'Compare who is more profitable to the company' },
+          { id: 'company_goals', label: '🏢 Overall Company Goal (2x, 3x, 5x Macro)', icon: Target, desc: 'Set overall company return multiple & scale' }
+        ].map(t => (
+          <button
+            key={t.id}
+            onClick={() => setCostMainTab(t.id)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 18px',
+              borderRadius: '8px',
+              border: 'none',
+              background: costMainTab === t.id ? 'var(--accent-teal, #0F6E56)' : 'var(--bg-card)',
+              color: costMainTab === t.id ? '#ffffff' : 'var(--text-main)',
+              fontWeight: costMainTab === t.id ? '800' : '600',
+              fontSize: '0.88rem',
+              cursor: 'pointer',
+              boxShadow: costMainTab === t.id ? '0 4px 12px rgba(15,110,86,0.25)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <t.icon size={16} />
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+      {/* ========================================================================= */}
+      {/* TAB 3: OVERALL COMPANY GOAL (2x, 3x, 4x, 5x, 7x MACRO SCALE SETTER)        */}
+      {/* ========================================================================= */}
+      {costMainTab === 'company_goals' && (
+        <div className="animate-fade-in">
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(15, 110, 86, 0.05))',
+            border: '1.5px solid rgba(16, 185, 129, 0.35)',
+            borderRadius: '16px',
+            padding: '24px 28px',
+            marginBottom: '24px',
+            boxShadow: '0 6px 20px rgba(16, 185, 129, 0.06)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: '#10B981', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 10px rgba(16,185,129,0.35)' }}>
+                  <Target size={24} />
                 </div>
-                <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-main)' }}>
-                  Target Profitability Optimizer & Deal Routing Matrix
-                </h2>
-                <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10B981', padding: '2px 8px', borderRadius: '6px', fontSize: '0.74rem', fontWeight: '800' }}>
-                  Live Profit Algorithm
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                      Overall Company Target ROI Multiplier Goal
+                    </h2>
+                    <span style={{ background: '#10B981', color: '#ffffff', padding: '2px 10px', borderRadius: '12px', fontSize: '0.74rem', fontWeight: '800' }}>
+                      Company Target: {globalTargetMultiplier}x
+                    </span>
+                  </div>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                    Sets company-wide multiplier on <strong>Total Operating Execution Cost</strong> ({formatCurrency(totals.executionCost)}). Formula: <strong>Target Revenue = Total Company Cost × Multiplier</strong>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Benchmark Multiplier Presets */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-card)', padding: '8px 14px', borderRadius: '10px', border: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  Company Scale Benchmark:
                 </span>
+                {[
+                  { label: '2.0x Break-Even', val: 2.0 },
+                  { label: '3.0x Contributor', val: 3.0 },
+                  { label: '4.0x High Growth', val: 4.0 },
+                  { label: '5.0x Star Company', val: 5.0 },
+                  { label: '7.0x Top Tier', val: 7.0 }
+                ].map(p => (
+                  <button
+                    key={p.val}
+                    onClick={() => setGlobalTargetMultiplier(p.val)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      border: globalTargetMultiplier === p.val ? '1px solid #10B981' : '1px solid var(--border-color)',
+                      background: globalTargetMultiplier === p.val ? '#10B981' : 'transparent',
+                      color: globalTargetMultiplier === p.val ? '#ffffff' : 'var(--text-main)',
+                      fontWeight: globalTargetMultiplier === p.val ? '800' : '600',
+                      fontSize: '0.78rem',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {p.label}
+                  </button>
+                ))}
               </div>
-              <p style={{ margin: '4px 0 0 36px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                Set your commercial revenue target below. The optimizer ranks who will generate the highest bottom-line bank profit for your target and computes the optimal deal allocation schedule.
-              </p>
             </div>
 
-            <button 
-              onClick={() => setIsTargetOptimizerOpen(false)}
-              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
-            >
-              <X size={20} />
-            </button>
+            {/* Macro KPI Cards for Company Goal */}
+            {(() => {
+              const companyTargetRevenue = Math.round(totals.executionCost * globalTargetMultiplier);
+              const companyRevSurplus = totals.companyShare - companyTargetRevenue;
+              const isTargetMet = companyRevSurplus >= 0;
+              const currentClosures = reportData?.rows?.reduce((s, r) => s + (r.placements || 0), 0) || 1;
+              const avgTicket = totals.companyShare > 0 ? (totals.companyShare / Math.max(1, currentClosures)) : 30000;
+              const requiredCompanyClosures = Math.ceil(companyTargetRevenue / Math.max(1000, avgTicket));
+
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+                  <div style={{ background: 'var(--bg-card)', padding: '16px 18px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #3B82F6' }}>
+                    <div style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                      Company Total Operating Cost
+                    </div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: '800', color: '#3B82F6', marginTop: '4px' }}>
+                      {formatCurrency(totals.executionCost)}
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      Total seat salaries & allocated overheads across all departments
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'var(--bg-card)', padding: '16px 18px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #10B981' }}>
+                    <div style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                      Required Company Revenue ({globalTargetMultiplier}x)
+                    </div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-main)', marginTop: '4px' }}>
+                      {formatCurrency(companyTargetRevenue)}
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: isTargetMet ? '#10B981' : '#A8402E', marginTop: '2px', fontWeight: '700' }}>
+                      Actual: {formatCurrency(totals.companyShare)} ({isTargetMet ? `✅ +${formatCurrency(companyRevSurplus)} Surplus` : `⚠️ ${formatCurrency(Math.abs(companyRevSurplus))} Shortfall`})
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'var(--bg-card)', padding: '16px 18px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #8B5CF6' }}>
+                    <div style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                      Company ROI Multiple Health
+                    </div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: '800', color: isTargetMet ? '#10B981' : '#A8402E', marginTop: '4px' }}>
+                      {companyRoiMultiple.toFixed(2)}x Actual ROI
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      Target: <strong>{globalTargetMultiplier}.0x</strong> • Delta: <strong style={{ color: isTargetMet ? '#10B981' : '#A8402E' }}>{(companyRoiMultiple - globalTargetMultiplier).toFixed(2)}x</strong>
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'var(--bg-card)', padding: '16px 18px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #F59E0B' }}>
+                    <div style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                      Company Placement Closures Needed
+                    </div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: '800', color: 'var(--text-main)', marginTop: '4px' }}>
+                      {requiredCompanyClosures} Closures
+                    </div>
+                    <div style={{ fontSize: '0.74rem', color: currentClosures >= requiredCompanyClosures ? '#10B981' : '#A8402E', marginTop: '2px', fontWeight: '700' }}>
+                      {currentClosures >= requiredCompanyClosures ? `✅ Closed ${currentClosures} (+${currentClosures - requiredCompanyClosures} above target)` : `⚠️ ${requiredCompanyClosures - currentClosures} more closures needed (Currently ${currentClosures})`}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB 2: HEAD-TO-HEAD PROFILE COMPARISON                                     */}
+      {/* ========================================================================= */}
+      {costMainTab === 'compare' && (
+        <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '22px', marginBottom: '24px' }}>
+          
+          {/* Dimension Selector + Action Presets */}
+          <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '14px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '800', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Scale size={18} color="var(--accent-teal, #0F6E56)" />
+                  <span>Head-to-Head Profile Comparison Matrix</span>
+                </h3>
+                <p style={{ margin: '3px 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Select multiple profiles below to compare revenue, direct seat costs, net contribution, and ROI multiples side-by-side.
+                </p>
+              </div>
+
+              {/* Quick Profile Selection Presets */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Presets:</span>
+                <button
+                  onClick={() => {
+                    const top3 = (reportData?.rows || []).slice(0, 3).map(r => r.dimension_value);
+                    setSelectedCompareProfiles(top3);
+                  }}
+                  style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer' }}
+                >
+                  ⭐ Top 3 Performers
+                </button>
+                <button
+                  onClick={() => {
+                    const top5 = (reportData?.rows || []).slice(0, 5).map(r => r.dimension_value);
+                    setSelectedCompareProfiles(top5);
+                  }}
+                  style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer' }}
+                >
+                  🚀 Top 5 Contributors
+                </button>
+                <button
+                  onClick={() => {
+                    const active = (reportData?.rows || []).filter(r => !r.isDormant).map(r => r.dimension_value);
+                    setSelectedCompareProfiles(active);
+                  }}
+                  style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer' }}
+                >
+                  🟢 All Active
+                </button>
+                <button
+                  onClick={() => {
+                    const act = (reportData?.rows || []).filter(r => !r.isDormant).slice(0, 2).map(r => r.dimension_value);
+                    const dorm = (reportData?.rows || []).filter(r => r.isDormant).slice(0, 2).map(r => r.dimension_value);
+                    setSelectedCompareProfiles([...act, ...dorm]);
+                  }}
+                  style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer' }}
+                >
+                  ⚡ Active vs Dormant
+                </button>
+              </div>
+            </div>
+
+            {/* Dimension Tabs */}
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)', marginBottom: '14px' }}>
+              {[
+                { key: 'bd', label: 'Compare BD Specialists (15)', icon: Users },
+                { key: 'tl', label: 'Compare Team Leaders (10)', icon: Building },
+                { key: 'franchise', label: 'Compare Franchisees (10)', icon: Layers },
+                { key: 'city', label: 'Compare Cities (10)', icon: MapPin },
+                { key: 'industry', label: 'Compare Industries (8)', icon: Briefcase }
+              ].map(tab => {
+                const IconComponent = tab.icon;
+                const isActive = activeDimension === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveDimension(tab.key)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '7px 14px',
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: isActive ? 'var(--accent-teal, #0F6E56)' : 'rgba(0,0,0,0.04)',
+                      color: isActive ? '#ffffff' : 'var(--text-muted)',
+                      fontWeight: isActive ? '700' : '600',
+                      fontSize: '0.82rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <IconComponent size={14} />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Multi-Profile Checkbox Selector Pills */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {(reportData?.rows || []).map(r => {
+                const isSelected = selectedCompareProfiles.includes(r.dimension_value);
+                return (
+                  <button
+                    key={r.dimension_value}
+                    onClick={() => handleToggleCompareProfile(r.dimension_value)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '5px 12px',
+                      borderRadius: '20px',
+                      border: isSelected ? '1.5px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
+                      background: isSelected ? 'rgba(15, 110, 86, 0.12)' : 'var(--bg-main)',
+                      color: isSelected ? 'var(--accent-teal, #0F6E56)' : 'var(--text-main)',
+                      fontSize: '0.78rem',
+                      fontWeight: isSelected ? '800' : '600',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: r.isDormant ? '#A8402E' : '#10B981' }}></span>
+                    <span>{r.dimension_value}</span>
+                    <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>({r.roi_multiple}x)</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Target Goal Input & Presets */}
-          <div style={{ background: 'var(--bg-card)', padding: '16px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: '300px' }}>
-              <div>
-                <label style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
-                  Company Share Revenue Target:
-                </label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input
-                    type="range"
-                    min="1000000"
-                    max="20000000"
-                    step="500000"
-                    value={targetGoal}
-                    onChange={(e) => setTargetGoal(parseFloat(e.target.value))}
-                    style={{ width: '220px', cursor: 'pointer', accentColor: '#10B981' }}
-                  />
-                  <span style={{ fontSize: '1.25rem', fontWeight: '800', color: '#10B981' }}>
-                    {formatCurrency(targetGoal)}
-                  </span>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: '600' }}>
-                    ({formatLakhs(targetGoal)})
-                  </span>
+          {/* Executive Decision Winner Cards: "Who is more profitable to me?" */}
+          {compareHighlights && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
+              {/* Most Profitable */}
+              <div style={{ background: 'var(--bg-card)', padding: '16px 18px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #10B981' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#10B981', textTransform: 'uppercase' }}>🏆 Highest Net Contribution</span>
+                </div>
+                <div style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                  {compareHighlights.mostProfitable?.dimension_value}
+                </div>
+                <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#10B981', marginTop: '2px' }}>
+                  +{formatCurrency(compareHighlights.mostProfitable?.net_contribution)} Net Profit
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '3px' }}>
+                  Revenue: {formatCurrency(compareHighlights.mostProfitable?.company_share)} • Cost: {formatCurrency(compareHighlights.mostProfitable?.total_cost)}
+                </div>
+              </div>
+
+              {/* Highest ROI Multiple */}
+              <div style={{ background: 'var(--bg-card)', padding: '16px 18px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #3B82F6' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#3B82F6', textTransform: 'uppercase' }}>⚡ Highest Capital Efficiency</span>
+                </div>
+                <div style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                  {compareHighlights.highestRoi?.dimension_value}
+                </div>
+                <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#3B82F6', marginTop: '2px' }}>
+                  {compareHighlights.highestRoi?.roi_multiple}x ROI Multiple
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '3px' }}>
+                  Generates {formatCurrency(compareHighlights.highestRoi?.company_share)} with lean spend of {formatCurrency(compareHighlights.highestRoi?.total_cost)}
+                </div>
+              </div>
+
+              {/* Best Unit Economics */}
+              <div style={{ background: 'var(--bg-card)', padding: '16px 18px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #8B5CF6' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#8B5CF6', textTransform: 'uppercase' }}>💡 Best Lead Conversion Margin</span>
+                </div>
+                <div style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                  {compareHighlights.bestUnitEconomics?.dimension_value}
+                </div>
+                <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#8B5CF6', marginTop: '2px' }}>
+                  +{formatCurrency(compareHighlights.bestUnitEconomics?.net_surplus_per_enquiry)} / Lead
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '3px' }}>
+                  Highest commercial surplus retained on every enquiry handled
+                </div>
+              </div>
+
+              {/* Turnaround Opportunity */}
+              <div style={{ background: 'var(--bg-card)', padding: '16px 18px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #A8402E' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#A8402E', textTransform: 'uppercase' }}>⚠️ Turnaround / Growth Priority</span>
+                </div>
+                <div style={{ fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                  {compareHighlights.dormantOrLagging?.dimension_value}
+                </div>
+                <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#A8402E', marginTop: '2px' }}>
+                  {compareHighlights.dormantOrLagging?.isDormant ? '0x ROI (Dormant)' : `${compareHighlights.dormantOrLagging?.roi_multiple}x ROI`}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '3px' }}>
+                  Reactivation unlocks ~{formatCurrency(compareHighlights.dormantOrLagging?.isDormant ? 150000 : 90000)} in net revenue recovery
                 </div>
               </div>
             </div>
+          )}
 
-            {/* Quick Target Presets */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: '600' }}>Presets:</span>
-              {[
-                { label: '₹25L', val: 2500000 },
-                { label: '₹50L', val: 5000000 },
-                { label: '₹75L', val: 7500000 },
-                { label: '₹1.0 Cr', val: 10000000 },
-                { label: '₹1.5 Cr', val: 15000000 }
-              ].map(p => (
-                <button
-                  key={p.val}
-                  onClick={() => setTargetGoal(p.val)}
-                  style={{
-                    padding: '5px 10px',
-                    borderRadius: '6px',
-                    border: targetGoal === p.val ? '1px solid #10B981' : '1px solid var(--border-color)',
-                    background: targetGoal === p.val ? 'rgba(16, 185, 129, 0.15)' : 'var(--bg-main)',
-                    color: targetGoal === p.val ? '#10B981' : 'var(--text-main)',
-                    fontWeight: targetGoal === p.val ? '800' : '600',
-                    fontSize: '0.76rem',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Comparison Cards: Optimized Allocation vs Equal Distribution */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', marginBottom: '22px' }}>
-            
-            {/* Optimized Profit Card */}
-            <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1.5px solid #10B981', position: 'relative' }}>
-              <span style={{ position: 'absolute', top: '-10px', right: '14px', background: '#10B981', color: '#fff', padding: '2px 8px', borderRadius: '10px', fontSize: '0.68rem', fontWeight: '800' }}>
-                RECOMMENDED
-              </span>
-              <div style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                Optimized Deal Allocation Profit
-              </div>
-              <div style={{ fontSize: '1.65rem', fontWeight: '800', color: '#10B981', marginTop: '4px' }}>
-                {formatCurrency(targetOptimization.totalOptimizedNetProfit)}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                <span>Projected Net Margin:</span>
-                <strong style={{ color: '#10B981' }}>{targetOptimization.optimalMarginPct}%</strong>
-              </div>
-            </div>
-
-            {/* Baseline Uniform Profit Card */}
-            <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                Equal / Uniform Mandate Distribution Profit
-              </div>
-              <div style={{ fontSize: '1.65rem', fontWeight: '800', color: 'var(--text-main)', marginTop: '4px' }}>
-                {formatCurrency(targetOptimization.totalUniformNetProfit)}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                <span>Projected Net Margin:</span>
-                <strong>{targetOptimization.uniformMarginPct}%</strong>
-              </div>
-            </div>
-
-            {/* Extra Bank Surplus Unlocked Banner */}
-            <div style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(15, 110, 86, 0.2))', padding: '18px 20px', borderRadius: '12px', border: '1px solid rgba(16, 185, 129, 0.4)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.74rem', fontWeight: '800', color: '#10B981', textTransform: 'uppercase' }}>
-                <Sparkles size={14} />
-                <span>Extra Profit Surplus Unlocked</span>
-              </div>
-              <div style={{ fontSize: '1.65rem', fontWeight: '900', color: '#0F6E56', marginTop: '4px' }}>
-                +{formatCurrency(targetOptimization.netProfitGain)}
-              </div>
-              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                By allocating mandates to highest net contributors rather than equal distribution.
-              </div>
-            </div>
-
-          </div>
-
-          {/* Optimal Mandate Allocation Schedule Table */}
-          <div style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-            <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.02)' }}>
-              <div style={{ fontWeight: '800', fontSize: '0.86rem', color: 'var(--text-main)' }}>
-                Who Will Be Most Profitable to Hit {formatLakhs(targetGoal)}? (Optimal Allocation Matrix)
-              </div>
-              <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                Ranks all {targetOptimization.allocationMatrix.length} entities in {activeDimension.toUpperCase()}
-              </span>
+          {/* Comparative Side-by-Side Table Matrix */}
+          <div style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)' }}>
+              <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                Side-by-Side Performance Ledger ({compareRows.length} Profiles Compared)
+              </h3>
             </div>
 
             <div className="table-responsive">
-              <table className="data-table" style={{ width: '100%', fontSize: '0.82rem' }}>
+              <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
                 <thead>
-                  <tr style={{ background: 'rgba(0,0,0,0.01)', borderBottom: '1px solid var(--border-color)' }}>
-                    <th style={{ padding: '10px 14px', textAlign: 'left' }}>Rank & Entity</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'center' }}>Status</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Historical ROI</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Net Margin %</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Net Surplus / Enquiry</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '800', color: '#10B981' }}>Recommended Deal Share %</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '800' }}>Target Revenue Share</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '800', color: '#10B981' }}>Projected Net Profit</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'left' }}>Action Strategy</th>
+                  <tr style={{ background: 'rgba(0,0,0,0.02)', borderBottom: '1px solid var(--border-color)' }}>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: 'var(--text-muted)' }}>Profile Name</th>
+                    <th style={{ padding: '12px 10px', textAlign: 'center', fontWeight: '700', color: 'var(--text-muted)' }}>Status</th>
+                    <th style={{ padding: '12px 12px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)' }}>Placements</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)' }}>Company Share</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)' }}>Total Cost</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)' }}>Net Contribution</th>
+                    <th style={{ padding: '12px 12px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)' }}>Margin %</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: 'var(--text-muted)' }}>ROI Multiple</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: 'var(--text-muted)' }}>Profitability Tier</th>
+                    <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: 'var(--text-muted)' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {targetOptimization.allocationMatrix.map((item, idx) => (
-                    <tr 
-                      key={item.dimension_value || idx}
-                      style={{ 
-                        borderBottom: '1px solid var(--border-color)',
-                        background: idx === 0 ? 'rgba(16, 185, 129, 0.05)' : item.isDormant ? 'rgba(0,0,0,0.02)' : 'transparent'
-                      }}
-                    >
-                      {/* Name */}
-                      <td style={{ padding: '10px 14px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{
-                            width: '20px',
-                            height: '20px',
-                            borderRadius: '50%',
-                            background: idx === 0 ? '#F59E0B' : idx === 1 ? '#94A3B8' : idx === 2 ? '#B45309' : 'rgba(0,0,0,0.08)',
-                            color: idx < 3 ? '#ffffff' : 'var(--text-muted)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: '0.68rem',
-                            fontWeight: '800'
-                          }}>
-                            {idx + 1}
-                          </span>
-                          <div>
-                            <div style={{ fontWeight: '700', color: 'var(--text-main)' }}>{item.dimension_value}</div>
-                            {item.role && <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{item.role}</div>}
+                  {compareRows.map((r, idx) => {
+                    const isPositive = r.net_contribution >= 0;
+                    return (
+                      <tr key={r.dimension_value || idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '14px 16px', fontWeight: '800', color: 'var(--text-main)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: '800' }}>
+                              {idx + 1}
+                            </span>
+                            <span>{r.dimension_value}</span>
                           </div>
-                        </div>
-                      </td>
-
-                      {/* Status */}
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                        <span style={{
-                          padding: '2px 8px',
-                          borderRadius: '10px',
-                          fontSize: '0.7rem',
-                          fontWeight: '700',
-                          background: item.isDormant ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
-                          color: item.isDormant ? '#A8402E' : '#10B981'
-                        }}>
-                          {item.isDormant ? '💤 Dormant' : '🟢 Active'}
-                        </span>
-                      </td>
-
-                      {/* ROI */}
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '600' }}>
-                        {item.roi_multiple}x
-                      </td>
-
-                      {/* Margin % */}
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '700', color: parseFloat(item.netMarginPct) >= 50 ? '#10B981' : parseFloat(item.netMarginPct) >= 0 ? '#3B82F6' : '#A8402E' }}>
-                        {item.netMarginPct}%
-                      </td>
-
-                      {/* Net Surplus / Enquiry */}
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '600', color: item.net_surplus_per_enquiry >= 0 ? '#8B5CF6' : '#A8402E' }}>
-                        {item.net_surplus_per_enquiry > 0 ? '+' : ''}{formatCurrency(item.net_surplus_per_enquiry)}
-                      </td>
-
-                      {/* Recommended Deal Share % */}
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '800', color: item.optimalSharePct > 0 ? '#10B981' : 'var(--text-muted)', fontSize: '0.88rem' }}>
-                        {item.optimalSharePct}%
-                      </td>
-
-                      {/* Allocated Target */}
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
-                        {formatCurrency(item.allocatedRevenueTarget)}
-                      </td>
-
-                      {/* Projected Net Profit */}
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '800', color: item.projectedNetProfit > 0 ? '#10B981' : 'var(--text-muted)' }}>
-                        {formatCurrency(item.projectedNetProfit)}
-                      </td>
-
-                      {/* Strategy */}
-                      <td style={{ padding: '10px 14px' }}>
-                        <div style={{ fontSize: '0.74rem', color: item.isDormant ? '#A8402E' : 'var(--text-main)', fontWeight: item.isDormant ? '700' : '500' }}>
-                          {item.recommendation}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td style={{ padding: '14px 10px', textAlign: 'center' }}>
+                          <span style={{ fontSize: '0.74rem', fontWeight: '700', color: r.isDormant ? '#A8402E' : '#10B981', background: r.isDormant ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)', padding: '2px 8px', borderRadius: '4px' }}>
+                            {r.isDormant ? '💤 Dormant' : '🟢 Active'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '14px 12px', textAlign: 'right', fontWeight: '700' }}>{r.placements}</td>
+                        <td style={{ padding: '14px 14px', textAlign: 'right', fontWeight: '800', color: '#10B981' }}>{formatCurrency(r.company_share)}</td>
+                        <td style={{ padding: '14px 14px', textAlign: 'right', fontWeight: '700', color: '#3B82F6' }}>{formatCurrency(r.total_cost)}</td>
+                        <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: '800', color: isPositive ? '#10B981' : '#A8402E' }}>
+                          {isPositive ? '+' : ''}{formatCurrency(r.net_contribution)}
+                        </td>
+                        <td style={{ padding: '14px 12px', textAlign: 'right', fontWeight: '700' }}>{r.netMarginPct}%</td>
+                        <td style={{ padding: '14px 14px', textAlign: 'center', fontWeight: '800', color: r.roi_multiple >= 3.0 ? '#10B981' : r.roi_multiple >= 1.5 ? '#3B82F6' : '#A8402E' }}>
+                          {r.roi_multiple}x
+                        </td>
+                        <td style={{ padding: '14px 14px', textAlign: 'center' }}>
+                          <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: '700', background: r.roi_multiple >= 3.0 ? 'rgba(16,185,129,0.15)' : r.roi_multiple >= 1.5 ? 'rgba(59,130,246,0.15)' : 'rgba(239,68,68,0.12)', color: r.roi_multiple >= 3.0 ? '#10B981' : r.roi_multiple >= 1.5 ? '#3B82F6' : '#A8402E' }}>
+                            {r.tier_badge || (r.roi_multiple >= 3.0 ? 'Star' : r.roi_multiple >= 1.5 ? 'Contributor' : 'At Risk')}
+                          </span>
+                        </td>
+                        <td style={{ padding: '14px 14px', textAlign: 'center' }}>
+                          {r.isDormant ? (
+                            <button
+                              onClick={() => setActivationPlaybookEntity(r)}
+                              style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#A8402E', padding: '4px 10px', borderRadius: '6px', fontSize: '0.74rem', fontWeight: '700', cursor: 'pointer' }}
+                            >
+                              ⚡ Playbook
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleOpenDrilldown(r)}
+                              style={{ background: 'transparent', border: 'none', color: 'var(--accent-teal, #0F6E56)', cursor: 'pointer' }}
+                            >
+                              <ChevronRight size={18} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          {/* Comparative Visual Bar Charts */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '16px' }}>
+            <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '0.96rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                Revenue vs Operating Execution Cost Comparison
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {compareRows.map((r, i) => {
+                  const maxAmt = Math.max(...compareRows.map(x => Math.max(x.company_share, x.total_cost)), 100000);
+                  const revW = Math.min(100, Math.max(6, (r.company_share / maxAmt) * 100));
+                  const costW = Math.min(100, Math.max(6, (r.total_cost / maxAmt) * 100));
+                  return (
+                    <div key={i} style={{ background: 'rgba(0,0,0,0.02)', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontWeight: '700', fontSize: '0.82rem' }}>
+                        <span>{r.dimension_value}</span>
+                        <span style={{ color: '#10B981' }}>{r.roi_multiple}x ROI</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.72rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ width: '55px', color: 'var(--text-muted)' }}>Revenue:</span>
+                          <div style={{ flex: 1, height: '7px', background: 'var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
+                            <div style={{ width: `${revW}%`, height: '100%', background: '#10B981', borderRadius: '4px' }}></div>
+                          </div>
+                          <span style={{ width: '70px', textAlign: 'right', fontWeight: '700', color: '#10B981' }}>{formatCurrency(r.company_share)}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ width: '55px', color: 'var(--text-muted)' }}>Cost:</span>
+                          <div style={{ flex: 1, height: '7px', background: 'var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
+                            <div style={{ width: `${costW}%`, height: '100%', background: '#3B82F6', borderRadius: '4px' }}></div>
+                          </div>
+                          <span style={{ width: '70px', textAlign: 'right', fontWeight: '700', color: '#3B82F6' }}>{formatCurrency(r.total_cost)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '0.96rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                Net Commercial Surplus Ranking (True Bank Profit)
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {compareRows.map((r, i) => {
+                  const maxNet = Math.max(...compareRows.map(x => Math.abs(x.net_contribution)), 100000);
+                  const isPos = r.net_contribution >= 0;
+                  const netW = Math.min(100, Math.max(6, (Math.abs(r.net_contribution) / maxNet) * 100));
+                  return (
+                    <div key={i} style={{ background: 'rgba(0,0,0,0.02)', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '0.82rem' }}>
+                        <span style={{ fontWeight: '700' }}>{r.dimension_value}</span>
+                        <span style={{ fontWeight: '800', color: isPos ? '#10B981' : '#A8402E' }}>
+                          {isPos ? '+' : ''}{formatCurrency(r.net_contribution)}
+                        </span>
+                      </div>
+                      <div style={{ height: '8px', background: 'var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div style={{ width: `${netW}%`, height: '100%', background: isPos ? 'linear-gradient(90deg, #10B981, #059669)' : '#DC2626', borderRadius: '4px' }}></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* 2. Top Summary KPI Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-        
-        {/* Company Share (Total Revenue Inflow) */}
-        <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #0F6E56', position: 'relative' }}>
+      {/* ========================================================================= */}
+      {/* TAB 1: INDIVIDUAL PROFILE TRACKING (DASHBOARD & DETAILED TABLE)            */}
+      {/* ========================================================================= */}
+      {costMainTab === 'profiles' && (
+        <div className="animate-fade-in">
+          
+          {/* Top KPI Summary Row */}
+        <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #0F6E56' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               Company Share (ourShare)
@@ -1360,26 +1612,10 @@ const CostOfPerformance = () => {
               {formatCurrency(totals.executionCost)}
             </div>
             <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-              Direct Salaries + Overhead ({reportData?.allocation_basis || 'Rev Share'})
+              Salaries + Overheads ({reportData?.allocation_basis || 'Rev Share'})
             </div>
           </div>
         )}
-
-        {/* Churn Cost & Leakage */}
-        <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #A8402E' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Cost of Losing Clients (Churn)
-            </span>
-            <AlertTriangle size={18} color="#A8402E" />
-          </div>
-          <div style={{ fontSize: '1.55rem', fontWeight: '800', color: '#A8402E' }}>
-            {formatCurrency(totals.churnCost)}
-          </div>
-          <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Reversed Credit Notes & Lost Deal Sunk CAC
-          </div>
-        </div>
 
         {/* Net Commercial Contribution */}
         {userRole !== 'franchise_partner' && (
@@ -1399,11 +1635,11 @@ const CostOfPerformance = () => {
           </div>
         )}
 
-        {/* Activity & Dormancy Status KPI */}
+        {/* Active vs Dormant Profile Tracker */}
         <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #F59E0B' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Activity vs Dormancy
+              {activeDimension.toUpperCase()} Activity vs Dormancy
             </span>
             <Flame size={18} color="#F59E0B" />
           </div>
@@ -1419,12 +1655,102 @@ const CostOfPerformance = () => {
             <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Dormant</span>
           </div>
           <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Total {activityCounts.total} registered in {activeDimension.toUpperCase()} roster
+            Total {activityCounts.total} registered in this view
+          </div>
+        </div>
+
+        {/* Dedicated Dormant Franchisees Counter */}
+        <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #A8402E' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Franchisee Network Health
+            </span>
+            <Store size={18} color="#A8402E" />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <span style={{ fontSize: '1.55rem', fontWeight: '800', color: '#10B981' }}>
+              {franchiseDormancyStats.active}
+            </span>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Active</span>
+            <span style={{ fontSize: '1.1rem', color: 'var(--text-muted)' }}>/</span>
+            <span style={{ fontSize: '1.35rem', fontWeight: '800', color: '#A8402E' }}>
+              {franchiseDormancyStats.dormant}
+            </span>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Dormant</span>
+          </div>
+          <div style={{ fontSize: '0.74rem', color: '#A8402E', marginTop: '4px', fontWeight: '600' }}>
+            {franchiseDormancyStats.dormant} Franchisees need activation ({((franchiseDormancyStats.dormant / franchiseDormancyStats.total) * 100).toFixed(0)}% dormant)
           </div>
         </div>
       </div>
 
-      {/* 3. Operational Dimension Navigation Tabs & Activity Status Filter Pills */}
+      {/* ========================================================================= */}
+      {/* 4. DEDICATED DORMANT FRANCHISEES DIRECTORY & ACTIVATION LEVERS            */}
+      {/* ========================================================================= */}
+      {franchiseDormancyStats.dormant > 0 && (
+        <div style={{ background: 'rgba(239, 68, 68, 0.04)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '12px', padding: '16px 20px', marginBottom: '22px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <AlertTriangle size={17} color="#A8402E" />
+              <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: '800', color: '#A8402E' }}>
+                Dormant Franchisees Directory ({franchiseDormancyStats.dormant} Inactive Partners)
+              </h3>
+            </div>
+            <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+              Click '⚡ Activate' to launch re-activation playbook & simulate commercial recovery
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+            {franchiseDormancyStats.dormantList.map(f => (
+              <div key={f.name} style={{ background: 'var(--bg-card)', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: '800', fontSize: '0.86rem', color: 'var(--text-main)' }}>{f.name}</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    {f.city} • TL: {f.teamLeader}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#A8402E', marginTop: '2px' }}>
+                    {f.dormantReason}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setActivationPlaybookEntity({
+                    dimension_value: f.name,
+                    role: `Franchise Partner (${f.city})`,
+                    isDormant: true,
+                    dormantReason: f.dormantReason,
+                    total_cost: 0,
+                    enquiries_handled: 3,
+                    net_contribution: -15000
+                  })}
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: '#A8402E',
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    fontSize: '0.74rem',
+                    fontWeight: '800',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    flexShrink: 0
+                  }}
+                >
+                  <Zap size={12} />
+                  <span>Activate</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 5. DIMENSION SUB-TABS & FILTER PILLS                                      */}
+      {/* ========================================================================= */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
         
         {/* Dimension Sub-Tabs */}
@@ -1441,7 +1767,7 @@ const CostOfPerformance = () => {
             return (
               <button
                 key={tab.key}
-                onClick={() => { setActiveDimension(tab.key); setActivityStatusFilter('all'); }}
+                onClick={() => { setActiveDimension(tab.key); setActivityStatusFilter('all'); setSelectedProfile('all'); }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1530,7 +1856,7 @@ const CostOfPerformance = () => {
           </div>
 
           {/* Search Input */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-card)', padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', minWidth: '200px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-card)', padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--border-color)', minWidth: '190px' }}>
             <Search size={15} color="var(--text-muted)" />
             <input
               type="text"
@@ -1553,7 +1879,7 @@ const CostOfPerformance = () => {
         </div>
       </div>
 
-      {/* 4. VISUAL ANALYTICS & INTERACTIVE GRAPHS SECTION */}
+      {/* 6. VISUAL ANALYTICS & INTERACTIVE GRAPHS SECTION */}
       {(viewMode === 'charts' || viewMode === 'both') && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(480px, 1fr))', gap: '18px', marginBottom: '24px' }}>
           
@@ -1619,8 +1945,8 @@ const CostOfPerformance = () => {
                               💤 Dormant
                             </span>
                           ) : (
-                            <span style={{ fontSize: '0.68rem', fontWeight: '600', color: 'var(--text-muted)' }}>
-                              {r.placements} placements
+                            <span style={{ fontSize: '0.68rem', fontWeight: '700', color: r.isTargetAchieved ? '#10B981' : '#B7791F' }}>
+                              {r.roi_multiple}x ROI (Target: {r.targetMultiple}x)
                             </span>
                           )}
                         </div>
@@ -1716,16 +2042,12 @@ const CostOfPerformance = () => {
               <div>
                 <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: '800', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <TrendingUp size={17} color="#10B981" />
-                  <span>Net Commercial Contribution Leaderboard</span>
+                  <span>Target Multiplier vs Actual ROI Multiple Leaderboard</span>
                 </h3>
                 <p style={{ margin: '3px 0 0 0', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                  True bottom-line bank contribution after deducting all execution salaries & loss write-offs
+                  Comparing each profile's actual multiple against target benchmark ({globalTargetMultiplier}x)
                 </p>
               </div>
-
-              <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: '600' }}>
-                {filteredRows.filter(r => !r.isDormant).length} Active Performers
-              </span>
             </div>
 
             {filteredRows.length === 0 ? (
@@ -1760,23 +2082,18 @@ const CostOfPerformance = () => {
                             {idx + 1}
                           </span>
                           <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>{r.dimension_value}</span>
-                          {r.isDormant && (
-                            <span style={{ fontSize: '0.65rem', background: 'rgba(239,68,68,0.1)', color: '#A8402E', padding: '1px 5px', borderRadius: '3px' }}>
-                              Dormant
-                            </span>
-                          )}
+                          <span style={{
+                            fontSize: '0.66rem',
+                            fontWeight: '700',
+                            padding: '1px 5px',
+                            borderRadius: '3px',
+                            background: r.isTargetAchieved ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.12)',
+                            color: r.isTargetAchieved ? '#10B981' : '#A8402E'
+                          }}>
+                            {r.roi_multiple}x / {r.targetMultiple}x Target
+                          </span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ 
-                            fontSize: '0.68rem', 
-                            fontWeight: '700',
-                            padding: '1px 5px', 
-                            borderRadius: '4px',
-                            background: r.tier_badge === 'star' ? 'rgba(16,185,129,0.15)' : r.tier_badge === 'profitable' ? 'rgba(59,130,246,0.15)' : 'rgba(239,68,68,0.15)',
-                            color: r.tier_badge === 'star' ? '#10B981' : r.tier_badge === 'profitable' ? '#3B82F6' : '#A8402E'
-                          }}>
-                            {r.roi_multiple}x ROI
-                          </span>
                           <span style={{ fontWeight: '800', color: isPositive ? '#10B981' : '#A8402E' }}>
                             {isPositive ? '+' : ''}{formatCurrency(r.net_contribution)}
                           </span>
@@ -1800,14 +2117,6 @@ const CostOfPerformance = () => {
                 })}
               </div>
             )}
-
-            {/* Quick Summary Pill */}
-            <div style={{ marginTop: '16px', padding: '10px 14px', background: 'rgba(16,185,129,0.06)', borderRadius: '8px', border: '1px solid rgba(16,185,129,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.74rem', color: 'var(--text-main)', fontWeight: '600' }}>Total Portfolio Net Commercial Surplus:</span>
-              <span style={{ fontSize: '0.88rem', fontWeight: '800', color: totals.netContribution >= 0 ? '#10B981' : '#A8402E' }}>
-                {totals.netContribution >= 0 ? '+' : ''}{formatCurrency(totals.netContribution)}
-              </span>
-            </div>
           </div>
 
           {/* Graph 3: Effort Unit Economics */}
@@ -1872,7 +2181,7 @@ const CostOfPerformance = () => {
             )}
           </div>
 
-          {/* Graph 4: Corporate Cost Composition & Leakage Donut / Bar */}
+          {/* Graph 4: Corporate Cost Composition */}
           <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
@@ -1938,17 +2247,17 @@ const CostOfPerformance = () => {
         </div>
       )}
 
-      {/* 5. Ranked Dimension Detailed Table Section */}
+      {/* 7. Detailed Table Section with Inline Target ROI Multiplier Editor */}
       {(viewMode === 'table' || viewMode === 'both') && (
         <div style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)' }}>
           
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
             <div>
               <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: '800', color: 'var(--text-main)' }}>
-                Detailed Dimension Audit Ledger ({activeDimension.toUpperCase()})
+                Detailed Target ROI Multiplier Ledger ({activeDimension.toUpperCase()})
               </h3>
               <p style={{ margin: '2px 0 0 0', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                Click on any row to open the invoice & lost deal forensics, or click "⚡ Activation Playbook" for dormant entities.
+                Set individual 2x, 3x, 5x target multipliers per profile below to audit required closures & surplus.
               </p>
             </div>
             <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
@@ -1959,7 +2268,7 @@ const CostOfPerformance = () => {
         {filteredRows.length === 0 ? (
           <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-muted)' }}>
             <Info size={32} style={{ marginBottom: '8px', opacity: 0.6 }} />
-            <div style={{ fontWeight: '600' }}>No records found matching filter '{activityStatusFilter}' for {activeDimension.toUpperCase()} in {selectedMonth}</div>
+            <div style={{ fontWeight: '600' }}>No records found matching filters for {activeDimension.toUpperCase()} in {selectedMonth}</div>
           </div>
         ) : (
           <div className="table-responsive">
@@ -1978,152 +2287,88 @@ const CostOfPerformance = () => {
                     </div>
                   </th>
 
-                  {/* Activity Status */}
+                  {/* Status */}
+                  <th style={{ padding: '12px 10px', textAlign: 'center', fontWeight: '700', color: 'var(--text-muted)', width: '90px' }}>
+                    Status
+                  </th>
+
+                  {/* Actual vs Target ROI Multiple */}
                   <th 
-                    onClick={() => handleSort('isDormant')}
-                    style={{ padding: '12px 12px', textAlign: 'center', fontWeight: '700', color: 'var(--text-muted)', cursor: 'pointer', width: '120px' }}
+                    onClick={() => handleSort('roi_multiple')}
+                    style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '800', color: 'var(--accent-teal, #0F6E56)', cursor: 'pointer' }}
+                    title="Actual Company Share / Execution Cost"
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                      <span>Status</span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                      <span>Actual ROI</span>
                       <ArrowUpDown size={12} />
                     </div>
                   </th>
 
-                  {/* Placements */}
+                  {/* Target ROI Multiplier Setter */}
+                  <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '800', color: '#10B981', width: '130px' }}>
+                    Target Multiplier
+                  </th>
+
+                  {/* Required Revenue to hit Target */}
                   <th 
-                    onClick={() => handleSort('placements')}
+                    onClick={() => handleSort('targetRevenueRequired')}
                     style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)', cursor: 'pointer' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                      <span>Placements</span>
+                      <span>Req. Revenue</span>
                       <ArrowUpDown size={12} />
                     </div>
                   </th>
 
-                  {/* Enquiries Handled */}
-                  {(activeDimension === 'bd' || activeDimension === 'tl') && (
-                    <th 
-                      onClick={() => handleSort('enquiries_handled')}
-                      style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)', cursor: 'pointer' }}
-                      title="All enquiries handled (closed, cancelled, on hold, in progress)"
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                        <span>Total Enquiries</span>
-                        <ArrowUpDown size={12} />
-                      </div>
-                    </th>
-                  )}
+                  {/* Target Closures Needed */}
+                  <th style={{ padding: '12px 12px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)' }}>
+                    Req. Closures
+                  </th>
 
-                  {/* Company Share */}
+                  {/* Actual Delivered Company Share */}
                   <th 
                     onClick={() => handleSort('company_share')}
-                    style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)', cursor: 'pointer' }}
+                    style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-main)', cursor: 'pointer' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                      <span>Company Share</span>
+                      <span>Actual Share</span>
                       <ArrowUpDown size={12} />
                     </div>
                   </th>
 
-                  {/* TL Network Normalization Columns */}
-                  {activeDimension === 'tl' && (
-                    <>
-                      <th style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)' }}>
-                        Active Franchises
-                      </th>
-                      <th 
-                        onClick={() => handleSort('rev_per_franchise')}
-                        style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)', cursor: 'pointer' }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                          <span>Rev / Franchise</span>
-                          <ArrowUpDown size={12} />
-                        </div>
-                      </th>
-                      <th 
-                        onClick={() => handleSort('net_contribution_per_franchise')}
-                        style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '800', color: 'var(--accent-teal, #0F6E56)', cursor: 'pointer' }}
-                        title="Normalized Net Contribution per Active Franchise (Default TL Sort)"
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                          <span>Net Contrib / Franchise ★</span>
-                          <ArrowUpDown size={12} />
-                        </div>
-                      </th>
-                    </>
-                  )}
-
-                  {/* Cost Columns */}
-                  {userRole !== 'franchise_partner' && activeDimension !== 'tl' && (
-                    <>
-                      <th 
-                        onClick={() => handleSort('cac')}
-                        style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)', cursor: 'pointer' }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                          <span>CAC</span>
-                          <ArrowUpDown size={12} />
-                        </div>
-                      </th>
-                      <th 
-                        onClick={() => handleSort('cost_of_execution')}
-                        style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)', cursor: 'pointer' }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                          <span>Cost of Execution</span>
-                          <ArrowUpDown size={12} />
-                        </div>
-                      </th>
-                    </>
-                  )}
-
-                  {/* Per-Enquiry Unit Economics */}
-                  {userRole !== 'franchise_partner' && (activeDimension === 'bd' || activeDimension === 'tl') && (
+                  {/* Execution Cost */}
+                  {userRole !== 'franchise_partner' && (
                     <th 
-                      onClick={() => handleSort('net_surplus_per_enquiry')}
-                      style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: '#8B5CF6', cursor: 'pointer' }}
-                      title="Net Surplus per Enquiry handled (Revenue/Enquiry - Expense/Enquiry)"
+                      onClick={() => handleSort('total_cost')}
+                      style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: '#3B82F6', cursor: 'pointer' }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                        <span>Net Surplus/Enquiry</span>
+                        <span>Seat Cost</span>
                         <ArrowUpDown size={12} />
                       </div>
                     </th>
                   )}
 
-                  {/* Churn Cost */}
-                  <th 
-                    onClick={() => handleSort('churn_cost')}
-                    style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-muted)', cursor: 'pointer' }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                      <span>Churn Cost</span>
-                      <ArrowUpDown size={12} />
-                    </div>
+                  {/* Target Achievement Status */}
+                  <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '800', width: '170px' }}>
+                    Target ROI Health
                   </th>
 
-                  {/* Net Contribution (Worth) */}
+                  {/* Net Contribution */}
                   {userRole !== 'franchise_partner' && (
                     <th 
                       onClick={() => handleSort('net_contribution')}
                       style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '800', color: 'var(--text-main)', cursor: 'pointer' }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                        <span>Net Contribution</span>
+                        <span>Net Bank Surplus</span>
                         <ArrowUpDown size={12} />
                       </div>
                     </th>
                   )}
 
-                  {/* ROI Tier */}
-                  {userRole !== 'franchise_partner' && (
-                    <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: 'var(--text-muted)', width: '160px' }}>
-                      Performance Tier
-                    </th>
-                  )}
-
-                  {/* Action / Playbook */}
-                  <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '600', color: 'var(--text-muted)', width: '130px' }}>
+                  {/* Action */}
+                  <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '600', color: 'var(--text-muted)', width: '110px' }}>
                     Action
                   </th>
                 </tr>
@@ -2156,106 +2401,106 @@ const CostOfPerformance = () => {
                             {r.role || 'BD Specialist'} {r.cancelled_losses > 0 ? `• Lost Deals: ${formatCurrency(r.cancelled_losses)}` : ''}
                           </div>
                         )}
+                        {activeDimension === 'franchise' && (
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            {r.city} • TL: {r.teamLeader}
+                          </div>
+                        )}
                       </td>
 
-                      {/* Status Badge */}
-                      <td style={{ padding: '14px 12px', textAlign: 'center' }}>
+                      {/* Status */}
+                      <td style={{ padding: '14px 10px', textAlign: 'center' }}>
                         <span style={{
                           display: 'inline-block',
-                          padding: '3px 8px',
-                          borderRadius: '12px',
-                          fontSize: '0.7rem',
+                          padding: '2px 7px',
+                          borderRadius: '10px',
+                          fontSize: '0.68rem',
                           fontWeight: '800',
                           background: r.isDormant ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
-                          color: r.isDormant ? '#A8402E' : '#10B981',
-                          border: `1px solid ${r.isDormant ? 'rgba(239, 68, 68, 0.3)' : 'rgba(16, 185, 129, 0.3)'}`
+                          color: r.isDormant ? '#A8402E' : '#10B981'
                         }}>
                           {r.isDormant ? '💤 Dormant' : '🟢 Active'}
                         </span>
                       </td>
 
-                      {/* Placements */}
-                      <td style={{ padding: '14px 14px', textAlign: 'right', fontWeight: '600' }}>
-                        {r.placements}
+                      {/* Actual ROI Multiple */}
+                      <td style={{ padding: '14px 14px', textAlign: 'right', fontWeight: '800', fontSize: '0.92rem', color: r.roi_multiple >= 3.0 ? '#10B981' : r.roi_multiple >= 1.5 ? '#3B82F6' : '#A8402E' }}>
+                        {r.roi_multiple}x
                       </td>
 
-                      {/* Enquiries Handled */}
-                      {(activeDimension === 'bd' || activeDimension === 'tl') && (
-                        <td style={{ padding: '14px 14px', textAlign: 'right', color: 'var(--text-muted)' }}>
-                          {r.enquiries_handled}
-                        </td>
-                      )}
+                      {/* Target ROI Multiplier Selector (2x, 3x, 4x, 5x) */}
+                      <td style={{ padding: '14px 14px', textAlign: 'center' }}>
+                        <select
+                          value={r.targetMultiple}
+                          onChange={(e) => handleSetProfileTarget(r.dimension_value, e.target.value)}
+                          style={{
+                            background: 'var(--bg-main)',
+                            border: '1.5px solid #10B981',
+                            borderRadius: '6px',
+                            color: '#10B981',
+                            fontWeight: '800',
+                            fontSize: '0.78rem',
+                            padding: '3px 6px',
+                            cursor: 'pointer',
+                            outline: 'none'
+                          }}
+                        >
+                          <option value="2.0">2.0x Target</option>
+                          <option value="2.5">2.5x Target</option>
+                          <option value="3.0">3.0x Target</option>
+                          <option value="4.0">4.0x Target</option>
+                          <option value="5.0">5.0x Target</option>
+                          <option value="7.0">7.0x Target</option>
+                        </select>
+                      </td>
 
-                      {/* Company Share */}
+                      {/* Required Revenue */}
                       <td style={{ padding: '14px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
+                        {formatCurrency(r.targetRevenueRequired)}
+                      </td>
+
+                      {/* Required Closures */}
+                      <td style={{ padding: '14px 12px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: '600' }}>
+                        {r.targetPlacementsRequired} pl
+                      </td>
+
+                      {/* Actual Company Share */}
+                      <td style={{ padding: '14px 14px', textAlign: 'right', fontWeight: '800', color: 'var(--text-main)' }}>
                         {formatCurrency(r.company_share)}
                       </td>
 
-                      {/* TL Specific Columns */}
-                      {activeDimension === 'tl' && (
-                        <>
-                          <td style={{ padding: '14px 14px', textAlign: 'right', color: 'var(--text-muted)' }}>
-                            {r.active_franchise_count} franchises
-                          </td>
-                          <td style={{ padding: '14px 14px', textAlign: 'right', fontWeight: '600' }}>
-                            {formatCurrency(r.rev_per_franchise)}
-                          </td>
-                          <td style={{ padding: '14px 14px', textAlign: 'right', fontWeight: '800', color: r.net_contribution_per_franchise >= 0 ? 'var(--accent-teal, #0F6E56)' : '#A8402E' }}>
-                            {formatCurrency(r.net_contribution_per_franchise)}
-                          </td>
-                        </>
-                      )}
-
-                      {/* Cost of Execution & CAC */}
-                      {userRole !== 'franchise_partner' && activeDimension !== 'tl' && (
-                        <>
-                          <td style={{ padding: '14px 14px', textAlign: 'right', color: 'var(--text-muted)' }}>
-                            {formatCurrency(r.cac)}
-                          </td>
-                          <td style={{ padding: '14px 14px', textAlign: 'right', color: '#3B82F6', fontWeight: '600' }}>
-                            {formatCurrency(r.cost_of_execution)}
-                          </td>
-                        </>
-                      )}
-
-                      {/* Net Surplus per Enquiry */}
-                      {userRole !== 'franchise_partner' && (activeDimension === 'bd' || activeDimension === 'tl') && (
-                        <td style={{ padding: '14px 14px', textAlign: 'right', fontWeight: '700', color: r.net_surplus_per_enquiry >= 0 ? '#8B5CF6' : '#A8402E' }}>
-                          {r.net_surplus_per_enquiry > 0 ? '+' : ''}{formatCurrency(r.net_surplus_per_enquiry)}
+                      {/* Execution Seat Cost */}
+                      {userRole !== 'franchise_partner' && (
+                        <td style={{ padding: '14px 14px', textAlign: 'right', color: '#3B82F6', fontWeight: '600' }}>
+                          {formatCurrency(r.total_cost)}
                         </td>
                       )}
 
-                      {/* Churn Cost */}
-                      <td style={{ padding: '14px 14px', textAlign: 'right', color: '#A8402E', fontWeight: '600' }}>
-                        {formatCurrency(r.churn_cost)}
+                      {/* Target Achievement Health */}
+                      <td style={{ padding: '14px 14px', textAlign: 'center' }}>
+                        {r.isDormant ? (
+                          <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#A8402E', background: 'rgba(239,68,68,0.1)', padding: '3px 8px', borderRadius: '6px', display: 'inline-block' }}>
+                            💤 0x (Req: {r.targetPlacementsRequired} pl)
+                          </span>
+                        ) : r.isTargetAchieved ? (
+                          <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#10B981', background: 'rgba(16,185,129,0.12)', padding: '3px 8px', borderRadius: '6px', display: 'inline-block' }}>
+                            ✅ +{r.multipleGap}x Surplus
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '0.72rem', fontWeight: '700', color: '#B7791F', background: 'rgba(234,179,8,0.12)', padding: '3px 8px', borderRadius: '6px', display: 'inline-block' }}>
+                            ⚠️ Needs {r.placementsGap} pl ({formatCurrency(r.revenueGap)})
+                          </span>
+                        )}
                       </td>
 
-                      {/* Net Contribution */}
+                      {/* Net Bank Surplus */}
                       {userRole !== 'franchise_partner' && (
                         <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: '800', color: isNetPositive ? '#10B981' : '#A8402E', fontSize: '0.92rem' }}>
                           {isNetPositive ? '+' : ''}{formatCurrency(r.net_contribution)}
                         </td>
                       )}
 
-                      {/* ROI Tier Badge */}
-                      {userRole !== 'franchise_partner' && (
-                        <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                          <span style={{
-                            display: 'inline-block',
-                            padding: '3px 8px',
-                            borderRadius: '12px',
-                            fontSize: '0.72rem',
-                            fontWeight: '700',
-                            background: r.tier_badge === 'star' ? 'rgba(16, 185, 129, 0.15)' : r.tier_badge === 'profitable' ? 'rgba(59, 130, 246, 0.15)' : r.tier_badge === 'diluter' ? 'rgba(234, 179, 8, 0.15)' : r.tier_badge === 'dormant' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.15)',
-                            color: r.tier_badge === 'star' ? '#10B981' : r.tier_badge === 'profitable' ? '#3B82F6' : r.tier_badge === 'diluter' ? '#B7791F' : '#A8402E',
-                            border: `1px solid ${r.tier_badge === 'star' ? 'rgba(16, 185, 129, 0.3)' : r.tier_badge === 'profitable' ? 'rgba(59, 130, 246, 0.3)' : r.tier_badge === 'diluter' ? 'rgba(234, 179, 8, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
-                          }}>
-                            {r.tier} {!r.isDormant ? `(${r.roi_multiple}x)` : ''}
-                          </span>
-                        </td>
-                      )}
-
-                      {/* Action Button: Playbook for Dormant, Audit Drilldown for Active */}
+                      {/* Action Button */}
                       <td style={{ padding: '14px 14px', textAlign: 'center' }}>
                         {r.isDormant ? (
                           <button
@@ -2271,8 +2516,7 @@ const CostOfPerformance = () => {
                               cursor: 'pointer',
                               display: 'inline-flex',
                               alignItems: 'center',
-                              gap: '4px',
-                              transition: 'all 0.15s ease'
+                              gap: '4px'
                             }}
                           >
                             <Zap size={12} />
@@ -2311,8 +2555,12 @@ const CostOfPerformance = () => {
       </div>
       )}
 
+      {/* End Profiles Tab */}
+      </div>
+      )}
+
       {/* ========================================================================= */}
-      {/* 5. ACTIONABLE ACTIVATION PLAYBOOK MODAL                                    */}
+      {/* 8. ACTIONABLE ACTIVATION PLAYBOOK MODAL                                    */}
       {/* ========================================================================= */}
       {activationPlaybookEntity && (
         <div style={{
@@ -2383,7 +2631,7 @@ const CostOfPerformance = () => {
                 <div style={{ display: 'flex', gap: '16px', marginTop: '10px', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
                   <span>Current Sunk Cost: <strong>{formatCurrency(activationPlaybookEntity.total_cost)}</strong></span>
                   <span>Enquiries in Pipeline: <strong>{activationPlaybookEntity.enquiries_handled}</strong></span>
-                  <span>Closures: <strong style={{ color: '#A8402E' }}>0</strong></span>
+                  <span>Target Multiplier: <strong>{activationPlaybookEntity.targetMultiple || globalTargetMultiplier}x</strong></span>
                 </div>
               </div>
 
@@ -2467,7 +2715,7 @@ const CostOfPerformance = () => {
                     +₹1,50,000 Company Share <span style={{ fontSize: '0.84rem', color: '#10B981' }}>(4 Placements)</span>
                   </div>
                   <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    Converts current net loss of {formatCurrency(Math.abs(activationPlaybookEntity.net_contribution))} into positive net bank contribution of +₹85,000.
+                    Reaches a healthy 2.5x ROI multiple and unlocks positive net bank contribution.
                   </div>
                 </div>
 
@@ -2501,7 +2749,7 @@ const CostOfPerformance = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* 6. DRILLDOWN AUDIT & LOSS FORENSICS MODAL                                  */}
+      {/* 9. DRILLDOWN AUDIT & LOSS FORENSICS MODAL                                  */}
       {/* ========================================================================= */}
       {drilldownItem && (
         <div style={{
@@ -2747,7 +2995,7 @@ const CostOfPerformance = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* 7. COST & OVERHEAD INPUT MODAL                                            */}
+      {/* 10. COST & OVERHEAD INPUT MODAL                                           */}
       {/* ========================================================================= */}
       {isInputModalOpen && (
         <div style={{

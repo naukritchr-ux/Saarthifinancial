@@ -116,36 +116,67 @@ const GrowthTracking = () => {
       const base = (franchisees && franchisees.length > 0)
         ? franchisees.map(f => ({ id: String(f.id), name: f.name || f.nameAsPerAgreement, type: 'franchisee', role: 'Franchise Partner', total_revenue: f.revenue || 0 }))
         : [
-            { id: 'f-1', name: 'Nagpur Central', type: 'franchisee', role: 'Franchise Partner', total_revenue: 0 },
-            { id: 'f-2', name: 'Pune East', type: 'franchisee', role: 'Franchise Partner', total_revenue: 0 },
-            { id: 'f-3', name: 'Mumbai South', type: 'franchisee', role: 'Franchise Partner', total_revenue: 0 },
-            { id: 'f-4', name: 'Nashik Hub', type: 'franchisee', role: 'Franchise Partner', total_revenue: 0 }
+            { id: 'f-1', name: 'Preshita', type: 'franchisee', role: 'Franchise Partner', total_deals: 18, total_revenue: 1650000 },
+            { id: 'f-2', name: 'Anita', type: 'franchisee', role: 'Franchise Partner', total_deals: 14, total_revenue: 1280000 },
+            { id: 'f-3', name: 'Razia', type: 'franchisee', role: 'Franchise Partner', total_deals: 12, total_revenue: 1100000 },
+            { id: 'f-4', name: 'Sandeep', type: 'franchisee', role: 'Franchise Partner', total_deals: 10, total_revenue: 920000 },
+            { id: 'f-5', name: 'Ankur', type: 'franchisee', role: 'Franchise Partner', total_deals: 8, total_revenue: 750000 },
+            { id: 'f-6', name: 'Subhash', type: 'franchisee', role: 'Franchise Partner', total_deals: 6, total_revenue: 550000 },
+            { id: 'f-7', name: 'Rajesh Khanna', type: 'franchisee', role: 'Franchise Partner (Dormant)', total_deals: 0, total_revenue: 0 },
+            { id: 'f-8', name: 'Deepak Verma', type: 'franchisee', role: 'Franchise Partner (Dormant)', total_deals: 0, total_revenue: 0 },
+            { id: 'f-9', name: 'Pooja Nair', type: 'franchisee', role: 'Franchise Partner (Dormant)', total_deals: 0, total_revenue: 0 },
+            { id: 'f-10', name: 'Kavita Joshi', type: 'franchisee', role: 'Franchise Partner (Dormant)', total_deals: 0, total_revenue: 0 }
           ];
       return base;
     } else if (entityType === 'bd_agent') {
       const base = (bdAgents && bdAgents.length > 0)
         ? bdAgents.map(b => ({ id: String(b.id), name: b.name, type: 'bd_agent', role: 'BD Specialist', total_revenue: b.grossRevenue || 0 }))
         : [
-            { id: 'bd-1', name: 'Rohan Mehta', type: 'bd_agent', role: 'BD Specialist', total_revenue: 0 },
-            { id: 'bd-2', name: 'Neha Sharma', type: 'bd_agent', role: 'BD Specialist', total_revenue: 0 }
+            { id: 'bd-1', name: 'Komal Suresh', type: 'bd_agent', role: 'BD Specialist', total_deals: 22, total_revenue: 1950000 },
+            { id: 'bd-2', name: 'Rajalaxmi', type: 'bd_agent', role: 'BD Specialist', total_deals: 19, total_revenue: 1720000 },
+            { id: 'bd-3', name: 'Jahnvi', type: 'bd_agent', role: 'BD Specialist', total_deals: 16, total_revenue: 1480000 },
+            { id: 'bd-4', name: 'Ashutosh', type: 'bd_agent', role: 'BD Specialist', total_deals: 14, total_revenue: 1250000 },
+            { id: 'bd-5', name: 'Kadambinee', type: 'bd_agent', role: 'BD Specialist', total_deals: 12, total_revenue: 1080000 },
+            { id: 'bd-6', name: 'Muskan', type: 'bd_agent', role: 'BD Specialist', total_deals: 11, total_revenue: 990000 },
+            { id: 'bd-7', name: 'Rahul', type: 'bd_agent', role: 'BD Specialist', total_deals: 9, total_revenue: 810000 },
+            { id: 'bd-8', name: 'Sneha K.', type: 'bd_agent', role: 'BD Specialist', total_deals: 8, total_revenue: 720000 },
+            { id: 'bd-9', name: 'Ankur S.', type: 'bd_agent', role: 'BD Specialist', total_deals: 7, total_revenue: 630000 },
+            { id: 'bd-10', name: 'Ruchi', type: 'bd_agent', role: 'BD Specialist', total_deals: 5, total_revenue: 450000 },
+            { id: 'bd-11', name: 'Shreya', type: 'bd_agent', role: 'BD Specialist (Dormant)', total_deals: 0, total_revenue: 0 },
+            { id: 'bd-12', name: 'Sneha J.', type: 'bd_agent', role: 'BD Specialist (Dormant)', total_deals: 0, total_revenue: 0 },
+            { id: 'bd-13', name: 'Shruti', type: 'bd_agent', role: 'BD Specialist (Dormant)', total_deals: 0, total_revenue: 0 },
+            { id: 'bd-14', name: 'Jiya', type: 'bd_agent', role: 'BD Specialist (Dormant)', total_deals: 0, total_revenue: 0 },
+            { id: 'bd-15', name: 'Sonali', type: 'bd_agent', role: 'BD Specialist (Dormant)', total_deals: 0, total_revenue: 0 }
           ];
       return base;
     } else if (entityType === 'team_leader') {
       const base = (teamLeaders && teamLeaders.length > 0)
         ? teamLeaders.map(t => ({ id: String(t.id), name: t.name, type: 'team_leader', role: t.role || 'Team Leader', total_revenue: t.grossRevenue || t.target || 0 }))
         : [
-            { id: 'tl-1', name: 'Avadai Esakki Muthu Sundaram Marthuvar', type: 'team_leader', role: 'Senior Team Leader', total_deals: 142, total_revenue: 8500000 },
-            { id: 'tl-2', name: 'Surbhi Vinod Jain', type: 'team_leader', role: 'Team Leader', total_deals: 110, total_revenue: 6200000 },
-            { id: 'tl-3', name: 'Joyeeta Joydeb Khaskel', type: 'team_leader', role: 'Team Leader', total_deals: 98, total_revenue: 5400000 },
-            { id: 'tl-4', name: 'Vedika Girish Tolani', type: 'team_leader', role: 'Team Leader', total_deals: 85, total_revenue: 4900000 }
+            { id: 'tl-1', name: 'Vedika', type: 'team_leader', role: 'Team Leader', total_deals: 36, total_revenue: 3200000 },
+            { id: 'tl-2', name: 'Surbhi', type: 'team_leader', role: 'Team Leader', total_deals: 31, total_revenue: 2800000 },
+            { id: 'tl-3', name: 'Joyeeta', type: 'team_leader', role: 'Team Leader', total_deals: 27, total_revenue: 2450000 },
+            { id: 'tl-4', name: 'Avadai', type: 'team_leader', role: 'Senior Team Leader', total_deals: 24, total_revenue: 2150000 },
+            { id: 'tl-5', name: 'Pooja', type: 'team_leader', role: 'Team Leader', total_deals: 19, total_revenue: 1700000 },
+            { id: 'tl-6', name: 'Rajesh', type: 'team_leader', role: 'Team Leader', total_deals: 15, total_revenue: 1350000 },
+            { id: 'tl-7', name: 'Amit', type: 'team_leader', role: 'Team Leader (Dormant)', total_deals: 0, total_revenue: 0 },
+            { id: 'tl-8', name: 'Priya', type: 'team_leader', role: 'Team Leader (Dormant)', total_deals: 0, total_revenue: 0 },
+            { id: 'tl-9', name: 'Sanjay', type: 'team_leader', role: 'Team Leader (Dormant)', total_deals: 0, total_revenue: 0 },
+            { id: 'tl-10', name: 'Vikram', type: 'team_leader', role: 'Team Leader (Dormant)', total_deals: 0, total_revenue: 0 }
           ];
       return base;
+    } else if (entityType === 'company') {
+      return [
+        { id: 'comp-overall', name: 'Overall Company (Full Agency Portfolio)', type: 'company', role: 'Head Office Total Portfolio', total_deals: 185, total_revenue: 16500000 }
+      ];
     } else {
       return [
-        { id: 'emp-aagamkamlesh', name: 'Aagam Kamlesh Sheth', type: 'employee', role: 'Consultant', total_deals: 199, total_revenue: 10132865 },
-        { id: 'emp-ashutoshmano', name: 'Ashutosh Manoj Hiremath', type: 'employee', role: 'Consultant', total_deals: 50, total_revenue: 2029786 },
-        { id: 'emp-jahnvithakke', name: 'Jahnvi - Thakker', type: 'employee', role: 'Consultant', total_deals: 48, total_revenue: 1950000 },
-        { id: 'emp-rajalaxmidas', name: 'Rajalaxmi Das Das', type: 'employee', role: 'Consultant', total_deals: 120, total_revenue: 5600000 }
+        { id: 'emp-1', name: 'Komal Suresh', type: 'employee', role: 'BD Specialist', total_deals: 22, total_revenue: 1950000 },
+        { id: 'emp-2', name: 'Rajalaxmi', type: 'employee', role: 'BD Specialist', total_deals: 19, total_revenue: 1720000 },
+        { id: 'emp-3', name: 'Jahnvi', type: 'employee', role: 'BD Specialist', total_deals: 16, total_revenue: 1480000 },
+        { id: 'emp-4', name: 'Ashutosh', type: 'employee', role: 'BD Specialist', total_deals: 14, total_revenue: 1250000 },
+        { id: 'emp-5', name: 'Vedika', type: 'employee', role: 'Team Leader', total_deals: 36, total_revenue: 3200000 },
+        { id: 'emp-6', name: 'Surbhi', type: 'employee', role: 'Team Leader', total_deals: 31, total_revenue: 2800000 }
       ];
     }
   }, [entityType, serverRoster, franchisees, bdAgents, teamLeaders]);
@@ -507,6 +538,26 @@ const GrowthTracking = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Roster View:</span>
           <div style={{ display: 'flex', background: 'var(--bg-main)', borderRadius: '8px', padding: '3px', border: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '2px' }}>
+            <button
+              onClick={() => { setEntityType('company'); setSelectedEntityId('comp-overall'); }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 14px',
+                borderRadius: '6px',
+                border: 'none',
+                background: entityType === 'company' ? 'var(--bg-card)' : 'transparent',
+                color: entityType === 'company' ? 'var(--accent-teal)' : 'var(--text-muted)',
+                fontWeight: entityType === 'company' ? '700' : '500',
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                boxShadow: entityType === 'company' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none'
+              }}
+            >
+              <Building size={15} />
+              🏢 Overall Company
+            </button>
             <button
               onClick={() => { setEntityType('franchisee'); setSelectedEntityId(''); }}
               style={{
