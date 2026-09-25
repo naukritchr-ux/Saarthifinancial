@@ -217,29 +217,34 @@ export default function TdsReconciliation() {
   const handleCsvExport = async () => {
     try {
       setExporting(true);
-      let exportRows = rows;
-      try {
-        const res = await getReconciliationReport({
-          page: 1,
-          limit: 10000,
-          search,
-          company: companyFilter === 'All' ? '' : companyFilter,
-          pan: panFilter === 'All' ? '' : panFilter,
-          overallStatus: overallStatus === 'All' ? '' : overallStatus,
-          coverageFilter: coverageFilter === 'All' ? '' : coverageFilter,
-          fy: fyFilter,
-          sortBy,
-          followupStatus: responseFilter === 'All' ? '' : responseFilter
-        });
-        if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
-          exportRows = res.data;
+      let exportRows = (Array.isArray(rows) && rows.length > 0) ? [...rows] : [];
+
+      if (total > rows.length) {
+        try {
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000));
+          const fetchPromise = getReconciliationReport({
+            page: 1,
+            limit: Math.min(1000, total || 1000),
+            search,
+            company: companyFilter === 'All' ? '' : companyFilter,
+            pan: panFilter === 'All' ? '' : panFilter,
+            overallStatus: overallStatus === 'All' ? '' : overallStatus,
+            coverageFilter: coverageFilter === 'All' ? '' : coverageFilter,
+            fy: fyFilter,
+            sortBy,
+            followupStatus: responseFilter === 'All' ? '' : responseFilter
+          });
+          const res = await Promise.race([fetchPromise, timeoutPromise]);
+          if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
+            exportRows = res.data;
+          }
+        } catch (fetchErr) {
+          console.warn('Quick fetch for full report timed out or failed, exporting loaded rows:', fetchErr);
         }
-      } catch (err) {
-        console.warn('Fallback to current page rows for export:', err);
       }
 
       if (!exportRows || exportRows.length === 0) {
-        alert('No data available to export with current filters.');
+        alert('No data rows available to export with the current filters.');
         return;
       }
 
