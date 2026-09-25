@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { getFollowups, getFollowupSummary, deleteFollowup, purgeFollowups } from '../../api/tdsApi';
+import { triggerCsvDownload } from '../../utils/exportUtils';
 import AddFollowupModal from './AddFollowupModal';
 
 export default function FollowUp() {
@@ -207,18 +208,9 @@ export default function FollowUp() {
         `"${(row.notes || '').replace(/"/g, '""')}"`,
         `"${row.followupDate || ''}"`,
         `"${row.nextFollowupDate || ''}"`
-      ].join(','));
-    });
-
-    const blob = new Blob(['\uFEFF' + csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `tds_followup_report_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const csvContent = '\uFEFF' + csvLines.join('\n');
+    const filename = `tds_followup_report_${new Date().toISOString().slice(0, 10)}.csv`;
+    triggerCsvDownload(filename, csvContent);
   };
 
   const getStatusBadge = (st) => {
