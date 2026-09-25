@@ -840,6 +840,9 @@ export const getReconciliationReport = async (req, res) => {
     let statsQuery = `
       SELECT 
         COUNT(tr.id) as total,
+        SUM(COALESCE(tr.tally_tds, 0)) as totalTally,
+        SUM(COALESCE(tr.as26_tds, 0)) as totalAs26,
+        SUM(COALESCE(tr.books_tds, 0)) as totalSaarthi,
         SUM(CASE 
           WHEN tr.is_manually_edited = 1 THEN 1
           WHEN (CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END) > 0 
@@ -870,12 +873,23 @@ export const getReconciliationReport = async (req, res) => {
     let [statsRes] = await db.query(statsQuery, queryParams);
     const aggStats = statsRes[0] || {};
     let total = parseInt(aggStats.total) || 0;
+    const isSaarthiEraGlobal = isSaarthiEra(activeFy);
+    const totalTally = parseFloat(aggStats.totalTally || 0);
+    const totalAs26 = parseFloat(aggStats.totalAs26 || 0);
+    const totalSaarthi = parseFloat(aggStats.totalSaarthi || 0);
+    const baselineTotal = isSaarthiEraGlobal ? (totalSaarthi > 0 ? totalSaarthi : totalTally) : (totalTally > 0 ? totalTally : totalSaarthi);
+    const totalBalance = baselineTotal - totalAs26;
+
     let stats = {
       total,
       matched: parseInt(aggStats.matched) || 0,
       less: parseInt(aggStats.less) || 0,
       excess: parseInt(aggStats.excess) || 0,
-      notReceived: parseInt(aggStats.notReceived) || 0
+      notReceived: parseInt(aggStats.notReceived) || 0,
+      totalTally,
+      totalAs26,
+      totalSaarthi,
+      totalBalance
     };
 
     const reportQuery = `

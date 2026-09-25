@@ -12,7 +12,9 @@ import {
   Calendar, 
   Filter, 
   RotateCcw,
-  PlusCircle 
+  PlusCircle,
+  FileText,
+  Layers
 } from 'lucide-react';
 import ReconciliationTable from './ReconciliationTable';
 import EditModal from './EditModal';
@@ -57,8 +59,27 @@ export default function TdsReconciliation() {
   const [activeCrmRow, setActiveCrmRow] = useState(null);
   const [followupRow, setFollowupRow] = useState(null);
 
-  // Statistics counters
-  const [stats, setStats] = useState({ total: 0, matched: 0, less: 0, excess: 0, notReceived: 0 });
+  // Statistics counters and amount aggregations
+  const [stats, setStats] = useState({ 
+    total: 0, 
+    matched: 0, 
+    less: 0, 
+    excess: 0, 
+    notReceived: 0,
+    totalTally: 0,
+    totalAs26: 0,
+    totalSaarthi: 0,
+    totalBalance: 0
+  });
+
+  // Format currency helper
+  const formatCurrency = (val) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 2
+    }).format(parseFloat(val || 0));
+  };
 
   // Load distinct filter options once and on refresh
   useEffect(() => {
@@ -105,14 +126,27 @@ export default function TdsReconciliation() {
             matched: res.stats.matched || 0,
             less: res.stats.less || 0,
             excess: res.stats.excess || 0,
-            notReceived: res.stats.notReceived || 0
+            notReceived: res.stats.notReceived || 0,
+            totalTally: parseFloat(res.stats.totalTally || 0),
+            totalAs26: parseFloat(res.stats.totalAs26 || 0),
+            totalSaarthi: parseFloat(res.stats.totalSaarthi || 0),
+            totalBalance: parseFloat(res.stats.totalBalance || 0)
           });
         } else {
-          const tempStats = { total: res.total ?? res.data.length, matched: 0, less: 0, excess: 0, notReceived: 0 };
+          let totalT = 0;
+          let totalA = 0;
+          let totalS = 0;
+          let totalB = 0;
+          const tempStats = { total: res.total ?? res.data.length, matched: 0, less: 0, excess: 0, notReceived: 0, totalTally: 0, totalAs26: 0, totalSaarthi: 0, totalBalance: 0 };
           res.data.forEach(r => {
             const as26 = parseFloat(r.as26Tds || 0);
             const tally = parseFloat(r.tallyTds || 0);
             const saarthi = parseFloat(r.saarthiTds || r.booksTds || 0);
+            const bal = parseFloat(r.balance !== undefined ? r.balance : (tally > 0 ? tally - as26 : saarthi - as26));
+            totalT += tally;
+            totalA += as26;
+            totalS += saarthi;
+            totalB += bal;
             const effectiveStatus = (tally === 0 && saarthi === 0 && as26 > 0) ? 'Excess' : r.financialStatus;
 
             if (as26 === 0 || effectiveStatus === 'Not Received') {
@@ -127,6 +161,10 @@ export default function TdsReconciliation() {
               tempStats.notReceived++;
             }
           });
+          tempStats.totalTally = totalT;
+          tempStats.totalAs26 = totalA;
+          tempStats.totalSaarthi = totalS;
+          tempStats.totalBalance = totalB;
           setStats(tempStats);
         }
       }
@@ -242,7 +280,72 @@ export default function TdsReconciliation() {
         </div>
       </div>
 
-      {/* Statistics Cards */}
+      {/* Summary Amount KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Tally Total */}
+        <div className="bg-white rounded-3xl p-5 border border-[#E9E4FA] shadow-xs">
+          <div className="flex items-center justify-between text-xs text-[#6B6580] font-bold mb-1">
+            <span>Tally Ledger TDS</span>
+            <Building2 className="w-4 h-4 text-[#9B87F5]" />
+          </div>
+          <div className="text-xl font-black text-[#1F1B2E]">
+            {formatCurrency(stats.totalTally)}
+          </div>
+          <div className="text-[11px] text-[#6B6580] font-medium mt-1">
+            2019-2026 Primary Baseline
+          </div>
+        </div>
+
+        {/* 26AS Total */}
+        <div className="bg-white rounded-3xl p-5 border border-[#E9E4FA] shadow-xs">
+          <div className="flex items-center justify-between text-xs text-[#6B6580] font-bold mb-1">
+            <span>Form 26AS Portal TDS</span>
+            <FileText className="w-4 h-4 text-[#8572E0]" />
+          </div>
+          <div className="text-xl font-black text-[#1F1B2E]">
+            {formatCurrency(stats.totalAs26)}
+          </div>
+          <div className="text-[11px] text-[#6B6580] font-medium mt-1">
+            TRACES Portal Credit
+          </div>
+        </div>
+
+        {/* Saarthi 360 Total */}
+        <div className="bg-white rounded-3xl p-5 border border-[#E9E4FA] shadow-xs">
+          <div className="flex items-center justify-between text-xs text-[#6B6580] font-bold mb-1">
+            <span>Saarthi 360 CRM TDS</span>
+            <Database className="w-4 h-4 text-[#B4A7F5]" />
+          </div>
+          <div className="text-xl font-black text-[#1F1B2E]">
+            {formatCurrency(stats.totalSaarthi)}
+          </div>
+          <div className="text-[11px] text-[#6B6580] font-medium mt-1">
+            2026-2027+ Primary Baseline
+          </div>
+        </div>
+
+        {/* Net Balance / Variance */}
+        <div className="bg-white rounded-3xl p-5 border border-[#E9E4FA] shadow-xs">
+          <div className="flex items-center justify-between text-xs text-[#6B6580] font-bold mb-1">
+            <span>Calculated Net Balance</span>
+            <Layers className="w-4 h-4 text-[#9B87F5]" />
+          </div>
+          <div className={`text-xl font-black ${
+            Math.abs(stats.totalBalance) <= 1.0 
+              ? 'text-[#2E8B57]' 
+              : stats.totalBalance > 0 
+                ? 'text-[#D97706]' 
+                : 'text-[#E11D48]'
+          }`}>
+            {stats.totalBalance > 0 ? `+${formatCurrency(stats.totalBalance)}` : formatCurrency(stats.totalBalance)}
+          </div>
+          <div className="text-[11px] text-[#6B6580] font-medium mt-1">
+            {stats.totalBalance > 0 ? 'Pending TDS credit from clients' : stats.totalBalance < 0 ? 'Excess TDS in 26AS' : 'Balanced across sources'}
+          </div>
+        </div>
+      </div>
+
+      {/* Status Breakdown Count Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-[#E9E4FA] shadow-sm flex items-center gap-4">
           <div className="p-3 bg-[#E8E4FF] text-[#9B87F5] rounded-xl">
