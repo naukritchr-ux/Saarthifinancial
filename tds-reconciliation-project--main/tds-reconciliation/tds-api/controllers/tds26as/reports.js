@@ -1507,21 +1507,45 @@ export const getFilterOptions = async (req, res) => {
  */
 export const getCompanyEntries = async (req, res) => {
   try {
-    const { company, tan, pan } = req.query;
-    let whereClauses = [];
+    const { company, tan, pan, id } = req.query;
+    let orConditions = [];
     let params = [];
 
-    if (tan && String(tan).trim() !== '') {
-      whereClauses.push('(tr.tan_no = ? OR d.tan_no = ?)');
-      params.push(String(tan).trim(), String(tan).trim());
-    } else if (company && String(company).trim() !== '') {
-      whereClauses.push('(d.company_name = ? OR tr.tan_no IN (SELECT tan_no FROM tds_tally_entries WHERE party_name = ?))');
-      params.push(String(company).trim(), String(company).trim());
-    } else if (pan && String(pan).trim() !== '') {
-      whereClauses.push('(d.pan_no = ? OR tr.tan_no IN (SELECT tan_no FROM tds_tally_entries WHERE pan_no = ?))');
-      params.push(String(pan).trim(), String(pan).trim());
-    } else {
-      return res.status(400).json({ success: false, error: 'Provide company, tan, or pan parameter' });
+    if (id && parseInt(id, 10)) {
+      orConditions.push('tr.id = ?');
+      params.push(parseInt(id, 10));
+    }
+
+    if (tan && String(tan).trim() !== '' && !String(tan).startsWith('NO_TAN_') && !String(tan).includes('UNKNOWN') && String(tan) !== 'Pending TAN') {
+      const cleanTan = String(tan).trim();
+      orConditions.push('tr.tan_no = ?');
+      params.push(cleanTan);
+      orConditions.push('d.tan_no = ?');
+      params.push(cleanTan);
+    }
+
+    if (company && String(company).trim() !== '' && !['Client Entity', 'Unknown Client', 'Unknown Company', 'Unassigned Entity'].includes(String(company).trim())) {
+      const cleanComp = String(company).trim();
+      orConditions.push('d.company_name = ?');
+      params.push(cleanComp);
+      orConditions.push('d.company_name LIKE ?');
+      params.push(`%${cleanComp}%`);
+      orConditions.push('tr.tan_no IN (SELECT tan_no FROM tds_tally_entries WHERE party_name = ? OR party_name LIKE ?)');
+      params.push(cleanComp, `%${cleanComp}%`);
+      orConditions.push('tr.tan_no IN (SELECT tan_no FROM tds_26as_entries WHERE deductor_name = ? OR deductor_name LIKE ?)');
+      params.push(cleanComp, `%${cleanComp}%`);
+    }
+
+    if (pan && String(pan).trim() !== '' && String(pan).trim() !== 'N/A') {
+      const cleanPan = String(pan).trim().toUpperCase();
+      orConditions.push('d.pan_no = ?');
+      params.push(cleanPan);
+      orConditions.push('tr.tan_no IN (SELECT tan_no FROM tds_tally_entries WHERE pan_no = ?)');
+      params.push(cleanPan);
+    }
+
+    if (orConditions.length === 0) {
+      return res.status(400).json({ success: false, error: 'Provide company, tan, pan, or id parameter' });
     }
 
     const query = `
@@ -1529,7 +1553,7 @@ export const getCompanyEntries = async (req, res) => {
         tr.id,
         tr.tds_dues_id as tdsDuesId,
         tr.tan_no as tanNo,
-        COALESCE(NULLIF(TRIM(d.company_name), ''), tr.tan_no) as companyName,
+        COALESCE(NULLIF(TRIM(d.company_name), ''), tr.tan_no, 'Client Entity') as companyName,
         COALESCE(NULLIF(TRIM(d.pan_no), ''), (SELECT t.pan_no FROM tds_tally_entries t WHERE t.tan_no = tr.tan_no LIMIT 1), '') as panNo,
         COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') as financialYear,
         COALESCE(tr.books_tds, 0) as saarthiTds,
@@ -1545,7 +1569,7 @@ export const getCompanyEntries = async (req, res) => {
         tr.updated_at as updatedAt
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
-      WHERE ${whereClauses.join(' AND ')}
+      WHERE (${orConditions.join(' OR ')})
       ORDER BY tr.financial_year DESC, tr.id ASC
     `;
 

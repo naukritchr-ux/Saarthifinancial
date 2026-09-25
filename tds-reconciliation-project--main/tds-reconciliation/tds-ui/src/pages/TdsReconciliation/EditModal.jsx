@@ -52,14 +52,14 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
       setLoadingEntries(true);
       try {
         const res = await getCompanyEntries({
-          company: row.companyName && !['Client Entity', 'Unknown Client', 'Unknown Company'].includes(row.companyName.trim()) ? row.companyName : '',
-          tan: (row.tanNo && !row.tanNo.startsWith('NO_TAN_') && !row.tanNo.includes('UNKNOWN')) ? row.tanNo : '',
+          id: row.id,
+          company: row.companyName && !['Client Entity', 'Unknown Client', 'Unknown Company', 'Unassigned Entity'].includes(row.companyName.trim()) ? row.companyName : '',
+          tan: (row.tanNo && !row.tanNo.startsWith('NO_TAN_') && !row.tanNo.includes('UNKNOWN') && row.tanNo !== 'Pending TAN') ? row.tanNo : '',
           pan: (row.panNo && row.panNo !== 'N/A') ? row.panNo : ''
         });
 
         if (isMounted && res && res.success && Array.isArray(res.data) && res.data.length > 0) {
           setEntries(res.data);
-          // Find index of the clicked row
           const matchIdx = res.data.findIndex(e => e.id === row.id);
           const initialIdx = matchIdx >= 0 ? matchIdx : 0;
           setCurrentIndex(initialIdx);
@@ -171,8 +171,7 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
       });
 
       if (res && res.success) {
-        setSaveSuccessMsg(`Entry #${formData.id} (${formData.financialYear || 'FY'}) updated successfully!`);
-        
+        const newStatus = (Math.abs(calculatedBalance) <= 1.0) ? 'Matched' : (calculatedBalance > 1.0 ? 'Less Paid' : 'Excess');
         // Update local entries list
         setEntries(prev => prev.map((e, idx) => idx === currentIndex ? {
           ...e,
@@ -180,7 +179,9 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
           tallyTds: tallyNum,
           as26Tds: as26Num,
           saarthiTds: saarthiNum,
-          balance: calculatedBalance
+          balance: calculatedBalance,
+          financialStatus: newStatus,
+          overallStatus: newStatus
         } : e));
 
         if (onSaveSuccess) onSaveSuccess();
@@ -264,22 +265,52 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
             </div>
 
             {/* Quick entry tab chips */}
-            <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
-              {entries.map((ent, idx) => (
-                <button
-                  key={ent.id || idx}
-                  type="button"
-                  onClick={() => handleSelectEntry(idx)}
-                  className={`px-3 py-1 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 border ${
-                    idx === currentIndex
-                      ? 'bg-[#9B87F5] text-white border-[#8572E0] shadow-xs'
-                      : 'bg-white text-[#6B6580] border-[#E9E4FA] hover:text-[#1F1B2E] hover:bg-[#E8E4FF]'
-                  }`}
-                >
-                  <span>Entry {idx + 1}:</span>
-                  <span className="font-extrabold">{ent.financialYear || 'Unspecified FY'}</span>
-                </button>
-              ))}
+            <div className="flex gap-2 overflow-x-auto pb-1.5 custom-scrollbar">
+              {entries.map((ent, idx) => {
+                const entStatus = ent.financialStatus || ent.overallStatus || 'Pending';
+                const isMatch = entStatus === 'Matched' || entStatus === 'Match';
+                const isLess = entStatus.includes('Less');
+                const isExcess = entStatus.includes('Excess');
+                const isCurrent = idx === currentIndex;
+
+                return (
+                  <button
+                    key={ent.id || idx}
+                    type="button"
+                    onClick={() => handleSelectEntry(idx)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-2 border ${
+                      isCurrent
+                        ? 'bg-[#9B87F5] text-white border-[#8572E0] shadow-sm'
+                        : 'bg-white text-[#6B6580] border-[#E9E4FA] hover:text-[#1F1B2E] hover:bg-[#E8E4FF]'
+                    }`}
+                  >
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
+                      isCurrent ? 'bg-white/25 text-white' : 'bg-[#E8E4FF] text-[#9B87F5]'
+                    }`}>
+                      {idx + 1}
+                    </span>
+                    <span className="font-extrabold">{ent.financialYear || 'Unspecified FY'}</span>
+                    {ent.billNumber && ent.billNumber !== 'N/A' && (
+                      <span className={`text-[10px] font-medium opacity-80 ${isCurrent ? 'text-white' : 'text-[#6B6580]'}`}>
+                        ({ent.billNumber})
+                      </span>
+                    )}
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold ${
+                      isCurrent
+                        ? 'bg-white/20 text-white'
+                        : isMatch
+                          ? 'bg-[#4ADE80]/20 text-[#2E8B57]'
+                          : isLess
+                            ? 'bg-[#FBBF77]/25 text-[#D97706]'
+                            : isExcess
+                              ? 'bg-[#F87A9E]/20 text-[#E11D48]'
+                              : 'bg-gray-100 text-gray-700'
+                    }`}>
+                      {entStatus}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

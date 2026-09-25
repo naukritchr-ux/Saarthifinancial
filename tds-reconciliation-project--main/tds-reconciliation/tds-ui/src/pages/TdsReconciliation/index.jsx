@@ -211,16 +211,95 @@ export default function TdsReconciliation() {
     setPage(1);
   };
 
-  const handleCsvExport = () => {
-    const exportUrl = getCsvExportUrl({
-      search,
-      company: companyFilter === 'All' ? '' : companyFilter,
-      pan: panFilter === 'All' ? '' : panFilter,
-      overallStatus: overallStatus === 'All' ? '' : overallStatus,
-      coverageFilter: coverageFilter === 'All' ? '' : coverageFilter,
-      fy: fyFilter
-    });
-    window.open(exportUrl, '_blank');
+  const [exporting, setExporting] = useState(false);
+
+  const handleCsvExport = async () => {
+    try {
+      setExporting(true);
+      let exportRows = rows;
+      try {
+        const res = await getReconciliationReport({
+          page: 1,
+          limit: 10000,
+          search,
+          company: companyFilter === 'All' ? '' : companyFilter,
+          pan: panFilter === 'All' ? '' : panFilter,
+          overallStatus: overallStatus === 'All' ? '' : overallStatus,
+          coverageFilter: coverageFilter === 'All' ? '' : coverageFilter,
+          fy: fyFilter,
+          sortBy,
+          followupStatus: responseFilter === 'All' ? '' : responseFilter
+        });
+        if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
+          exportRows = res.data;
+        }
+      } catch (err) {
+        console.warn('Fallback to current page rows for export:', err);
+      }
+
+      if (!exportRows || exportRows.length === 0) {
+        alert('No data available to export with current filters.');
+        return;
+      }
+
+      const headers = [
+        'Company Name',
+        'TAN No.',
+        'PAN No.',
+        'Financial Year',
+        'Tally TDS (INR)',
+        '26AS TDS (INR)',
+        'Saarthi TDS (INR)',
+        'Balance (INR)',
+        'Financial Status',
+        'Books vs 26AS Status',
+        'Books vs Tally Status',
+        '26AS vs Tally Status',
+        'Follow-up Status'
+      ];
+
+      const csvRows = exportRows.map(r => {
+        const tally = parseFloat(r.tallyTds || 0);
+        const as26 = parseFloat(r.as26Tds || 0);
+        const saarthi = parseFloat(r.saarthiTds || r.booksTds || 0);
+        const bal = parseFloat(r.balance !== undefined ? r.balance : (tally > 0 ? tally - as26 : saarthi - as26));
+        const cleanName = (r.companyName || r.partyName || r.deductorName || 'Unassigned Entity').replace(/"/g, '""');
+        const cleanTan = (!r.tanNo || r.tanNo.startsWith('NO_TAN_') || r.tanNo.includes('UNKNOWN')) ? 'Pending TAN' : r.tanNo;
+
+        return [
+          `"${cleanName}"`,
+          `"${cleanTan}"`,
+          `"${r.panNo || 'N/A'}"`,
+          `"${r.financialYear || fyFilter || 'All'}"`,
+          tally.toFixed(2),
+          as26.toFixed(2),
+          saarthi.toFixed(2),
+          bal.toFixed(2),
+          `"${r.financialStatus || r.overallStatus || 'Unknown'}"`,
+          `"${r.booksVs26asStatus || ''}"`,
+          `"${r.booksVsTallyStatus || ''}"`,
+          `"${r.as26VsTallyStatus || ''}"`,
+          `"${r.isFollowupDone ? 'Resolved / Done' : 'Pending'}"`
+        ];
+      });
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...csvRows.map(r => r.join(','))].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const cleanFy = (fyFilter || 'All').replace(/\s+/g, '_');
+      link.setAttribute('download', `tds_reconciliation_${cleanFy}_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Failed to generate export file: ' + error.message);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleToggleFollowup = async (rowId) => {
@@ -437,10 +516,15 @@ export default function TdsReconciliation() {
 
             <button
               onClick={handleCsvExport}
-              className="w-full md:w-auto inline-flex items-center justify-center gap-2 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-bold py-2 px-4 rounded-xl transition text-xs cursor-pointer shadow-2xs"
+              disabled={exporting}
+              className="w-full md:w-auto inline-flex items-center justify-center gap-2 bg-[#9B87F5] hover:bg-[#8572E0] disabled:opacity-50 text-white font-bold py-2 px-4 rounded-xl transition text-xs cursor-pointer shadow-2xs"
             >
-              <Download className="w-4 h-4" />
-              Export CSV
+              {exporting ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              {exporting ? 'Exporting...' : 'Export CSV'}
             </button>
           </div>
         </div>
