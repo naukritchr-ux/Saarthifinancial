@@ -208,6 +208,9 @@ export default function FollowUp() {
         `"${(row.notes || '').replace(/"/g, '""')}"`,
         `"${row.followupDate || ''}"`,
         `"${row.nextFollowupDate || ''}"`
+      ].join(','));
+    });
+
     const csvContent = '\uFEFF' + csvLines.join('\n');
     const filename = `tds_followup_report_${new Date().toISOString().slice(0, 10)}.csv`;
     triggerCsvDownload(filename, csvContent);
