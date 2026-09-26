@@ -23,8 +23,6 @@ import {
   CheckSquare,
   Square,
   Search,
-  Filter,
-  ArrowRight,
   ShieldCheck,
   FileSpreadsheet
 } from 'lucide-react';
@@ -630,12 +628,15 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
               </div>
 
               {/* Transactions List Table */}
-              {transactionsLoading ? (
+              {transactionsLoading && (
                 <div className="p-12 text-center text-[#6B6580] flex flex-col items-center justify-center gap-2">
                   <Loader2 className="w-6 h-6 animate-spin text-[#9B87F5]" />
                   <span className="text-xs font-semibold">Loading transaction records...</span>
                 </div>
-              ) : txSubTab === 'bills' ? (
+              )}
+
+              {/* Client Bills View */}
+              {!transactionsLoading && txSubTab === 'bills' && (
                 filteredBills.length === 0 ? (
                   <div className="p-8 text-center bg-[#FAF9FF] rounded-2xl border border-dashed border-[#E9E4FA]">
                     <FileSpreadsheet className="w-8 h-8 text-[#B4A7F5] mx-auto mb-2 opacity-60" />
@@ -672,7 +673,6 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
                                 key={b.id} 
                                 className={`hover:bg-[#FAF9FF] transition ${isPaid ? 'bg-white' : 'bg-[#FFF5F7]/30'}`}
                               >
-                                {/* Checkbox / Confirm Toggle */}
                                 <td className="px-3 py-2.5 text-center">
                                   <button
                                     type="button"
@@ -690,33 +690,21 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
                                     )}
                                   </button>
                                 </td>
-
-                                {/* Bill Number */}
                                 <td className="px-3 py-2.5 font-bold text-[#1F1B2E]">
                                   {b.billNumber || b.invoiceId || 'N/A'}
                                 </td>
-
-                                {/* Bill Date */}
                                 <td className="px-3 py-2.5 text-[#6B6580] font-medium whitespace-nowrap">
                                   {b.billDate || '—'}
                                 </td>
-
-                                {/* Gross Amount */}
                                 <td className="px-3 py-2.5 text-right font-bold text-[#1F1B2E]">
                                   {formatCurrency(b.totalBillAmount)}
                                 </td>
-
-                                {/* TDS Amount */}
                                 <td className="px-3 py-2.5 text-right font-black text-[#9B87F5]">
                                   {formatCurrency(b.tds)}
                                 </td>
-
-                                {/* Received Amount */}
                                 <td className="px-3 py-2.5 text-right font-semibold text-[#6B6580]">
                                   {formatCurrency(b.amountReceived)}
                                 </td>
-
-                                {/* Status Badge */}
                                 <td className="px-3 py-2.5 text-center whitespace-nowrap">
                                   <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                     isPaid 
@@ -727,8 +715,6 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
                                     <span>{isPaid ? 'Paid' : 'Unpaid / Due'}</span>
                                   </span>
                                 </td>
-
-                                {/* Quick Action */}
                                 <td className="px-3 py-2.5 text-center whitespace-nowrap">
                                   <button
                                     type="button"
@@ -751,8 +737,10 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
                     </div>
                   </div>
                 )
-              ) : txSubTab === 'tally' ? (
-                /* Tally Vouchers View */
+              )}
+
+              {/* Tally Vouchers View */}
+              {!transactionsLoading && txSubTab === 'tally' && (
                 transactionsData.tallyEntries.length === 0 ? (
                   <div className="p-8 text-center bg-[#FAF9FF] rounded-2xl border border-dashed border-[#E9E4FA]">
                     <FileSpreadsheet className="w-8 h-8 text-[#B4A7F5] mx-auto mb-2 opacity-60" />
@@ -795,56 +783,59 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
                       </table>
                     </div>
                   </div>
+                )
+              )}
+
+              {/* 26AS Records View */}
+              {!transactionsLoading && txSubTab === '26as' && (
+                transactionsData.as26Entries.length === 0 ? (
+                  <div className="p-8 text-center bg-[#FAF9FF] rounded-2xl border border-dashed border-[#E9E4FA]">
+                    <ShieldCheck className="w-8 h-8 text-[#B4A7F5] mx-auto mb-2 opacity-60" />
+                    <div className="text-xs font-bold text-[#1F1B2E]">No Form 26AS records for this company</div>
+                  </div>
                 ) : (
-                  /* Form 26AS Records View */
-                  transactionsData.as26Entries.length === 0 ? (
-                    <div className="p-8 text-center bg-[#FAF9FF] rounded-2xl border border-dashed border-[#E9E4FA]">
-                      <ShieldCheck className="w-8 h-8 text-[#B4A7F5] mx-auto mb-2 opacity-60" />
-                      <div className="text-xs font-bold text-[#1F1B2E]">No Form 26AS records for this company</div>
-                    </div>
-                  ) : (
-                    <div className="border border-[#E9E4FA] rounded-2xl overflow-hidden shadow-2xs">
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs">
-                          <thead className="bg-[#FAF9FF] border-b border-[#E9E4FA] text-[#6B6580] font-bold uppercase text-[10px]">
-                            <tr>
-                              <th className="px-3 py-2.5">Deductor Name</th>
-                              <th className="px-3 py-2.5">Section</th>
-                              <th className="px-3 py-2.5">Quarter</th>
-                              <th className="px-3 py-2.5">FY</th>
-                              <th className="px-3 py-2.5 text-right">Amount Paid</th>
-                              <th className="px-3 py-2.5 text-right">TDS Deducted</th>
+                  <div className="border border-[#E9E4FA] rounded-2xl overflow-hidden shadow-2xs">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-[#FAF9FF] border-b border-[#E9E4FA] text-[#6B6580] font-bold uppercase text-[10px]">
+                          <tr>
+                            <th className="px-3 py-2.5">Deductor Name</th>
+                            <th className="px-3 py-2.5">Section</th>
+                            <th className="px-3 py-2.5">Quarter</th>
+                            <th className="px-3 py-2.5">FY</th>
+                            <th className="px-3 py-2.5 text-right">Amount Paid</th>
+                            <th className="px-3 py-2.5 text-right">TDS Deducted</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#E9E4FA]">
+                          {transactionsData.as26Entries.map((a) => (
+                            <tr key={a.id} className="hover:bg-[#FAF9FF]">
+                              <td className="px-3 py-2.5 font-bold text-[#1F1B2E]">
+                                {a.deductorName || '26AS Portal Deductor'}
+                              </td>
+                              <td className="px-3 py-2.5 text-[#6B6580] font-bold">
+                                {a.section || '194J'}
+                              </td>
+                              <td className="px-3 py-2.5 text-[#6B6580] font-bold">
+                                {a.quarter || 'Q1'}
+                              </td>
+                              <td className="px-3 py-2.5 text-[#6B6580] font-bold">
+                                {a.financialYear || '—'}
+                              </td>
+                              <td className="px-3 py-2.5 text-right font-bold text-[#1F1B2E]">
+                                {formatCurrency(a.amountPaid)}
+                              </td>
+                              <td className="px-3 py-2.5 text-right font-black text-[#8572E0]">
+                                {formatCurrency(a.tdsDeducted)}
+                              </td>
                             </tr>
-                          </thead>
-                          <tbody className="divide-y divide-[#E9E4FA]">
-                            {transactionsData.as26Entries.map((a) => (
-                              <tr key={a.id} className="hover:bg-[#FAF9FF]">
-                                <td className="px-3 py-2.5 font-bold text-[#1F1B2E]">
-                                  {a.deductorName || '26AS Portal Deductor'}
-                                </td>
-                                <td className="px-3 py-2.5 text-[#6B6580] font-bold">
-                                  {a.section || '194J'}
-                                </td>
-                                <td className="px-3 py-2.5 text-[#6B6580] font-bold">
-                                  {a.quarter || 'Q1'}
-                                </td>
-                                <td className="px-3 py-2.5 text-[#6B6580] font-bold">
-                                  {a.financialYear || '—'}
-                                </td>
-                                <td className="px-3 py-2.5 text-right font-bold text-[#1F1B2E]">
-                                  {formatCurrency(a.amountPaid)}
-                                </td>
-                                <td className="px-3 py-2.5 text-right font-black text-[#8572E0]">
-                                  {formatCurrency(a.tdsDeducted)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  )
-                )}
+                  </div>
+                )
+              )}
             </div>
           )}
 
