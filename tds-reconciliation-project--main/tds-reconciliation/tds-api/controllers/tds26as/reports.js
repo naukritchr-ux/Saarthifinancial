@@ -184,27 +184,11 @@ export const getCleaningQueueCount = async (req, res) => {
             GROUP BY d_sub.company_name
             HAVING COUNT(DISTINCT tr_sub.tan_no) > 1
           )
-          OR (
-            tr.tan_no IN (
-              SELECT tan_no FROM tds_26as_entries 
-              WHERE tan_no IS NOT NULL AND tan_no != '' 
-              GROUP BY tan_no, COALESCE(financial_year, '') 
-              HAVING COUNT(*) > 1 AND COUNT(DISTINCT tds_deducted) > 1
-            )
-          )
-          OR (
-            tr.tan_no IN (
-              SELECT tan_no FROM tds_tally_entries 
-              WHERE tan_no IS NOT NULL AND tan_no != '' 
-              GROUP BY tan_no, COALESCE(financial_year, '') 
-              HAVING COUNT(*) > 1 AND COUNT(DISTINCT tds_amount) > 1
-            )
-          )
         )
         AND tr.tan_no NOT IN ('COMPANYNAME', 'TANNO', 'TAN_NO', 'PANNO', 'TAN')
         AND UPPER(COALESCE(d.company_name, '')) NOT IN ('UNKNOWN CLIENT', 'COMPANYNAME')
     `);
-    return res.json({ success: true, count: Number(cnt) });
+    return res.json({ success: true, count: Number(cnt || 0) });
   } catch (error) {
     console.error('💥 Error in getCleaningQueueCount:', error);
     return res.status(500).json({ success: false, count: 0, error: error.message });
@@ -323,22 +307,6 @@ export const getCleaningQueue = async (req, res) => {
             WHERE d_sub.company_name IS NOT NULL AND d_sub.company_name != ''
             GROUP BY d_sub.company_name
             HAVING COUNT(DISTINCT tr_sub.tan_no) > 1
-          )
-          OR (
-            tr.tan_no IN (
-              SELECT tan_no FROM tds_26as_entries 
-              WHERE tan_no IS NOT NULL AND tan_no != '' 
-              GROUP BY tan_no, COALESCE(financial_year, '') 
-              HAVING COUNT(*) > 1 AND COUNT(DISTINCT tds_deducted) > 1
-            )
-          )
-          OR (
-            tr.tan_no IN (
-              SELECT tan_no FROM tds_tally_entries 
-              WHERE tan_no IS NOT NULL AND tan_no != '' 
-              GROUP BY tan_no, COALESCE(financial_year, '') 
-              HAVING COUNT(*) > 1 AND COUNT(DISTINCT tds_amount) > 1
-            )
           )
         )
         AND tr.tan_no NOT IN ('COMPANYNAME', 'TANNO', 'TAN_NO', 'PANNO', 'TAN')
