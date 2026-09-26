@@ -18,7 +18,6 @@ import {
   Layers,
   Save,
   IndianRupee,
-  Receipt,
   CheckCheck,
   Clock,
   CheckSquare,
@@ -40,7 +39,7 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
   const [entries, setEntries] = useState([row]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loadingEntries, setLoadingEntries] = useState(true);
-  const [activeTab, setActiveTab] = useState('transactions'); // Default to 'transactions' as requested by user
+  const [activeTab, setActiveTab] = useState('transactions'); // Default to 'transactions'
 
   // Form state for currently active entry
   const [formData, setFormData] = useState({
@@ -128,12 +127,28 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
         });
 
         if (isMounted && res && res.success && Array.isArray(res.data) && res.data.length > 0) {
-          setEntries(res.data);
-          const matchIdx = res.data.findIndex(e => e.id === row.id);
+          // Deduplicate entries by unique ID and clean financial year label
+          const seen = new Set();
+          const uniqueList = [];
+          for (const item of res.data) {
+            if (!seen.has(item.id)) {
+              seen.add(item.id);
+              let cleanFy = item.financialYear ? String(item.financialYear).trim() : 'Unspecified';
+              if (/2025[-/]?25/i.test(cleanFy)) {
+                cleanFy = 'FY 2024-25';
+              } else if (!cleanFy.toUpperCase().startsWith('FY') && /\d{4}/.test(cleanFy)) {
+                cleanFy = `FY ${cleanFy}`;
+              }
+              uniqueList.push({ ...item, financialYear: cleanFy });
+            }
+          }
+
+          setEntries(uniqueList);
+          const matchIdx = uniqueList.findIndex(e => e.id === row.id);
           const initialIdx = matchIdx >= 0 ? matchIdx : 0;
           setCurrentIndex(initialIdx);
-          loadEntryIntoForm(res.data[initialIdx]);
-          fetchTransactions(res.data[initialIdx]);
+          loadEntryIntoForm(uniqueList[initialIdx]);
+          fetchTransactions(uniqueList[initialIdx]);
         } else if (isMounted) {
           loadEntryIntoForm(row);
           fetchTransactions(row);
@@ -241,7 +256,6 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
       });
 
       if (res && res.success) {
-        // Update local bills list immediately
         setTransactionsData(prev => {
           const updatedBills = prev.bills.map(b => b.id === bill.id ? {
             ...b,
@@ -414,27 +428,36 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
 
             {/* Stepper bubbles */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              {entries.map((entry, idx) => (
-                <button
-                  key={entry.id || idx}
-                  type="button"
-                  onClick={() => handleSelectEntry(idx)}
-                  className={`px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                    currentIndex === idx
-                      ? 'bg-[#9B87F5] text-white shadow-xs'
-                      : 'bg-white border border-[#E9E4FA] text-[#6B6580] hover:bg-[#E8E4FF]'
-                  }`}
-                >
-                  <span>{entry.financialYear || `Entry #${idx + 1}`}</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${
-                    currentIndex === idx 
-                      ? 'bg-white/20 text-white' 
-                      : 'bg-[#F6F8FA] text-[#6B6580]'
-                  }`}>
-                    {formatCurrency(entry.balance !== undefined ? Math.abs(entry.balance) : 0)}
-                  </span>
-                </button>
-              ))}
+              {entries.map((entry, idx) => {
+                const sameFyEntries = entries.filter(e => e.financialYear === entry.financialYear);
+                const isDuplicateFy = sameFyEntries.length > 1;
+                const fyIndex = sameFyEntries.findIndex(e => e.id === entry.id) + 1;
+                const fyLabel = isDuplicateFy 
+                  ? `${entry.financialYear} (${fyIndex})` 
+                  : (entry.financialYear || `Entry #${idx + 1}`);
+
+                return (
+                  <button
+                    key={entry.id || idx}
+                    type="button"
+                    onClick={() => handleSelectEntry(idx)}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                      currentIndex === idx
+                        ? 'bg-[#9B87F5] text-white shadow-xs'
+                        : 'bg-white border border-[#E9E4FA] text-[#6B6580] hover:bg-[#E8E4FF]'
+                    }`}
+                  >
+                    <span>{fyLabel}</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+                      currentIndex === idx 
+                        ? 'bg-white/20 text-white' 
+                        : 'bg-[#F6F8FA] text-[#6B6580]'
+                    }`}>
+                      {formatCurrency(entry.balance !== undefined ? Math.abs(entry.balance) : 0)}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -450,7 +473,7 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
                 : 'text-[#6B6580] hover:text-[#1F1B2E] border-transparent'
             }`}
           >
-            <Receipt className="w-4 h-4 text-[#9B87F5]" />
+            <FileSpreadsheet className="w-4 h-4 text-[#9B87F5]" />
             <span>Client Invoices & Bills Breakdown</span>
             {transactionsData.bills.length > 0 && (
               <span className="bg-[#9B87F5]/15 text-[#9B87F5] text-[10px] px-2 py-0.5 rounded-full font-bold">
@@ -615,7 +638,7 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
               ) : txSubTab === 'bills' ? (
                 filteredBills.length === 0 ? (
                   <div className="p-8 text-center bg-[#FAF9FF] rounded-2xl border border-dashed border-[#E9E4FA]">
-                    <Receipt className="w-8 h-8 text-[#B4A7F5] mx-auto mb-2 opacity-60" />
+                    <FileSpreadsheet className="w-8 h-8 text-[#B4A7F5] mx-auto mb-2 opacity-60" />
                     <div className="text-xs font-bold text-[#1F1B2E]">No client bills found for this record</div>
                     <p className="text-[11px] text-[#6B6580] mt-1">
                       {billSearch ? 'Try clearing your search query.' : 'Bills will appear here once linked with this company or TAN.'}
@@ -772,57 +795,56 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
                       </table>
                     </div>
                   </div>
-                )
-              ) : (
-                /* Form 26AS Records View */
-                transactionsData.as26Entries.length === 0 ? (
-                  <div className="p-8 text-center bg-[#FAF9FF] rounded-2xl border border-dashed border-[#E9E4FA]">
-                    <ShieldCheck className="w-8 h-8 text-[#B4A7F5] mx-auto mb-2 opacity-60" />
-                    <div className="text-xs font-bold text-[#1F1B2E]">No Form 26AS records for this company</div>
-                  </div>
                 ) : (
-                  <div className="border border-[#E9E4FA] rounded-2xl overflow-hidden shadow-2xs">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-[#FAF9FF] border-b border-[#E9E4FA] text-[#6B6580] font-bold uppercase text-[10px]">
-                          <tr>
-                            <th className="px-3 py-2.5">Deductor Name</th>
-                            <th className="px-3 py-2.5">Section</th>
-                            <th className="px-3 py-2.5">Quarter</th>
-                            <th className="px-3 py-2.5">FY</th>
-                            <th className="px-3 py-2.5 text-right">Amount Paid</th>
-                            <th className="px-3 py-2.5 text-right">TDS Deducted</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#E9E4FA]">
-                          {transactionsData.as26Entries.map((a) => (
-                            <tr key={a.id} className="hover:bg-[#FAF9FF]">
-                              <td className="px-3 py-2.5 font-bold text-[#1F1B2E]">
-                                {a.deductorName || '26AS Portal Deductor'}
-                              </td>
-                              <td className="px-3 py-2.5 text-[#6B6580] font-bold">
-                                {a.section || '194J'}
-                              </td>
-                              <td className="px-3 py-2.5 text-[#6B6580] font-bold">
-                                {a.quarter || 'Q1'}
-                              </td>
-                              <td className="px-3 py-2.5 text-[#6B6580] font-bold">
-                                {a.financialYear || '—'}
-                              </td>
-                              <td className="px-3 py-2.5 text-right font-bold text-[#1F1B2E]">
-                                {formatCurrency(a.amountPaid)}
-                              </td>
-                              <td className="px-3 py-2.5 text-right font-black text-[#8572E0]">
-                                {formatCurrency(a.tdsDeducted)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  /* Form 26AS Records View */
+                  transactionsData.as26Entries.length === 0 ? (
+                    <div className="p-8 text-center bg-[#FAF9FF] rounded-2xl border border-dashed border-[#E9E4FA]">
+                      <ShieldCheck className="w-8 h-8 text-[#B4A7F5] mx-auto mb-2 opacity-60" />
+                      <div className="text-xs font-bold text-[#1F1B2E]">No Form 26AS records for this company</div>
                     </div>
-                  </div>
-                )
-              )}
+                  ) : (
+                    <div className="border border-[#E9E4FA] rounded-2xl overflow-hidden shadow-2xs">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-[#FAF9FF] border-b border-[#E9E4FA] text-[#6B6580] font-bold uppercase text-[10px]">
+                            <tr>
+                              <th className="px-3 py-2.5">Deductor Name</th>
+                              <th className="px-3 py-2.5">Section</th>
+                              <th className="px-3 py-2.5">Quarter</th>
+                              <th className="px-3 py-2.5">FY</th>
+                              <th className="px-3 py-2.5 text-right">Amount Paid</th>
+                              <th className="px-3 py-2.5 text-right">TDS Deducted</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#E9E4FA]">
+                            {transactionsData.as26Entries.map((a) => (
+                              <tr key={a.id} className="hover:bg-[#FAF9FF]">
+                                <td className="px-3 py-2.5 font-bold text-[#1F1B2E]">
+                                  {a.deductorName || '26AS Portal Deductor'}
+                                </td>
+                                <td className="px-3 py-2.5 text-[#6B6580] font-bold">
+                                  {a.section || '194J'}
+                                </td>
+                                <td className="px-3 py-2.5 text-[#6B6580] font-bold">
+                                  {a.quarter || 'Q1'}
+                                </td>
+                                <td className="px-3 py-2.5 text-[#6B6580] font-bold">
+                                  {a.financialYear || '—'}
+                                </td>
+                                <td className="px-3 py-2.5 text-right font-bold text-[#1F1B2E]">
+                                  {formatCurrency(a.amountPaid)}
+                                </td>
+                                <td className="px-3 py-2.5 text-right font-black text-[#8572E0]">
+                                  {formatCurrency(a.tdsDeducted)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )
+                )}
             </div>
           )}
 

@@ -1549,7 +1549,7 @@ export const getCompanyEntries = async (req, res) => {
     }
 
     const query = `
-      SELECT 
+      SELECT DISTINCT
         tr.id,
         tr.tds_dues_id as tdsDuesId,
         tr.tan_no as tanNo,
@@ -1570,11 +1570,32 @@ export const getCompanyEntries = async (req, res) => {
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
       WHERE (${orConditions.join(' OR ')})
+      GROUP BY tr.id
       ORDER BY tr.financial_year DESC, tr.id ASC
     `;
 
     const [rows] = await db.execute(query, params);
-    const processed = (rows || []).map(r => {
+    
+    // Deduplicate by ID and normalize FY strings
+    const seenIds = new Set();
+    const uniqueRows = [];
+    for (const r of (rows || [])) {
+      if (!seenIds.has(r.id)) {
+        seenIds.add(r.id);
+        
+        // Fix any 2025-25 typo -> FY 2024-25 or FY 2025-26
+        let cleanFy = r.financialYear ? String(r.financialYear).trim() : 'Unspecified';
+        if (/2025[-/]?25/i.test(cleanFy)) {
+          cleanFy = 'FY 2024-25';
+        } else if (!cleanFy.toUpperCase().startsWith('FY') && /\d{4}/.test(cleanFy)) {
+          cleanFy = `FY ${cleanFy}`;
+        }
+        r.financialYear = cleanFy;
+        uniqueRows.push(r);
+      }
+    }
+
+    const processed = uniqueRows.map(r => {
       const tally = parseFloat(r.tallyTds || 0);
       const as26 = parseFloat(r.as26Tds || 0);
       const saarthi = parseFloat(r.saarthiTds || 0);
