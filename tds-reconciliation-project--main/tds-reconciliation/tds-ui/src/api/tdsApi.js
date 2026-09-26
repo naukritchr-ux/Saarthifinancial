@@ -508,5 +508,35 @@ export const createCrmBookEntry = async (payload) => {
   }
 };
 
+/** Fetch individual bills, tally vouchers, and 26AS records for a company */
+export const getCompanyTransactions = async (params = {}) => {
+  try {
+    const q = buildQuery(params);
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/company-transactions?${q}`);
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to load company transactions', data: { bills: [], tallyEntries: [], as26Entries: [], summary: {} } };
+  } catch (err) {
+    return { success: false, error: err.message || 'Error fetching transactions', data: { bills: [], tallyEntries: [], as26Entries: [], summary: {} } };
+  }
+};
+
+/** Update individual bill status or payment */
+export const updateBillStatus = async (id, payload) => {
+  try {
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/bill/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to update bill status' };
+  } catch (err) {
+    return { success: false, error: err.message || 'Error updating bill status' };
+  }
+};
+
+
 
 

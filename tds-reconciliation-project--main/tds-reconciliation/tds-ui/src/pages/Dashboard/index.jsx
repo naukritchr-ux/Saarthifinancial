@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  DollarSign, 
+  IndianRupee, 
   AlertTriangle, 
   CheckCircle2, 
   TrendingDown, 
@@ -19,8 +19,9 @@ const formatCurrency = (val) => {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
-    maximumFractionDigits: 0
-  }).format(val || 0);
+    maximumFractionDigits: 0,
+    minimumFractionDigits: 0
+  }).format(Math.round(parseFloat(val || 0)));
 };
 
 export default function Dashboard() {
@@ -111,7 +112,7 @@ export default function Dashboard() {
             <div className="text-[11px] text-[#9B87F5] font-medium mt-1">Accountant Ledger Export</div>
           </div>
           <div className="p-3 bg-[#9B87F5]/15 text-[#9B87F5] rounded-xl">
-            <DollarSign className="w-6 h-6" />
+            <IndianRupee className="w-6 h-6" />
           </div>
         </div>
 
@@ -123,7 +124,7 @@ export default function Dashboard() {
             <div className="text-[11px] text-[#B4A7F5] font-medium mt-1">Government Portal Traces</div>
           </div>
           <div className="p-3 bg-[#B4A7F5]/20 text-[#9B87F5] rounded-xl">
-            <DollarSign className="w-6 h-6" />
+            <IndianRupee className="w-6 h-6" />
           </div>
         </div>
 
@@ -135,7 +136,7 @@ export default function Dashboard() {
             <div className="text-[11px] text-[#9B87F5] font-medium mt-1">CRM Platform Invoices</div>
           </div>
           <div className="p-3 bg-[#9B87F5]/15 text-[#9B87F5] rounded-xl">
-            <DollarSign className="w-6 h-6" />
+            <IndianRupee className="w-6 h-6" />
           </div>
         </div>
 

@@ -1715,3 +1715,232 @@ export const updateReconciliationEntry = async (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to update entry', details: err.message });
   }
 };
+
+/**
+ * Get all transactions/bills (CRM Invoices, Tally Vouchers, 26AS Records) for a company / TAN
+ */
+export const getCompanyTransactions = async (req, res) => {
+  try {
+    const { company, tan, pan, fy, id } = req.query;
+
+    let targetTan = tan && !String(tan).startsWith('NO_TAN_') && !String(tan).includes('UNKNOWN') && String(tan) !== 'Pending TAN' ? String(tan).trim() : null;
+    let targetCompany = company && !['Client Entity', 'Unknown Client', 'Unknown Company', 'Unassigned Entity'].includes(String(company).trim()) ? String(company).trim() : null;
+    let targetPan = pan && String(pan).trim() !== 'N/A' ? String(pan).trim().toUpperCase() : null;
+    let targetFy = fy && String(fy).trim() !== '' && String(fy).trim() !== 'All Financial Years' && String(fy).trim() !== 'All' ? String(fy).trim() : null;
+
+    if (id && parseInt(id, 10)) {
+      const [reconRows] = await db.execute(`
+        SELECT tr.tan_no, tr.financial_year, d.company_name, d.pan_no
+        FROM tds_reconciliation_results tr
+        LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+        WHERE tr.id = ?
+      `, [parseInt(id, 10)]);
+      if (reconRows && reconRows.length > 0) {
+        const r = reconRows[0];
+        if (!targetTan && r.tan_no && !r.tan_no.startsWith('NO_TAN_')) targetTan = r.tan_no;
+        if (!targetFy && r.financial_year) targetFy = r.financial_year;
+        if (!targetCompany && r.company_name) targetCompany = r.company_name;
+        if (!targetPan && r.pan_no) targetPan = r.pan_no;
+      }
+    }
+
+    // 1. Fetch Invoices / Bills from tds_dues
+    let duesConditions = [];
+    let duesParams = [];
+    if (targetTan) {
+      duesConditions.push('tan_no = ?');
+      duesParams.push(targetTan);
+    }
+    if (targetCompany) {
+      duesConditions.push('company_name LIKE ?');
+      duesParams.push(`%${targetCompany}%`);
+    }
+    if (targetPan) {
+      duesConditions.push('pan_no = ?');
+      duesParams.push(targetPan);
+    }
+
+    let bills = [];
+    if (duesConditions.length > 0) {
+      let duesSql = `
+        SELECT 
+          id,
+          invoice_id as invoiceId,
+          bill_number as billNumber,
+          bill_date as billDate,
+          company_name as companyName,
+          COALESCE(total_bill_amount, 0) as totalBillAmount,
+          COALESCE(tds, 0) as tds,
+          COALESCE(amount_received, 0) as amountReceived,
+          status,
+          payment_date as paymentDate,
+          financial_year as financialYear,
+          note
+        FROM tds_dues
+        WHERE (${duesConditions.join(' OR ')})
+      `;
+      if (targetFy) {
+        duesSql += ` AND (financial_year = ? OR financial_year IS NULL OR financial_year = '')`;
+        duesParams.push(targetFy);
+      }
+      duesSql += ` ORDER BY id ASC`;
+      const [dueRows] = await db.execute(duesSql, duesParams);
+      bills = dueRows || [];
+    }
+
+    // 2. Fetch Tally Vouchers
+    let tallyConditions = [];
+    let tallyParams = [];
+    if (targetTan) {
+      tallyConditions.push('tan_no = ?');
+      tallyParams.push(targetTan);
+    }
+    if (targetCompany) {
+      tallyConditions.push('party_name LIKE ?');
+      tallyParams.push(`%${targetCompany}%`);
+    }
+    if (targetPan) {
+      tallyConditions.push('pan_no = ?');
+      tallyParams.push(targetPan);
+    }
+
+    let tallyEntries = [];
+    if (tallyConditions.length > 0) {
+      let tallySql = `
+        SELECT 
+          id,
+          party_name as partyName,
+          voucher_date as voucherDate,
+          COALESCE(amount, 0) as amount,
+          COALESCE(tds_amount, 0) as tdsAmount,
+          ledger_name as ledgerName,
+          financial_year as financialYear
+        FROM tds_tally_entries
+        WHERE (${tallyConditions.join(' OR ')})
+      `;
+      if (targetFy) {
+        tallySql += ` AND (financial_year = ? OR financial_year IS NULL OR financial_year = '')`;
+        tallyParams.push(targetFy);
+      }
+      tallySql += ` ORDER BY id ASC`;
+      const [tRows] = await db.execute(tallySql, tallyParams);
+      tallyEntries = tRows || [];
+    }
+
+    // 3. Fetch 26AS portal records
+    let as26Conditions = [];
+    let as26Params = [];
+    if (targetTan) {
+      as26Conditions.push('tan_no = ?');
+      as26Params.push(targetTan);
+    }
+    if (targetCompany) {
+      as26Conditions.push('deductor_name LIKE ?');
+      as26Params.push(`%${targetCompany}%`);
+    }
+
+    let as26Entries = [];
+    if (as26Conditions.length > 0) {
+      let as26Sql = `
+        SELECT 
+          id,
+          deductor_name as deductorName,
+          section,
+          quarter,
+          COALESCE(amount_paid, 0) as amountPaid,
+          COALESCE(tds_deducted, 0) as tdsDeducted,
+          financial_year as financialYear
+        FROM tds_26as_entries
+        WHERE (${as26Conditions.join(' OR ')})
+      `;
+      if (targetFy) {
+        as26Sql += ` AND (financial_year = ? OR financial_year IS NULL OR financial_year = '')`;
+        as26Params.push(targetFy);
+      }
+      as26Sql += ` ORDER BY id ASC`;
+      const [aRows] = await db.execute(as26Sql, as26Params);
+      as26Entries = aRows || [];
+    }
+
+    // Summary calculations
+    const totalBillsCount = bills.length;
+    const totalBillAmount = bills.reduce((acc, b) => acc + parseFloat(b.totalBillAmount || 0), 0);
+    const totalBillTds = bills.reduce((acc, b) => acc + parseFloat(b.tds || 0), 0);
+    const totalAmountReceived = bills.reduce((acc, b) => acc + parseFloat(b.amountReceived || 0), 0);
+    
+    // Count paid vs unpaid
+    const paidBills = bills.filter(b => {
+      const s = (b.status || '').toLowerCase();
+      return s === 'paid' || s === 'settled' || s === 'completed' || parseFloat(b.amountReceived || 0) >= parseFloat(b.totalBillAmount || 0) && parseFloat(b.totalBillAmount || 0) > 0;
+    });
+    const paidBillsCount = paidBills.length;
+    const pendingBillsCount = totalBillsCount - paidBillsCount;
+
+    res.json({
+      success: true,
+      data: {
+        bills,
+        tallyEntries,
+        as26Entries,
+        summary: {
+          totalBillsCount,
+          totalBillAmount: Math.round(totalBillAmount),
+          totalBillTds: Math.round(totalBillTds),
+          totalAmountReceived: Math.round(totalAmountReceived),
+          paidBillsCount,
+          pendingBillsCount,
+          totalTallyCount: tallyEntries.length,
+          totalTallyTds: Math.round(tallyEntries.reduce((acc, t) => acc + parseFloat(t.tdsAmount || 0), 0)),
+          total26asCount: as26Entries.length,
+          total26asTds: Math.round(as26Entries.reduce((acc, a) => acc + parseFloat(a.tdsDeducted || 0), 0))
+        }
+      }
+    });
+  } catch (err) {
+    console.error('💥 Error in getCompanyTransactions:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch transactions', details: err.message });
+  }
+};
+
+/**
+ * Update single bill / invoice status and payment info
+ */
+export const updateBillStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, amountReceived, note } = req.body;
+    const billId = parseInt(id, 10);
+    if (!billId) {
+      return res.status(400).json({ success: false, error: 'Invalid bill ID' });
+    }
+
+    let updates = [];
+    let params = [];
+    if (status !== undefined) {
+      updates.push('status = ?');
+      params.push(status);
+    }
+    if (amountReceived !== undefined) {
+      updates.push('amount_received = ?');
+      params.push(parseFloat(amountReceived || 0));
+    }
+    if (note !== undefined) {
+      updates.push('note = ?');
+      params.push(note);
+    }
+
+    if (updates.length > 0) {
+      params.push(billId);
+      await db.execute(`UPDATE tds_dues SET ${updates.join(', ')} WHERE id = ?`, params);
+    }
+
+    res.json({
+      success: true,
+      message: 'Bill status updated successfully',
+      data: { id: billId, status, amountReceived, note }
+    });
+  } catch (err) {
+    console.error('💥 Error in updateBillStatus:', err);
+    res.status(500).json({ success: false, error: 'Failed to update bill status', details: err.message });
+  }
+};

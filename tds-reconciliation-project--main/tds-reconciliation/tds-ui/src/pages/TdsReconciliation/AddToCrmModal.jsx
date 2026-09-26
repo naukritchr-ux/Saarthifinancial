@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Building2, CheckCircle2, AlertCircle, PlusCircle, DollarSign, Calendar, FileText, User, Phone, Mail } from 'lucide-react';
+import { X, Building2, CheckCircle2, AlertCircle, PlusCircle, IndianRupee, Calendar, FileText, User, Phone, Mail } from 'lucide-react';
 import { createCrmBookEntry } from '../../api/tdsApi';
 
 export default function AddToCrmModal({ row, onClose, onSuccess }) {

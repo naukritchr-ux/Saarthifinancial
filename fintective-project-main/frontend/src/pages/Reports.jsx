@@ -175,18 +175,17 @@ const Reports = () => {
       ];
     });
     
-    // Construct csv string
-    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" // UTF-8 BOM for Excel compatibility
-      + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-      
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = "\uFEFF" + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", url);
     const fileSuffix = selectedMonth.replace(' ', '_');
     link.setAttribute("download", `Fintective_Finance_Ledger_${fileSuffix}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleClearFilters = () => {

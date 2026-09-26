@@ -17,7 +17,9 @@ import {
   createCrmBookEntry,
   getFilterOptions,
   getCompanyEntries,
-  updateReconciliationEntry
+  updateReconciliationEntry,
+  getCompanyTransactions,
+  updateBillStatus
 } from '../controllers/tds26asController.js';
 
 const router = express.Router();
@@ -26,10 +28,12 @@ const router = express.Router();
 router.get('/dashboard-summary', asyncHandler(getDashboardSummary));
 router.get('/filter-options',    asyncHandler(getFilterOptions));
 router.get('/company-entries',   asyncHandler(getCompanyEntries));
+router.get('/company-transactions', asyncHandler(getCompanyTransactions));
 
 // ── Reconciliation report & updates ───────────────────────────────────────────
 router.get('/report',          asyncHandler(getReconciliationReport));
 router.put('/entry/:id',       validateId, asyncHandler(updateReconciliationEntry));
+router.put('/bill/:id',        validateId, asyncHandler(updateBillStatus));
 router.put('/override',        asyncHandler(overrideReconciliationStatus));
 router.post('/crm-book-entry', asyncHandler(createCrmBookEntry));
 

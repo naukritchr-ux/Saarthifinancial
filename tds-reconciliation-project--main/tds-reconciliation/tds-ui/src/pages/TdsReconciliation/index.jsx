@@ -73,13 +73,14 @@ export default function TdsReconciliation() {
     totalBalance: 0
   });
 
-  // Format currency helper
+  // Format currency helper (Integer full figures, 0 decimals)
   const formatCurrency = (val) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
-      minimumFractionDigits: 2
-    }).format(parseFloat(val || 0));
+      maximumFractionDigits: 0,
+      minimumFractionDigits: 0
+    }).format(Math.round(parseFloat(val || 0)));
   };
 
   // Load distinct filter options once and on refresh
@@ -277,10 +278,10 @@ export default function TdsReconciliation() {
           `"${cleanTan}"`,
           `"${r.panNo || 'N/A'}"`,
           `"${r.financialYear || fyFilter || 'All'}"`,
-          tally.toFixed(2),
-          as26.toFixed(2),
-          saarthi.toFixed(2),
-          bal.toFixed(2),
+          Math.round(tally),
+          Math.round(as26),
+          Math.round(saarthi),
+          Math.round(bal),
           `"${r.financialStatus || r.overallStatus || 'Unknown'}"`,
           `"${r.booksVs26asStatus || ''}"`,
           `"${r.booksVsTallyStatus || ''}"`,
