@@ -19,6 +19,9 @@ import {
   Database,
   PlusCircle,
   RotateCcw,
+  ChevronDown,
+  ChevronUp,
+  PhoneCall,
   X,
   AlertCircle,
   Mail
@@ -31,10 +34,16 @@ import {
   getFyWiseReport, 
   getTanWiseReport,
   getFilterOptions,
-  getCompanyTransactions
+  getReconciliationReport,
+  toggleFollowupDone
 } from '../../api/tdsApi';
 import { triggerCsvDownload } from '../../utils/exportUtils';
 import AddToCrmModal from '../TdsReconciliation/AddToCrmModal';
+import EditModal from '../TdsReconciliation/EditModal';
+import RecordDetailPanel, { adaptReportRow } from './RecordDetailPanel';
+import RecordViewModal from './RecordViewModal';
+import ReconciliationTable from '../TdsReconciliation/ReconciliationTable';
+import AddFollowupModal from '../FollowUp/AddFollowupModal';
 
 export default function Reports() {
   const { fyFilter, setFyFilter, refreshKey } = useApp();
@@ -69,9 +78,15 @@ export default function Reports() {
 
   // Row details popup (click on a table row)
   const [detailRow, setDetailRow] = useState(null);
-  const [detailBills, setDetailBills] = useState([]);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState('');
+  const [expandedKey, setExpandedKey] = useState(null);
+  const [activeEditRow, setActiveEditRow] = useState(null);
+  const [activeViewRow, setActiveViewRow] = useState(null);
+  const [followupRow, setFollowupRow] = useState(null);
+
+  // Tally / 26AS / Saarthi 360 tabs use the exact Reconciliation table
+  const isRecordTab = activeTab === 'tally' || activeTab === '26as' || activeTab === 'saarthi360';
+  const [recoRows, setRecoRows] = useState([]);
+  const [recoLoading, setRecoLoading] = useState(false);
 
   // Pagination state
   const [page, setPage] = useState(1);
@@ -164,42 +179,69 @@ export default function Reports() {
     };
   }, [activeTab, viewFilter, search, companyFilter, panFilter, tabFyFilter, refreshKey, localRefresh]);
 
-  // Close details popup on Esc
+  // Collapse the open details panel whenever the table content changes
   useEffect(() => {
-    if (!detailRow) return;
-    const onKey = (e) => { if (e.key === 'Escape') setDetailRow(null); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [detailRow]);
+    setDetailRow(null);
+    setExpandedKey(null);
+  }, [activeTab, viewFilter, search, companyFilter, panFilter, tabFyFilter, page, limit]);
 
-  // Load bills (bill no / amount) for the clicked row's company
+  // Turn report rows into Reconciliation-shaped records (statuses, contact, follow-up, last modified)
   useEffect(() => {
-    if (!detailRow) { setDetailBills([]); setDetailError(''); return; }
+    if (!isRecordTab) { setRecoRows([]); setRecoLoading(false); return; }
+    if (loading) return;
     let cancelled = false;
-    const load = async () => {
-      setDetailLoading(true);
-      setDetailError('');
+    const build = async () => {
+      setRecoLoading(true);
+      const map = {};
       try {
-        const res = await getCompanyTransactions({
-          id: activeTab === 'tan-wise' ? '' : detailRow.id,
-          tan: detailRow.tan_no,
-          company: detailRow.company_name,
-          pan: detailRow.pan_no && detailRow.pan_no !== 'N/A' ? detailRow.pan_no : '',
-          fy: '' // all years, so every bill of this company is listed
+        const res = await getReconciliationReport({
+          fy: tabFyFilter === 'All Financial Years' ? '' : tabFyFilter,
+          company: companyFilter === 'All' ? '' : companyFilter,
+          pan: panFilter === 'All' ? '' : panFilter,
+          search,
+          limit: 1000
         });
-        if (!cancelled) {
-          setDetailBills(res?.success && res.data?.bills ? res.data.bills : []);
-          if (!res?.success) setDetailError(res?.error || 'Could not load bills');
-        }
-      } catch (err) {
-        if (!cancelled) { setDetailBills([]); setDetailError(err.message || 'Could not load bills'); }
-      } finally {
-        if (!cancelled) setDetailLoading(false);
-      }
+        (res && Array.isArray(res.data) ? res.data : []).forEach(r => { map[String(r.id)] = r; });
+      } catch { /* fall back to report values below */ }
+      if (cancelled) return;
+      setRecoRows(data.map(r => {
+        const base = adaptReportRow(r);
+        const rec = map[String(r.id)];
+        if (!rec) return { ...base, billNumber: r.bill_number && r.bill_number !== 'N/A' ? r.bill_number : 'N/A' };
+        return {
+          ...rec,
+          // keep this report's own numbers so the table matches the report totals
+          tallyTds: base.tallyTds,
+          as26Tds: base.as26Tds,
+          saarthiTds: base.saarthiTds,
+          balance: base.balance,
+          overallStatus: base.overallStatus || rec.overallStatus,
+          financialStatus: base.financialStatus || rec.financialStatus,
+          billNumber: r.bill_number && r.bill_number !== 'N/A' ? r.bill_number : rec.billNumber
+        };
+      }));
+      setRecoLoading(false);
     };
-    load();
+    build();
     return () => { cancelled = true; };
-  }, [detailRow, activeTab]);
+  }, [data, loading, isRecordTab, localRefresh]);
+
+  const handleToggleFollowup = async (rowId) => {
+    const flip = () => setRecoRows(prev => prev.map(r => r.id === rowId ? { ...r, isFollowupDone: r.isFollowupDone ? 0 : 1 } : r));
+    flip();
+    try {
+      const res = await toggleFollowupDone(rowId);
+      if (!res || !res.success) flip();
+      else if (Object.prototype.hasOwnProperty.call(res, 'isFollowupDone')) {
+        setRecoRows(prev => prev.map(r => r.id === rowId ? { ...r, isFollowupDone: res.isFollowupDone ? 1 : 0 } : r));
+      }
+    } catch { flip(); }
+  };
+
+  const pagedRecoRows = useMemo(() => {
+    const start = (page - 1) * limit;
+    return recoRows.slice(start, start + limit);
+  }, [recoRows, page, limit]);
 
   // Format currency helper
   const formatCurrency = (val) => {
@@ -717,6 +759,31 @@ export default function Reports() {
           </span>
         </div>
 
+        {isRecordTab ? (
+          (loading || recoLoading) ? (
+            <div className="px-6 py-12 text-center text-[#6B6580] border border-[#E9E4FA] rounded-2xl">
+              <div className="flex flex-col items-center justify-center gap-2">
+                <RefreshCw className="w-7 h-7 text-[#9B87F5] animate-spin" />
+                <span className="font-bold text-[#1F1B2E]">Loading report records...</span>
+              </div>
+            </div>
+          ) : (
+            <ReconciliationTable
+              rows={pagedRecoRows}
+              total={recoRows.length}
+              page={page}
+              limit={limit}
+              onPageChange={(newPage) => setPage(newPage)}
+              onEditClick={(row) => setActiveEditRow(row)}
+              onViewClick={(row) => setActiveViewRow(row)}
+              onAddToCrmClick={(row) => setSelectedCrmRow(row)}
+              onFollowupClick={(row) => setFollowupRow(row)}
+              onFollowupDoneToggle={handleToggleFollowup}
+              onIdentitySaved={() => setLocalRefresh(prev => prev + 1)}
+            />
+          )
+        ) : (
+        <>
         {/* Data Table */}
         <div className="overflow-x-auto border border-[#E9E4FA] rounded-2xl">
           <table className="w-full text-left border-collapse text-xs">
@@ -733,6 +800,7 @@ export default function Reports() {
                   </>
                 ) : activeTab === 'tan-wise' ? (
                   <>
+                    <th className="px-3 py-3.5 w-8"></th>
                     <th className="px-4 py-3.5">TAN No.</th>
                     <th className="px-4 py-3.5">Company Name</th>
                     <th className="px-4 py-3.5">PAN No.</th>
@@ -744,6 +812,7 @@ export default function Reports() {
                   </>
                 ) : (
                   <>
+                    <th className="px-3 py-3.5 w-8"></th>
                     <th className="px-4 py-3.5">Company / Entity</th>
                     <th className="px-4 py-3.5">TAN No.</th>
                     <th className="px-4 py-3.5">PAN No.</th>
@@ -783,13 +852,28 @@ export default function Reports() {
                   const isShort = bal > 1.0;
                   const isExcess = bal < -1.0;
 
+                  const rowKey = String(row.id || row.tan_no || idx);
+                  const isExpanded = activeTab !== 'fy-wise' && expandedKey === rowKey;
+
                   return (
+                    <React.Fragment key={rowKey}>
                     <tr
-                      key={row.id || row.tan_no || idx}
-                      onClick={activeTab === 'fy-wise' ? undefined : () => setDetailRow(row)}
+                      onClick={activeTab === 'fy-wise' ? undefined : () => {
+                        if (isExpanded) { setExpandedKey(null); setDetailRow(null); }
+                        else { setExpandedKey(rowKey); setDetailRow(row); }
+                      }}
                       title={activeTab === 'fy-wise' ? undefined : 'Click to view details'}
-                      className={`hover:bg-[#E8E4FF]/25 transition ${activeTab === 'fy-wise' ? '' : 'cursor-pointer'}`}
+                      className={`hover:bg-[#E8E4FF]/25 transition ${activeTab === 'fy-wise' ? '' : 'cursor-pointer'} ${
+                        isExpanded ? 'bg-[#E8E4FF]/40 border-l-4 border-l-[#9B87F5]' : ''
+                      }`}
                     >
+                      {activeTab !== 'fy-wise' && (
+                        <td className="px-3 py-3.5 text-center">
+                          {isExpanded
+                            ? <ChevronUp className="w-4 h-4 text-[#9B87F5]" />
+                            : <ChevronDown className="w-4 h-4 text-[#6B6580]" />}
+                        </td>
+                      )}
                       {activeTab === 'fy-wise' ? (
                         <>
                           <td className="px-4 py-3.5 font-bold text-[#1F1B2E]">{row.financial_year}</td>
@@ -845,6 +929,20 @@ export default function Reports() {
                         </>
                       )}
                     </tr>
+                    {isExpanded && (
+                      <tr className="bg-[#E8E4FF]/30 border-b border-[#E9E4FA]">
+                        <td colSpan="10" className="px-6 py-4">
+                          <RecordDetailPanel
+                            row={row}
+                            tabFy={tabFyFilter}
+                            refreshToken={localRefresh}
+                            onEdit={(rec) => setActiveEditRow(rec)}
+                            onChanged={() => setLocalRefresh(prev => prev + 1)}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   );
                 })
               )}
@@ -880,124 +978,39 @@ export default function Reports() {
             </button>
           </div>
         </div>
+        </>
+        )}
 
       </div>
 
 
-      {/* Row Details Modal */}
-      {detailRow && (() => {
-        const hrName = detailRow.hr_name || detailRow.contact_person_name || '';
-        const mobile = detailRow.contact_no || detailRow.contact_number || '';
-        const email = detailRow.email_id || '';
-        const dash = (v) => (v && v !== 'N/A' ? v : '—');
-        const rowBill = detailRow.bill_number && detailRow.bill_number !== 'N/A' ? detailRow.bill_number : '';
-        const rowAmount = parseFloat(detailRow.total_bill_amount || detailRow.gross_amount || 0);
-        const bills = detailBills.length > 0
-          ? detailBills
-          : (rowBill ? [{ id: 'row', billNumber: rowBill, billDate: detailRow.bill_date, totalBillAmount: rowAmount }] : []);
-        return (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-            onClick={() => setDetailRow(null)}
-          >
-            <div
-              className="bg-white rounded-3xl shadow-xl border border-[#E9E4FA] w-full max-w-lg max-h-[90vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-start justify-between gap-3 p-5 border-b border-[#E9E4FA]">
-                <div>
-                  <h2 className="text-base font-black text-[#1F1B2E]">Record Details</h2>
-                  <p className="text-[11px] text-[#6B6580] font-mono">
-                    {dash(detailRow.tan_no)}{detailRow.financial_year ? ` · ${detailRow.financial_year}` : ''}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setDetailRow(null)}
-                  className="p-1.5 rounded-xl hover:bg-[#E8E4FF] text-[#6B6580] cursor-pointer"
-                  aria-label="Close"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+      {/* Manual Data Edit & Multi-Entry Modal (same as Reconciliation) */}
+      {activeEditRow && (
+        <EditModal
+          row={activeEditRow}
+          onClose={() => setActiveEditRow(null)}
+          onSaveSuccess={() => setLocalRefresh(prev => prev + 1)}
+        />
+      )}
 
-              <div className="p-5 space-y-3 text-xs">
-                <div className="flex items-start gap-3">
-                  <Building2 className="w-4 h-4 text-[#9B87F5] mt-0.5" />
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#6B6580]">Company Name</div>
-                    <div className="font-extrabold text-[#1F1B2E]">{dash(detailRow.company_name)}</div>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <User className="w-4 h-4 text-[#9B87F5] mt-0.5" />
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#6B6580]">HR Name</div>
-                    <div className="font-bold text-[#1F1B2E]">{dash(hrName)}</div>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Phone className="w-4 h-4 text-[#9B87F5] mt-0.5" />
-                  <div>
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#6B6580]">Mobile No.</div>
-                    <div className="font-bold text-[#1F1B2E] font-mono">{dash(mobile)}</div>
-                  </div>
-                </div>
-                {email && (
-                  <div className="flex items-start gap-3">
-                    <Mail className="w-4 h-4 text-[#9B87F5] mt-0.5" />
-                    <div>
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-[#6B6580]">Email</div>
-                      <div className="font-bold text-[#1F1B2E]">{email}</div>
-                    </div>
-                  </div>
-                )}
+      {/* Read-only detail popup (Eye button) */}
+      {activeViewRow && (
+        <RecordViewModal row={activeViewRow} onClose={() => setActiveViewRow(null)} />
+      )}
 
-                <div className="pt-2">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Hash className="w-4 h-4 text-[#9B87F5]" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#6B6580]">Bill No. &amp; Amount</span>
-                  </div>
-                  <div className="border border-[#E9E4FA] rounded-2xl overflow-hidden">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="bg-[#E8E4FF]/60 text-[#6B6580] font-black uppercase tracking-wider text-[10px]">
-                          <th className="px-3 py-2">Bill No.</th>
-                          <th className="px-3 py-2">Date</th>
-                          <th className="px-3 py-2 text-right">Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#E9E4FA]">
-                        {detailLoading && bills.length === 0 ? (
-                          <tr><td colSpan="3" className="px-3 py-4 text-center text-[#6B6580]">Loading bills...</td></tr>
-                        ) : bills.length === 0 ? (
-                          <tr>
-                            <td colSpan="3" className="px-3 py-4 text-center text-[#6B6580]">
-                              {detailError
-                                ? `Could not load bills: ${detailError}`
-                                : 'No bill found in Saarthi 360 for this company / TAN.'}
-                              {rowAmount ? <div className="mt-1 font-bold text-[#1F1B2E]">Amount on record: {formatCurrency(rowAmount)}</div> : null}
-                            </td>
-                          </tr>
-                        ) : (
-                          bills.map((b, i) => (
-                            <tr key={b.id || i}>
-                              <td className="px-3 py-2.5 font-bold text-[#1F1B2E]">{dash(b.billNumber)}</td>
-                              <td className="px-3 py-2.5 text-[#6B6580]">{dash(b.billDate)}</td>
-                              <td className="px-3 py-2.5 text-right font-bold text-[#1F1B2E]">
-                                {parseFloat(b.totalBillAmount || 0) ? formatCurrency(b.totalBillAmount) : '—'}
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {/* Follow-up modal */}
+      {followupRow && (
+        <AddFollowupModal
+          initialData={{
+            tan: followupRow.tanNo,
+            company: followupRow.companyName || '',
+            contactPerson: followupRow.contactPersonName || '',
+            contactNumber: followupRow.contactNumber || ''
+          }}
+          onClose={() => setFollowupRow(null)}
+          onSaveSuccess={() => { setFollowupRow(null); setLocalRefresh(prev => prev + 1); }}
+        />
+      )}
 
       {/* CRM Booking Modal */}
       {selectedCrmRow && (
