@@ -552,3 +552,19 @@ export const updateBillStatus = async (id, payload) => {
     return { success: false, error: err.message || 'Error updating bill status' };
   }
 };
+
+/** Permanently save a corrected TAN and/or PAN to Saarthi 360, Tally and 26AS data */
+export const saveRecordIdentity = async (id, { tanNo, panNo }) => {
+  try {
+    const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/identity/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tanNo, panNo })
+    });
+    const data = await response.json();
+    if (response.ok && data && data.success !== false) return data;
+    return { success: false, error: data?.error || 'Failed to save TAN/PAN' };
+  } catch (err) {
+    return { success: false, error: err.message || 'Error saving TAN/PAN' };
+  }
+};
