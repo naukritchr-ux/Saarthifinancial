@@ -98,6 +98,8 @@ export const getTallyDataReport = async ({ fy = '', company = '', pan = '', view
       COALESCE(tr.as26_tds, 0) AS as26_tds,
       COALESCE(tr.books_tds, 0) AS saarthi_tds,
       COALESCE(d.total_bill_amount, 0) AS gross_amount,
+      d.bill_number,
+      d.bill_date,
       d.contact_person_name,
       d.contact_number,
       d.email_id
@@ -145,6 +147,8 @@ export const getTallyDataReport = async ({ fy = '', company = '', pan = '', view
       baselineValue,
       status,
       financialStatus,
+      bill_number: r.bill_number || '',
+      bill_date: r.bill_date || '',
       contact_person_name: r.contact_person_name || '',
       contact_number: r.contact_number || '',
       email_id: r.email_id || ''
@@ -172,7 +176,13 @@ export const getAs26DataReport = async ({ fy = '', company = '', pan = '', view 
       COALESCE(tr.tally_tds, 0) AS tally_tds,
       COALESCE(tr.books_tds, 0) AS saarthi_tds,
       (SELECT e.section FROM tds_26as_entries e WHERE e.tan_no = tr.tan_no LIMIT 1) AS section,
-      (SELECT e.quarter FROM tds_26as_entries e WHERE e.tan_no = tr.tan_no LIMIT 1) AS quarter
+      (SELECT e.quarter FROM tds_26as_entries e WHERE e.tan_no = tr.tan_no LIMIT 1) AS quarter,
+      COALESCE(d.total_bill_amount, 0) AS gross_amount,
+      d.bill_number,
+      d.bill_date,
+      d.contact_person_name,
+      d.contact_number,
+      d.email_id
     FROM tds_reconciliation_results tr
     LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
     ${whereSQL}
@@ -219,6 +229,8 @@ export const getAs26DataReport = async ({ fy = '', company = '', pan = '', view 
       status,
       financialStatus,
       gross_amount: parseFloat(r.gross_amount || 0),
+      bill_number: r.bill_number || '',
+      bill_date: r.bill_date || '',
       contact_person_name: r.contact_person_name || '',
       contact_number: r.contact_number || '',
       email_id: r.email_id || ''
@@ -393,7 +405,11 @@ export const getTanWiseReport = async ({ view = 'all', fy = '', search = '' } = 
       COALESCE(MAX(d.pan_no), (SELECT t.pan_no FROM tds_tally_entries t WHERE t.tan_no = tr.tan_no LIMIT 1), '') AS pan_no,
       SUM(COALESCE(tr.tally_tds, 0)) AS tally_total,
       SUM(COALESCE(tr.as26_tds, 0)) AS as26_total,
-      SUM(COALESCE(tr.books_tds, 0)) AS saarthi_total
+      SUM(COALESCE(tr.books_tds, 0)) AS saarthi_total,
+      MAX(d.contact_person_name) AS contact_person_name,
+      MAX(d.contact_number) AS contact_number,
+      MAX(d.email_id) AS email_id,
+      MAX(d.bill_number) AS bill_number
     FROM tds_reconciliation_results tr
     LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
     WHERE ${whereClauses.join(' AND ')}
@@ -428,7 +444,11 @@ export const getTanWiseReport = async ({ view = 'all', fy = '', search = '' } = 
       balance,
       baselineSource,
       baselineValue,
-      status
+      status,
+      bill_number: row.bill_number || '',
+      contact_person_name: row.contact_person_name || '',
+      contact_number: row.contact_number || '',
+      email_id: row.email_id || ''
     };
   });
 

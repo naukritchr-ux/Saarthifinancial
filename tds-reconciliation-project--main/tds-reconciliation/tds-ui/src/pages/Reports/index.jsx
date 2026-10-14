@@ -71,6 +71,7 @@ export default function Reports() {
   const [detailRow, setDetailRow] = useState(null);
   const [detailBills, setDetailBills] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
 
   // Pagination state
   const [page, setPage] = useState(1);
@@ -173,21 +174,25 @@ export default function Reports() {
 
   // Load bills (bill no / amount) for the clicked row's company
   useEffect(() => {
-    if (!detailRow) { setDetailBills([]); return; }
+    if (!detailRow) { setDetailBills([]); setDetailError(''); return; }
     let cancelled = false;
     const load = async () => {
       setDetailLoading(true);
+      setDetailError('');
       try {
         const res = await getCompanyTransactions({
           id: activeTab === 'tan-wise' ? '' : detailRow.id,
           tan: detailRow.tan_no,
           company: detailRow.company_name,
           pan: detailRow.pan_no && detailRow.pan_no !== 'N/A' ? detailRow.pan_no : '',
-          fy: detailRow.financial_year || ''
+          fy: '' // all years, so every bill of this company is listed
         });
-        if (!cancelled) setDetailBills(res?.success && res.data?.bills ? res.data.bills : []);
-      } catch {
-        if (!cancelled) setDetailBills([]);
+        if (!cancelled) {
+          setDetailBills(res?.success && res.data?.bills ? res.data.bills : []);
+          if (!res?.success) setDetailError(res?.error || 'Could not load bills');
+        }
+      } catch (err) {
+        if (!cancelled) { setDetailBills([]); setDetailError(err.message || 'Could not load bills'); }
       } finally {
         if (!cancelled) setDetailLoading(false);
       }
@@ -966,9 +971,12 @@ export default function Reports() {
                           <tr><td colSpan="3" className="px-3 py-4 text-center text-[#6B6580]">Loading bills...</td></tr>
                         ) : bills.length === 0 ? (
                           <tr>
-                            <td className="px-3 py-3 font-bold">—</td>
-                            <td className="px-3 py-3">—</td>
-                            <td className="px-3 py-3 text-right font-bold">{rowAmount ? formatCurrency(rowAmount) : '—'}</td>
+                            <td colSpan="3" className="px-3 py-4 text-center text-[#6B6580]">
+                              {detailError
+                                ? `Could not load bills: ${detailError}`
+                                : 'No bill found in Saarthi 360 for this company / TAN.'}
+                              {rowAmount ? <div className="mt-1 font-bold text-[#1F1B2E]">Amount on record: {formatCurrency(rowAmount)}</div> : null}
+                            </td>
                           </tr>
                         ) : (
                           bills.map((b, i) => (
