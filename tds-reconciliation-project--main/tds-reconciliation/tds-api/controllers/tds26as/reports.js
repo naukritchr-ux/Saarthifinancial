@@ -5,6 +5,7 @@ import db from '../../config/db.js';
 import { reconcile, cleanNameTokens } from '../../services/tdsReconciliationService.js';
 import { seedEmbeddedDataset, markPurgedFlag, clearPurgedFlag } from '../../seed_embedded_dataset.js';
 import { v4 as uuidv4 } from 'uuid';
+import { ensurePanColumns } from './identity.js';
 import { normalizeFY, getFinancialYearFromDate } from '../../utils/fyHelper.js';
 import {
   TDS_TOLERANCE,
@@ -700,6 +701,7 @@ async function ensureFollowupDoneColumn() {
 export const getReconciliationReport = async (req, res) => {
   try {
     await ensureFollowupDoneColumn();
+    await ensurePanColumns();
 
     const {
       page = 1,
@@ -752,8 +754,8 @@ export const getReconciliationReport = async (req, res) => {
 
     if (pan && String(pan).trim() !== '' && pan !== 'All') {
       const term = `%${String(pan).trim()}%`;
-      whereClauses.push('(d.pan_no LIKE ? OR tr.tan_no IN (SELECT tan_no FROM tds_tally_entries WHERE pan_no LIKE ?))');
-      queryParams.push(term, term);
+      whereClauses.push('(d.pan_no LIKE ? OR tr.tan_no IN (SELECT tan_no FROM tds_tally_entries WHERE pan_no LIKE ?) OR tr.tan_no IN (SELECT tan_no FROM tds_26as_entries WHERE pan_no LIKE ?))');
+      queryParams.push(term, term, term);
     }
 
     if (search && String(search).trim() !== '') {
@@ -895,7 +897,7 @@ export const getReconciliationReport = async (req, res) => {
 
         d.company_name as tallyPartyName,
         COALESCE(d.gst_num, '') as gstNum,
-        COALESCE(NULLIF(TRIM(d.pan_no), ''), (SELECT t.pan_no FROM tds_tally_entries t WHERE t.tan_no = tr.tan_no AND t.pan_no IS NOT NULL AND TRIM(t.pan_no) != '' LIMIT 1), '') as panNo,
+        COALESCE(NULLIF(TRIM(d.pan_no), ''), (SELECT t.pan_no FROM tds_tally_entries t WHERE t.tan_no = tr.tan_no AND t.pan_no IS NOT NULL AND TRIM(t.pan_no) != '' LIMIT 1), (SELECT a.pan_no FROM tds_26as_entries a WHERE a.tan_no = tr.tan_no AND a.pan_no IS NOT NULL AND TRIM(a.pan_no) != '' LIMIT 1), '') as panNo,
         0 as tallyGrossTotal,
 
         d.company_name as as26DeductorName,
@@ -1426,6 +1428,32 @@ export const createCrmBookEntry = async (req, res) => {
 /**
  * Get Distinct Filter Options (Financial Years, Companies, PAN Numbers)
  */
+// ---------------------------------------------------------------------------
+// Filter-option helpers: guarantee each company / PAN appears only once,
+// ignoring case, repeated spaces, and trailing punctuation.
+// ---------------------------------------------------------------------------
+const cleanDisplayName = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
+const normalizeCompanyKey = (v) =>
+  cleanDisplayName(v).toLowerCase().replace(/[.,;]+$/g, '').replace(/\s*&\s*/g, ' and ').trim();
+const normalizePanKey = (v) => String(v ?? '').replace(/\s+/g, '').toUpperCase();
+
+/**
+ * Returns a sorted, de-duplicated list. The first spelling seen for a key is kept as the display value.
+ * `keyFn` builds the comparison key, `displayFn` builds the shown value, `keepFn(display, key)` can reject values.
+ */
+function uniqueByKey(values, keyFn, displayFn, keepFn = () => true) {
+  const seen = new Map();
+  for (const raw of values) {
+    if (raw === null || raw === undefined) continue;
+    const key = keyFn(raw);
+    if (!key) continue;
+    const display = displayFn(raw, key);
+    if (!display || !keepFn(display, key)) continue;
+    if (!seen.has(key)) seen.set(key, display);
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+}
+
 export const getFilterOptions = async (req, res) => {
   try {
     const [fyRows] = await db.execute(`
@@ -1440,29 +1468,49 @@ export const getFilterOptions = async (req, res) => {
       ) fys ORDER BY financial_year DESC
     `);
 
-    const [companyRows] = await db.execute(`
-      SELECT DISTINCT company_name FROM (
-        SELECT company_name FROM tds_dues WHERE company_name IS NOT NULL AND TRIM(company_name) != '' AND company_name NOT IN ('Unknown Client', 'Unknown Company')
-        UNION
-        SELECT party_name as company_name FROM tds_tally_entries WHERE party_name IS NOT NULL AND TRIM(party_name) != ''
-        UNION
-        SELECT deductor_name as company_name FROM tds_26as_entries WHERE deductor_name IS NOT NULL AND TRIM(deductor_name) != ''
-      ) comps ORDER BY company_name ASC
-    `);
+    // Sources are queried separately (highest-priority source first) so that when the same
+    // company appears with different spellings, the CRM master spelling wins as display name.
+    const PLACEHOLDER_NAMES = new Set([
+      'unknown client', 'unknown company', 'client entity', 'unassigned entity', 'n/a', 'na', '-'
+    ]);
+    const [duesNames] = await db.execute(
+      `SELECT DISTINCT company_name AS name FROM tds_dues WHERE company_name IS NOT NULL AND TRIM(company_name) != ''`
+    );
+    const [tallyNames] = await db.execute(
+      `SELECT DISTINCT party_name AS name FROM tds_tally_entries WHERE party_name IS NOT NULL AND TRIM(party_name) != ''`
+    );
+    const [as26Names] = await db.execute(
+      `SELECT DISTINCT deductor_name AS name FROM tds_26as_entries WHERE deductor_name IS NOT NULL AND TRIM(deductor_name) != ''`
+    );
+    const companies = uniqueByKey(
+      [...(duesNames || []), ...(tallyNames || []), ...(as26Names || [])].map(r => r.name),
+      normalizeCompanyKey,
+      cleanDisplayName,
+      (name, key) => !PLACEHOLDER_NAMES.has(key)
+    );
 
-    const [panRows] = await db.execute(`
-      SELECT DISTINCT pan_no FROM (
-        SELECT pan_no FROM tds_dues WHERE pan_no IS NOT NULL AND TRIM(pan_no) != '' AND LENGTH(pan_no) >= 10
-        UNION
-        SELECT pan_no FROM tds_tally_entries WHERE pan_no IS NOT NULL AND TRIM(pan_no) != '' AND LENGTH(pan_no) >= 10
-      ) pans ORDER BY pan_no ASC
-    `);
+    const [duesPans] = await db.execute(
+      `SELECT DISTINCT pan_no AS pan FROM tds_dues WHERE pan_no IS NOT NULL AND TRIM(pan_no) != ''`
+    );
+    const [tallyPans] = await db.execute(
+      `SELECT DISTINCT pan_no AS pan FROM tds_tally_entries WHERE pan_no IS NOT NULL AND TRIM(pan_no) != ''`
+    );
+    await ensurePanColumns();
+    const [as26Pans] = await db.execute(
+      `SELECT DISTINCT pan_no AS pan FROM tds_26as_entries WHERE pan_no IS NOT NULL AND TRIM(pan_no) != ''`
+    );
+    const pans = uniqueByKey(
+      [...(duesPans || []), ...(tallyPans || []), ...(as26Pans || [])].map(r => r.pan),
+      normalizePanKey,
+      normalizePanKey,
+      (pan) => pan.length >= 10
+    );
 
     res.json({
       success: true,
       financialYears: (fyRows || []).map(r => r.financial_year).filter(Boolean),
-      companies: (companyRows || []).map(r => r.company_name).filter(Boolean),
-      pans: (panRows || []).map(r => r.pan_no).filter(Boolean)
+      companies,
+      pans
     });
   } catch (err) {
     console.error('💥 Error in getFilterOptions:', err);
@@ -1475,6 +1523,7 @@ export const getFilterOptions = async (req, res) => {
  */
 export const getCompanyEntries = async (req, res) => {
   try {
+    await ensurePanColumns();
     const { company, tan, pan, id } = req.query;
     let orConditions = [];
     let params = [];
@@ -1522,7 +1571,7 @@ export const getCompanyEntries = async (req, res) => {
         tr.tds_dues_id as tdsDuesId,
         tr.tan_no as tanNo,
         COALESCE(NULLIF(TRIM(d.company_name), ''), tr.tan_no, 'Client Entity') as companyName,
-        COALESCE(NULLIF(TRIM(d.pan_no), ''), (SELECT t.pan_no FROM tds_tally_entries t WHERE t.tan_no = tr.tan_no LIMIT 1), '') as panNo,
+        COALESCE(NULLIF(TRIM(d.pan_no), ''), (SELECT t.pan_no FROM tds_tally_entries t WHERE t.tan_no = tr.tan_no LIMIT 1), (SELECT a.pan_no FROM tds_26as_entries a WHERE a.tan_no = tr.tan_no AND a.pan_no IS NOT NULL AND TRIM(a.pan_no) != '' LIMIT 1), '') as panNo,
         COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') as financialYear,
         COALESCE(tr.books_tds, 0) as saarthiTds,
         COALESCE(tr.as26_tds, 0) as as26Tds,

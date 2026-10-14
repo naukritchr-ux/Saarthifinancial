@@ -29,6 +29,7 @@ import { centralErrorHandler } from './middleware/errorHandler.js';
 // DB / startup
 import db from './config/db.js';
 import { ensureTablesExist } from './seed_embedded_dataset.js';
+import { ensurePanColumns } from './controllers/tds26as/identity.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -128,6 +129,7 @@ app.use(centralErrorHandler);
 app.listen(PORT, async () => {
   console.log(`🚀 TDS backend listening on port ${PORT}`);
   await ensureTablesExist();
+  await ensurePanColumns();
   console.log('✅ Ready.');
 });
 

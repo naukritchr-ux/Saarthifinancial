@@ -19,7 +19,8 @@ import {
   getCompanyEntries,
   updateReconciliationEntry,
   getCompanyTransactions,
-  updateBillStatus
+  updateBillStatus,
+  updateRecordIdentity
 } from '../controllers/tds26asController.js';
 
 const router = express.Router();
@@ -33,6 +34,7 @@ router.get('/company-transactions', asyncHandler(getCompanyTransactions));
 // ── Reconciliation report & updates ───────────────────────────────────────────
 router.get('/report',          asyncHandler(getReconciliationReport));
 router.put('/entry/:id',       validateId, asyncHandler(updateReconciliationEntry));
+router.put('/identity/:id',    validateId, asyncHandler(updateRecordIdentity));
 router.put('/bill/:id',        validateId, asyncHandler(updateBillStatus));
 router.put('/override',        asyncHandler(overrideReconciliationStatus));
 router.post('/crm-book-entry', asyncHandler(createCrmBookEntry));
@@ -49,4 +51,3 @@ router.post('/sync-saarthi', asyncHandler(syncSaarthiLiveApi));
 router.post('/sync-sarthi',  asyncHandler(syncSarthiLiveApi));
 
 export default router;
-
