@@ -18,7 +18,10 @@ import {
   Hash,
   Database,
   PlusCircle,
-  RotateCcw
+  RotateCcw,
+  X,
+  AlertCircle,
+  Mail
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { 
@@ -27,7 +30,8 @@ import {
   getSaarthi360Report,
   getFyWiseReport, 
   getTanWiseReport,
-  getFilterOptions
+  getFilterOptions,
+  getCompanyTransactions
 } from '../../api/tdsApi';
 import { triggerCsvDownload } from '../../utils/exportUtils';
 import AddToCrmModal from '../TdsReconciliation/AddToCrmModal';
@@ -62,6 +66,11 @@ export default function Reports() {
 
   // Selected row for Booking in CRM Books
   const [selectedCrmRow, setSelectedCrmRow] = useState(null);
+
+  // Row details popup (click on a table row)
+  const [detailRow, setDetailRow] = useState(null);
+  const [detailBills, setDetailBills] = useState([]);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   // Pagination state
   const [page, setPage] = useState(1);
@@ -153,6 +162,39 @@ export default function Reports() {
       clearTimeout(timer);
     };
   }, [activeTab, viewFilter, search, companyFilter, panFilter, tabFyFilter, refreshKey, localRefresh]);
+
+  // Close details popup on Esc
+  useEffect(() => {
+    if (!detailRow) return;
+    const onKey = (e) => { if (e.key === 'Escape') setDetailRow(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [detailRow]);
+
+  // Load bills (bill no / amount) for the clicked row's company
+  useEffect(() => {
+    if (!detailRow) { setDetailBills([]); return; }
+    let cancelled = false;
+    const load = async () => {
+      setDetailLoading(true);
+      try {
+        const res = await getCompanyTransactions({
+          id: activeTab === 'tan-wise' ? '' : detailRow.id,
+          tan: detailRow.tan_no,
+          company: detailRow.company_name,
+          pan: detailRow.pan_no && detailRow.pan_no !== 'N/A' ? detailRow.pan_no : '',
+          fy: detailRow.financial_year || ''
+        });
+        if (!cancelled) setDetailBills(res?.success && res.data?.bills ? res.data.bills : []);
+      } catch {
+        if (!cancelled) setDetailBills([]);
+      } finally {
+        if (!cancelled) setDetailLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [detailRow, activeTab]);
 
   // Format currency helper
   const formatCurrency = (val) => {
@@ -737,7 +779,12 @@ export default function Reports() {
                   const isExcess = bal < -1.0;
 
                   return (
-                    <tr key={row.id || row.tan_no || idx} className="hover:bg-[#E8E4FF]/25 transition">
+                    <tr
+                      key={row.id || row.tan_no || idx}
+                      onClick={activeTab === 'fy-wise' ? undefined : () => setDetailRow(row)}
+                      title={activeTab === 'fy-wise' ? undefined : 'Click to view details'}
+                      className={`hover:bg-[#E8E4FF]/25 transition ${activeTab === 'fy-wise' ? '' : 'cursor-pointer'}`}
+                    >
                       {activeTab === 'fy-wise' ? (
                         <>
                           <td className="px-4 py-3.5 font-bold text-[#1F1B2E]">{row.financial_year}</td>
@@ -830,6 +877,119 @@ export default function Reports() {
         </div>
 
       </div>
+
+
+      {/* Row Details Modal */}
+      {detailRow && (() => {
+        const hrName = detailRow.hr_name || detailRow.contact_person_name || '';
+        const mobile = detailRow.contact_no || detailRow.contact_number || '';
+        const email = detailRow.email_id || '';
+        const dash = (v) => (v && v !== 'N/A' ? v : '—');
+        const rowBill = detailRow.bill_number && detailRow.bill_number !== 'N/A' ? detailRow.bill_number : '';
+        const rowAmount = parseFloat(detailRow.total_bill_amount || detailRow.gross_amount || 0);
+        const bills = detailBills.length > 0
+          ? detailBills
+          : (rowBill ? [{ id: 'row', billNumber: rowBill, billDate: detailRow.bill_date, totalBillAmount: rowAmount }] : []);
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={() => setDetailRow(null)}
+          >
+            <div
+              className="bg-white rounded-3xl shadow-xl border border-[#E9E4FA] w-full max-w-lg max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-3 p-5 border-b border-[#E9E4FA]">
+                <div>
+                  <h2 className="text-base font-black text-[#1F1B2E]">Record Details</h2>
+                  <p className="text-[11px] text-[#6B6580] font-mono">
+                    {dash(detailRow.tan_no)}{detailRow.financial_year ? ` · ${detailRow.financial_year}` : ''}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setDetailRow(null)}
+                  className="p-1.5 rounded-xl hover:bg-[#E8E4FF] text-[#6B6580] cursor-pointer"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-3 text-xs">
+                <div className="flex items-start gap-3">
+                  <Building2 className="w-4 h-4 text-[#9B87F5] mt-0.5" />
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#6B6580]">Company Name</div>
+                    <div className="font-extrabold text-[#1F1B2E]">{dash(detailRow.company_name)}</div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <User className="w-4 h-4 text-[#9B87F5] mt-0.5" />
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#6B6580]">HR Name</div>
+                    <div className="font-bold text-[#1F1B2E]">{dash(hrName)}</div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Phone className="w-4 h-4 text-[#9B87F5] mt-0.5" />
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#6B6580]">Mobile No.</div>
+                    <div className="font-bold text-[#1F1B2E] font-mono">{dash(mobile)}</div>
+                  </div>
+                </div>
+                {email && (
+                  <div className="flex items-start gap-3">
+                    <Mail className="w-4 h-4 text-[#9B87F5] mt-0.5" />
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-[#6B6580]">Email</div>
+                      <div className="font-bold text-[#1F1B2E]">{email}</div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Hash className="w-4 h-4 text-[#9B87F5]" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#6B6580]">Bill No. &amp; Amount</span>
+                  </div>
+                  <div className="border border-[#E9E4FA] rounded-2xl overflow-hidden">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="bg-[#E8E4FF]/60 text-[#6B6580] font-black uppercase tracking-wider text-[10px]">
+                          <th className="px-3 py-2">Bill No.</th>
+                          <th className="px-3 py-2">Date</th>
+                          <th className="px-3 py-2 text-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#E9E4FA]">
+                        {detailLoading && bills.length === 0 ? (
+                          <tr><td colSpan="3" className="px-3 py-4 text-center text-[#6B6580]">Loading bills...</td></tr>
+                        ) : bills.length === 0 ? (
+                          <tr>
+                            <td className="px-3 py-3 font-bold">—</td>
+                            <td className="px-3 py-3">—</td>
+                            <td className="px-3 py-3 text-right font-bold">{rowAmount ? formatCurrency(rowAmount) : '—'}</td>
+                          </tr>
+                        ) : (
+                          bills.map((b, i) => (
+                            <tr key={b.id || i}>
+                              <td className="px-3 py-2.5 font-bold text-[#1F1B2E]">{dash(b.billNumber)}</td>
+                              <td className="px-3 py-2.5 text-[#6B6580]">{dash(b.billDate)}</td>
+                              <td className="px-3 py-2.5 text-right font-bold text-[#1F1B2E]">
+                                {parseFloat(b.totalBillAmount || 0) ? formatCurrency(b.totalBillAmount) : '—'}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* CRM Booking Modal */}
       {selectedCrmRow && (

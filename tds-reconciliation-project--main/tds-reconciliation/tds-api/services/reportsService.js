@@ -217,7 +217,11 @@ export const getAs26DataReport = async ({ fy = '', company = '', pan = '', view 
       baselineSource,
       baselineValue,
       status,
-      financialStatus
+      financialStatus,
+      gross_amount: parseFloat(r.gross_amount || 0),
+      contact_person_name: r.contact_person_name || '',
+      contact_number: r.contact_number || '',
+      email_id: r.email_id || ''
     };
   });
 
