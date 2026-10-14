@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   RefreshCw,
   Search,
@@ -30,6 +30,9 @@ import {
 import { triggerCsvDownload } from '../../utils/exportUtils';
 import { useApp } from '../../context/AppContext';
 
+// Max options rendered at once in a searchable dropdown (typing narrows the rest)
+const MAX_VISIBLE_OPTIONS = 100;
+
 function SearchableDropdown({
   label,
   icon: Icon,
@@ -41,15 +44,31 @@ function SearchableDropdown({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const rootRef = useRef(null);
+
+  // Close the dropdown when the user clicks anywhere outside it
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) {
+        setIsOpen(false);
+        setSearchTerm('');
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
 
   const filteredOptions = options.filter(option =>
     String(option).toLowerCase().includes(searchTerm.trim().toLowerCase())
   );
 
+  const visibleOptions = filteredOptions.slice(0, MAX_VISIBLE_OPTIONS);
+
   const selectedLabel = value === 'All' ? allLabel : value;
 
   return (
-    <div className="relative min-w-0">
+    <div ref={rootRef} className="relative min-w-0">
       <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1 flex items-center gap-1">
         {Icon && <Icon className="w-3.5 h-3.5 text-[#9B87F5]" />}
         {label}
@@ -71,7 +90,7 @@ function SearchableDropdown({
             isOpen ? 'rotate-180' : ''
           }`}
         />
-        </button>
+      </button>
 
       {isOpen && (
         <div className="absolute z-50 mt-1 w-full min-w-[240px] rounded-xl border border-[#E9E4FA] bg-white shadow-xl overflow-hidden">
@@ -82,6 +101,12 @@ function SearchableDropdown({
               type="text"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') {
+                  setIsOpen(false);
+                  setSearchTerm('');
+                }
+              }}
               placeholder={placeholder}
               className="w-full bg-[#F6F8FA] border border-[#E9E4FA] rounded-lg pl-8 pr-3 py-2 text-xs text-[#1F1B2E] focus:outline-none focus:border-[#9B87F5]"
               autoFocus
@@ -111,8 +136,8 @@ function SearchableDropdown({
               {allLabel}
             </button>
 
-            {filteredOptions.length > 0 ? (
-              filteredOptions.map(option => (
+            {visibleOptions.length > 0 ? (
+              visibleOptions.map(option => (
                 <button
                   key={option}
                   type="button"
@@ -135,6 +160,12 @@ function SearchableDropdown({
             ) : (
               <p className="px-3 py-3 text-xs text-[#6B6580]">
                 No matching options found.
+              </p>
+            )}
+
+            {filteredOptions.length > MAX_VISIBLE_OPTIONS && (
+              <p className="px-3 py-2 text-[10px] text-[#6B6580] border-t border-[#E9E4FA]">
+                Showing {MAX_VISIBLE_OPTIONS} of {filteredOptions.length} — keep typing to narrow down
               </p>
             )}
           </div>
@@ -367,8 +398,14 @@ export default function TdsReconciliation() {
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    setPage(1);
-    fetchReport();
+
+    // If we're not on page 1, changing the page re-runs the fetch through the effect above.
+    // Otherwise fetch right away. This avoids requesting the old page number.
+    if (page !== 1) {
+      setPage(1);
+    } else {
+      fetchReport();
+    }
   };
 
   const handleRefresh = () => {
@@ -382,6 +419,7 @@ export default function TdsReconciliation() {
     setOverallStatus('All');
     setCoverageFilter('All');
     setResponseFilter('All');
+    setSortBy('updated_at');
     setFyFilter('All Financial Years');
     setPage(1);
   };
@@ -440,6 +478,7 @@ export default function TdsReconciliation() {
         return;
       }
 
+      // 13 columns — must match the 13 values pushed for every row below
       const headers = [
         'Company Name',
         'TAN No.',
@@ -967,6 +1006,7 @@ export default function TdsReconciliation() {
         onAddToCrmClick={(row) => setActiveCrmRow(row)}
         onFollowupClick={(row) => setFollowupRow(row)}
         onFollowupDoneToggle={handleToggleFollowup}
+        onIdentitySaved={handleRefresh}
       />
 
       {/* Direct Follow-up Modal on Reconciliation Table */}
