@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import SearchableDropdown, { FY_OPTIONS } from './SearchableDropdown';
 import { 
   FileText, 
   Download, 
@@ -655,7 +656,7 @@ export default function Reports() {
           </div>
         </div>
 
-        {/* 3 Core Filter Dropdowns: Year-Wise, Company-Wise, PAN-Wise + Search */}
+        {/* 3 Core Filter Dropdowns: Year-Wise, Company-Wise, PAN-Wise + Search (all share one design) */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2 text-xs">
           
           {/* Year-Wise Selector */}
@@ -664,21 +665,15 @@ export default function Reports() {
               <Calendar className="w-3.5 h-3.5 text-[#9B87F5]" />
               Financial Year
             </label>
-            <select
+            <SearchableDropdown
               value={tabFyFilter}
-              onChange={(e) => setTabFyFilter(e.target.value)}
-              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-bold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
-            >
-              <option value="All Financial Years">All Financial Years</option>
-              <option value="FY 2026-27">FY 2026-27 (Saarthi 360 Era)</option>
-              <option value="FY 2025-26">FY 2025-26</option>
-              <option value="FY 2024-25">FY 2024-25</option>
-              <option value="FY 2023-24">FY 2023-24</option>
-              <option value="FY 2022-23">FY 2022-23</option>
-              <option value="FY 2021-22">FY 2021-22</option>
-              <option value="FY 2020-21">FY 2020-21</option>
-              <option value="FY 2019-20">FY 2019-20</option>
-            </select>
+              options={FY_OPTIONS}
+              allValue="All Financial Years"
+              allLabel="All Financial Years"
+              showSearch={false}
+              sort={false}
+              onChange={setTabFyFilter}
+            />
           </div>
 
           {/* Company-Wise Selector */}
@@ -687,16 +682,13 @@ export default function Reports() {
               <Building2 className="w-3.5 h-3.5 text-[#9B87F5]" />
               Company Name
             </label>
-            <select
+            <SearchableDropdown
               value={companyFilter}
-              onChange={(e) => setCompanyFilter(e.target.value)}
-              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
-            >
-              <option value="All">All Companies</option>
-              {filterOptions.companies.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+              options={filterOptions.companies}
+              allLabel={`All Companies (${filterOptions.companies.length})`}
+              placeholder="Search company name..."
+              onChange={setCompanyFilter}
+            />
           </div>
 
           {/* PAN-Wise Selector */}
@@ -705,16 +697,14 @@ export default function Reports() {
               <CreditCard className="w-3.5 h-3.5 text-[#9B87F5]" />
               PAN Number
             </label>
-            <select
+            <SearchableDropdown
               value={panFilter}
-              onChange={(e) => setPanFilter(e.target.value)}
-              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-mono font-bold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
-            >
-              <option value="All">All PAN Numbers</option>
-              {filterOptions.pans.map(p => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
+              options={filterOptions.pans}
+              allLabel={`All PAN Numbers (${filterOptions.pans.length})`}
+              placeholder="Search PAN number..."
+              mono
+              onChange={setPanFilter}
+            />
           </div>
 
           {/* Keyword Search */}
@@ -729,7 +719,7 @@ export default function Reports() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search TAN, Company..."
-                className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl pl-3 pr-8 py-2 text-xs font-medium focus:outline-none focus:border-[#9B87F5]"
+                className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl pl-3 pr-8 py-2 text-xs font-semibold placeholder:font-semibold placeholder:text-[#6B6580] focus:outline-none focus:border-[#9B87F5]"
               />
               {search && (
                 <button
