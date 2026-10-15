@@ -8,6 +8,7 @@ import {
   Wrench,
   ArrowDownRight,
   ArrowUpRight,
+  Building2,
   User,
   Mail,
   Phone,
@@ -624,7 +625,19 @@ export default function ReconciliationTable({
                                 </div>
                               </div>
 
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                <div className="flex items-center gap-2 p-2.5 rounded-xl border border-[#E9E4FA] bg-[#F6F8FA]">
+                                  <Building2 className="w-4 h-4 text-[#6B6580] flex-shrink-0" />
+                                  <div className="truncate" title={row.as26DeductorName || ''}>
+                                    <div className="text-[9px] text-[#6B6580] uppercase font-bold">
+                                      Company Name (as per 26AS)
+                                    </div>
+                                    <div className="font-bold text-[#1F1B2E] text-xs truncate">
+                                      {row.as26DeductorName || 'Not available in 26AS'}
+                                    </div>
+                                  </div>
+                                </div>
+
                                 <div className="flex items-center gap-2 p-2.5 rounded-xl border border-[#E9E4FA] bg-[#F6F8FA]">
                                   <User className="w-4 h-4 text-[#6B6580] flex-shrink-0" />
                                   <div className="truncate">

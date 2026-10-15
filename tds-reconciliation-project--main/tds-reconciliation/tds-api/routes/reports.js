@@ -1,28 +1,1988 @@
-/**
- * routes/reports.js — Tally, 26AS, Saarthi 360, FY-wise, TAN-wise, and TAN-wise-by-FY reports.
- * Mounted at /api/tds-26as via the barrel routes/tds26asRoutes.js
- */
-import express from 'express';
-import asyncHandler from '../middleware/asyncHandler.js';
+import xlsx from 'xlsx';
+import fs from 'fs';
+import path from 'path';
+import db from '../../config/db.js';
+import { reconcile, cleanNameTokens } from '../../services/tdsReconciliationService.js';
+import { seedEmbeddedDataset, markPurgedFlag, clearPurgedFlag } from '../../seed_embedded_dataset.js';
+import { v4 as uuidv4 } from 'uuid';
+import { ensurePanColumns } from './identity.js';
+import { normalizeFY, getFinancialYearFromDate } from '../../utils/fyHelper.js';
 import {
-  getTallyReportHandler,
-  getAs26ReportHandler,
-  getSaarthi360ReportHandler,
-  getFyWiseReportHandler,
-  getTanWiseReportHandler,
-  getTanWiseByFyReportHandler
-} from '../controllers/reportsController.js';
+  TDS_TOLERANCE,
+  PRIMARY_TDS_SQL,
+  getPrimaryTdsVal,
+  getDifferenceAmount,
+  calculateTdsBalance,
+  isSaarthiEra,
+  deriveFinancialStatus,
+  getFinancialStatusWhereClause
+} from '../../services/reconciliationRules.js';
 
-const router = express.Router();
+export { normalizeFY, getFinancialYearFromDate };
 
-// ── 3 Main Report Options ──────────────────────────────────────────────────────
-router.get('/reports/tally', asyncHandler(getTallyReportHandler));
-router.get('/reports/26as', asyncHandler(getAs26ReportHandler));
-router.get('/reports/saarthi360', asyncHandler(getSaarthi360ReportHandler));
+export const getDashboardSummary = async (req, res) => {
+  try {
+    const { fy } = req.query;
 
-// ── Aggregated & Breakdown Reports ─────────────────────────────────────────────
-router.get('/reports/fy-wise', asyncHandler(getFyWiseReportHandler));
-router.get('/reports/tan-wise', asyncHandler(getTanWiseReportHandler));
-router.get('/reports/tan-wise-by-fy', asyncHandler(getTanWiseByFyReportHandler));
+    let whereClauses = [
+      "(COALESCE(tr.books_tds, 0) > 0 OR COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0)",
+      "(tr.tan_no IS NOT NULL AND tr.tan_no NOT LIKE 'NO_TAN_%' AND tr.tan_no != 'Pending TAN' AND tr.tan_no != 'Not Available' AND tr.tan_no NOT LIKE '%UNKNOWN%' AND TRIM(tr.tan_no) != '')"
+    ];
+    const params = [];
+    if (fy && fy !== 'All' && fy !== 'All Financial Years' && String(fy).trim() !== '') {
+      const cleanFy = String(fy).replace(/^FY\s*/i, '').trim();
+      whereClauses.push('(TRIM(tr.financial_year) LIKE ? OR (tr.financial_year IS NULL AND TRIM(d.financial_year) LIKE ?))');
+      params.push(`%${cleanFy}%`, `%${cleanFy}%`);
+    }
 
-export default router;
+    const whereSQL = 'WHERE ' + whereClauses.join(' AND ');
+
+    const query = `
+      SELECT 
+        tr.books_tds,
+        tr.as26_tds,
+        tr.tally_tds,
+        tr.overall_status,
+        tr.books_vs_26as_status,
+        tr.books_vs_tally_status,
+        tr.as26_vs_tally_status,
+        tr.is_manually_edited,
+        tr.tds_dues_id,
+        d.id as crm_id
+      FROM tds_reconciliation_results tr
+      LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+      ${whereSQL}
+    `;
+
+    let [rows] = await db.execute(query, params);
+
+    let tallyTotal = 0;
+    let as26Total = 0;
+    let saarthiTotal = 0;
+
+    let threeOfThree = 0;
+    let twoOfThree = 0;
+    let oneOfThree = 0;
+    let noMatch = 0;
+
+    let matchCount = 0;
+    let lessCount = 0;
+    let excessCount = 0;
+    let missingCount = 0;
+    let pendingReviewCount = 0;
+    let resolvedCount = 0;
+
+    rows.forEach(r => {
+      const tally = parseFloat(r.tally_tds || 0);
+      const as26 = parseFloat(r.as26_tds || 0);
+      const saarthi = parseFloat(r.books_tds || 0);
+
+      tallyTotal += tally;
+      as26Total += as26;
+      saarthiTotal += saarthi;
+
+      const hasTally = tally > 0;
+      const has26as = as26 > 0;
+      const hasSarthi = saarthi > 0 || Boolean(r.tds_dues_id || r.crm_id);
+
+      const sourcesPresent = (hasTally ? 1 : 0) + (has26as ? 1 : 0) + (hasSarthi ? 1 : 0);
+      if (sourcesPresent === 3) threeOfThree++;
+      else if (sourcesPresent === 2) twoOfThree++;
+      else if (sourcesPresent === 1) oneOfThree++;
+      else noMatch++;
+
+      const primaryVal = getPrimaryTdsVal(tally, saarthi);
+
+      if (r.is_manually_edited) {
+        resolvedCount++;
+      }
+      const derived = deriveFinancialStatus({
+        tally,
+        as26,
+        saarthi,
+        isManuallyEdited: false,
+        overallStatus: r.overall_status
+      });
+      if (derived === 'Match') matchCount++;
+      else if (derived === 'Less Paid') lessCount++;
+      else if (derived === 'Excess') excessCount++;
+      else if (derived === 'Pending Review') pendingReviewCount++;
+      else missingCount++;
+    });
+
+    const primaryTotal = getPrimaryTdsVal(tallyTotal, saarthiTotal);
+
+    res.json({
+      success: true,
+      totals: {
+        tally: tallyTotal,
+        as26: as26Total,
+        saarthi: saarthiTotal,
+        netGap: getDifferenceAmount(as26Total, primaryTotal)
+      },
+      recordCount: rows.length,
+      sourceCoverage: {
+        threeOfThree,
+        twoOfThree,
+        oneOfThree,
+        noMatch
+      },
+      financialStatus: {
+        match: matchCount,
+        less: lessCount,
+        excess: excessCount,
+        missing: missingCount,
+        pendingReview: pendingReviewCount,
+        resolved: resolvedCount
+      }
+    });
+
+  } catch (error) {
+    console.error('💥 Error in getDashboardSummary:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch dashboard summary', details: error.message });
+  }
+};
+
+/**
+ * Detect placeholder or dummy company names (e.g. 'Unknown Client', 'Client Entity', 'Entity <TAN>')
+ */
+export const isDummyPlaceholderName = (name) => {
+  if (!name) return true;
+  const str = String(name).trim();
+  if (!str) return true;
+  if (['Unknown Client', 'Unknown Company', 'Client Entity', 'Unassigned Entity'].includes(str)) return true;
+  if (/^Entity\s+[A-Za-z0-9]+$/i.test(str)) return true;
+  return false;
+};
+
+/**
+ * Get Data Cleaning Queue items
+ */
+/**
+ * Fast badge count — single SQL COUNT(*), no JS processing.
+ * Used by AppContext on every page load; must be cheap.
+ */
+export const getCleaningQueueCount = async (req, res) => {
+  try {
+    const [[{ cnt }]] = await db.execute(`
+      SELECT COUNT(*) as cnt
+      FROM tds_reconciliation_results tr
+      LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+      WHERE (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
+        AND (COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0)
+        AND (
+          tr.tan_no IS NULL OR tr.tan_no = '' OR LENGTH(tr.tan_no) < 10
+          OR tr.tan_no LIKE 'NO_TAN_%' OR tr.tan_no LIKE '%UNKNOWN%'
+          OR tr.tan_no REGEXP '^[A-Za-z]{5}[0-9]{4}[A-Za-z]$'
+          OR NOT (tr.tan_no REGEXP '^[A-Za-z]{4}[0-9]{5}[A-Za-z]$')
+          OR d.company_name IS NULL OR d.company_name = 'Unknown Company' OR d.company_name = ''
+          OR d.company_name LIKE 'Entity %'
+          OR d.company_name IN (
+            SELECT d_sub.company_name
+            FROM tds_reconciliation_results tr_sub
+            JOIN tds_dues d_sub ON tr_sub.tds_dues_id = d_sub.id
+            WHERE d_sub.company_name IS NOT NULL AND d_sub.company_name != ''
+            GROUP BY d_sub.company_name
+            HAVING COUNT(DISTINCT tr_sub.tan_no) > 1
+          )
+        )
+        AND tr.tan_no NOT IN ('COMPANYNAME', 'TANNO', 'TAN_NO', 'PANNO', 'TAN')
+        AND UPPER(COALESCE(d.company_name, '')) NOT IN ('UNKNOWN CLIENT', 'COMPANYNAME')
+    `);
+    return res.json({ success: true, count: Number(cnt || 0) });
+  } catch (error) {
+    console.error('💥 Error in getCleaningQueueCount:', error);
+    return res.status(500).json({ success: false, count: 0, error: error.message });
+  }
+};
+
+export const getCleaningQueue = async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(500, Math.max(1, parseInt(req.query.pageSize, 10) || 100));
+
+    // Fetch multi-TAN companies so we can flag them
+    const [multiTanRows] = await db.execute(`
+      SELECT d.company_name, COUNT(DISTINCT tr.tan_no) as tan_count, GROUP_CONCAT(DISTINCT tr.tan_no) as tans
+      FROM tds_reconciliation_results tr
+      JOIN tds_dues d ON tr.tds_dues_id = d.id
+      WHERE d.company_name IS NOT NULL AND d.company_name != ''
+      GROUP BY d.company_name
+      HAVING tan_count > 1
+    `);
+    const multiTanMap = new Map();
+    (multiTanRows || []).forEach(r => {
+      multiTanMap.set(String(r.company_name).trim().toUpperCase(), r.tans.split(','));
+    });
+
+    // Fetch ambiguous duplicate entries (same TAN+FY with conflicting distinct amounts)
+    const [dup26asRows] = await db.execute(`
+      SELECT 
+        UPPER(TRIM(tan_no)) as tan_no, 
+        COALESCE(NULLIF(TRIM(financial_year), ''), 'Unspecified') as financial_year,
+        COUNT(*) as row_count,
+        COUNT(DISTINCT tds_deducted) as distinct_amounts_count,
+        GROUP_CONCAT(DISTINCT tds_deducted) as amounts
+      FROM tds_26as_entries
+      WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''
+      GROUP BY UPPER(TRIM(tan_no)), COALESCE(NULLIF(TRIM(financial_year), ''), 'Unspecified')
+      HAVING COUNT(*) > 1 AND COUNT(DISTINCT tds_deducted) > 1
+    `);
+
+    const [dupTallyRows] = await db.execute(`
+      SELECT 
+        UPPER(TRIM(tan_no)) as tan_no, 
+        COALESCE(NULLIF(TRIM(financial_year), ''), 'Unspecified') as financial_year,
+        COUNT(*) as row_count,
+        COUNT(DISTINCT tds_amount) as distinct_amounts_count,
+        GROUP_CONCAT(DISTINCT tds_amount) as amounts
+      FROM tds_tally_entries
+      WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''
+      GROUP BY UPPER(TRIM(tan_no)), COALESCE(NULLIF(TRIM(financial_year), ''), 'Unspecified')
+      HAVING COUNT(*) > 1 AND COUNT(DISTINCT tds_amount) > 1
+    `);
+
+    const duplicateEntriesMap = new Map();
+    (dup26asRows || []).forEach(r => {
+      const amountsList = String(r.amounts || '').split(',').map(a => `₹${parseFloat(a).toLocaleString('en-IN')}`).join(', ');
+      const key = `${r.tan_no}|${r.financial_year}`.toUpperCase();
+      duplicateEntriesMap.set(key, {
+        source: 'Form 26AS',
+        tan: r.tan_no,
+        fy: r.financial_year,
+        amounts: amountsList,
+        reason: `Multiple Form 26AS entries for this TAN+FY with different amounts (${amountsList})`
+      });
+      if (!duplicateEntriesMap.has(r.tan_no)) {
+        duplicateEntriesMap.set(r.tan_no, duplicateEntriesMap.get(key));
+      }
+    });
+
+    (dupTallyRows || []).forEach(r => {
+      const amountsList = String(r.amounts || '').split(',').map(a => `₹${parseFloat(a).toLocaleString('en-IN')}`).join(', ');
+      const key = `${r.tan_no}|${r.financial_year}`.toUpperCase();
+      if (duplicateEntriesMap.has(key)) {
+        const existing = duplicateEntriesMap.get(key);
+        existing.source = 'Form 26AS & Tally';
+        existing.reason = `Multiple entries with conflicting amounts in 26AS & Tally (${amountsList})`;
+      } else {
+        duplicateEntriesMap.set(key, {
+          source: 'Tally Ledger',
+          tan: r.tan_no,
+          fy: r.financial_year,
+          amounts: amountsList,
+          reason: `Multiple Tally Ledger entries for this TAN+FY with different amounts (${amountsList})`
+        });
+      }
+      if (!duplicateEntriesMap.has(r.tan_no)) {
+        duplicateEntriesMap.set(r.tan_no, duplicateEntriesMap.get(key));
+      }
+    });
+
+    const query = `
+      SELECT 
+        tr.id,
+        tr.tan_no as tanNo,
+        d.company_name as booksCompanyName,
+        d.pan_no as booksPanNo,
+        COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') as financialYear,
+        tr.books_tds as booksTds,
+        tr.as26_tds as as26Tds,
+        tr.tally_tds as tallyTds,
+        tr.overall_status as overallStatus
+      FROM tds_reconciliation_results tr
+      LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+      WHERE (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
+        AND (COALESCE(tr.as26_tds, 0) > 0 OR COALESCE(tr.tally_tds, 0) > 0)
+        AND (
+          tr.tan_no IS NULL OR tr.tan_no = '' OR LENGTH(tr.tan_no) < 10 
+          OR tr.tan_no LIKE 'NO_TAN_%' OR tr.tan_no LIKE '%UNKNOWN%'
+          OR tr.tan_no REGEXP '^[A-Za-z]{5}[0-9]{4}[A-Za-z]$'
+          OR NOT (tr.tan_no REGEXP '^[A-Za-z]{4}[0-9]{5}[A-Za-z]$')
+          OR d.company_name IS NULL OR d.company_name = 'Unknown Company' OR d.company_name = ''
+          OR d.company_name LIKE 'Entity %'
+          OR d.company_name IN (
+            SELECT d_sub.company_name
+            FROM tds_reconciliation_results tr_sub
+            JOIN tds_dues d_sub ON tr_sub.tds_dues_id = d_sub.id
+            WHERE d_sub.company_name IS NOT NULL AND d_sub.company_name != ''
+            GROUP BY d_sub.company_name
+            HAVING COUNT(DISTINCT tr_sub.tan_no) > 1
+          )
+        )
+        AND tr.tan_no NOT IN ('COMPANYNAME', 'TANNO', 'TAN_NO', 'PANNO', 'TAN')
+        AND UPPER(COALESCE(d.company_name, '')) NOT IN ('UNKNOWN CLIENT', 'COMPANYNAME')
+      ORDER BY tr.id DESC
+    `;
+
+    const [rows] = await db.execute(query);
+    if (!rows || rows.length === 0) {
+      return res.json({ success: true, count: 0, data: [] });
+    }
+
+    const neededTans = new Set();
+    const neededNames = new Set();
+    for (const r of rows) {
+      const tan = r.tanNo ? String(r.tanNo).trim().toUpperCase() : '';
+      const isUsableTan = tan && tan.length >= 10 && !tan.startsWith('NO_TAN_') && !tan.includes('UNKNOWN');
+      if (isUsableTan) neededTans.add(tan);
+      const name = r.booksCompanyName ? String(r.booksCompanyName).trim().toUpperCase() : '';
+      if (name) neededNames.add(name);
+    }
+    const tanList = Array.from(neededTans);
+    const nameList = Array.from(neededNames);
+
+    const LOOKUP_CHUNK = 500;
+    const fetchScoped = async (table, nameCol) => {
+      const results = [];
+      for (let i = 0; i < tanList.length; i += LOOKUP_CHUNK) {
+        const chunk = tanList.slice(i, i + LOOKUP_CHUNK);
+        const placeholders = chunk.map(() => '?').join(', ');
+        const [batch] = await db.execute(
+          `SELECT ${nameCol}, UPPER(TRIM(tan_no)) as tan_no FROM ${table}
+           WHERE tan_no IS NOT NULL AND TRIM(tan_no) != '' AND UPPER(TRIM(tan_no)) IN (${placeholders})`,
+          chunk
+        );
+        results.push(...batch);
+      }
+      for (let i = 0; i < nameList.length; i += LOOKUP_CHUNK) {
+        const chunk = nameList.slice(i, i + LOOKUP_CHUNK);
+        const placeholders = chunk.map(() => '?').join(', ');
+        const [batch] = await db.execute(
+          `SELECT ${nameCol}, UPPER(TRIM(tan_no)) as tan_no FROM ${table}
+           WHERE ${nameCol} IS NOT NULL AND TRIM(${nameCol}) != '' AND UPPER(TRIM(${nameCol})) IN (${placeholders})`,
+          chunk
+        );
+        results.push(...batch);
+      }
+      return results;
+    };
+
+    const all26as = (tanList.length || nameList.length)
+      ? await fetchScoped('tds_26as_entries', 'deductor_name')
+      : [];
+    const allTally = (tanList.length || nameList.length)
+      ? await fetchScoped('tds_tally_entries', 'party_name')
+      : [];
+
+    const as26ByTan = new Map();
+    const as26ByName = new Map();
+    for (const e of all26as) {
+      const tanKey = e.tan_no ? String(e.tan_no).trim().toUpperCase() : '';
+      if (tanKey && !as26ByTan.has(tanKey)) as26ByTan.set(tanKey, e);
+      const nameKey = e.deductor_name ? String(e.deductor_name).trim().toUpperCase() : '';
+      if (nameKey && !as26ByName.has(nameKey)) as26ByName.set(nameKey, e);
+    }
+
+    const tallyByTan = new Map();
+    const tallyByName = new Map();
+    for (const e of allTally) {
+      const tanKey = e.tan_no ? String(e.tan_no).trim().toUpperCase() : '';
+      if (tanKey && !tallyByTan.has(tanKey)) tallyByTan.set(tanKey, e);
+      const nameKey = e.party_name ? String(e.party_name).trim().toUpperCase() : '';
+      if (nameKey && !tallyByName.has(nameKey)) tallyByName.set(nameKey, e);
+    }
+
+    const cleaningItems = rows.map((r) => {
+      const tan = r.tanNo ? String(r.tanNo).trim().toUpperCase() : '';
+      const rawBooksName = r.booksCompanyName || '';
+      const isMissingBooksName = isDummyPlaceholderName(rawBooksName);
+      const booksName = isMissingBooksName ? (rawBooksName || 'Unknown Client') : rawBooksName;
+      const normBooksName = String(booksName).trim().toUpperCase();
+
+      let as26Name = null;
+      let as26Tan = null;
+      const as26Match = (tan && !tan.startsWith('NO_TAN_') ? as26ByTan.get(tan) : null) || (!isMissingBooksName && normBooksName ? as26ByName.get(normBooksName) : null);
+      if (as26Match) {
+        as26Name = as26Match.deductor_name;
+        as26Tan = as26Match.tan_no;
+      }
+
+      let tallyName = null;
+      let tallyTan = null;
+      const tallyMatch = (tan && !tan.startsWith('NO_TAN_') ? tallyByTan.get(tan) : null) || (!isMissingBooksName && normBooksName ? tallyByName.get(normBooksName) : null);
+      if (tallyMatch) {
+        tallyName = tallyMatch.party_name;
+        tallyTan = tallyMatch.tan_no;
+      }
+
+      // Do not score confidence against dummy/placeholder names like 'Entity <TAN>' or 'Unknown Client'
+      const namesToCompare = [
+        tallyName && !isDummyPlaceholderName(tallyName) ? tallyName : null,
+        as26Name && !isDummyPlaceholderName(as26Name) ? as26Name : null,
+        !isMissingBooksName ? booksName : null
+      ].filter(Boolean);
+
+      let confidence = 100;
+      if (namesToCompare.length >= 2) {
+        let totalSim = 0;
+        let pairCount = 0;
+        for (let i = 0; i < namesToCompare.length; i++) {
+          for (let j = i + 1; j < namesToCompare.length; j++) {
+            totalSim += calculateStringSimilarity(namesToCompare[i], namesToCompare[j]);
+            pairCount++;
+          }
+        }
+        confidence = Math.round(totalSim / pairCount);
+      }
+
+      // If booksName is a dummy placeholder, prefer genuine names from 26AS or Tally as suggestion
+      let saarthiSuggestion = !isMissingBooksName ? booksName : (as26Name || tallyName || booksName);
+      if (as26Name && as26Name.length > saarthiSuggestion.length && as26Name !== 'Unknown Deductor') {
+        saarthiSuggestion = as26Name;
+      }
+      if (tallyName && tallyName.length > saarthiSuggestion.length && tallyName !== 'Unknown Client') {
+        saarthiSuggestion = tallyName;
+      }
+
+      const isMissingTan = !tan || tan.length < 10 || tan.startsWith('NO_TAN_') || tan.includes('UNKNOWN');
+      const isPanAsTan = /^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(tan);
+      const isInvalidTanFormat = !isPanAsTan && !/^[A-Za-z]{4}[0-9]{5}[A-Za-z]$/.test(tan);
+      const companyTans = multiTanMap.get(normBooksName);
+      const isMultiTan = companyTans && companyTans.length > 1;
+
+      const fyKey = `${tan}|${r.financialYear || 'Unspecified'}`.toUpperCase();
+      const dupInfo = duplicateEntriesMap.get(fyKey) || duplicateEntriesMap.get(tan);
+      const isDuplicateEntry = Boolean(dupInfo);
+
+      const resolvedTans = [isMissingTan ? null : tan, as26Tan, tallyTan].filter(Boolean);
+      const uniqueTans = Array.from(new Set(resolvedTans));
+      const isTanMismatch = uniqueTans.length > 1 || isPanAsTan || isMultiTan;
+
+      let reason = 'Multi-source Data Discrepancy';
+      let issueType = 'source_discrepancy';
+
+      // Explicit triage priority:
+      // 1. Conflicting TANs across datasets (hard mismatch between 26AS, Tally, or Sarthi)
+      // 2. Multiple TAN registrations for the same legal company entity (e.g. branch offices)
+      // 3. PAN entered into TAN field (common user/accountant transposition)
+      // 4. Ambiguous duplicate entry with differing amounts for the same TAN+FY
+      // 5. Missing or syntactically invalid TAN format
+      // 6. Missing / dummy company entity name
+      // 7. Name discrepancy / fuzzy token confidence < 90%
+      if (uniqueTans.length > 1) {
+        reason = 'Conflicting TANs across datasets';
+        issueType = 'tan_mismatch';
+      } else if (isMultiTan) {
+        reason = `Multiple TANs for company (${companyTans.join(', ')})`;
+        issueType = 'multi_tan';
+      } else if (isPanAsTan) {
+        reason = `PAN (${tan}) entered instead of TAN Number`;
+        issueType = 'pan_as_tan';
+      } else if (isDuplicateEntry) {
+        reason = dupInfo.reason;
+        issueType = 'duplicate_entry';
+      } else if (isMissingTan || isInvalidTanFormat) {
+        reason = 'Missing or Invalid TAN format';
+        issueType = 'invalid_tan';
+      } else if (isMissingBooksName) {
+        reason = 'Missing Client Entity Name';
+        issueType = 'missing_name';
+      } else if (confidence < 90) {
+        reason = 'Deductor Name Discrepancy';
+        issueType = 'name_mismatch';
+      }
+
+      return {
+        id: r.id,
+        tanNo: isMissingTan ? 'Pending TAN' : tan,
+        pan: r.booksPanNo || (isPanAsTan ? tan : null),
+        companyName: tallyName || booksName,
+        tallyCompanyName: tallyName || booksName,
+        tallyTan: tallyTan || (isMissingTan ? '' : tan),
+        as26CompanyName: as26Name || null,
+        as26Tan: as26Tan || null,
+        saarthiName: booksName,
+        saarthiTan: isMissingTan ? '' : tan,
+        financialYear: r.financialYear || 'Unspecified',
+        saarthiSuggestion,
+        confidence,
+        isTanMismatch,
+        issueType,
+        issueReason: reason,
+        sources: [
+          r.booksTds > 0 ? 'Saarthi 360' : null,
+          (as26Name || r.as26Tds > 0) ? 'Form 26AS' : null,
+          (tallyName || r.tallyTds > 0) ? 'Tally Ledger' : null
+        ].filter(Boolean),
+        booksTds: r.booksTds,
+        as26Tds: r.as26Tds,
+        tallyTds: r.tallyTds
+      };
+    });
+
+    const flaggedItems = cleaningItems.filter(item => {
+      const isZeroData = (item.booksTds || 0) === 0 && (item.as26Tds || 0) === 0 && (item.tallyTds || 0) === 0;
+      const isUnknownDummy = (item.companyName || item.saarthiName || '').toUpperCase().includes('UNKNOWN') || isDummyPlaceholderName(item.companyName || item.saarthiName);
+
+      if (isZeroData && isUnknownDummy) return false;
+
+      const invalidTan = !item.tanNo || item.tanNo === 'Pending TAN' || item.tanNo.length < 10 || item.tanNo.includes('UNKNOWN') || !/^[A-Za-z]{4}[0-9]{5}[A-Za-z]$/.test(item.tanNo);
+      const isPanAsTan = /^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(item.tanNo);
+      const missingName = isDummyPlaceholderName(item.saarthiName);
+      const lowConfidence = item.confidence < 90;
+      const tanMismatch = item.isTanMismatch;
+      const isMultiTan = item.issueType === 'multi_tan';
+      const isDuplicateEntry = item.issueType === 'duplicate_entry';
+      return invalidTan || isPanAsTan || missingName || lowConfidence || tanMismatch || isMultiTan || isDuplicateEntry;
+    });
+
+    const totalCount = flaggedItems.length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+    const startIndex = (page - 1) * pageSize;
+    const pagedItems = flaggedItems.slice(startIndex, startIndex + pageSize);
+
+    res.json({
+      success: true,
+      count: totalCount,
+      page,
+      pageSize,
+      totalPages,
+      data: pagedItems
+    });
+
+  } catch (error) {
+    console.error('💥 Error in getCleaningQueue:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch cleaning queue', details: error.message });
+  }
+};
+
+/**
+ * Resolve a Data Import Cleaning Item
+ */
+export const resolveCleaningItem = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tanNo, companyName, status, panNo, gstNum } = req.body;
+
+    if (!id) {
+      return res.status(400).json({ success: false, error: 'Cleaning Item ID is required' });
+    }
+
+    if (String(status || '').toLowerCase() === 'rejected') {
+      // Mark as manually edited so it leaves the cleaning queue without wiping other FYs sharing that TAN
+      await db.execute(
+        'UPDATE tds_reconciliation_results SET is_manually_edited = 1 WHERE id = ?',
+        [id]
+      );
+
+      return res.json({
+        success: true,
+        message: 'Cleaning item rejected and removed from review queue successfully',
+        id
+      });
+    }
+
+    const cleanTan = String(tanNo || 'N/A').toUpperCase().trim();
+    const cleanCompany = String(companyName || 'Cleaned Entity').trim();
+    const cleanPan = panNo ? String(panNo).toUpperCase().trim() : null;
+    const cleanGst = gstNum ? String(gstNum).toUpperCase().trim() : null;
+
+    const [recRows] = await db.execute('SELECT * FROM tds_reconciliation_results WHERE id = ?', [id]);
+
+    let booksVs26as = 'Not Received';
+    let booksVsTally = 'Not Received';
+    let as26VsTally = 'Not Received';
+    let overallStatus = 'Not Received';
+
+    if (recRows.length > 0) {
+      const rec = recRows[0];
+      const booksTds = parseFloat(rec.books_tds || 0);
+      const as26Tds = parseFloat(rec.as26_tds || 0);
+      const tallyTds = parseFloat(rec.tally_tds || 0);
+
+      const has26as = rec.as26_batch_id !== null || as26Tds > 0;
+      const hasTally = rec.tally_batch_id !== null || tallyTds > 0;
+      const hasSaarthi = booksTds > 0;
+
+      const evaluatePair = (valA, valB, hasA, hasB) => {
+        if (!hasA || !hasB || valA <= 0 || valB <= 0) return 'Not Received';
+        if (Math.abs(valA - valB) <= 1.0) return 'Matched';
+        if (valA > valB) return 'Excess';
+        return 'Less Paid';
+      };
+
+      booksVs26as = evaluatePair(as26Tds, booksTds, has26as, true);
+      booksVsTally = evaluatePair(tallyTds, booksTds, hasTally, true);
+      as26VsTally = evaluatePair(tallyTds, as26Tds, hasTally, has26as);
+
+      const activeSourcesCount = [hasSaarthi, hasTally, has26as].filter(Boolean).length;
+
+      if (tallyTds <= 0 && booksTds <= 0 && as26Tds > 0) {
+        overallStatus = 'Excess';
+        booksVs26as = 'Excess';
+        as26VsTally = 'Excess';
+      } else if (activeSourcesCount >= 2) {
+        const vals = [];
+        if (hasSaarthi) vals.push(booksTds);
+        if (hasTally) vals.push(tallyTds);
+        if (has26as) vals.push(as26Tds);
+
+        let allAgree = true;
+        for (let i = 0; i < vals.length; i++) {
+          for (let j = i + 1; j < vals.length; j++) {
+            if (Math.abs(vals[i] - vals[j]) > 1.0) {
+              allAgree = false;
+              break;
+            }
+          }
+        }
+
+        if (allAgree && activeSourcesCount === 3) {
+          overallStatus = 'All Matched';
+        } else if (allAgree) {
+          overallStatus = 'Partial Mismatch';
+        } else {
+          overallStatus = 'Major Mismatch';
+        }
+      }
+    }
+
+    await db.execute(
+      `UPDATE tds_reconciliation_results 
+       SET tan_no = ?, is_manually_edited = 1, 
+           books_vs_26as_status = ?, books_vs_tally_status = ?, as26_vs_tally_status = ?,
+           overall_status = ?, updated_at = CURRENT_TIMESTAMP 
+       WHERE id = ?`,
+      [cleanTan, booksVs26as, booksVsTally, as26VsTally, overallStatus, id]
+    );
+
+    if (recRows.length > 0 && recRows[0].tds_dues_id) {
+      try {
+        await db.execute(
+          `UPDATE tds_dues 
+           SET tan_no = ?, company_name = ?, 
+               pan_no = COALESCE(?, pan_no), 
+               gst_num = COALESCE(?, gst_num) 
+           WHERE id = ?`,
+          [cleanTan, cleanCompany, cleanPan, cleanGst, recRows[0].tds_dues_id]
+        );
+      } catch (e) {
+        await db.execute(
+          'UPDATE tds_dues SET tan_no = ?, company_name = ? WHERE id = ?',
+          [cleanTan, cleanCompany, recRows[0].tds_dues_id]
+        );
+      }
+    }
+
+    // Fire-and-forget reconcile so corrected TAN gets its 26AS/Tally amounts recalculated immediately
+    reconcile(null, null).catch(rErr => {
+      console.warn('Background reconcile warning after cleaning item resolve:', rErr.message);
+    });
+
+    res.json({
+      success: true,
+      message: 'Cleaning item resolved successfully',
+      id,
+      tanNo: cleanTan,
+      companyName: cleanCompany
+    });
+
+  } catch (error) {
+    console.error('💥 Error in resolveCleaningItem:', error);
+    res.status(500).json({ success: false, error: 'Failed to resolve cleaning item', details: error.message });
+  }
+};
+
+let followupColumnChecked = false;
+async function ensureFollowupDoneColumn() {
+  if (followupColumnChecked) return;
+  try {
+    await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done BOOLEAN DEFAULT FALSE');
+  } catch (e) {
+    try { await db.execute('ALTER TABLE tds_reconciliation_results ADD COLUMN is_followup_done INTEGER DEFAULT 0'); } catch (err) { }
+  }
+  followupColumnChecked = true;
+}
+
+/**
+ * Get Paginated & Filterable Reconciliation Report
+ */
+export const getReconciliationReport = async (req, res) => {
+  try {
+    await ensureFollowupDoneColumn();
+    await ensurePanColumns();
+
+    const {
+      page = 1,
+      limit = 20,
+      search = '',
+      company = '',
+      pan = '',
+      overallStatus = '',
+      coverageFilter = 'All',
+      fy = '',
+      financialYear = '',
+      sortBy = 'updated_at',
+      booksVs26asStatus = '',
+      booksVsTallyStatus = '',
+      as26VsTallyStatus = '',
+      followupStatus = ''
+    } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, Math.min(1000, parseInt(limit) || 20));
+    const offset = (pageNum - 1) * limitNum;
+
+    let whereClauses = [];
+    const queryParams = [];
+
+    // Filter by follow-up done / pending
+    if (followupStatus === 'done' || followupStatus === '1' || followupStatus === 'true') {
+      whereClauses.push('(tr.is_followup_done = 1 OR tr.is_followup_done = true)');
+    } else if (followupStatus === 'pending' || followupStatus === '0' || followupStatus === 'false') {
+      whereClauses.push('(tr.is_followup_done = 0 OR tr.is_followup_done IS NULL OR tr.is_followup_done = false)');
+    }
+
+    // Always exclude zero-data ghost rows where all 3 TDS amounts are zero/null
+    whereClauses.push("NOT (COALESCE(tr.books_tds, 0) = 0 AND COALESCE(tr.as26_tds, 0) = 0 AND COALESCE(tr.tally_tds, 0) = 0)");
+    // Exclude unassigned/unresolved dummy TAN rows (Pending TAN / NO_TAN_) from the reconciliation table
+    whereClauses.push("(tr.tan_no IS NOT NULL AND tr.tan_no NOT LIKE 'NO_TAN_%' AND tr.tan_no != 'Pending TAN' AND tr.tan_no != 'Not Available' AND tr.tan_no NOT LIKE '%UNKNOWN%' AND TRIM(tr.tan_no) != '')");
+
+    const activeFy = fy || financialYear;
+    if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years' && String(activeFy).trim() !== '') {
+      const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
+      whereClauses.push('(TRIM(tr.financial_year) LIKE ? OR (tr.financial_year IS NULL AND TRIM(d.financial_year) LIKE ?))');
+      queryParams.push(`%${cleanFy}%`, `%${cleanFy}%`);
+    }
+
+    if (company && String(company).trim() !== '' && company !== 'All') {
+      const term = `%${String(company).trim()}%`;
+      whereClauses.push('(d.company_name LIKE ? OR tr.tan_no IN (SELECT tan_no FROM tds_tally_entries WHERE party_name LIKE ?))');
+      queryParams.push(term, term);
+    }
+
+    if (pan && String(pan).trim() !== '' && pan !== 'All') {
+      const term = `%${String(pan).trim()}%`;
+      whereClauses.push('(d.pan_no LIKE ? OR tr.tan_no IN (SELECT tan_no FROM tds_tally_entries WHERE pan_no LIKE ?) OR tr.tan_no IN (SELECT tan_no FROM tds_26as_entries WHERE pan_no LIKE ?))');
+      queryParams.push(term, term, term);
+    }
+
+    if (search && String(search).trim() !== '') {
+      whereClauses.push("(tr.tan_no LIKE ? OR COALESCE(d.company_name, '') LIKE ? OR d.pan_no LIKE ?)");
+      const wild = `%${String(search).trim()}%`;
+      queryParams.push(wild, wild, wild);
+    }
+
+    const primaryTdsSQL = PRIMARY_TDS_SQL;
+
+    if (overallStatus && overallStatus !== 'All') {
+      const statusCondition = getFinancialStatusWhereClause(overallStatus, primaryTdsSQL);
+      if (statusCondition) {
+        whereClauses.push(statusCondition);
+        if (statusCondition === 'tr.overall_status = ?') {
+          queryParams.push(overallStatus);
+        }
+      }
+    }
+
+    if (booksVs26asStatus && booksVs26asStatus !== 'All') {
+      whereClauses.push('tr.books_vs_26as_status = ?');
+      queryParams.push(booksVs26asStatus);
+    }
+
+    // 3-Way Source Coverage Filter
+    const hasSaarthiSQL = '(COALESCE(tr.books_tds, 0) > 0 OR tr.tds_dues_id IS NOT NULL)';
+    const hasTallySQL = '(COALESCE(tr.tally_tds, 0) > 0)';
+    const has26asSQL = '(COALESCE(tr.as26_tds, 0) > 0)';
+
+    if (coverageFilter === '3/3' || coverageFilter === '3 of 3' || coverageFilter === 'all_3' || coverageFilter === 'all3' || coverageFilter === 'All 3 (Saarthi + Tally + 26AS)' || coverageFilter === 'All 3 (Sarthi + Tally + 26AS)') {
+      whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL} AND ${has26asSQL})`);
+    } else if (coverageFilter === 'saarthi_tally' || coverageFilter === 'sarthi_tally' || coverageFilter === 'tally_saarthi' || coverageFilter === 'tally_sarthi' || coverageFilter === 'Saarthi + Tally' || coverageFilter === 'Sarthi + Tally') {
+      whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL} AND NOT ${has26asSQL})`);
+    } else if (coverageFilter === 'tally_26as' || coverageFilter === '26as_tally' || coverageFilter === 'Tally + 26AS') {
+      whereClauses.push(`(${hasTallySQL} AND ${has26asSQL} AND NOT ${hasSaarthiSQL})`);
+    } else if (coverageFilter === 'as26_saarthi' || coverageFilter === 'as26_sarthi' || coverageFilter === 'saarthi_26as' || coverageFilter === 'sarthi_26as' || coverageFilter === '26as_saarthi' || coverageFilter === '26as_sarthi' || coverageFilter === '26AS + Saarthi' || coverageFilter === '26AS + Sarthi') {
+      whereClauses.push(`(${has26asSQL} AND ${hasSaarthiSQL} AND NOT ${hasTallySQL})`);
+    } else if (coverageFilter === '2/3' || coverageFilter === '2 of 3') {
+      whereClauses.push(`(((CASE WHEN ${hasSaarthiSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${has26asSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${hasTallySQL} THEN 1 ELSE 0 END)) = 2)`);
+    } else if (coverageFilter === '1/3' || coverageFilter === '1 of 3' || coverageFilter === 'Single Source Only') {
+      whereClauses.push(`(((CASE WHEN ${hasSaarthiSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${has26asSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${hasTallySQL} THEN 1 ELSE 0 END)) = 1)`);
+    }
+
+    const whereSQL = whereClauses.length ? 'WHERE ' + whereClauses.join(' AND ') : '';
+
+    let orderSQL = 'ORDER BY tr.id DESC';
+    if (sortBy === 'difference_desc' || sortBy === 'difference' || sortBy === 'Difference (High → Low)') {
+      orderSQL = `ORDER BY ABS(${primaryTdsSQL} - COALESCE(tr.as26_tds, 0)) DESC`;
+    }
+
+    let statsQuery = `
+      SELECT 
+        COUNT(tr.id) as total,
+        SUM(COALESCE(tr.tally_tds, 0)) as totalTally,
+        SUM(COALESCE(tr.as26_tds, 0)) as totalAs26,
+        SUM(COALESCE(tr.books_tds, 0)) as totalSaarthi,
+        SUM(CASE 
+          WHEN tr.is_manually_edited = 1 THEN 1
+          WHEN (CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END) > 0 
+               AND COALESCE(tr.as26_tds, 0) > 0 
+               AND ABS((CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END) - COALESCE(tr.as26_tds, 0)) <= 1.0 THEN 1
+          WHEN tr.overall_status IN ('All Matched', 'Match', 'Matched') THEN 1
+          ELSE 0 END) as matched,
+        SUM(CASE 
+          WHEN (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
+               AND (CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END) > 0 
+               AND COALESCE(tr.as26_tds, 0) > 0 
+               AND (CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END) > COALESCE(tr.as26_tds, 0) + 1.0 THEN 1
+          ELSE 0 END) as less,
+        SUM(CASE 
+          WHEN (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
+               AND COALESCE(tr.as26_tds, 0) > 0 
+               AND ((CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END) = 0 
+                    OR (CASE WHEN COALESCE(tr.tally_tds, 0) > 0 THEN tr.tally_tds ELSE COALESCE(tr.books_tds, 0) END) < COALESCE(tr.as26_tds, 0) - 1.0) THEN 1
+          ELSE 0 END) as excess,
+        SUM(CASE 
+          WHEN (tr.is_manually_edited IS NULL OR tr.is_manually_edited = 0)
+               AND (COALESCE(tr.as26_tds, 0) = 0 AND (COALESCE(tr.tally_tds, 0) > 0 OR COALESCE(tr.books_tds, 0) > 0)) THEN 1
+          ELSE 0 END) as notReceived
+      FROM tds_reconciliation_results tr
+      LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+      ${whereSQL}
+    `;
+    let [statsRes] = await db.query(statsQuery, queryParams);
+    const aggStats = statsRes[0] || {};
+    let total = parseInt(aggStats.total) || 0;
+    const isSaarthiEraGlobal = isSaarthiEra(activeFy);
+    const totalTally = parseFloat(aggStats.totalTally || 0);
+    const totalAs26 = parseFloat(aggStats.totalAs26 || 0);
+    const totalSaarthi = parseFloat(aggStats.totalSaarthi || 0);
+    const baselineTotal = isSaarthiEraGlobal ? (totalSaarthi > 0 ? totalSaarthi : totalTally) : (totalTally > 0 ? totalTally : totalSaarthi);
+    const totalBalance = baselineTotal - totalAs26;
+
+    let stats = {
+      total,
+      matched: parseInt(aggStats.matched) || 0,
+      less: parseInt(aggStats.less) || 0,
+      excess: parseInt(aggStats.excess) || 0,
+      notReceived: parseInt(aggStats.notReceived) || 0,
+      totalTally,
+      totalAs26,
+      totalSaarthi,
+      totalBalance
+    };
+
+    const reportQuery = `
+      SELECT 
+        tr.id,
+        tr.tds_dues_id as tdsDuesId,
+        COALESCE(
+          CASE WHEN tr.tan_no IS NOT NULL AND tr.tan_no NOT LIKE 'NO_TAN_%' AND tr.tan_no NOT LIKE '%UNKNOWN%' AND TRIM(tr.tan_no) != '' THEN TRIM(tr.tan_no) END,
+          CASE WHEN d.tan_no IS NOT NULL AND d.tan_no NOT LIKE 'NO_TAN_%' AND TRIM(d.tan_no) != '' THEN TRIM(d.tan_no) END
+        ) as tanNo,
+        COALESCE(NULLIF(TRIM(d.company_name), ''), COALESCE(CASE WHEN tr.tan_no NOT LIKE 'NO_TAN_%' THEN tr.tan_no END, d.tan_no), 'Unassigned Entity') as companyName,
+        'N/A' as billNumber,
+        'N/A' as billDate,
+        COALESCE(d.total_bill_amount, 0) as totalBillAmount,
+        COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') as financialYear,
+
+        COALESCE(tr.books_tds, 0) as booksTds,
+        COALESCE(tr.as26_tds, 0) as as26Tds,
+        COALESCE(tr.tally_tds, 0) as tallyTds,
+        tr.books_vs_26as_status as booksVs26asStatus,
+        tr.books_vs_tally_status as booksVsTallyStatus,
+        tr.as26_vs_tally_status as as26VsTallyStatus,
+        tr.overall_status as overallStatus,
+        tr.as26_batch_id as as26BatchId,
+        tr.tally_batch_id as tallyBatchId,
+        tr.is_manually_edited as isManuallyEdited,
+        tr.is_followup_done as isFollowupDone,
+        tr.updated_at as updatedAt,
+
+        COALESCE(NULLIF(TRIM(d.contact_person_name), ''), '') as contactPersonName,
+        COALESCE(NULLIF(TRIM(d.designation), ''), '') as designation,
+        COALESCE(NULLIF(TRIM(d.contact_number), ''), '') as contactNumber,
+        COALESCE(NULLIF(TRIM(d.email_id), ''), '') as emailId,
+        COALESCE(NULLIF(TRIM(d.teamleader), ''), '') as teamleader,
+
+        d.company_name as tallyPartyName,
+        COALESCE(d.gst_num, '') as gstNum,
+        COALESCE(NULLIF(TRIM(d.pan_no), ''), (SELECT t.pan_no FROM tds_tally_entries t WHERE t.tan_no = tr.tan_no AND t.pan_no IS NOT NULL AND TRIM(t.pan_no) != '' LIMIT 1), (SELECT a.pan_no FROM tds_26as_entries a WHERE a.tan_no = tr.tan_no AND a.pan_no IS NOT NULL AND TRIM(a.pan_no) != '' LIMIT 1), '') as panNo,
+        0 as tallyGrossTotal,
+
+        COALESCE(
+          (SELECT a.deductor_name FROM tds_26as_entries a WHERE a.tan_no = tr.tan_no AND a.financial_year = tr.financial_year AND a.deductor_name IS NOT NULL AND TRIM(a.deductor_name) != '' LIMIT 1),
+          (SELECT a.deductor_name FROM tds_26as_entries a WHERE a.tan_no = tr.tan_no AND a.deductor_name IS NOT NULL AND TRIM(a.deductor_name) != '' LIMIT 1),
+          ''
+        ) as as26DeductorName,
+        0 as as26InvoiceAmount
+
+      FROM tds_reconciliation_results tr
+      LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+      ${whereSQL}
+      ${orderSQL}
+      LIMIT ${limitNum} OFFSET ${offset}
+    `;
+
+    let rawRows = [];
+    try {
+      const [res] = await db.query(reportQuery, queryParams);
+      rawRows = res;
+    } catch (qErr) {
+      console.warn('⚠️ Primary report query failed, retrying with fallback:', qErr.message);
+      const fallbackQuery = reportQuery.replace('tr.is_followup_done as isFollowupDone,', '0 as isFollowupDone,');
+      const [res] = await db.query(fallbackQuery, queryParams);
+      rawRows = res;
+    }
+
+    const rows = rawRows.map(r => {
+      const tally = parseFloat(r.tallyTds || 0);
+      const as26 = parseFloat(r.as26Tds || 0);
+      const saarthi = parseFloat(r.booksTds || 0);
+      const displayFy = (r.financialYear && r.financialYear.trim()) ? r.financialYear.trim() : (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years' ? activeFy : 'Unspecified');
+
+      const has26as = Boolean(as26 > 0);
+      const hasTally = Boolean(tally > 0);
+      const hasSaarthi = Boolean(saarthi > 0 || r.tdsDuesId || r.contactPersonName || (r.companyName && !['Client Entity', 'Unknown Client', 'Unknown Company', 'Unassigned Entity'].includes(String(r.companyName).trim())));
+
+      const sources = [];
+      if (hasTally) sources.push('Tally');
+      if (has26as) sources.push('26AS');
+      if (hasSaarthi) sources.push('Sarthi');
+
+      const countStr = `${sources.length}/3`;
+      let coverageLabel = `${countStr} · ${sources.join(' + ') || 'No match'}`;
+
+      const { balance, baselineSource, baselineValue } = calculateTdsBalance({
+        tally,
+        as26,
+        saarthi,
+        financialYear: displayFy
+      });
+
+      const primaryVal = getPrimaryTdsVal(tally, saarthi, displayFy);
+      const diffCalc = getDifferenceAmount(as26, primaryVal);
+
+      // Derive financialStatus based on centralized rules
+      const financialStatus = deriveFinancialStatus({
+        tally,
+        as26,
+        saarthi,
+        financialYear: displayFy,
+        isManuallyEdited: r.isManuallyEdited,
+        overallStatus: r.overallStatus
+      });
+
+      const personName = (r.contactPersonName && r.contactPersonName.trim() !== '') ? r.contactPersonName.trim() : '';
+      const desig = (r.designation && r.designation.trim() !== '') ? r.designation.trim() : '';
+      const phone = (r.contactNumber && r.contactNumber.trim() !== '') ? r.contactNumber.trim() : '';
+      const email = (r.emailId && r.emailId.trim() !== '') ? r.emailId.trim() : '';
+
+      const isMissingTan = !r.tanNo || String(r.tanNo).startsWith('NO_TAN_') || String(r.tanNo).includes('UNKNOWN');
+      const cleanTan = isMissingTan ? null : r.tanNo;
+
+      return {
+        ...r,
+        tanNo: cleanTan,
+        rawTanNo: r.tanNo,
+        panNo: r.panNo || 'N/A',
+        isTanMissing: isMissingTan,
+        contactPersonName: personName,
+        designation: desig,
+        contactNumber: phone,
+        emailId: email,
+        financialYear: displayFy,
+        saarthiTds: saarthi,
+        difference: diffCalc,
+        balance,
+        baselineSource,
+        baselineValue,
+        sourceCoverage: {
+          count: countStr,
+          label: coverageLabel,
+          sourcesCount: sources.length,
+          sources
+        },
+        financialStatus
+      };
+    });
+
+    res.json({
+      success: true,
+      data: rows,
+      total,
+      stats,
+      page: parseInt(page),
+      limit: limitNum,
+      totalPages: Math.ceil(total / limitNum)
+    });
+
+  } catch (error) {
+    console.error('💥 Error in getReconciliationReport:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch reconciliation report', details: error.message });
+  }
+};
+
+
+/**
+ * Manually Override Pairwise or Overall Status
+ */
+export const overrideReconciliationStatus = async (req, res) => {
+  try {
+    const { reconciliationId, overrideField, newValue, note } = req.body;
+
+    if (!reconciliationId || !overrideField || !newValue || !note) {
+      return res.status(400).json({ success: false, error: 'Missing parameters. Required: reconciliationId, overrideField, newValue, note' });
+    }
+
+    const allowedFields = ['books_vs_26as_status', 'books_vs_tally_status', 'as26_vs_tally_status', 'overall_status'];
+    if (!allowedFields.includes(overrideField)) {
+      return res.status(400).json({ success: false, error: 'Invalid override field' });
+    }
+
+    const targetId = isNaN(parseInt(reconciliationId)) ? reconciliationId : parseInt(reconciliationId);
+
+    const validPairStatuses = ['Match', 'Less Paid', 'Excess', 'Not Received', 'Matched', 'Less'];
+    const validOverallStatuses = ['Match', 'Less Paid', 'Excess', 'All Matched', 'Partial Mismatch', 'Major Mismatch', 'Matched', 'Less'];
+
+    if (overrideField === 'overall_status') {
+      if (!validOverallStatuses.includes(newValue)) {
+        return res.status(400).json({ success: false, error: `Invalid overall status value: ${newValue}` });
+      }
+    } else {
+      if (!validPairStatuses.includes(newValue)) {
+        return res.status(400).json({ success: false, error: `Invalid status value: ${newValue}` });
+      }
+    }
+
+    const updateQuery = `
+      UPDATE tds_reconciliation_results 
+      SET ${overrideField} = ?, is_manually_edited = 1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `;
+    const [result] = await db.execute(updateQuery, [newValue, targetId]);
+
+    if (!result || result.affectedRows === 0) {
+      const [duesCheck] = await db.execute('SELECT id, tan_no, tds FROM tds_dues WHERE id = ?', [targetId]);
+      if (duesCheck && duesCheck.length > 0) {
+        const dRow = duesCheck[0];
+        await db.execute(
+          `INSERT INTO tds_reconciliation_results 
+           (tds_dues_id, tan_no, books_tds, ${overrideField}, overall_status, is_manually_edited) 
+           VALUES (?, ?, ?, ?, ?, 1)`,
+          [dRow.id, dRow.tan_no || 'N/A', dRow.tds || 0, newValue, newValue]
+        );
+      }
+    }
+
+    try {
+      const auditQuery = `
+        INSERT INTO tds_reconciliation_audit_logs (reconciliation_id, action, details, changed_by)
+        VALUES (?, ?, ?, ?)
+      `;
+      const detailsText = `Field: ${overrideField} changed to "${newValue}". Reason/Note: ${note}`;
+      await db.execute(auditQuery, [
+        targetId,
+        'status_override',
+        detailsText,
+        req.user?.email || 'System Override'
+      ]);
+    } catch (auditErr) {
+      console.warn('⚠️ Audit log write warning:', auditErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'Status overridden and logged successfully',
+      reconciliationId: targetId,
+      field: overrideField,
+      newValue
+    });
+
+  } catch (error) {
+    console.error('💥 Error in overrideReconciliationStatus:', error);
+    res.status(500).json({ success: false, error: 'Failed to apply status override', details: error.message });
+  }
+};
+
+/**
+ * Get Historical Upload Batches
+ */
+export const exportReconciliationCSV = async (req, res) => {
+  try {
+    const {
+      search = '',
+      overallStatus = '',
+      coverageFilter = 'All',
+      fy = '',
+      financialYear = '',
+      booksVs26asStatus = '',
+      booksVsTallyStatus = '',
+      as26VsTallyStatus = ''
+    } = req.query;
+
+    let whereClauses = [];
+    const queryParams = [];
+
+    // Always exclude zero-data ghost rows where all 3 TDS amounts are zero/null
+    whereClauses.push("NOT (COALESCE(tr.books_tds, 0) = 0 AND COALESCE(tr.as26_tds, 0) = 0 AND COALESCE(tr.tally_tds, 0) = 0)");
+    // Exclude unassigned/unresolved dummy TAN rows (Pending TAN / NO_TAN_) from export
+    whereClauses.push("(tr.tan_no IS NOT NULL AND tr.tan_no NOT LIKE 'NO_TAN_%' AND tr.tan_no != 'Pending TAN' AND tr.tan_no != 'Not Available' AND tr.tan_no NOT LIKE '%UNKNOWN%' AND TRIM(tr.tan_no) != '')");
+
+    const activeFy = fy || financialYear;
+    if (activeFy && activeFy !== 'All' && activeFy !== 'All Financial Years') {
+      const cleanFy = String(activeFy).replace(/^FY\s*/i, '').trim();
+      whereClauses.push("COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), '')) LIKE ?");
+      queryParams.push(`%${cleanFy}%`);
+    }
+
+    if (search && String(search).trim() !== '') {
+      whereClauses.push("(tr.tan_no LIKE ? OR COALESCE(d.company_name, '') LIKE ?)");
+      const wild = `%${String(search).trim()}%`;
+      queryParams.push(wild, wild);
+    }
+
+    const primaryTdsSQL = PRIMARY_TDS_SQL;
+
+    if (overallStatus && overallStatus !== 'All') {
+      const statusCondition = getFinancialStatusWhereClause(overallStatus, primaryTdsSQL);
+      if (statusCondition) {
+        whereClauses.push(statusCondition);
+        if (statusCondition === 'tr.overall_status = ?') {
+          queryParams.push(overallStatus);
+        }
+      }
+    }
+
+    if (booksVs26asStatus && booksVs26asStatus !== 'All') {
+      whereClauses.push('tr.books_vs_26as_status = ?');
+      queryParams.push(booksVs26asStatus);
+    }
+
+    // 3-Way Source Coverage Filter
+    const hasSaarthiSQL = '(COALESCE(tr.books_tds, 0) > 0)';
+    const hasTallySQL = '(COALESCE(tr.tally_tds, 0) > 0)';
+    const has26asSQL = '(COALESCE(tr.as26_tds, 0) > 0)';
+
+    if (coverageFilter === '3/3' || coverageFilter === '3 of 3' || coverageFilter === 'all_3' || coverageFilter === 'all3' || coverageFilter === 'All 3 (Saarthi + Tally + 26AS)' || coverageFilter === 'All 3 (Sarthi + Tally + 26AS)') {
+      whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL} AND ${has26asSQL})`);
+    } else if (coverageFilter === 'saarthi_tally' || coverageFilter === 'sarthi_tally' || coverageFilter === 'tally_saarthi' || coverageFilter === 'tally_sarthi' || coverageFilter === 'Saarthi + Tally' || coverageFilter === 'Sarthi + Tally') {
+      whereClauses.push(`(${hasSaarthiSQL} AND ${hasTallySQL} AND NOT ${has26asSQL})`);
+    } else if (coverageFilter === 'tally_26as' || coverageFilter === '26as_tally' || coverageFilter === 'Tally + 26AS') {
+      whereClauses.push(`(${hasTallySQL} AND ${has26asSQL} AND NOT ${hasSaarthiSQL})`);
+    } else if (coverageFilter === 'as26_saarthi' || coverageFilter === 'as26_sarthi' || coverageFilter === 'saarthi_26as' || coverageFilter === 'sarthi_26as' || coverageFilter === '26as_saarthi' || coverageFilter === '26as_sarthi' || coverageFilter === '26AS + Saarthi' || coverageFilter === '26AS + Sarthi') {
+      whereClauses.push(`(${has26asSQL} AND ${hasSaarthiSQL} AND NOT ${hasTallySQL})`);
+    } else if (coverageFilter === '2/3' || coverageFilter === '2 of 3') {
+      whereClauses.push(`(((CASE WHEN ${hasSaarthiSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${has26asSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${hasTallySQL} THEN 1 ELSE 0 END)) = 2)`);
+    } else if (coverageFilter === '1/3' || coverageFilter === '1 of 3' || coverageFilter === 'Single Source Only') {
+      whereClauses.push(`(((CASE WHEN ${hasSaarthiSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${has26asSQL} THEN 1 ELSE 0 END) + (CASE WHEN ${hasTallySQL} THEN 1 ELSE 0 END)) = 1)`);
+    }
+
+    const whereSQL = whereClauses.length ? 'WHERE ' + whereClauses.join(' AND ') : '';
+
+    const query = `
+      SELECT 
+        COALESCE(NULLIF(TRIM(d.company_name), ''), tr.tan_no, 'Unassigned Entity') as companyName,
+        tr.tan_no as tanNo,
+        COALESCE(tr.books_tds, 0) as booksTds,
+        COALESCE(tr.as26_tds, 0) as as26Tds,
+        COALESCE(tr.tally_tds, 0) as tallyTds,
+        tr.books_vs_26as_status as booksVs26asStatus,
+        tr.books_vs_tally_status as booksVsTallyStatus,
+        tr.as26_vs_tally_status as as26VsTallyStatus,
+        tr.overall_status as overallStatus,
+        tr.is_manually_edited as isManuallyEdited
+      FROM tds_reconciliation_results tr
+      LEFT JOIN (
+        SELECT 
+          MAX(id) as id,
+          UPPER(TRIM(tan_no)) as tan_key,
+          MAX(company_name) as company_name,
+          MAX(financial_year) as financial_year
+        FROM tds_dues
+        WHERE tan_no IS NOT NULL AND TRIM(tan_no) != ''
+        GROUP BY UPPER(TRIM(tan_no))
+      ) d ON (tr.tds_dues_id = d.id OR UPPER(TRIM(tr.tan_no)) = d.tan_key)
+      ${whereSQL}
+      ORDER BY tr.updated_at DESC
+    `;
+
+    const [rows] = await db.execute(query, queryParams);
+
+    const headers = [
+      'Company Name',
+      'TAN No',
+      'Books TDS (A)',
+      '26AS TDS (B)',
+      'Tally TDS (C)',
+      'Books vs 26AS',
+      'Books vs Tally',
+      '26AS vs Tally',
+      'Overall Status'
+    ];
+
+    let csvContent = headers.join(',') + '\n';
+    rows.forEach(r => {
+      const isMissingTan = !r.tanNo || String(r.tanNo).startsWith('NO_TAN_') || String(r.tanNo).includes('UNKNOWN');
+      const cleanTan = isMissingTan ? 'Pending TAN' : r.tanNo;
+
+      const tally = parseFloat(r.tallyTds || 0);
+      const as26 = parseFloat(r.as26Tds || 0);
+      const saarthi = parseFloat(r.booksTds || 0);
+      const primaryVal = getPrimaryTdsVal(tally, saarthi);
+      const calculatedStatus = deriveFinancialStatus({
+        tally,
+        as26,
+        saarthi,
+        isManuallyEdited: r.isManuallyEdited,
+        overallStatus: r.overallStatus
+      });
+
+      const line = [
+        `"${String(r.companyName || 'Unknown').replace(/"/g, '""')}"`,
+        `"${cleanTan}"`,
+        r.booksTds || 0,
+        r.as26Tds || 0,
+        r.tallyTds || 0,
+        `"${r.booksVs26asStatus || ''}"`,
+        `"${r.booksVsTallyStatus || ''}"`,
+        `"${r.as26VsTallyStatus || ''}"`,
+        `"${calculatedStatus}"`
+      ];
+      csvContent += line.join(',') + '\n';
+    });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="tds_reconciliation_${overallStatus || 'report'}.csv"`);
+    res.status(200).send(csvContent);
+
+  } catch (error) {
+    console.error('💥 Error in exportReconciliationCSV:', error);
+    res.status(500).json({ success: false, error: 'Failed to generate CSV export file', details: error.message });
+  }
+};
+
+/**
+ * Purge / Clear uploaded data
+ */
+export const toggleFollowupDone = async (req, res) => {
+  try {
+    await ensureFollowupDoneColumn();
+    const { id } = req.params;
+    const rowId = parseInt(id, 10);
+    if (!rowId || isNaN(rowId)) {
+      return res.status(400).json({ success: false, error: 'Invalid reconciliation record ID' });
+    }
+
+    // Read current value
+    const [existing] = await db.query(
+      'SELECT is_followup_done FROM tds_reconciliation_results WHERE id = ? LIMIT 1',
+      [rowId]
+    );
+    if (!existing || existing.length === 0) {
+      return res.status(404).json({ success: false, error: 'Record not found' });
+    }
+
+    const currentVal = existing[0].is_followup_done;
+    const newVal = currentVal ? 0 : 1;
+
+    await db.query(
+      'UPDATE tds_reconciliation_results SET is_followup_done = ? WHERE id = ?',
+      [newVal, rowId]
+    );
+
+    res.json({ success: true, id: rowId, isFollowupDone: Boolean(newVal) });
+  } catch (error) {
+    console.error('💥 Error in toggleFollowupDone:', error);
+    res.status(500).json({ success: false, error: 'Failed to update follow-up done flag', details: error.message });
+  }
+};
+
+/**
+ * Manually create / record missing CRM book entry in tds_dues and auto-reconcile with 26AS/Tally
+ */
+export const createCrmBookEntry = async (req, res) => {
+  try {
+    const {
+      tan_no,
+      company_name,
+      financial_year,
+      tds_amount,
+      total_bill_amount,
+      bill_number,
+      bill_date,
+      contact_person_name,
+      contact_number,
+      designation,
+      email_id,
+      reconciliation_id,
+      note
+    } = req.body;
+
+    if (!tan_no || !financial_year || tds_amount === undefined || tds_amount === null || tds_amount === '') {
+      return res.status(400).json({ success: false, error: 'Missing required parameters: tan_no, financial_year, tds_amount' });
+    }
+
+    const cleanTan = String(tan_no).trim().toUpperCase();
+    const normFy = normalizeFY(financial_year) || String(financial_year).trim();
+    const cleanTds = parseFloat(tds_amount) || 0;
+    const cleanTotalBill = parseFloat(total_bill_amount || (cleanTds * 10) || 0);
+    const cleanBillNo = String(bill_number || `INV-CRM-${Date.now().toString(36).toUpperCase()}`).trim();
+    const cleanBillDate = String(bill_date || new Date().toISOString().slice(0, 10)).trim();
+
+    // 1. Insert/Update into tds_dues (Internal CRM Books table)
+    const insertDueQuery = `
+      INSERT INTO tds_dues (
+        company_name, tan_no, financial_year, bill_number, bill_date,
+        total_bill_amount, tds, contact_person_name, contact_number,
+        designation, email_id, note, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')
+      ON DUPLICATE KEY UPDATE
+        company_name = COALESCE(VALUES(company_name), company_name),
+        tds = VALUES(tds),
+        total_bill_amount = VALUES(total_bill_amount),
+        bill_number = COALESCE(VALUES(bill_number), bill_number),
+        contact_person_name = COALESCE(VALUES(contact_person_name), contact_person_name),
+        contact_number = COALESCE(VALUES(contact_number), contact_number),
+        designation = COALESCE(VALUES(designation), designation),
+        email_id = COALESCE(VALUES(email_id), email_id),
+        note = VALUES(note),
+        status = 'Active'
+    `;
+
+    await db.query(insertDueQuery, [
+      company_name || cleanTan,
+      cleanTan,
+      normFy,
+      cleanBillNo,
+      cleanBillDate,
+      cleanTotalBill,
+      cleanTds,
+      contact_person_name || null,
+      contact_number || null,
+      designation || null,
+      email_id || null,
+      note || 'Manually booked from TDS Reconciliation'
+    ]);
+
+    // 2. Re-run reconciliation engine so row status and difference recalculate immediately
+    try {
+      await reconcile(null, null);
+    } catch (recErr) {
+      console.warn('Reconcile notice:', recErr.message);
+    }
+
+    // 3. Log audit event
+    try {
+      const auditQuery = `
+        INSERT INTO tds_reconciliation_audit_logs (reconciliation_id, action, details, changed_by)
+        VALUES (?, ?, ?, ?)
+      `;
+      await db.query(auditQuery, [
+        reconciliation_id || 0,
+        'crm_book_entry_created',
+        `Booked CRM TDS of ₹${cleanTds} for ${cleanTan} (${normFy}). Invoice: ${cleanBillNo}. Note: ${note || 'Manual Book Entry'}`,
+        req.user?.email || 'Finance Team'
+      ]);
+    } catch (auditErr) {
+      console.warn('Audit warning:', auditErr.message);
+    }
+
+    // 4. Forward to remote Saarthi 360 CRM API in background (non-blocking)
+    (async () => {
+      try {
+        const payload = {
+          companyName: company_name || cleanTan,
+          tanNo: cleanTan,
+          financialYear: normFy,
+          billNumber: cleanBillNo,
+          billDate: cleanBillDate,
+          totalBillAmount: cleanTotalBill,
+          tdsAmount: cleanTds,
+          contactPersonName: contact_person_name,
+          contactNumber: contact_number,
+          emailId: email_id
+        };
+        const candidates = [
+          'https://api.sarthi360.in/api/Invoice',
+          'https://api.sarthi360.in/Invoice',
+          'https://sarthi360.in/api/Invoice'
+        ];
+        for (const u of candidates) {
+          try {
+            await fetch(u, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+              signal: AbortSignal.timeout(5000)
+            });
+          } catch (e) {}
+        }
+      } catch (fwdErr) {}
+    })();
+
+    res.json({
+      success: true,
+      message: `Successfully booked ₹${cleanTds.toLocaleString('en-IN')} in CRM Books for ${cleanTan} (${normFy})!`,
+      data: {
+        tan_no: cleanTan,
+        company_name: company_name || cleanTan,
+        financial_year: normFy,
+        books_tds: cleanTds,
+        bill_number: cleanBillNo
+      }
+    });
+
+  } catch (error) {
+    console.error('💥 Error in createCrmBookEntry:', error);
+    res.status(500).json({ success: false, error: 'Failed to create CRM book entry', details: error.message });
+  }
+};
+
+/**
+ * Get Distinct Filter Options (Financial Years, Companies, PAN Numbers)
+ */
+// ---------------------------------------------------------------------------
+// Filter-option helpers: guarantee each company / PAN appears only once,
+// ignoring case, repeated spaces, and trailing punctuation.
+// ---------------------------------------------------------------------------
+const cleanDisplayName = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
+const normalizeCompanyKey = (v) =>
+  cleanDisplayName(v).toLowerCase().replace(/[.,;]+$/g, '').replace(/\s*&\s*/g, ' and ').trim();
+const normalizePanKey = (v) => String(v ?? '').replace(/\s+/g, '').toUpperCase();
+
+/**
+ * Returns a sorted, de-duplicated list. The first spelling seen for a key is kept as the display value.
+ * `keyFn` builds the comparison key, `displayFn` builds the shown value, `keepFn(display, key)` can reject values.
+ */
+function uniqueByKey(values, keyFn, displayFn, keepFn = () => true) {
+  const seen = new Map();
+  for (const raw of values) {
+    if (raw === null || raw === undefined) continue;
+    const key = keyFn(raw);
+    if (!key) continue;
+    const display = displayFn(raw, key);
+    if (!display || !keepFn(display, key)) continue;
+    if (!seen.has(key)) seen.set(key, display);
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+}
+
+export const getFilterOptions = async (req, res) => {
+  try {
+    const [fyRows] = await db.execute(`
+      SELECT DISTINCT financial_year FROM (
+        SELECT financial_year FROM tds_reconciliation_results WHERE financial_year IS NOT NULL AND TRIM(financial_year) != ''
+        UNION
+        SELECT financial_year FROM tds_dues WHERE financial_year IS NOT NULL AND TRIM(financial_year) != ''
+        UNION
+        SELECT financial_year FROM tds_26as_entries WHERE financial_year IS NOT NULL AND TRIM(financial_year) != ''
+        UNION
+        SELECT financial_year FROM tds_tally_entries WHERE financial_year IS NOT NULL AND TRIM(financial_year) != ''
+      ) fys ORDER BY financial_year DESC
+    `);
+
+    // Sources are queried separately (highest-priority source first) so that when the same
+    // company appears with different spellings, the CRM master spelling wins as display name.
+    const PLACEHOLDER_NAMES = new Set([
+      'unknown client', 'unknown company', 'client entity', 'unassigned entity', 'n/a', 'na', '-'
+    ]);
+    const [duesNames] = await db.execute(
+      `SELECT DISTINCT company_name AS name FROM tds_dues WHERE company_name IS NOT NULL AND TRIM(company_name) != ''`
+    );
+    const [tallyNames] = await db.execute(
+      `SELECT DISTINCT party_name AS name FROM tds_tally_entries WHERE party_name IS NOT NULL AND TRIM(party_name) != ''`
+    );
+    const [as26Names] = await db.execute(
+      `SELECT DISTINCT deductor_name AS name FROM tds_26as_entries WHERE deductor_name IS NOT NULL AND TRIM(deductor_name) != ''`
+    );
+    const companies = uniqueByKey(
+      [...(duesNames || []), ...(tallyNames || []), ...(as26Names || [])].map(r => r.name),
+      normalizeCompanyKey,
+      cleanDisplayName,
+      (name, key) => !PLACEHOLDER_NAMES.has(key)
+    );
+
+    const [duesPans] = await db.execute(
+      `SELECT DISTINCT pan_no AS pan FROM tds_dues WHERE pan_no IS NOT NULL AND TRIM(pan_no) != ''`
+    );
+    const [tallyPans] = await db.execute(
+      `SELECT DISTINCT pan_no AS pan FROM tds_tally_entries WHERE pan_no IS NOT NULL AND TRIM(pan_no) != ''`
+    );
+    await ensurePanColumns();
+    const [as26Pans] = await db.execute(
+      `SELECT DISTINCT pan_no AS pan FROM tds_26as_entries WHERE pan_no IS NOT NULL AND TRIM(pan_no) != ''`
+    );
+    const pans = uniqueByKey(
+      [...(duesPans || []), ...(tallyPans || []), ...(as26Pans || [])].map(r => r.pan),
+      normalizePanKey,
+      normalizePanKey,
+      (pan) => pan.length >= 10
+    );
+
+    res.json({
+      success: true,
+      financialYears: (fyRows || []).map(r => r.financial_year).filter(Boolean),
+      companies,
+      pans
+    });
+  } catch (err) {
+    console.error('💥 Error in getFilterOptions:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch filter options', details: err.message });
+  }
+};
+
+/**
+ * Get all reconciliation entries belonging to a company/TAN/PAN for multi-entry sequential editing
+ */
+export const getCompanyEntries = async (req, res) => {
+  try {
+    await ensurePanColumns();
+    const { company, tan, pan, id } = req.query;
+    let orConditions = [];
+    let params = [];
+
+    if (id && parseInt(id, 10)) {
+      orConditions.push('tr.id = ?');
+      params.push(parseInt(id, 10));
+    }
+
+    if (tan && String(tan).trim() !== '' && !String(tan).startsWith('NO_TAN_') && !String(tan).includes('UNKNOWN') && String(tan) !== 'Pending TAN') {
+      const cleanTan = String(tan).trim();
+      orConditions.push('tr.tan_no = ?');
+      params.push(cleanTan);
+      orConditions.push('d.tan_no = ?');
+      params.push(cleanTan);
+    }
+
+    if (company && String(company).trim() !== '' && !['Client Entity', 'Unknown Client', 'Unknown Company', 'Unassigned Entity'].includes(String(company).trim())) {
+      const cleanComp = String(company).trim();
+      orConditions.push('d.company_name = ?');
+      params.push(cleanComp);
+      orConditions.push('d.company_name LIKE ?');
+      params.push(`%${cleanComp}%`);
+      orConditions.push('tr.tan_no IN (SELECT tan_no FROM tds_tally_entries WHERE party_name = ? OR party_name LIKE ?)');
+      params.push(cleanComp, `%${cleanComp}%`);
+      orConditions.push('tr.tan_no IN (SELECT tan_no FROM tds_26as_entries WHERE deductor_name = ? OR deductor_name LIKE ?)');
+      params.push(cleanComp, `%${cleanComp}%`);
+    }
+
+    if (pan && String(pan).trim() !== '' && String(pan).trim() !== 'N/A') {
+      const cleanPan = String(pan).trim().toUpperCase();
+      orConditions.push('d.pan_no = ?');
+      params.push(cleanPan);
+      orConditions.push('tr.tan_no IN (SELECT tan_no FROM tds_tally_entries WHERE pan_no = ?)');
+      params.push(cleanPan);
+    }
+
+    if (orConditions.length === 0) {
+      return res.status(400).json({ success: false, error: 'Provide company, tan, pan, or id parameter' });
+    }
+
+    const query = `
+      SELECT DISTINCT
+        tr.id,
+        tr.tds_dues_id as tdsDuesId,
+        tr.tan_no as tanNo,
+        COALESCE(NULLIF(TRIM(d.company_name), ''), tr.tan_no, 'Client Entity') as companyName,
+        COALESCE(NULLIF(TRIM(d.pan_no), ''), (SELECT t.pan_no FROM tds_tally_entries t WHERE t.tan_no = tr.tan_no LIMIT 1), (SELECT a.pan_no FROM tds_26as_entries a WHERE a.tan_no = tr.tan_no AND a.pan_no IS NOT NULL AND TRIM(a.pan_no) != '' LIMIT 1), '') as panNo,
+        COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') as financialYear,
+        COALESCE(tr.books_tds, 0) as saarthiTds,
+        COALESCE(tr.as26_tds, 0) as as26Tds,
+        COALESCE(tr.tally_tds, 0) as tallyTds,
+        COALESCE(d.total_bill_amount, 0) as totalBillAmount,
+        COALESCE(d.bill_number, 'N/A') as billNumber,
+        d.contact_person_name as contactPersonName,
+        d.contact_number as contactNumber,
+        d.email_id as emailId,
+        tr.overall_status as overallStatus,
+        tr.is_manually_edited as isManuallyEdited,
+        tr.updated_at as updatedAt
+      FROM tds_reconciliation_results tr
+      LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+      WHERE (${orConditions.join(' OR ')})
+      GROUP BY tr.id
+      ORDER BY tr.financial_year DESC, tr.id ASC
+    `;
+
+    const [rows] = await db.execute(query, params);
+    
+    // Deduplicate by ID and normalize FY strings
+    const seenIds = new Set();
+    const uniqueRows = [];
+    for (const r of (rows || [])) {
+      if (!seenIds.has(r.id)) {
+        seenIds.add(r.id);
+        
+        // Fix any 2025-25 typo -> FY 2024-25 or FY 2025-26
+        let cleanFy = r.financialYear ? String(r.financialYear).trim() : 'Unspecified';
+        if (/2025[-/]?25/i.test(cleanFy)) {
+          cleanFy = 'FY 2024-25';
+        } else if (!cleanFy.toUpperCase().startsWith('FY') && /\d{4}/.test(cleanFy)) {
+          cleanFy = `FY ${cleanFy}`;
+        }
+        r.financialYear = cleanFy;
+        uniqueRows.push(r);
+      }
+    }
+
+    const processed = uniqueRows.map(r => {
+      const tally = parseFloat(r.tallyTds || 0);
+      const as26 = parseFloat(r.as26Tds || 0);
+      const saarthi = parseFloat(r.saarthiTds || 0);
+      const { balance, baselineSource, baselineValue } = calculateTdsBalance({
+        tally, as26, saarthi, financialYear: r.financialYear
+      });
+      const status = deriveFinancialStatus({
+        tally, as26, saarthi, financialYear: r.financialYear, isManuallyEdited: r.isManuallyEdited, overallStatus: r.overallStatus
+      });
+      return {
+        ...r,
+        balance,
+        baselineSource,
+        baselineValue,
+        financialStatus: status
+      };
+    });
+
+    res.json({ success: true, count: processed.length, data: processed });
+  } catch (err) {
+    console.error('💥 Error in getCompanyEntries:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch company entries', details: err.message });
+  }
+};
+
+/**
+ * Update full reconciliation entry data (Amounts, Company, TAN, PAN, FY, Contacts)
+ */
+export const updateReconciliationEntry = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      companyName,
+      tanNo,
+      panNo,
+      financialYear,
+      tallyTds,
+      as26Tds,
+      saarthiTds,
+      booksTds,
+      contactPersonName,
+      contactNumber,
+      emailId,
+      note
+    } = req.body;
+
+    const targetId = parseInt(id, 10);
+    if (!targetId) {
+      return res.status(400).json({ success: false, error: 'Invalid record ID' });
+    }
+
+    const [existing] = await db.execute(`
+      SELECT tr.*, d.id as dues_id 
+      FROM tds_reconciliation_results tr
+      LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+      WHERE tr.id = ?
+    `, [targetId]);
+
+    if (!existing || existing.length === 0) {
+      return res.status(404).json({ success: false, error: 'Reconciliation record not found' });
+    }
+
+    const row = existing[0];
+    const finalTally = tallyTds !== undefined ? parseFloat(tallyTds || 0) : parseFloat(row.tally_tds || 0);
+    const finalAs26 = as26Tds !== undefined ? parseFloat(as26Tds || 0) : parseFloat(row.as26_tds || 0);
+    const finalSaarthi = saarthiTds !== undefined ? parseFloat(saarthiTds || 0) : (booksTds !== undefined ? parseFloat(booksTds || 0) : parseFloat(row.books_tds || 0));
+    const finalTan = tanNo ? String(tanNo).trim().toUpperCase() : row.tan_no;
+    const finalFy = financialYear ? String(financialYear).trim() : row.financial_year;
+
+    // Recalculate status
+    const finalOverallStatus = deriveFinancialStatus({
+      tally: finalTally,
+      as26: finalAs26,
+      saarthi: finalSaarthi,
+      financialYear: finalFy,
+      isManuallyEdited: true
+    });
+
+    const booksVs26as = (Math.abs(finalSaarthi - finalAs26) <= TDS_TOLERANCE && finalSaarthi > 0 && finalAs26 > 0) ? 'Matched' : (finalSaarthi > finalAs26 ? 'Less Paid' : 'Excess');
+    const booksVsTally = (Math.abs(finalSaarthi - finalTally) <= TDS_TOLERANCE && finalSaarthi > 0 && finalTally > 0) ? 'Matched' : (finalSaarthi > finalTally ? 'Less Paid' : 'Excess');
+    const as26VsTally = (Math.abs(finalAs26 - finalTally) <= TDS_TOLERANCE && finalAs26 > 0 && finalTally > 0) ? 'Matched' : (finalTally > finalAs26 ? 'Less Paid' : 'Excess');
+
+    // Update tds_reconciliation_results
+    await db.execute(`
+      UPDATE tds_reconciliation_results
+      SET tan_no = ?, financial_year = ?, tally_tds = ?, as26_tds = ?, books_tds = ?,
+          overall_status = ?, books_vs_26as_status = ?, books_vs_tally_status = ?, as26_vs_tally_status = ?,
+          is_manually_edited = 1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [finalTan, finalFy, finalTally, finalAs26, finalSaarthi, finalOverallStatus, booksVs26as, booksVsTally, as26VsTally, targetId]);
+
+    // Update tds_dues if associated
+    if (row.tds_dues_id) {
+      let dueUpdates = [];
+      let dueParams = [];
+      if (companyName) { dueUpdates.push('company_name = ?'); dueParams.push(companyName); }
+      if (panNo) { dueUpdates.push('pan_no = ?'); dueParams.push(panNo); }
+      if (finalTan) { dueUpdates.push('tan_no = ?'); dueParams.push(finalTan); }
+      if (finalFy) { dueUpdates.push('financial_year = ?'); dueParams.push(finalFy); }
+      if (saarthiTds !== undefined || booksTds !== undefined) { dueUpdates.push('tds = ?'); dueParams.push(finalSaarthi); }
+      if (contactPersonName !== undefined) { dueUpdates.push('contact_person_name = ?'); dueParams.push(contactPersonName); }
+      if (contactNumber !== undefined) { dueUpdates.push('contact_number = ?'); dueParams.push(contactNumber); }
+      if (emailId !== undefined) { dueUpdates.push('email_id = ?'); dueParams.push(emailId); }
+
+      if (dueUpdates.length > 0) {
+        dueParams.push(row.tds_dues_id);
+        await db.execute(`UPDATE tds_dues SET ${dueUpdates.join(', ')} WHERE id = ?`, dueParams);
+      }
+    }
+
+    // Audit log
+    try {
+      await db.execute(`
+        INSERT INTO tds_reconciliation_audit_logs (reconciliation_id, action, details, changed_by)
+        VALUES (?, 'manual_entry_update', ?, 'User')
+      `, [targetId, note || `Updated data for entry #${targetId}: Tally=${finalTally}, 26AS=${finalAs26}, Saarthi=${finalSaarthi}`]);
+    } catch (aErr) {
+      console.warn('Audit log write error:', aErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'Entry updated successfully',
+      data: {
+        id: targetId,
+        companyName,
+        tanNo: finalTan,
+        panNo,
+        financialYear: finalFy,
+        tallyTds: finalTally,
+        as26Tds: finalAs26,
+        saarthiTds: finalSaarthi,
+        overallStatus: finalOverallStatus
+      }
+    });
+  } catch (err) {
+    console.error('💥 Error in updateReconciliationEntry:', err);
+    res.status(500).json({ success: false, error: 'Failed to update entry', details: err.message });
+  }
+};
+
+/**
+ * Get all transactions/bills (CRM Invoices, Tally Vouchers, 26AS Records) for a company / TAN
+ */
+export const getCompanyTransactions = async (req, res) => {
+  try {
+    const { company, tan, pan, fy, id } = req.query;
+
+    let targetTan = tan && !String(tan).startsWith('NO_TAN_') && !String(tan).includes('UNKNOWN') && String(tan) !== 'Pending TAN' ? String(tan).trim() : null;
+    let targetCompany = company && !['Client Entity', 'Unknown Client', 'Unknown Company', 'Unassigned Entity'].includes(String(company).trim()) ? String(company).trim() : null;
+    let targetPan = pan && String(pan).trim() !== 'N/A' ? String(pan).trim().toUpperCase() : null;
+    let targetFy = fy && String(fy).trim() !== '' && String(fy).trim() !== 'All Financial Years' && String(fy).trim() !== 'All' ? String(fy).trim() : null;
+
+    if (id && parseInt(id, 10)) {
+      const [reconRows] = await db.execute(`
+        SELECT tr.tan_no, tr.financial_year, d.company_name, d.pan_no
+        FROM tds_reconciliation_results tr
+        LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
+        WHERE tr.id = ?
+      `, [parseInt(id, 10)]);
+      if (reconRows && reconRows.length > 0) {
+        const r = reconRows[0];
+        if (!targetTan && r.tan_no && !r.tan_no.startsWith('NO_TAN_')) targetTan = r.tan_no;
+        if (!targetFy && r.financial_year) targetFy = r.financial_year;
+        if (!targetCompany && r.company_name) targetCompany = r.company_name;
+        if (!targetPan && r.pan_no) targetPan = r.pan_no;
+      }
+    }
+
+    // 1. Fetch Invoices / Bills from tds_dues
+    let duesConditions = [];
+    let duesParams = [];
+    if (targetTan) {
+      duesConditions.push('tan_no = ?');
+      duesParams.push(targetTan);
+    }
+    if (targetCompany) {
+      duesConditions.push('company_name LIKE ?');
+      duesParams.push(`%${targetCompany}%`);
+    }
+    if (targetPan) {
+      duesConditions.push('pan_no = ?');
+      duesParams.push(targetPan);
+    }
+
+    let bills = [];
+    if (duesConditions.length > 0) {
+      let duesSql = `
+        SELECT 
+          id,
+          invoice_id as invoiceId,
+          bill_number as billNumber,
+          bill_date as billDate,
+          company_name as companyName,
+          COALESCE(total_bill_amount, 0) as totalBillAmount,
+          COALESCE(tds, 0) as tds,
+          COALESCE(amount_received, 0) as amountReceived,
+          status,
+          payment_date as paymentDate,
+          financial_year as financialYear,
+          note
+        FROM tds_dues
+        WHERE (${duesConditions.join(' OR ')})
+      `;
+      if (targetFy) {
+        duesSql += ` AND (financial_year = ? OR financial_year IS NULL OR financial_year = '')`;
+        duesParams.push(targetFy);
+      }
+      duesSql += ` ORDER BY id ASC`;
+      const [dueRows] = await db.execute(duesSql, duesParams);
+      bills = dueRows || [];
+    }
+
+    // 2. Fetch Tally Vouchers
+    let tallyConditions = [];
+    let tallyParams = [];
+    if (targetTan) {
+      tallyConditions.push('tan_no = ?');
+      tallyParams.push(targetTan);
+    }
+    if (targetCompany) {
+      tallyConditions.push('party_name LIKE ?');
+      tallyParams.push(`%${targetCompany}%`);
+    }
+    if (targetPan) {
+      tallyConditions.push('pan_no = ?');
+      tallyParams.push(targetPan);
+    }
+
+    let tallyEntries = [];
+    if (tallyConditions.length > 0) {
+      let tallySql = `
+        SELECT 
+          id,
+          party_name as partyName,
+          voucher_date as voucherDate,
+          COALESCE(amount, 0) as amount,
+          COALESCE(tds_amount, 0) as tdsAmount,
+          ledger_name as ledgerName,
+          financial_year as financialYear
+        FROM tds_tally_entries
+        WHERE (${tallyConditions.join(' OR ')})
+      `;
+      if (targetFy) {
+        tallySql += ` AND (financial_year = ? OR financial_year IS NULL OR financial_year = '')`;
+        tallyParams.push(targetFy);
+      }
+      tallySql += ` ORDER BY id ASC`;
+      const [tRows] = await db.execute(tallySql, tallyParams);
+      tallyEntries = tRows || [];
+    }
+
+    // 3. Fetch 26AS portal records
+    let as26Conditions = [];
+    let as26Params = [];
+    if (targetTan) {
+      as26Conditions.push('tan_no = ?');
+      as26Params.push(targetTan);
+    }
+    if (targetCompany) {
+      as26Conditions.push('deductor_name LIKE ?');
+      as26Params.push(`%${targetCompany}%`);
+    }
+
+    let as26Entries = [];
+    if (as26Conditions.length > 0) {
+      let as26Sql = `
+        SELECT 
+          id,
+          deductor_name as deductorName,
+          section,
+          quarter,
+          COALESCE(amount_paid, 0) as amountPaid,
+          COALESCE(tds_deducted, 0) as tdsDeducted,
+          financial_year as financialYear
+        FROM tds_26as_entries
+        WHERE (${as26Conditions.join(' OR ')})
+      `;
+      if (targetFy) {
+        as26Sql += ` AND (financial_year = ? OR financial_year IS NULL OR financial_year = '')`;
+        as26Params.push(targetFy);
+      }
+      as26Sql += ` ORDER BY id ASC`;
+      const [aRows] = await db.execute(as26Sql, as26Params);
+      as26Entries = aRows || [];
+    }
+
+    // Summary calculations
+    const totalBillsCount = bills.length;
+    const totalBillAmount = bills.reduce((acc, b) => acc + parseFloat(b.totalBillAmount || 0), 0);
+    const totalBillTds = bills.reduce((acc, b) => acc + parseFloat(b.tds || 0), 0);
+    const totalAmountReceived = bills.reduce((acc, b) => acc + parseFloat(b.amountReceived || 0), 0);
+    
+    // Count paid vs unpaid
+    const paidBills = bills.filter(b => {
+      const s = (b.status || '').toLowerCase();
+      return s === 'paid' || s === 'settled' || s === 'completed' || parseFloat(b.amountReceived || 0) >= parseFloat(b.totalBillAmount || 0) && parseFloat(b.totalBillAmount || 0) > 0;
+    });
+    const paidBillsCount = paidBills.length;
+    const pendingBillsCount = totalBillsCount - paidBillsCount;
+
+    res.json({
+      success: true,
+      data: {
+        bills,
+        tallyEntries,
+        as26Entries,
+        summary: {
+          totalBillsCount,
+          totalBillAmount: Math.round(totalBillAmount),
+          totalBillTds: Math.round(totalBillTds),
+          totalAmountReceived: Math.round(totalAmountReceived),
+          paidBillsCount,
+          pendingBillsCount,
+          totalTallyCount: tallyEntries.length,
+          totalTallyTds: Math.round(tallyEntries.reduce((acc, t) => acc + parseFloat(t.tdsAmount || 0), 0)),
+          total26asCount: as26Entries.length,
+          total26asTds: Math.round(as26Entries.reduce((acc, a) => acc + parseFloat(a.tdsDeducted || 0), 0))
+        }
+      }
+    });
+  } catch (err) {
+    console.error('💥 Error in getCompanyTransactions:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch transactions', details: err.message });
+  }
+};
+
+/**
+ * Update single bill / invoice status and payment info
+ */
+export const updateBillStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, amountReceived, note } = req.body;
+    const billId = parseInt(id, 10);
+    if (!billId) {
+      return res.status(400).json({ success: false, error: 'Invalid bill ID' });
+    }
+
+    let updates = [];
+    let params = [];
+    if (status !== undefined) {
+      updates.push('status = ?');
+      params.push(status);
+    }
+    if (amountReceived !== undefined) {
+      updates.push('amount_received = ?');
+      params.push(parseFloat(amountReceived || 0));
+    }
+    if (note !== undefined) {
+      updates.push('note = ?');
+      params.push(note);
+    }
+
+    if (updates.length > 0) {
+      params.push(billId);
+      await db.execute(`UPDATE tds_dues SET ${updates.join(', ')} WHERE id = ?`, params);
+    }
+
+    res.json({
+      success: true,
+      message: 'Bill status updated successfully',
+      data: { id: billId, status, amountReceived, note }
+    });
+  } catch (err) {
+    console.error('💥 Error in updateBillStatus:', err);
+    res.status(500).json({ success: false, error: 'Failed to update bill status', details: err.message });
+  }
+};
