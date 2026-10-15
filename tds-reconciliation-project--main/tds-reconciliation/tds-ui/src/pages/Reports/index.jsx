@@ -42,7 +42,7 @@ import AddToCrmModal from '../TdsReconciliation/AddToCrmModal';
 import EditModal from '../TdsReconciliation/EditModal';
 import RecordDetailPanel, { adaptReportRow } from './RecordDetailPanel';
 import RecordViewModal from './RecordViewModal';
-import ReconciliationTable from '../TdsReconciliation/ReconciliationTable';
+import ReportsTable from './ReportsTable';
 import AddFollowupModal from '../FollowUp/AddFollowupModal';
 
 export default function Reports() {
@@ -768,7 +768,7 @@ export default function Reports() {
               </div>
             </div>
           ) : (
-            <ReconciliationTable
+            <ReportsTable
               rows={pagedRecoRows}
               total={recoRows.length}
               page={page}
