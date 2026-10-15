@@ -792,7 +792,7 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
 
           {/* ═══════════════════════════════════════════════════════════════
               TAB 1: EXACT MULTI-SOURCE SIDE-BY-SIDE RECONCILIATION TABLE
-              Columns: Tally [Date, Year, TDS] | 26AS [Date, Year, TDS] | Saarth360 [Date, Year, TDS] | Final Reco [Tally, 26AS, Saarthi]
+              Columns: TDS As Per 26AS [FY, Date, TDS] | TDS As Per Tally [FY, Date, TDS] | TDS As Per Saarthi 360 [FY, Date, TDS] | Final Reco [26AS, Tally, Saarthi 360] | Action
           ═══════════════════════════════════════════════════════════════ */}
           {activeTab === 'recoTable' && (
             <div className="space-y-4">
@@ -804,7 +804,7 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
                     <span>Transaction-by-Transaction Multi-Source Reconciliation</span>
                   </div>
                   <p className="text-[11px] text-[#6B6580] mt-0.5">
-                    Reconcile each individual transaction entry across Tally, 26AS portal, and Saarth360. TDS figures are editable directly.
+                    Reconcile each individual transaction entry across Form 26AS, Tally, and Saarthi 360. TDS figures are editable directly.
                   </p>
                 </div>
 
@@ -833,47 +833,47 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
               {!transactionsLoading && (
                 <div className="border border-[#E9E4FA] rounded-2xl overflow-hidden shadow-xs bg-white">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs border-collapse min-w-[900px]">
+                    <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
                       {/* Top Group Headers */}
                       <thead>
                         <tr className="text-white text-xs font-black text-center divide-x divide-white/20">
                           <th colSpan={3} className="bg-[#9B87F5] py-2.5 px-3 uppercase tracking-wider">
-                            Tally
+                            TDS As Per 26AS
                           </th>
                           <th colSpan={3} className="bg-[#8572E0] py-2.5 px-3 uppercase tracking-wider">
-                            26AS
+                            TDS As Per Tally
                           </th>
                           <th colSpan={3} className="bg-[#6E59CF] py-2.5 px-3 uppercase tracking-wider">
-                            Saarth360
+                            TDS As Per Saarthi 360
                           </th>
                           <th colSpan={3} className="bg-[#4E3FB4] py-2.5 px-3 uppercase tracking-wider">
                             Final Reco
                           </th>
-                          <th rowSpan={2} className="bg-[#3D2E99] py-2.5 px-2 uppercase tracking-wider text-[10px] w-12">
+                          <th rowSpan={2} className="bg-[#3D2E99] py-2.5 px-2 uppercase tracking-wider text-[10px] w-20">
                             Action
                           </th>
                         </tr>
                         {/* Sub Headers */}
                         <tr className="bg-[#FAF9FF] text-[#6B6580] font-bold text-[10px] uppercase border-b border-[#E9E4FA] divide-x divide-[#E9E4FA]">
-                          {/* Tally */}
+                          {/* TDS As Per 26AS */}
+                          <th className="px-2.5 py-2">FY</th>
                           <th className="px-3 py-2">Date</th>
-                          <th className="px-2.5 py-2">Year</th>
-                          <th className="px-3 py-2 text-right">TDS (₹)</th>
+                          <th className="px-3 py-2 text-right">TDS</th>
 
-                          {/* 26AS */}
+                          {/* TDS As Per Tally */}
+                          <th className="px-2.5 py-2">FY</th>
                           <th className="px-3 py-2">Date</th>
-                          <th className="px-2.5 py-2">Year</th>
-                          <th className="px-3 py-2 text-right">TDS (₹)</th>
+                          <th className="px-3 py-2 text-right">TDS</th>
 
-                          {/* Saarth360 */}
+                          {/* TDS As Per Saarthi 360 */}
+                          <th className="px-2.5 py-2">FY</th>
                           <th className="px-3 py-2">Date</th>
-                          <th className="px-2.5 py-2">Year</th>
-                          <th className="px-3 py-2 text-right">TDS (₹)</th>
+                          <th className="px-3 py-2 text-right">TDS</th>
 
                           {/* Final Reco */}
-                          <th className="px-3 py-2 text-right">Tally</th>
                           <th className="px-3 py-2 text-right">26AS</th>
-                          <th className="px-3 py-2 text-right">Saarthi</th>
+                          <th className="px-3 py-2 text-right">Tally</th>
+                          <th className="px-3 py-2 text-right">Saarthi 360</th>
                         </tr>
                       </thead>
 
@@ -890,106 +890,49 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
 
                           return (
                             <tr key={rowItem.id || idx} className="hover:bg-[#FAF9FF] transition divide-x divide-[#E9E4FA]">
-                              {/* ══ TALLY GROUP ══ */}
-                              <td className="px-2 py-2">
-                                <input
-                                  type="text"
-                                  value={rowItem.tallyDate}
-                                  onChange={(e) => handleCellChange(idx, 'tallyDate', e.target.value)}
-                                  placeholder="YYYY-MM-DD"
-                                  className="w-full bg-[#F6F8FA] focus:bg-white border border-transparent focus:border-[#9B87F5] rounded-lg px-2 py-1 text-xs font-medium text-[#1F1B2E] focus:outline-none"
-                                />
-                              </td>
-                              <td className="px-2 py-2 w-24">
-                                <input
-                                  type="text"
-                                  value={rowItem.tallyYear}
-                                  onChange={(e) => handleCellChange(idx, 'tallyYear', e.target.value)}
-                                  placeholder="FY 24-25"
-                                  className="w-full bg-[#F6F8FA] focus:bg-white border border-transparent focus:border-[#9B87F5] rounded-lg px-2 py-1 text-xs font-medium text-[#1F1B2E] focus:outline-none"
-                                />
-                              </td>
-                              <td className="px-2 py-2">
-                                <input
-                                  type="number"
-                                  step="1"
-                                  value={rowItem.tallyTds}
-                                  onChange={(e) => handleCellChange(idx, 'tallyTds', e.target.value)}
-                                  className="w-full bg-[#F6F8FA] focus:bg-white border border-transparent focus:border-[#9B87F5] rounded-lg px-2 py-1 text-xs font-bold text-right text-[#1F1B2E] focus:outline-none"
-                                />
-                              </td>
+                              {/* ══ TDS AS PER 26AS ══ */}
+                              <TdsGroupCells
+                                rowItem={rowItem}
+                                idx={idx}
+                                prefix="as26"
+                                datePlaceholder="Q1 / Date"
+                                tdsColor="text-[#8572E0]"
+                                onChange={handleCellChange}
+                              />
 
-                              {/* ══ 26AS GROUP ══ */}
-                              <td className="px-2 py-2">
-                                <input
-                                  type="text"
-                                  value={rowItem.as26Date}
-                                  onChange={(e) => handleCellChange(idx, 'as26Date', e.target.value)}
-                                  placeholder="Q1 / Date"
-                                  className="w-full bg-[#F6F8FA] focus:bg-white border border-transparent focus:border-[#9B87F5] rounded-lg px-2 py-1 text-xs font-medium text-[#1F1B2E] focus:outline-none"
-                                />
-                              </td>
-                              <td className="px-2 py-2 w-24">
-                                <input
-                                  type="text"
-                                  value={rowItem.as26Year}
-                                  onChange={(e) => handleCellChange(idx, 'as26Year', e.target.value)}
-                                  placeholder="FY 24-25"
-                                  className="w-full bg-[#F6F8FA] focus:bg-white border border-transparent focus:border-[#9B87F5] rounded-lg px-2 py-1 text-xs font-medium text-[#1F1B2E] focus:outline-none"
-                                />
-                              </td>
-                              <td className="px-2 py-2">
-                                <input
-                                  type="number"
-                                  step="1"
-                                  value={rowItem.as26Tds}
-                                  onChange={(e) => handleCellChange(idx, 'as26Tds', e.target.value)}
-                                  className="w-full bg-[#F6F8FA] focus:bg-white border border-transparent focus:border-[#9B87F5] rounded-lg px-2 py-1 text-xs font-bold text-right text-[#8572E0] focus:outline-none"
-                                />
-                              </td>
+                              {/* ══ TDS AS PER TALLY ══ */}
+                              <TdsGroupCells
+                                rowItem={rowItem}
+                                idx={idx}
+                                prefix="tally"
+                                datePlaceholder="YYYY-MM-DD"
+                                tdsColor="text-[#1F1B2E]"
+                                onChange={handleCellChange}
+                              />
 
-                              {/* ══ SAARTH360 GROUP ══ */}
-                              <td className="px-2 py-2">
-                                <input
-                                  type="text"
-                                  value={rowItem.saarthiDate}
-                                  onChange={(e) => handleCellChange(idx, 'saarthiDate', e.target.value)}
-                                  placeholder="Bill # / Date"
-                                  className="w-full bg-[#F6F8FA] focus:bg-white border border-transparent focus:border-[#9B87F5] rounded-lg px-2 py-1 text-xs font-medium text-[#1F1B2E] focus:outline-none"
-                                />
-                              </td>
-                              <td className="px-2 py-2 w-24">
-                                <input
-                                  type="text"
-                                  value={rowItem.saarthiYear}
-                                  onChange={(e) => handleCellChange(idx, 'saarthiYear', e.target.value)}
-                                  placeholder="FY 24-25"
-                                  className="w-full bg-[#F6F8FA] focus:bg-white border border-transparent focus:border-[#9B87F5] rounded-lg px-2 py-1 text-xs font-medium text-[#1F1B2E] focus:outline-none"
-                                />
-                              </td>
-                              <td className="px-2 py-2">
-                                <input
-                                  type="number"
-                                  step="1"
-                                  value={rowItem.saarthiTds}
-                                  onChange={(e) => handleCellChange(idx, 'saarthiTds', e.target.value)}
-                                  className="w-full bg-[#F6F8FA] focus:bg-white border border-transparent focus:border-[#9B87F5] rounded-lg px-2 py-1 text-xs font-bold text-right text-[#6E59CF] focus:outline-none"
-                                />
-                              </td>
+                              {/* ══ TDS AS PER SAARTHI 360 ══ */}
+                              <TdsGroupCells
+                                rowItem={rowItem}
+                                idx={idx}
+                                prefix="saarthi"
+                                datePlaceholder="Bill # / Date"
+                                tdsColor="text-[#6E59CF]"
+                                onChange={handleCellChange}
+                              />
 
-                              {/* ══ FINAL RECO GROUP ══ */}
-                              <td className="px-3 py-2 text-right font-semibold text-[#1F1B2E]">
-                                {formatCurrency(tTds)}
-                              </td>
+                              {/* ══ FINAL RECO ══ */}
                               <td className="px-3 py-2 text-right font-semibold text-[#8572E0]">
                                 {formatCurrency(aTds)}
                               </td>
+                              <td className="px-3 py-2 text-right font-semibold text-[#1F1B2E]">
+                                {formatCurrency(tTds)}
+                              </td>
                               <td className="px-3 py-2 text-right font-black">
                                 <span className={`inline-flex items-center gap-1 font-bold ${
-                                  rowMatched 
-                                    ? 'text-[#2E8B57]' 
-                                    : rowDiff > 0 
-                                      ? 'text-[#D97706]' 
+                                  rowMatched
+                                    ? 'text-[#2E8B57]'
+                                    : rowDiff > 0
+                                      ? 'text-[#D97706]'
                                       : 'text-[#E11D48]'
                                 }`}>
                                   {formatCurrency(sTds)}
@@ -1001,10 +944,10 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveTransactionRow(idx)}
-                                  className="p-1 rounded-lg text-[#6B6580] hover:text-[#E11D48] hover:bg-[#FFF5F7] transition cursor-pointer"
+                                  className="px-2 py-1 rounded-lg text-[#E11D48] font-bold text-xs hover:bg-[#FFF5F7] transition cursor-pointer"
                                   title="Remove this transaction row"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Delete
                                 </button>
                               </td>
                             </tr>
@@ -1015,22 +958,22 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
                       {/* ══ TOTALS FOOTER ROW ══ */}
                       <tfoot>
                         <tr className="bg-[#FAF9FF] border-t-2 border-[#E9E4FA] font-black text-xs divide-x divide-[#E9E4FA]">
-                          <td colSpan={2} className="px-3 py-3 text-[#1F1B2E] uppercase text-[10px]">
-                            Tally TDS Total
-                          </td>
-                          <td className="px-3 py-3 text-right text-[#1F1B2E] font-black">
-                            {formatCurrency(totals.tallySum)}
-                          </td>
-
                           <td colSpan={2} className="px-3 py-3 text-[#8572E0] uppercase text-[10px]">
-                            26AS TDS Total
+                            Total
                           </td>
                           <td className="px-3 py-3 text-right text-[#8572E0] font-black">
                             {formatCurrency(totals.as26Sum)}
                           </td>
 
+                          <td colSpan={2} className="px-3 py-3 text-[#1F1B2E] uppercase text-[10px]">
+                            Total
+                          </td>
+                          <td className="px-3 py-3 text-right text-[#1F1B2E] font-black">
+                            {formatCurrency(totals.tallySum)}
+                          </td>
+
                           <td colSpan={2} className="px-3 py-3 text-[#6E59CF] uppercase text-[10px]">
-                            Saarthi TDS Total
+                            Total
                           </td>
                           <td className="px-3 py-3 text-right text-[#6E59CF] font-black">
                             {formatCurrency(totals.saarthiSum)}
@@ -1043,10 +986,10 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
                                 Balance ({totals.status}):
                               </span>
                               <span className={`px-2 py-0.5 rounded-full text-xs font-black ${
-                                totals.isMatched 
-                                  ? 'bg-[#4ADE80]/20 text-[#2E8B57]' 
-                                  : totals.finalBalance > 0 
-                                    ? 'bg-[#F59E0B]/20 text-[#D97706]' 
+                                totals.isMatched
+                                  ? 'bg-[#4ADE80]/20 text-[#2E8B57]'
+                                  : totals.finalBalance > 0
+                                    ? 'bg-[#F59E0B]/20 text-[#D97706]'
                                     : 'bg-[#F87A9E]/20 text-[#E11D48]'
                               }`}>
                                 {formatCurrency(totals.finalBalance)}
@@ -1462,5 +1405,43 @@ export default function EditModal({ row, onClose, onSaveSuccess }) {
         </div>
       </div>
     </div>
+  );
+}
+
+
+// One group of editable cells: FY | Date | TDS (same fields and behaviour as before)
+function TdsGroupCells({ rowItem, idx, prefix, datePlaceholder, tdsColor, onChange }) {
+  const inputBase =
+    'w-full bg-[#F6F8FA] focus:bg-white border border-transparent focus:border-[#9B87F5] rounded-lg px-2 py-1 text-xs focus:outline-none';
+  return (
+    <>
+      <td className="px-2 py-2 w-24">
+        <input
+          type="text"
+          value={rowItem[`${prefix}Year`]}
+          onChange={(e) => onChange(idx, `${prefix}Year`, e.target.value)}
+          placeholder="FY 24-25"
+          className={`${inputBase} font-medium text-[#1F1B2E]`}
+        />
+      </td>
+      <td className="px-2 py-2">
+        <input
+          type="text"
+          value={rowItem[`${prefix}Date`]}
+          onChange={(e) => onChange(idx, `${prefix}Date`, e.target.value)}
+          placeholder={datePlaceholder}
+          className={`${inputBase} font-medium text-[#1F1B2E]`}
+        />
+      </td>
+      <td className="px-2 py-2">
+        <input
+          type="number"
+          step="1"
+          value={rowItem[`${prefix}Tds`]}
+          onChange={(e) => onChange(idx, `${prefix}Tds`, e.target.value)}
+          className={`${inputBase} font-bold text-right ${tdsColor}`}
+        />
+      </td>
+    </>
   );
 }

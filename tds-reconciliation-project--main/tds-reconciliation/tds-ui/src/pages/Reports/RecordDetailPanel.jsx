@@ -14,12 +14,35 @@ import { useApp } from '../../context/AppContext';
 import {
   getReconciliationReport,
   getCompanyTransactions,
-  saveRecordIdentity
+  saveRecordIdentity,
+  saveRecordContact
 } from '../../api/tdsApi';
 
 // ── Same TAN / PAN helpers as the Reconciliation page ───────────────────────────────
 const TAN_RE = /^[A-Z]{4}[0-9]{5}[A-Z]$/;
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+// The panel can be given a report row (snake_case) or a Reconciliation record (camelCase).
+// Accept both so TAN, PAN, company and contact values are never lost because of the shape.
+const pick = (...vals) => vals.find((v) => v !== undefined && v !== null);
+const normalizeRow = (r = {}) => ({
+  ...r,
+  tan_no: pick(r.tan_no, r.tanNo),
+  pan_no: pick(r.pan_no, r.panNo),
+  company_name: pick(r.company_name, r.companyName),
+  financial_year: pick(r.financial_year, r.financialYear),
+  tally_tds: pick(r.tally_tds, r.tally_total, r.tallyTds),
+  as26_tds: pick(r.as26_tds, r.as26_total, r.as26Tds),
+  saarthi_tds: pick(r.saarthi_tds, r.saarthi_total, r.saarthiTds, r.booksTds),
+  contact_person_name: pick(r.contact_person_name, r.contactPersonName),
+  contact_number: pick(r.contact_number, r.contactNumber),
+  email_id: pick(r.email_id, r.emailId),
+  bill_number: pick(r.bill_number, r.billNumber),
+  total_bill_amount: pick(r.total_bill_amount, r.totalBillAmount),
+  status: pick(r.status, r.overallStatus),
+  is_followup_done: pick(r.is_followup_done, r.isFollowupDone)
+});
 
 const isPlaceholderTan = (tan) =>
   !tan ||
@@ -85,8 +108,9 @@ export const adaptReportRow = (row) => {
   };
 };
 
-export default function RecordDetailPanel({ row, tabFy = '', refreshToken = 0, onEdit, onChanged }) {
+export default function RecordDetailPanel({ row: rawRow, tabFy = '', refreshToken = 0, onEdit, onChanged }) {
   const { navigateTo } = useApp();
+  const row = useMemo(() => normalizeRow(rawRow), [rawRow]);
 
   const [record, setRecord] = useState(null); // Reconciliation record (same data as the Reconciliation page)
   const [recordLoading, setRecordLoading] = useState(true);
@@ -97,6 +121,12 @@ export default function RecordDetailPanel({ row, tabFy = '', refreshToken = 0, o
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
+
+  // Editable client contact details
+  const [contactDraft, setContactDraft] = useState({});
+  const [contactSaving, setContactSaving] = useState(false);
+  const [contactMsg, setContactMsg] = useState(null);
+  const [contactOverride, setContactOverride] = useState(null); // values just saved, shown at once
 
   // Load the Reconciliation record for this row
   useEffect(() => {
@@ -222,14 +252,78 @@ export default function RecordDetailPanel({ row, tabFy = '', refreshToken = 0, o
     }
   };
 
-  const infoCard = (Icon, label, value) => (
-    <div className="flex items-center gap-2 p-2.5 rounded-xl border border-[#E9E4FA] bg-[#F6F8FA]">
+  // ── Editable client contact details ──
+  const stored = {
+    name: String((contactOverride ? contactOverride.contactPersonName : rec.contactPersonName) || ''),
+    phone: String((contactOverride ? contactOverride.contactNumber : rec.contactNumber) || ''),
+    email: String((contactOverride ? contactOverride.emailId : rec.emailId) || '')
+  };
+  const cName = contactDraft.name ?? stored.name;
+  const cPhone = contactDraft.phone ?? stored.phone;
+  const cEmail = contactDraft.email ?? stored.email;
+  const nameChanged = cName.trim() !== stored.name.trim();
+  const phoneChanged = cPhone.trim() !== stored.phone.trim();
+  const emailChanged = cEmail.trim() !== stored.email.trim();
+  const contactDirty = nameChanged || phoneChanged || emailChanged;
+
+  const updateContactDraft = (field, value) => {
+    setContactDraft((d) => ({ ...d, [field]: value }));
+    setContactMsg(null);
+  };
+
+  const saveContact = async () => {
+    if (!contactDirty) return;
+
+    const phone = cPhone.trim();
+    const digits = phone.replace(/\D/g, '');
+    if (phoneChanged && phone !== '' &&
+        (!/^\+?[0-9][0-9\s\-()]*$/.test(phone) || digits.length < 7 || digits.length > 15)) {
+      setContactMsg({ type: 'error', text: 'Enter a valid phone number (7 to 15 digits).' });
+      return;
+    }
+    if (emailChanged && cEmail.trim() !== '' && !EMAIL_RE.test(cEmail.trim())) {
+      setContactMsg({ type: 'error', text: 'Enter a valid email address (e.g. name@company.com).' });
+      return;
+    }
+
+    setContactSaving(true);
+    setContactMsg(null);
+    const res = await saveRecordContact(rec.id, {
+      contactPersonName: nameChanged ? cName.trim() : undefined,
+      contactNumber: phoneChanged ? phone : undefined,
+      emailId: emailChanged ? cEmail.trim() : undefined
+    });
+    setContactSaving(false);
+
+    if (res && res.success) {
+      setContactOverride({
+        contactPersonName: res.data?.contactPersonName ?? cName.trim(),
+        contactNumber: res.data?.contactNumber ?? phone,
+        emailId: res.data?.emailId ?? cEmail.trim()
+      });
+      setContactDraft({});
+      setContactMsg({ type: 'ok', text: 'Contact details saved.' });
+      if (onChanged) onChanged();
+    } else {
+      setContactMsg({ type: 'error', text: res?.error || 'Could not save. Please try again.' });
+    }
+  };
+
+  const contactField = (Icon, label, field, value, inputProps = {}) => (
+    <label className="flex items-center gap-2 p-2.5 rounded-xl border border-[#E9E4FA] bg-[#F6F8FA] focus-within:border-[#9B87F5] focus-within:ring-1 focus-within:ring-[#9B87F5] cursor-text">
       <Icon className="w-4 h-4 text-[#6B6580] flex-shrink-0" />
-      <div className="truncate">
+      <div className="min-w-0 flex-1">
         <div className="text-[9px] text-[#6B6580] uppercase font-bold">{label}</div>
-        <div className="font-bold text-[#1F1B2E] text-xs truncate">{value || 'Not recorded'}</div>
+        <input
+          value={value}
+          onChange={(e) => updateContactDraft(field, e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') saveContact(); }}
+          placeholder="Not recorded"
+          className="w-full bg-transparent outline-none font-bold text-[#1F1B2E] text-xs placeholder:text-[#6B6580] placeholder:font-semibold"
+          {...inputProps}
+        />
       </div>
-    </div>
+    </label>
   );
 
   return (
@@ -290,9 +384,27 @@ export default function RecordDetailPanel({ row, tabFy = '', refreshToken = 0, o
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {infoCard(User, 'Contact Person', rec.contactPersonName)}
-          {infoCard(Phone, 'Phone Number', rec.contactNumber)}
-          {infoCard(Mail, 'Email ID', rec.emailId)}
+          {contactField(User, 'Contact Person', 'name', cName, { type: 'text', maxLength: 120 })}
+          {contactField(Phone, 'Phone Number', 'phone', cPhone, { type: 'tel', maxLength: 20 })}
+          {contactField(Mail, 'Email ID', 'email', cEmail, { type: 'email', maxLength: 150 })}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {contactMsg?.text && (
+            <span className={`text-[11px] font-bold ${contactMsg.type === 'ok' ? 'text-[#2E8B57]' : 'text-[#E11D48]'}`}>
+              {contactMsg.text}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={saveContact}
+            disabled={!contactDirty || contactSaving}
+            className="inline-flex items-center gap-1.5 bg-[#9B87F5] hover:bg-[#8572E0] disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold text-xs px-3 py-1.5 rounded-xl transition cursor-pointer"
+            title="Save contact person, phone number and email permanently"
+          >
+            <Save className="w-3.5 h-3.5" />
+            {contactSaving ? 'Saving…' : 'Save Contact'}
+          </button>
         </div>
       </div>
 

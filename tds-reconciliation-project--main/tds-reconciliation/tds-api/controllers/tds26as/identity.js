@@ -170,3 +170,128 @@ export const updateRecordIdentity = async (req, res) => {
     });
   }
 };
+
+// ═══════════════════════════════════════════════════════════════════════════════════
+// Client contact details (Contact Person / Phone Number / Email ID)
+// Route: PUT /api/tds-26as/contact/:id     body: { contactPersonName?, contactNumber?, emailId? }
+//   - a field that is missing      -> left unchanged
+//   - a field sent as ''           -> cleared
+//   - a field sent with a value    -> saved
+// Saved on the bill's Saarthi 360 record (tds_dues). The same value is also filled in on the
+// company's other bills (same TAN) ONLY where that field is still blank, so nothing that is
+// already recorded on another bill gets overwritten.
+// ═══════════════════════════════════════════════════════════════════════════════════
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const CONTACT_COLUMNS = {
+  contactPersonName: 'contact_person_name',
+  contactNumber: 'contact_number',
+  emailId: 'email_id'
+};
+
+export const updateRecordContact = async (req, res) => {
+  try {
+    const targetId = parseInt(req.params.id, 10);
+    if (!targetId) {
+      return res.status(400).json({ success: false, error: 'Invalid record ID' });
+    }
+
+    // Collect only the fields that were actually sent
+    const values = {};
+    for (const key of Object.keys(CONTACT_COLUMNS)) {
+      if (req.body && req.body[key] !== undefined && req.body[key] !== null) {
+        values[key] = String(req.body[key]).replace(/\s+/g, ' ').trim();
+      }
+    }
+    if (Object.keys(values).length === 0) {
+      return res.status(400).json({ success: false, error: 'Nothing to save.' });
+    }
+
+    if (values.contactPersonName !== undefined && values.contactPersonName.length > 120) {
+      return res.status(400).json({ success: false, error: 'Contact person name is too long (max 120 characters).' });
+    }
+    if (values.contactNumber !== undefined && values.contactNumber !== '') {
+      const digits = values.contactNumber.replace(/\D/g, '');
+      if (!/^\+?[0-9][0-9\s\-()]*$/.test(values.contactNumber) || digits.length < 7 || digits.length > 15) {
+        return res.status(400).json({ success: false, error: 'Enter a valid phone number (7 to 15 digits).' });
+      }
+    }
+    if (values.emailId !== undefined && values.emailId !== '') {
+      if (values.emailId.length > 150 || !EMAIL_RE.test(values.emailId)) {
+        return res.status(400).json({ success: false, error: 'Enter a valid email address (e.g. name@company.com).' });
+      }
+    }
+
+    const [found] = await db.execute(
+      'SELECT id, tan_no, tds_dues_id FROM tds_reconciliation_results WHERE id = ?',
+      [targetId]
+    );
+    if (!found || found.length === 0) {
+      return res.status(404).json({ success: false, error: 'Reconciliation record not found' });
+    }
+    const duesId = found[0].tds_dues_id;
+    const tanKey = String(found[0].tan_no || '').trim().toUpperCase();
+    if (!duesId) {
+      return res.status(409).json({ success: false, error: 'This entry has no Saarthi 360 record to attach contact details to.' });
+    }
+
+    // 1) the bill / CRM record this row belongs to
+    const setParts = [];
+    const setParams = [];
+    for (const [key, val] of Object.entries(values)) {
+      setParts.push(`${CONTACT_COLUMNS[key]} = ?`);
+      setParams.push(val === '' ? null : val);
+    }
+    await db.execute(`UPDATE tds_dues SET ${setParts.join(', ')} WHERE id = ?`, [...setParams, duesId]);
+
+    // 2) fill blanks on the company's other bills (same TAN)
+    let filledElsewhere = 0;
+    if (tanKey) {
+      for (const [key, val] of Object.entries(values)) {
+        if (val === '') continue;
+        const col = CONTACT_COLUMNS[key];
+        const r = await db.execute(
+          `UPDATE tds_dues SET ${col} = ?
+            WHERE UPPER(TRIM(tan_no)) = ? AND id != ? AND (${col} IS NULL OR TRIM(${col}) = '')`,
+          [val, tanKey, duesId]
+        );
+        filledElsewhere += (Array.isArray(r) ? r[0]?.affectedRows : r?.affectedRows) || 0;
+      }
+    }
+
+    // 3) audit trail
+    try {
+      const changed = Object.keys(values).map(k => CONTACT_COLUMNS[k]).join(', ');
+      await db.execute(
+        `INSERT INTO tds_reconciliation_audit_logs (reconciliation_id, action, details, changed_by)
+         VALUES (?, 'contact_update', ?, 'User')`,
+        [targetId, `Contact updated (${changed}); also filled on ${filledElsewhere} other bill(s) with a blank value`]
+      );
+    } catch (aErr) {
+      console.warn('Audit log write error:', aErr.message);
+    }
+
+    const [after] = await db.execute(
+      'SELECT contact_person_name, contact_number, email_id FROM tds_dues WHERE id = ?',
+      [duesId]
+    );
+    const row = (after && after[0]) || {};
+    res.json({
+      success: true,
+      message: 'Contact details saved.',
+      data: {
+        id: targetId,
+        contactPersonName: row.contact_person_name || '',
+        contactNumber: row.contact_number || '',
+        emailId: row.email_id || '',
+        filledElsewhere
+      }
+    });
+  } catch (err) {
+    console.error('💥 Error in updateRecordContact:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to save contact details. Please try again.',
+      details: err.message
+    });
+  }
+};
