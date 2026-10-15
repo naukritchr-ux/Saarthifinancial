@@ -33,13 +33,27 @@ import { useApp } from '../../context/AppContext';
 // Max options rendered at once in a searchable dropdown (typing narrows the rest)
 const MAX_VISIBLE_OPTIONS = 100;
 
+// Base financial years always offered in the FY dropdown
+const BASE_FY_OPTIONS = [
+  { value: 'FY 2026-27', label: 'FY 2026-27 (Saarthi 360 Era)' },
+  ...['2025-26', '2024-25', '2023-24', '2022-23', '2021-22', '2020-21', '2019-20'].map(
+    (y) => ({ value: `FY ${y}`, label: `FY ${y}` })
+  )
+];
+
+// Options can be plain strings or { value, label } objects
+const normalizeOption = (o) =>
+  o !== null && typeof o === 'object' ? o : { value: o, label: String(o) };
+
 function SearchableDropdown({
   label,
   icon: Icon,
   value,
   options,
-  allLabel,
+  allValue = 'All', // the value that means "no filter"
+  allLabel, // omit to hide the "All" row (e.g. Sort Order)
   placeholder,
+  searchable = true, // false = no search box (short lists)
   onChange
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -59,13 +73,31 @@ function SearchableDropdown({
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
-  const filteredOptions = options.filter(option =>
-    String(option).toLowerCase().includes(searchTerm.trim().toLowerCase())
-  );
+  const normalized = options.map(normalizeOption);
+
+  const filteredOptions = searchable
+    ? normalized.filter((o) =>
+        o.label.toLowerCase().includes(searchTerm.trim().toLowerCase())
+      )
+    : normalized;
 
   const visibleOptions = filteredOptions.slice(0, MAX_VISIBLE_OPTIONS);
 
-  const selectedLabel = value === 'All' ? allLabel : value;
+  const selectedLabel =
+    value === allValue && allLabel
+      ? allLabel
+      : normalized.find((o) => o.value === value)?.label ?? value;
+
+  const choose = (v) => {
+    onChange(v);
+    setIsOpen(false);
+    setSearchTerm('');
+  };
+
+  const optionClass = (active) =>
+    `w-full text-left px-3 py-2 text-xs hover:bg-[#F3F0FF] break-words ${
+      active ? 'bg-[#E8E4FF] font-bold text-[#6B55C7]' : 'text-[#1F1B2E]'
+    }`;
 
   return (
     <div ref={rootRef} className="relative min-w-0">
@@ -77,7 +109,7 @@ function SearchableDropdown({
       <button
         type="button"
         onClick={() => {
-          setIsOpen(prev => !prev);
+          setIsOpen((prev) => !prev);
           setSearchTerm('');
         }}
         className="w-full flex items-center justify-between gap-2 bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 text-left font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
@@ -94,67 +126,55 @@ function SearchableDropdown({
 
       {isOpen && (
         <div className="absolute z-50 mt-1 w-full min-w-[240px] rounded-xl border border-[#E9E4FA] bg-white shadow-xl overflow-hidden">
-          <div className="relative p-2 border-b border-[#E9E4FA]">
-            <Search className="w-4 h-4 text-[#6B6580] absolute left-4 top-1/2 -translate-y-1/2" />
+          {searchable && (
+            <div className="relative p-2 border-b border-[#E9E4FA]">
+              <Search className="w-4 h-4 text-[#6B6580] absolute left-4 top-1/2 -translate-y-1/2" />
 
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Escape') {
-                  setIsOpen(false);
-                  setSearchTerm('');
-                }
-              }}
-              placeholder={placeholder}
-              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] rounded-lg pl-8 pr-3 py-2 text-xs text-[#1F1B2E] focus:outline-none focus:border-[#9B87F5]"
-              autoFocus
-            />
-          </div>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setIsOpen(false);
+                    setSearchTerm('');
+                  }
+                }}
+                placeholder={placeholder}
+                className="w-full bg-[#F6F8FA] border border-[#E9E4FA] rounded-lg pl-8 pr-3 py-2 text-xs text-[#1F1B2E] focus:outline-none focus:border-[#9B87F5]"
+                autoFocus
+              />
+            </div>
+          )}
 
           <div
             className="max-h-60 overflow-y-auto py-1"
             role="listbox"
             aria-label={label}
           >
-            <button
-              type="button"
-              onClick={() => {
-                onChange('All');
-                setIsOpen(false);
-                setSearchTerm('');
-              }}
-              className={`w-full text-left px-3 py-2 text-xs hover:bg-[#F3F0FF] ${
-                value === 'All'
-                  ? 'bg-[#E8E4FF] font-bold text-[#6B55C7]'
-                  : 'text-[#1F1B2E]'
-              }`}
-              role="option"
-              aria-selected={value === 'All'}
-            >
-              {allLabel}
-            </button>
+            {allLabel && (
+              <button
+                type="button"
+                onClick={() => choose(allValue)}
+                className={optionClass(value === allValue)}
+                role="option"
+                aria-selected={value === allValue}
+              >
+                {allLabel}
+              </button>
+            )}
 
             {visibleOptions.length > 0 ? (
-              visibleOptions.map(option => (
+              visibleOptions.map((o) => (
                 <button
-                  key={option}
+                  key={o.value}
                   type="button"
-                  onClick={() => {
-                    onChange(option);
-                    setIsOpen(false);
-                    setSearchTerm('');
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs hover:bg-[#F3F0FF] break-words ${
-                    value === option
-                      ? 'bg-[#E8E4FF] font-bold text-[#6B55C7]'
-                      : 'text-[#1F1B2E]'
-                  }`}
+                  onClick={() => choose(o.value)}
+                  className={optionClass(value === o.value)}
                   role="option"
-                  aria-selected={value === option}
+                  aria-selected={value === o.value}
                 >
-                  {option}
+                  {o.label}
                 </button>
               ))
             ) : (
@@ -240,7 +260,7 @@ export default function TdsReconciliation() {
             ...new Map(
               (res.companies || [])
                 .filter(Boolean)
-                .map(company => {
+                .map((company) => {
                   const name = String(company).trim();
                   return [name.toLowerCase(), name];
                 })
@@ -252,13 +272,8 @@ export default function TdsReconciliation() {
             ...new Set(
               (res.pans || [])
                 .filter(Boolean)
-                .map(pan => String(pan).trim().toUpperCase())
-                .filter(
-                  pan =>
-                    pan &&
-                    pan !== 'N/A' &&
-                    pan !== 'NULL'
-                )
+                .map((pan) => String(pan).trim().toUpperCase())
+                .filter((pan) => pan && pan !== 'N/A' && pan !== 'NULL')
             )
           ].sort((a, b) => a.localeCompare(b));
 
@@ -327,14 +342,16 @@ export default function TdsReconciliation() {
             totalBalance: 0
           };
 
-          res.data.forEach(r => {
+          res.data.forEach((r) => {
             const as26 = parseFloat(r.as26Tds || 0);
             const tally = parseFloat(r.tallyTds || 0);
             const saarthi = parseFloat(r.saarthiTds || r.booksTds || 0);
             const bal = parseFloat(
               r.balance !== undefined
                 ? r.balance
-                : (tally > 0 ? tally - as26 : saarthi - as26)
+                : tally > 0
+                  ? tally - as26
+                  : saarthi - as26
             );
 
             totalT += tally;
@@ -343,7 +360,7 @@ export default function TdsReconciliation() {
             totalB += bal;
 
             const effectiveStatus =
-              (tally === 0 && saarthi === 0 && as26 > 0)
+              tally === 0 && saarthi === 0 && as26 > 0
                 ? 'Excess'
                 : r.financialStatus;
 
@@ -409,7 +426,7 @@ export default function TdsReconciliation() {
   };
 
   const handleRefresh = () => {
-    setRefreshTrigger(prev => prev + 1);
+    setRefreshTrigger((prev) => prev + 1);
   };
 
   const handleResetFilters = () => {
@@ -430,8 +447,7 @@ export default function TdsReconciliation() {
     try {
       setExporting(true);
 
-      let exportRows =
-        (Array.isArray(rows) && rows.length > 0) ? [...rows] : [];
+      let exportRows = Array.isArray(rows) && rows.length > 0 ? [...rows] : [];
 
       if (total > rows.length) {
         try {
@@ -452,10 +468,7 @@ export default function TdsReconciliation() {
             followupStatus: responseFilter === 'All' ? '' : responseFilter
           });
 
-          const res = await Promise.race([
-            fetchPromise,
-            timeoutPromise
-          ]);
+          const res = await Promise.race([fetchPromise, timeoutPromise]);
 
           if (
             res &&
@@ -495,7 +508,7 @@ export default function TdsReconciliation() {
         'Follow-up Status'
       ];
 
-      const csvRows = exportRows.map(r => {
+      const csvRows = exportRows.map((r) => {
         const tally = parseFloat(r.tallyTds || 0);
         const as26 = parseFloat(r.as26Tds || 0);
         const saarthi = parseFloat(r.saarthiTds || r.booksTds || 0);
@@ -503,7 +516,9 @@ export default function TdsReconciliation() {
         const bal = parseFloat(
           r.balance !== undefined
             ? r.balance
-            : (tally > 0 ? tally - as26 : saarthi - as26)
+            : tally > 0
+              ? tally - as26
+              : saarthi - as26
         );
 
         const cleanName = (
@@ -514,9 +529,7 @@ export default function TdsReconciliation() {
         ).replace(/"/g, '""');
 
         const cleanTan =
-          (!r.tanNo ||
-            r.tanNo.startsWith('NO_TAN_') ||
-            r.tanNo.includes('UNKNOWN'))
+          !r.tanNo || r.tanNo.startsWith('NO_TAN_') || r.tanNo.includes('UNKNOWN')
             ? 'Pending TAN'
             : r.tanNo;
 
@@ -539,12 +552,13 @@ export default function TdsReconciliation() {
 
       const csvContent =
         '\uFEFF' +
-        [headers.join(','), ...csvRows.map(r => r.join(','))].join('\n');
+        [headers.join(','), ...csvRows.map((r) => r.join(','))].join('\n');
 
       const cleanFy = (fyFilter || 'All').replace(/\s+/g, '_');
 
-      const filename =
-        `tds_reconciliation_${cleanFy}_${new Date().toISOString().slice(0, 10)}.csv`;
+      const filename = `tds_reconciliation_${cleanFy}_${new Date()
+        .toISOString()
+        .slice(0, 10)}.csv`;
 
       triggerCsvDownload(filename, csvContent);
     } catch (error) {
@@ -556,36 +570,42 @@ export default function TdsReconciliation() {
   };
 
   const handleToggleFollowup = async (rowId) => {
-    setRows(prevRows => prevRows.map(r =>
-      r.id === rowId
-        ? { ...r, isFollowupDone: r.isFollowupDone ? 0 : 1 }
-        : r
-    ));
+    setRows((prevRows) =>
+      prevRows.map((r) =>
+        r.id === rowId ? { ...r, isFollowupDone: r.isFollowupDone ? 0 : 1 } : r
+      )
+    );
 
     try {
       const res = await toggleFollowupDone(rowId);
 
       if (!res || !res.success) {
-        setRows(prevRows => prevRows.map(r =>
-          r.id === rowId
-            ? { ...r, isFollowupDone: r.isFollowupDone ? 0 : 1 }
-            : r
-        ));
+        setRows((prevRows) =>
+          prevRows.map((r) =>
+            r.id === rowId
+              ? { ...r, isFollowupDone: r.isFollowupDone ? 0 : 1 }
+              : r
+          )
+        );
       } else if (res.hasOwnProperty('isFollowupDone')) {
-        setRows(prevRows => prevRows.map(r =>
-          r.id === rowId
-            ? { ...r, isFollowupDone: res.isFollowupDone ? 1 : 0 }
-            : r
-        ));
+        setRows((prevRows) =>
+          prevRows.map((r) =>
+            r.id === rowId
+              ? { ...r, isFollowupDone: res.isFollowupDone ? 1 : 0 }
+              : r
+          )
+        );
       }
     } catch (err) {
       console.error('Failed to toggle followup:', err);
 
-      setRows(prevRows => prevRows.map(r =>
-        r.id === rowId
-          ? { ...r, isFollowupDone: r.isFollowupDone ? 0 : 1 }
-          : r
-      ));
+      setRows((prevRows) =>
+        prevRows.map((r) =>
+          r.id === rowId
+            ? { ...r, isFollowupDone: r.isFollowupDone ? 0 : 1 }
+            : r
+        )
+      );
     }
   };
 
@@ -683,13 +703,15 @@ export default function TdsReconciliation() {
             <Layers className="w-4 h-4 text-[#9B87F5]" />
           </div>
 
-          <div className={`text-xl font-black ${
-            Math.abs(stats.totalBalance) <= 1.0
-              ? 'text-[#2E8B57]'
-              : stats.totalBalance > 0
-                ? 'text-[#D97706]'
-                : 'text-[#E11D48]'
-          }`}>
+          <div
+            className={`text-xl font-black ${
+              Math.abs(stats.totalBalance) <= 1.0
+                ? 'text-[#2E8B57]'
+                : stats.totalBalance > 0
+                  ? 'text-[#D97706]'
+                  : 'text-[#E11D48]'
+            }`}
+          >
             {stats.totalBalance > 0
               ? `+${formatCurrency(stats.totalBalance)}`
               : formatCurrency(stats.totalBalance)}
@@ -778,7 +800,7 @@ export default function TdsReconciliation() {
         </div>
       </div>
 
-      {/* Advanced Filter Toolbar: Year-wise + Company-wise + PAN-wise + Search */}
+      {/* Advanced Filter Toolbar */}
       <div className="bg-white rounded-3xl border border-[#E9E4FA] p-5 shadow-sm space-y-4">
         {/* Top Search Bar & CSV Action */}
         <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -831,56 +853,27 @@ export default function TdsReconciliation() {
           </div>
         </div>
 
-        {/* 3 Core Requested Filters Row: Year-Wise, Company-Wise, PAN-Wise */}
+        {/* Core Filters Row: Year-Wise, Company-Wise, PAN-Wise */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-[#E9E4FA] text-xs">
-          {/* 1. Year-Wise Filter */}
-          <div>
-            <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1 flex items-center gap-1">
-              <Calendar className="w-3.5 h-3.5 text-[#9B87F5]" />
-              Filter 1: Financial Year
-            </label>
+          <SearchableDropdown
+            label="Filter 1: Financial Year"
+            icon={Calendar}
+            value={fyFilter}
+            options={[
+              ...BASE_FY_OPTIONS,
+              ...filterOptions.financialYears.filter(
+                (fy) => !BASE_FY_OPTIONS.some((o) => o.value === fy)
+              )
+            ]}
+            allValue="All Financial Years"
+            allLabel="All Financial Years"
+            placeholder="Search financial year..."
+            onChange={(value) => {
+              setPage(1);
+              setFyFilter(value);
+            }}
+          />
 
-            <select
-              value={fyFilter}
-              onChange={(e) => {
-                setPage(1);
-                setFyFilter(e.target.value);
-              }}
-              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-bold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
-            >
-              <option value="All Financial Years">All Financial Years</option>
-              <option value="FY 2026-27">FY 2026-27 (Saarthi 360 Era)</option>
-              <option value="FY 2025-26">FY 2025-26</option>
-              <option value="FY 2024-25">FY 2024-25</option>
-              <option value="FY 2023-24">FY 2023-24</option>
-              <option value="FY 2022-23">FY 2022-23</option>
-              <option value="FY 2021-22">FY 2021-22</option>
-              <option value="FY 2020-21">FY 2020-21</option>
-              <option value="FY 2019-20">FY 2019-20</option>
-
-              {filterOptions.financialYears
-                .filter(
-                  fy =>
-                    ![
-                      'FY 2026-27',
-                      'FY 2025-26',
-                      'FY 2024-25',
-                      'FY 2023-24',
-                      'FY 2022-23',
-                      'FY 2021-22',
-                      'FY 2020-21',
-                      'FY 2019-20'
-                    ].includes(fy)
-                )
-                .map(fy => (
-                  <option key={fy} value={fy}>
-                    {fy}
-                  </option>
-                ))}
-            </select>
-          </div>
-
-          {/* 2. Company-Wise Filter */}
           <SearchableDropdown
             label="Filter 2: Company Name"
             icon={Building2}
@@ -888,13 +881,12 @@ export default function TdsReconciliation() {
             options={filterOptions.companies}
             allLabel={`All Companies (${filterOptions.companies.length})`}
             placeholder="Search company name..."
-            onChange={value => {
+            onChange={(value) => {
               setPage(1);
               setCompanyFilter(value);
             }}
           />
 
-          {/* 3. PAN-Wise Filter */}
           <SearchableDropdown
             label="Filter 3: PAN Number"
             icon={CreditCard}
@@ -902,7 +894,7 @@ export default function TdsReconciliation() {
             options={filterOptions.pans}
             allLabel={`All PAN Numbers (${filterOptions.pans.length})`}
             placeholder="Search PAN number..."
-            onChange={value => {
+            onChange={(value) => {
               setPage(1);
               setPanFilter(value);
             }}
@@ -911,65 +903,56 @@ export default function TdsReconciliation() {
 
         {/* Secondary Filters Row: Coverage, Sort, Follow-up status */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-[#E9E4FA] text-xs">
-          <div>
-            <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1">
-              Source Coverage Filter
-            </label>
+          <SearchableDropdown
+            label="Source Coverage Filter"
+            icon={Filter}
+            value={coverageFilter}
+            options={[
+              { value: '3/3', label: 'All 3 (Saarthi + Tally + 26AS)' },
+              { value: '2/3', label: 'Any 2 Sources (2/3)' },
+              { value: 'saarthi_tally', label: 'Saarthi + Tally' },
+              { value: 'tally_26as', label: 'Tally + 26AS' },
+              { value: 'as26_saarthi', label: '26AS + Saarthi' },
+              { value: '1/3', label: 'Single Source Only' }
+            ]}
+            allLabel="Coverage: All Records"
+            searchable={false}
+            onChange={(value) => {
+              setPage(1);
+              setCoverageFilter(value);
+            }}
+          />
 
-            <select
-              value={coverageFilter}
-              onChange={(e) => {
-                setPage(1);
-                setCoverageFilter(e.target.value);
-              }}
-              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
-            >
-              <option value="All">Coverage: All Records</option>
-              <option value="3/3">All 3 (Saarthi + Tally + 26AS)</option>
-              <option value="2/3">Any 2 Sources (2/3)</option>
-              <option value="saarthi_tally">Saarthi + Tally</option>
-              <option value="tally_26as">Tally + 26AS</option>
-              <option value="as26_saarthi">26AS + Saarthi</option>
-              <option value="1/3">Single Source Only</option>
-            </select>
-          </div>
+          <SearchableDropdown
+            label="Sort Order"
+            icon={Layers}
+            value={sortBy}
+            options={[
+              { value: 'updated_at', label: 'Recently Updated' },
+              { value: 'difference_desc', label: 'Difference (High → Low)' }
+            ]}
+            searchable={false}
+            onChange={(value) => {
+              setPage(1);
+              setSortBy(value);
+            }}
+          />
 
-          <div>
-            <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1">
-              Sort Order
-            </label>
-
-            <select
-              value={sortBy}
-              onChange={(e) => {
-                setPage(1);
-                setSortBy(e.target.value);
-              }}
-              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
-            >
-              <option value="updated_at">Recently Updated</option>
-              <option value="difference_desc">Difference (High → Low)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold text-[#6B6580] uppercase tracking-wider mb-1">
-              Follow-up Action Status
-            </label>
-
-            <select
-              value={responseFilter}
-              onChange={(e) => {
-                setPage(1);
-                setResponseFilter(e.target.value);
-              }}
-              className="w-full bg-[#F6F8FA] border border-[#E9E4FA] text-[#1F1B2E] rounded-xl px-3 py-2 font-semibold focus:outline-none focus:border-[#9B87F5] cursor-pointer"
-            >
-              <option value="All">All Follow-up Statuses</option>
-              <option value="done">✅ Follow-up Completed</option>
-              <option value="pending">⏳ Follow-up Pending</option>
-            </select>
-          </div>
+          <SearchableDropdown
+            label="Follow-up Action Status"
+            icon={CheckCircle}
+            value={responseFilter}
+            options={[
+              { value: 'done', label: '✅ Follow-up Completed' },
+              { value: 'pending', label: '⏳ Follow-up Pending' }
+            ]}
+            allLabel="All Follow-up Statuses"
+            searchable={false}
+            onChange={(value) => {
+              setPage(1);
+              setResponseFilter(value);
+            }}
+          />
         </div>
       </div>
 
@@ -1023,13 +1006,11 @@ export default function TdsReconciliation() {
                 'Unassigned Entity'
               ].includes(followupRow.companyName.trim())
                 ? followupRow.companyName
-                : (
-                  followupRow.tallyPartyName ||
+                : followupRow.tallyPartyName ||
                   followupRow.as26DeductorName ||
                   followupRow.deductorName ||
                   followupRow.partyName ||
-                  ''
-                ),
+                  '',
             contactPerson: followupRow.contactPersonName || '',
             contactNumber: followupRow.contactNumber || ''
           }}
@@ -1125,36 +1106,28 @@ export default function TdsReconciliation() {
 
               <div className="space-y-2">
                 <div className="flex justify-between py-1 border-b border-[#E9E4FA]">
-                  <span className="text-[#6B6580] font-semibold">
-                    PAN Number:
-                  </span>
+                  <span className="text-[#6B6580] font-semibold">PAN Number:</span>
                   <span className="font-mono font-bold text-[#1F1B2E]">
                     {activeViewRow.panNo || 'N/A'}
                   </span>
                 </div>
 
                 <div className="flex justify-between py-1 border-b border-[#E9E4FA]">
-                  <span className="text-[#6B6580] font-semibold">
-                    Financial Year:
-                  </span>
+                  <span className="text-[#6B6580] font-semibold">Financial Year:</span>
                   <span className="font-bold text-[#1F1B2E]">
                     {activeViewRow.financialYear || 'Unspecified'}
                   </span>
                 </div>
 
                 <div className="flex justify-between py-1 border-b border-[#E9E4FA]">
-                  <span className="text-[#6B6580] font-semibold">
-                    Source Coverage:
-                  </span>
+                  <span className="text-[#6B6580] font-semibold">Source Coverage:</span>
                   <span className="font-bold text-[#1F1B2E]">
                     {activeViewRow.sourceCoverage?.label || '3/3 Match'}
                   </span>
                 </div>
 
                 <div className="flex justify-between py-1 border-b border-[#E9E4FA]">
-                  <span className="text-[#6B6580] font-semibold">
-                    Is Manually Overridden:
-                  </span>
+                  <span className="text-[#6B6580] font-semibold">Is Manually Overridden:</span>
                   <span className="font-bold text-[#9B87F5]">
                     {activeViewRow.isManuallyEdited ? 'Yes' : 'No'}
                   </span>
@@ -1181,7 +1154,7 @@ export default function TdsReconciliation() {
           row={activeCrmRow}
           onClose={() => setActiveCrmRow(null)}
           onSuccess={() => {
-            setRefreshTrigger(prev => prev + 1);
+            setRefreshTrigger((prev) => prev + 1);
           }}
         />
       )}
