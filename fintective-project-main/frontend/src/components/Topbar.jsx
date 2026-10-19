@@ -13,11 +13,12 @@ import {
   CheckCircle2, 
   X,
   Database,
-  Activity
+  Activity,
+  HelpCircle
 } from 'lucide-react';
 import SyncModal from './SyncModal';
 
-const Topbar = ({ activePage, setActivePage }) => {
+const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
   const { 
     moduleFilteredTransactions, 
     selectedMonth, 
@@ -282,6 +283,29 @@ const Topbar = ({ activePage, setActivePage }) => {
             aria-label="Server health diagnostic"
           >
             <Info size={13} />
+          </button>
+
+          {/* Plain-Language Financial Guide Trigger */}
+          <button
+            onClick={() => setIsGlossaryOpen && setIsGlossaryOpen(true)}
+            style={{
+              background: '#ffffff',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              padding: '5px 10px',
+              cursor: 'pointer',
+              color: '#0f6e56',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '12px',
+              fontWeight: 600
+            }}
+            title="Open Plain-Language Financial Guide"
+            aria-label="Financial glossary and guide"
+          >
+            <HelpCircle size={13} color="#0f6e56" />
+            <span>Guide</span>
           </button>
         </div>
 

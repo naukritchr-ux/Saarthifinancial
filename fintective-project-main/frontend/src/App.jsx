@@ -1,9 +1,11 @@
 import React, { useState, useContext } from 'react';
 import { FinanceProvider, FinanceContext } from './context/FinanceContext';
+import { FilterProvider } from './context/FilterContext';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import DataStateBanner from './components/DataStateBanner';
 import BudgetSettingsModal from './components/BudgetSettingsModal';
+import GlossaryModal from './components/GlossaryModal';
 
 // Page Views
 import Dashboard from './pages/Dashboard';
@@ -53,6 +55,7 @@ function AppContent() {
   const { currentUser, isSidebarOpen } = useContext(FinanceContext);
   const [activePage, setActivePage] = useState('dashboard');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isGlossaryOpen, setIsGlossaryOpen] = useState(false);
 
   if (!currentUser) {
     return <Login />;
@@ -92,11 +95,11 @@ function AppContent() {
     <div className={`app-container ${!isSidebarOpen ? 'sidebar-collapsed' : ''}`}>
       
       {/* Navigation Sidebar */}
-      <Sidebar activePage={activePage} setActivePage={setActivePage} setIsSettingsOpen={setIsSettingsOpen} />
+      <Sidebar activePage={activePage} setActivePage={setActivePage} setIsSettingsOpen={setIsSettingsOpen} setIsGlossaryOpen={setIsGlossaryOpen} />
 
       {/* Primary Page Layout */}
       <main className="main-content">
-        <Topbar activePage={activePage} setActivePage={setActivePage} />
+        <Topbar activePage={activePage} setActivePage={setActivePage} setIsGlossaryOpen={setIsGlossaryOpen} />
         <DataStateBanner />
         <ErrorBoundary>
           {renderPage()}
@@ -109,6 +112,13 @@ function AppContent() {
           <BudgetSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
         </ErrorBoundary>
       )}
+
+      {/* Glossary & Plain-Language Guide modal */}
+      {isGlossaryOpen && (
+        <ErrorBoundary>
+          <GlossaryModal isOpen={isGlossaryOpen} onClose={() => setIsGlossaryOpen(false)} />
+        </ErrorBoundary>
+      )}
       
     </div>
   );
@@ -117,7 +127,9 @@ function AppContent() {
 function App() {
   return (
     <FinanceProvider>
-      <AppContent />
+      <FilterProvider>
+        <AppContent />
+      </FilterProvider>
     </FinanceProvider>
   );
 }

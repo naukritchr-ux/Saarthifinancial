@@ -15,10 +15,11 @@ import {
   Scale,
   LogOut,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  HelpCircle
 } from 'lucide-react';
 
-const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
+const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen, setIsGlossaryOpen }) => {
   const { userRole, currentUser, logout, activeModule, setActiveModule, isSidebarOpen, toggleSidebar } = useContext(FinanceContext);
 
   const handleModuleChange = (moduleName) => {
@@ -26,26 +27,24 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
     setActivePage('dashboard'); // Reset page to dashboard to prevent routing bugs
   };
 
-  // Define menu items for each module
+  // Define menu items for each module with plain-language one-line descriptions
   const franchiseBdItems = [
-    { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard, section: 'Overview' },
-    { id: 'cost-performance', name: 'Cost of Performance', icon: Scale, section: 'Analytics' },
-    { id: 'franchisees', name: 'Franchisees', icon: Users, section: 'Analytics' },
-    { id: 'bd-performance', name: 'BD performance', icon: TrendingUp, section: 'Analytics' },
-    { id: 'industry-analysis', name: 'Industry & Potential', icon: Briefcase, section: 'Analytics' },
-    { id: 'tl-performance', name: 'TL performance', icon: Users, section: 'Analytics' },
-    { id: 'roi-tracker', name: 'Runway & ROI', icon: Briefcase, section: 'Analytics' },
-    { id: 'growth-tracking', name: 'Growth targets', icon: Award, section: 'Analytics' },
-    { id: 'cash-outflow', name: 'Cash outflow', icon: TrendingDown, section: 'Analytics' },
-    { id: 'reports', name: 'Reports', icon: FileSpreadsheet, section: 'Analytics' }
+    { id: 'dashboard', name: 'Dashboard', description: 'Headline, needs attention & cash summary', icon: LayoutDashboard, section: 'Overview' },
+    { id: 'cost-performance', name: 'Cost of Performance', description: 'What each person earned vs what they cost', icon: Scale, section: 'Analytics' },
+    { id: 'bd-performance', name: 'BD performance', description: 'Leaderboard, contracts & conversions', icon: TrendingUp, section: 'Analytics' },
+    { id: 'tl-performance', name: 'TL performance', description: 'Team view, pipeline & quotas', icon: Users, section: 'Analytics' },
+    { id: 'franchisees', name: 'Franchisees', description: 'Ledger & collections across partner network', icon: Users, section: 'Analytics' },
+    { id: 'growth-tracking', name: 'Growth targets', description: 'Goals, progress, projection & compare', icon: Award, section: 'Analytics' },
+    { id: 'roi-tracker', name: 'Runway & ROI', description: 'Months of cash left & recovery center', icon: Briefcase, section: 'Analytics' },
+    { id: 'cash-outflow', name: 'Cash outflow', description: 'Direct vs overhead cost breakdown', icon: TrendingDown, section: 'Analytics' },
+    { id: 'reports', name: 'Reports', description: 'Every transaction, filterable & downloadable', icon: FileSpreadsheet, section: 'Analytics' }
   ];
 
   const jobPortalItems = [
-    { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard, section: 'Overview' },
-    { id: 'industry-analysis', name: 'Industry & Potential', icon: Briefcase, section: 'Analytics' },
-    { id: 'portal-analytics', name: 'Portal Analytics', icon: Globe, section: 'Analytics' },
-    { id: 'cash-outflow', name: 'Cash Outflow', icon: TrendingDown, section: 'Analytics' },
-    { id: 'reports', name: 'Reports', icon: FileSpreadsheet, section: 'Analytics' }
+    { id: 'dashboard', name: 'Dashboard', description: 'Portal overview & daily activity', icon: LayoutDashboard, section: 'Overview' },
+    { id: 'portal-analytics', name: 'Portal Analytics', description: 'Subscription intake & user activity', icon: Globe, section: 'Analytics' },
+    { id: 'cash-outflow', name: 'Cash Outflow', description: 'Direct hosting & infrastructure expenses', icon: TrendingDown, section: 'Analytics' },
+    { id: 'reports', name: 'Reports', description: 'Downloadable transaction exports', icon: FileSpreadsheet, section: 'Analytics' }
   ];
 
   const menuItems = activeModule === 'franchise_bd_revenue' ? franchiseBdItems : jobPortalItems;
@@ -154,8 +153,15 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
                           fontWeight: isActive ? '600' : '500'
                         }}
                       >
-                        <Icon size={18} className="menu-icon" style={{ stroke: isActive ? 'var(--accent-teal)' : 'var(--text-sidebar-muted)' }} />
-                        <span>{item.name}</span>
+                        <Icon size={18} className="menu-icon" style={{ stroke: isActive ? 'var(--accent-teal)' : 'var(--text-sidebar-muted)', flexShrink: 0 }} />
+                        <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left', overflow: 'hidden' }}>
+                          <span style={{ fontSize: '13px', lineHeight: 1.2 }}>{item.name}</span>
+                          {item.description && (
+                            <span style={{ fontSize: '10px', color: 'var(--text-sidebar-muted)', fontWeight: 400, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {item.description}
+                            </span>
+                          )}
+                        </div>
                       </button>
                     </li>
                   );
@@ -166,6 +172,11 @@ const Sidebar = ({ activePage, setActivePage, setIsSettingsOpen }) => {
       </div>
 
       <div className="sidebar-footer">
+        <button className="menu-item settings-btn" onClick={() => setIsGlossaryOpen && setIsGlossaryOpen(true)}>
+          <HelpCircle size={18} className="menu-icon" style={{ stroke: 'var(--text-sidebar-muted)' }} />
+          <span>Glossary & Guide</span>
+        </button>
+
         <button className="menu-item settings-btn" onClick={() => setIsSettingsOpen(true)}>
           <Settings size={18} className="menu-icon" style={{ stroke: 'var(--text-sidebar-muted)' }} />
           <span>Settings</span>

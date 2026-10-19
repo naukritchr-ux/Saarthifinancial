@@ -3,6 +3,7 @@ import { FinanceContext } from '../context/FinanceContext';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { getTransactionShares } from '../config/financeConfig';
 import { DonutChart, BarChart } from '../components/CustomCharts';
+import FilterBar from '../components/FilterBar';
 import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Activity, Percent, X, Calendar, Landmark, CreditCard, Tag } from 'lucide-react';
 
 const Dashboard = ({ setActivePage }) => {
@@ -580,6 +581,9 @@ const Dashboard = ({ setActivePage }) => {
 
   return (
     <div className="dashboard-page animate-fade-in">
+
+      {/* Shared FilterBar */}
+      <FilterBar showGroupBy={false} />
 
       {/* Narrative AI Insight Sentence */}
       <div className="dashboard-insight-banner" style={{ background: '#ffffff', border: '1px solid var(--border-color)', borderLeft: '3px solid var(--accent-teal)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: 'var(--shadow-sm)' }}>
