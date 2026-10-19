@@ -123,11 +123,6 @@ export const DataStateBanner = () => {
           <span style={{ fontSize: '12px', opacity: 0.95 }}>
             {banner.description}
           </span>
-          {backendHealth?.lastChecked && (
-            <span style={{ fontSize: '11px', display: 'block', marginTop: '2px', opacity: 0.75 }}>
-              Database Host: {backendHealth.host || 'Unknown'} • DB Connected: {backendHealth.isDbConnected ? 'Yes' : 'No'}
-            </span>
-          )}
         </div>
       </div>
 

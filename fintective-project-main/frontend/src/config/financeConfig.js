@@ -15,6 +15,9 @@ export const SENIOR_FRANCHISEE_SHARE_RATE = 0.70;    // 70% for partners > 3 yea
 export const DEFAULT_BD_COMMISSION_OF_COMPANY_POOL = 0.20; // 20% of company pool (5% of gross)
 export const DEFAULT_TL_COMMISSION_OF_COMPANY_POOL = 0.12; // 12% of company pool (3% of gross)
 
+// Corporate Tax Estimate Standard (Money Box Step 4)
+export const DEFAULT_ESTIMATED_TAX_RATE = 0.25; // 25% corporate tax estimate
+
 /**
  * Calculates real revenue shares for any transaction.
  * Prioritizes verified database fields (rShare, franchiseeShare).

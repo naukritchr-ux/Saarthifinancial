@@ -38,54 +38,7 @@ _FRANCHISEE_TRACK_CACHE = {}
 
 
 
-# Fallback seed data in case database is empty or running offline
-FALLBACK_FRANCHISEE_HISTORICAL = {
-    'Nagpur Central': [
-        {'period': '2023-24', 'revenue': 4200000.0},
-        {'period': '2024-25', 'revenue': 5500000.0},
-        {'period': '2025-26', 'revenue': 7200000.0}
-    ],
-    'Pune East': [
-        {'period': '2023-24', 'revenue': 3100000.0},
-        {'period': '2024-25', 'revenue': 4200000.0},
-        {'period': '2025-26', 'revenue': 5800000.0}
-    ],
-    'Mumbai South': [
-        {'period': '2023-24', 'revenue': 6000000.0},
-        {'period': '2024-25', 'revenue': 8500000.0},
-        {'period': '2025-26', 'revenue': 11500000.0}
-    ],
-    'Nashik Hub': [
-        {'period': '2023-24', 'revenue': 2200000.0},
-        {'period': '2024-25', 'revenue': 2900000.0},
-        {'period': '2025-26', 'revenue': 3900000.0}
-    ]
-}
-
-FALLBACK_BD_HISTORICAL = {
-    'Rohan Mehta': [
-        {'period': '2023-24', 'revenue': 8500000.0},
-        {'period': '2024-25', 'revenue': 11200000.0},
-        {'period': '2025-26', 'revenue': 14800000.0}
-    ],
-    'Neha Sharma': [
-        {'period': '2023-24', 'revenue': 6200000.0},
-        {'period': '2024-25', 'revenue': 8400000.0},
-        {'period': '2025-26', 'revenue': 10900000.0}
-    ],
-    'Karan Malhotra': [
-        {'period': '2023-24', 'revenue': 11000000.0},
-        {'period': '2024-25', 'revenue': 15500000.0},
-        {'period': '2025-26', 'revenue': 21000000.0}
-    ],
-    'Anjali Verma': [
-        {'period': '2023-24', 'revenue': 3800000.0},
-        {'period': '2024-25', 'revenue': 4900000.0},
-        {'period': '2025-26', 'revenue': 6500000.0}
-    ]
-}
-
-USE_DEMO_FALLBACK_DATA = os.environ.get('USE_DEMO_FALLBACK_DATA', 'false').lower() in ('true', '1', 'yes')
+USE_DEMO_FALLBACK_DATA = False
 
 
 def _get_entity_aliases(cursor, entity_type, entity_id, explicit_name=None):
@@ -459,25 +412,6 @@ def _fetch_historical_revenue_and_stats(cursor, entity_type, entity_id, entity_n
 
     except Exception as e:
         raise RuntimeError(f"Database query failed while fetching historical data for {entity_type} '{entity_name}': {e}")
-
-    # Seed fallback if enabled
-    if not historical_series and USE_DEMO_FALLBACK_DATA:
-        if entity_type == 'franchisee':
-            match = FALLBACK_FRANCHISEE_HISTORICAL.get(entity_name)
-            if match:
-                historical_series = [
-                    {'period': item['period'], 'revenue': item['revenue'], 'net_revenue': item['revenue'] * 0.4375, 'deals_count': max(5, int(item['revenue'] / 150000))}
-                    for item in match
-                ]
-                months_of_history = 12
-        else:
-            match = FALLBACK_BD_HISTORICAL.get(entity_name)
-            if match:
-                historical_series = [
-                    {'period': item['period'], 'revenue': item['revenue'], 'net_revenue': item['revenue'] * 0.4375, 'deals_count': max(8, int(item['revenue'] / 180000))}
-                    for item in match
-                ]
-                months_of_history = 12
 
     return historical_series, monthly_series, months_of_history
 
@@ -1246,27 +1180,24 @@ def predict_growth():
             'entity_type': entity_type,
             'entity_id': entity_id,
             'entity_name': entity_name_param or entity_id,
-            'projection_status': 'fallback_projection',
-            'insufficient_data': False,
+            'projection_status': 'insufficient_data',
+            'insufficient_data': True,
             'is_new_hire': False,
-            'months_of_history': 12,
-            'confidence': 'medium',
-            'productivity_score': {'score': 75, 'grade': 'A', 'monthly_avg_billing': 100000.0, 'monthly_deals_velocity': 1.0},
-            'base_revenue': base_revenue,
-            'current_deals_count': deal_base,
-            'current_monthly_deals': 1.0,
-            'avg_revenue_per_deal': 100000.0,
-            'historical_cagr': 0.15,
-            'historical_cagr_pct': 15.0,
+            'months_of_history': 0,
+            'confidence': 'low',
+            'productivity_score': None,
+            'base_revenue': 0.0,
+            'current_deals_count': 0,
+            'current_monthly_deals': 0.0,
+            'avg_revenue_per_deal': 0.0,
+            'historical_cagr': None,
+            'historical_cagr_pct': None,
             'applied_rate': round(selected_r, 4),
             'applied_rate_pct': round(selected_r * 100, 2),
-            'historical_series': [
-                {'period': 'FY 2024-2025', 'revenue': 1000000.0, 'net_revenue': 437500.0, 'deals_count': 10},
-                {'period': 'FY 2025-2026', 'revenue': 1200000.0, 'net_revenue': 525000.0, 'deals_count': 12}
-            ],
-            'projections': projections,
-            'scenarios': scenarios,
-            'notice': 'Calculated using resilient baseline'
+            'historical_series': [],
+            'projections': [],
+            'scenarios': {},
+            'notice': 'Not enough data'
         })
     finally:
         try:
@@ -1388,6 +1319,697 @@ def create_growth_target():
         }), 201
     except Exception as e:
         print(f"[create_growth_target] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+
+# --------------------------------------------------------------------------
+# 3b. GET /api/growth-targets/summary (Live enquiry-level summary for Growth targets)
+# --------------------------------------------------------------------------
+def _classify_backend_status(raw_status):
+    st = str(raw_status or '').strip().lower()
+    invoiced_set = {'closed', 'offered_and_accepted', 'invoiced', 'r', 'rv', 'billed', 'collected'}
+    cancelled_set = {'cancelled', 'canceled', 'offered_and_rejected', 'internally_closed', 'credit_note', 'cn', 'legal-cn', 'legal_cn', 'c', 'void', 'dropped'}
+    progressed_set = {'inprogress', 'in_progress', 'position_hold', 'revised', 'reallocation', 'pipeline', 'sourcing', 'interviewing'}
+    
+    if st in invoiced_set:
+        return 'invoiced'
+    elif st in cancelled_set:
+        return 'cancelled'
+    elif st in progressed_set:
+        return 'progressed'
+    else:
+        return 'other'
+
+def _format_inr_short(rev):
+    val = float(rev or 0.0)
+    if val >= 10000000:
+        return f"₹{val / 10000000:.2f} Cr"
+    elif val >= 100000:
+        return f"₹{val / 100000:.1f}L"
+    else:
+        return f"₹{val:,.0f}"
+
+def _calculate_money_box(cursor, entity_type, entity_name, fy_months, invoiced_deals, total_invoiced_rev, cur_start, cur_end, req):
+    """
+    Computes real Money Box line items according to Step 4 requirements:
+    Revenue (gross billed)
+    Our share (real per-deal company share from invoices, verified vs unverified)
+    - Earnings (salary + incentive from cost_bd_monthly / cost_tl_monthly for BD/TL, franchisee share for Franchise)
+    - Other costs (TL allocation, travel, overhead share based on active allocation rule)
+    = Net
+    - Tax (estimate, 25%)
+    = Surplus
+    Enforced on server-side: only returned to admin and manager roles.
+    """
+    user_role = (req.headers.get('X-User-Role') or req.args.get('role') or 'admin').strip().lower()
+    is_admin_or_manager = user_role in ('admin', 'manager', 'head_office')
+
+    if not is_admin_or_manager:
+        return None
+
+    # 1. Our share calculation (real per-deal company share)
+    our_share_sum = 0.0
+    verified_count = 0
+    unverified_count = 0
+    franchisee_deal_shares = 0.0
+
+    for d in invoiced_deals:
+        d_our = float(d.get('our_share') or 0.0)
+        d_fran = float(d.get('franchisee_share') or 0.0)
+        is_ver = bool(d.get('is_verified'))
+
+        our_share_sum += d_our
+        franchisee_deal_shares += d_fran
+        if is_ver:
+            verified_count += 1
+        else:
+            unverified_count += 1
+
+    our_share_sum = round(our_share_sum, 2)
+    franchisee_deal_shares = round(franchisee_deal_shares, 2)
+
+    # 2. Earnings calculation (the PERSON's earnings, not company cost allocation)
+    is_specific_name = entity_name and entity_name.lower() != 'all'
+    months_in_fy = len(fy_months)
+    placeholders = ','.join(['%s'] * len(fy_months))
+
+    earnings = {
+        'amount': None,
+        'status': 'not_set',
+        'label': 'Not set',
+        'entered_months': 0,
+        'total_months': months_in_fy,
+        'fixed_salary': 0.0,
+        'incentive_paid': 0.0
+    }
+    travel_expense = 0.0
+
+    if entity_type == 'bd':
+        if is_specific_name:
+            cursor.execute(f"""
+                SELECT fixed_salary, incentive_paid, travel_expense, month 
+                FROM cost_bd_monthly 
+                WHERE (LOWER(TRIM(bd_name)) = %s OR LOWER(TRIM(bd_name)) LIKE %s)
+                  AND month IN ({placeholders})
+            """, [entity_name.lower(), f"%{entity_name.lower()}%"] + fy_months)
+            rows = cursor.fetchall()
+            if rows:
+                fixed_sal = sum(float(r['fixed_salary'] or 0.0) for r in rows)
+                inc_paid = sum(float(r['incentive_paid'] or 0.0) for r in rows)
+                travel_expense = sum(float(r['travel_expense'] or 0.0) for r in rows)
+                tot = fixed_sal + inc_paid
+                earnings = {
+                    'amount': round(tot, 2),
+                    'status': 'entered' if len(rows) >= months_in_fy else 'partial',
+                    'label': f"Entered for {len(rows)} of {months_in_fy} months" if len(rows) < months_in_fy else "Full FY Entered",
+                    'entered_months': len(rows),
+                    'total_months': months_in_fy,
+                    'fixed_salary': round(fixed_sal, 2),
+                    'incentive_paid': round(inc_paid, 2)
+                }
+        else:
+            cursor.execute(f"""
+                SELECT fixed_salary, incentive_paid, travel_expense, month 
+                FROM cost_bd_monthly 
+                WHERE month IN ({placeholders})
+            """, fy_months)
+            rows = cursor.fetchall()
+            distinct_months = len(set(r['month'] for r in rows))
+            if rows:
+                fixed_sal = sum(float(r['fixed_salary'] or 0.0) for r in rows)
+                inc_paid = sum(float(r['incentive_paid'] or 0.0) for r in rows)
+                travel_expense = sum(float(r['travel_expense'] or 0.0) for r in rows)
+                tot = fixed_sal + inc_paid
+                earnings = {
+                    'amount': round(tot, 2),
+                    'status': 'entered' if distinct_months >= months_in_fy else 'partial',
+                    'label': f"Entered for {distinct_months} of {months_in_fy} months" if distinct_months < months_in_fy else "Full FY Entered",
+                    'entered_months': distinct_months,
+                    'total_months': months_in_fy,
+                    'fixed_salary': round(fixed_sal, 2),
+                    'incentive_paid': round(inc_paid, 2)
+                }
+
+    elif entity_type == 'tl':
+        if is_specific_name:
+            cursor.execute(f"""
+                SELECT fixed_salary, incentive_paid, month 
+                FROM cost_tl_monthly 
+                WHERE (LOWER(TRIM(tl_name)) = %s OR LOWER(TRIM(tl_name)) LIKE %s)
+                  AND month IN ({placeholders})
+            """, [entity_name.lower(), f"%{entity_name.lower()}%"] + fy_months)
+            rows = cursor.fetchall()
+            if rows:
+                fixed_sal = sum(float(r['fixed_salary'] or 0.0) for r in rows)
+                inc_paid = sum(float(r['incentive_paid'] or 0.0) for r in rows)
+                tot = fixed_sal + inc_paid
+                earnings = {
+                    'amount': round(tot, 2),
+                    'status': 'entered' if len(rows) >= months_in_fy else 'partial',
+                    'label': f"Entered for {len(rows)} of {months_in_fy} months" if len(rows) < months_in_fy else "Full FY Entered",
+                    'entered_months': len(rows),
+                    'total_months': months_in_fy,
+                    'fixed_salary': round(fixed_sal, 2),
+                    'incentive_paid': round(inc_paid, 2)
+                }
+        else:
+            cursor.execute(f"""
+                SELECT fixed_salary, incentive_paid, month 
+                FROM cost_tl_monthly 
+                WHERE month IN ({placeholders})
+            """, fy_months)
+            rows = cursor.fetchall()
+            distinct_months = len(set(r['month'] for r in rows))
+            if rows:
+                fixed_sal = sum(float(r['fixed_salary'] or 0.0) for r in rows)
+                inc_paid = sum(float(r['incentive_paid'] or 0.0) for r in rows)
+                tot = fixed_sal + inc_paid
+                earnings = {
+                    'amount': round(tot, 2),
+                    'status': 'entered' if distinct_months >= months_in_fy else 'partial',
+                    'label': f"Entered for {distinct_months} of {months_in_fy} months" if distinct_months < months_in_fy else "Full FY Entered",
+                    'entered_months': distinct_months,
+                    'total_months': months_in_fy,
+                    'fixed_salary': round(fixed_sal, 2),
+                    'incentive_paid': round(inc_paid, 2)
+                }
+
+    elif entity_type == 'franchise':
+        earnings = {
+            'amount': round(franchisee_deal_shares, 2),
+            'status': 'entered',
+            'label': 'Per-deal partner share (no salary)',
+            'entered_months': months_in_fy,
+            'total_months': months_in_fy,
+            'fixed_salary': 0.0,
+            'incentive_paid': 0.0
+        }
+
+    else: # entity_type == 'all'
+        cursor.execute(f"SELECT fixed_salary, incentive_paid, travel_expense, month FROM cost_bd_monthly WHERE month IN ({placeholders})", fy_months)
+        bd_rows = cursor.fetchall()
+        cursor.execute(f"SELECT fixed_salary, incentive_paid, month FROM cost_tl_monthly WHERE month IN ({placeholders})", fy_months)
+        tl_rows = cursor.fetchall()
+
+        bd_sal = sum(float(r['fixed_salary'] or 0.0) + float(r['incentive_paid'] or 0.0) for r in bd_rows)
+        tl_sal = sum(float(r['fixed_salary'] or 0.0) + float(r['incentive_paid'] or 0.0) for r in tl_rows)
+        travel_expense = sum(float(r['travel_expense'] or 0.0) for r in bd_rows)
+        total_sal = bd_sal + tl_sal
+
+        if len(bd_rows) == 0 and len(tl_rows) == 0:
+            earnings = {
+                'amount': round(franchisee_deal_shares, 2),
+                'status': 'partial' if franchisee_deal_shares > 0 else 'not_set',
+                'label': 'Franchise payouts (BD/TL salaries not set)',
+                'entered_months': 0,
+                'total_months': months_in_fy,
+                'fixed_salary': 0.0,
+                'incentive_paid': 0.0
+            }
+        else:
+            earnings = {
+                'amount': round(franchisee_deal_shares + total_sal, 2),
+                'status': 'entered',
+                'label': 'Company total (salaries + partner shares)',
+                'entered_months': months_in_fy,
+                'total_months': months_in_fy,
+                'fixed_salary': round(total_sal, 2),
+                'incentive_paid': 0.0
+            }
+
+    # 3. Other costs calculation
+    cursor.execute("SELECT basis FROM cost_allocation_rule WHERE is_active = 1 ORDER BY id DESC LIMIT 1")
+    rule_row = cursor.fetchone()
+    allocation_basis = rule_row.get('basis', 'revenue_share') if rule_row else 'revenue_share'
+
+    cursor.execute(f"SELECT * FROM overhead_monthly WHERE month IN ({placeholders})", fy_months)
+    ov_rows = cursor.fetchall()
+    overhead_months_entered = len(ov_rows)
+    overhead_pool = sum(
+        float(r.get('admin_team_salary', 0) or 0) +
+        float(r.get('marketing_team_salary', 0) or 0) +
+        float(r.get('rent', 0) or 0) +
+        float(r.get('other_admin_expense', 0) or 0)
+        for r in ov_rows
+    )
+
+    overhead_share = 0.0
+    if overhead_pool > 0 and our_share_sum > 0:
+        cursor.execute("""
+            SELECT SUM(COALESCE(i.ourShare, i.serviceCharges * 0.25)) as tot_company_share
+            FROM invoice i
+            WHERE i.billDate >= %s AND i.billDate <= %s
+        """, [cur_start, cur_end])
+        tot_cs_row = cursor.fetchone()
+        tot_company_share_fy = float(tot_cs_row.get('tot_company_share') or 0.0) if tot_cs_row else 0.0
+        if tot_company_share_fy > 0:
+            overhead_share = round((our_share_sum / tot_company_share_fy) * overhead_pool, 2)
+
+    tl_allocation = 0.0
+    if entity_type == 'bd' and is_specific_name:
+        tl_allocation = 0.0
+
+    other_costs_amount = round(tl_allocation + travel_expense + overhead_share, 2)
+    other_costs_tooltip = f"Allocation method: {allocation_basis} ({overhead_months_entered} of {months_in_fy} months entered in overhead_monthly). TL allocation: ₹{tl_allocation:,.0f}, Travel: ₹{travel_expense:,.0f}, Overhead share: ₹{overhead_share:,.0f}."
+
+    # 4. Net & Reconciliation
+    earnings_val = earnings['amount'] if earnings and earnings['amount'] is not None else 0.0
+    net = round(our_share_sum - earnings_val - other_costs_amount, 2)
+
+    # 5. Tax (estimate, 25%)
+    tax_rate = 0.25
+    tax_amount = round(net * tax_rate, 2) if net > 0 else 0.0
+    surplus = round(net - tax_amount, 2)
+
+    return {
+        'revenue': round(total_invoiced_rev, 2),
+        'our_share': our_share_sum,
+        'verified_count': verified_count,
+        'unverified_count': unverified_count,
+        'total_deals_count': len(invoiced_deals),
+        'earnings': earnings,
+        'other_costs': {
+            'amount': other_costs_amount,
+            'allocation_method': allocation_basis,
+            'tooltip': other_costs_tooltip,
+            'breakdown': {
+                'tl_allocation': tl_allocation,
+                'travel': travel_expense,
+                'overhead_share': overhead_share
+            }
+        },
+        'net': net,
+        'tax': {
+            'amount': tax_amount,
+            'rate': tax_rate,
+            'label': 'estimate (25%)'
+        },
+        'surplus': surplus
+    }
+
+@growth_tracking_bp.route("/api/growth-targets/summary", methods=["GET"])
+def get_growth_targets_summary():
+    raw_type = request.args.get("entity_type", "all").strip().lower()
+    entity_name = request.args.get("entity_name", "all").strip()
+    entity_id = request.args.get("entity_id", "").strip()
+    fy_str = request.args.get("fy", "FY 2026-27").strip()
+
+    # Normalize entity_type
+    if raw_type in ('bd', 'bd_agent', 'bd_specialist'):
+        entity_type = 'bd'
+    elif raw_type in ('tl', 'team_leader', 'team_leaders'):
+        entity_type = 'tl'
+    elif raw_type in ('franchise', 'franchisee', 'franchisees'):
+        entity_type = 'franchise'
+    else:
+        entity_type = 'all'
+
+    import re
+    match = re.search(r'(\d{4})', fy_str)
+    if match:
+        start_year = int(match.group(1))
+    else:
+        now = datetime.date.today()
+        start_year = now.year if now.month >= 4 else now.year - 1
+
+    cur_start = f"{start_year}-04-01"
+    cur_end = f"{start_year + 1}-03-31"
+    prior_start = f"{start_year - 1}-04-01"
+    prior_end = f"{start_year}-03-31"
+
+    today = datetime.date.today()
+    cur_end_date = datetime.date(start_year + 1, 3, 31)
+    cur_start_date = datetime.date(start_year, 4, 1)
+
+    if today > cur_end_date:
+        months_elapsed = 12
+        months_remaining = 0
+    elif today < cur_start_date:
+        months_elapsed = 0
+        months_remaining = 12
+    else:
+        if today.month >= 4:
+            months_elapsed = today.month - 3
+        else:
+            months_elapsed = today.month + 9
+        months_remaining = max(0, 12 - months_elapsed)
+
+    user_role = (request.headers.get('X-User-Role') or request.args.get('role') or 'admin').strip().lower()
+    cache_key = f"growth_summary_{entity_type}_{entity_name}_{start_year}_{user_role}"
+    cached_val = _get_cached(cache_key)
+    if cached_val is not None:
+        return jsonify(cached_val)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # 1. Fetch current FY enquiries with joined invoice share information
+        where_clauses = [
+            "LOWER(TRIM(COALESCE(e.bdMemberName, ''))) NOT IN ('head office', 'head  - office', 'head - office', '')",
+            "LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) >= %s",
+            "LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) <= %s"
+        ]
+        params = [cur_start, cur_end]
+
+        is_specific_name = entity_name and entity_name.lower() != 'all'
+
+        if entity_type == 'bd' and is_specific_name:
+            where_clauses.append("(LOWER(TRIM(e.bdMemberName)) = %s OR LOWER(TRIM(e.bdMemberName)) LIKE %s)")
+            params.extend([entity_name.lower(), f"%{entity_name.lower()}%"])
+        elif entity_type == 'tl' and is_specific_name:
+            where_clauses.append("(LOWER(TRIM(e.teamLeaderName)) = %s OR LOWER(TRIM(e.teamLeaderName)) LIKE %s)")
+            params.extend([entity_name.lower(), f"%{entity_name.lower()}%"])
+        elif entity_type == 'franchise' and is_specific_name:
+            where_clauses.append("(LOWER(TRIM(e.franchiseeName)) = %s OR LOWER(TRIM(e.franchiseeName)) LIKE %s)")
+            params.extend([entity_name.lower(), f"%{entity_name.lower()}%"])
+
+        query = f"""
+            SELECT 
+                e.id, e.companyName, e.positionName, e.bdMemberName, e.teamLeaderName, e.franchiseeName,
+                e.enquiryStatus, e.bill_no, e.bill_date, e.bill_amount, e.placementFees,
+                e.industry, e.info,
+                COALESCE(inv_enq.ourShare, inv_bill.ourShare) as inv_our_share,
+                COALESCE(inv_enq.franchiseeShare, inv_bill.franchiseeShare) as inv_franchisee_share,
+                LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) as effective_date
+            FROM enquiries e
+            LEFT JOIN (
+                SELECT 
+                    enquiry_id,
+                    MAX(ourShare) as ourShare,
+                    MAX(franchiseeShare) as franchiseeShare
+                FROM invoice 
+                WHERE enquiry_id IS NOT NULL AND enquiry_id > 0
+                GROUP BY enquiry_id
+            ) inv_enq ON inv_enq.enquiry_id = e.id
+            LEFT JOIN (
+                SELECT 
+                    billNumber,
+                    MAX(ourShare) as ourShare,
+                    MAX(franchiseeShare) as franchiseeShare
+                FROM invoice 
+                WHERE billNumber IS NOT NULL AND billNumber != ''
+                GROUP BY billNumber
+            ) inv_bill ON (inv_enq.enquiry_id IS NULL AND e.bill_no IS NOT NULL AND e.bill_no != '' AND inv_bill.billNumber = e.bill_no)
+            WHERE {' AND '.join(where_clauses)}
+            ORDER BY effective_date DESC
+        """
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+
+        # Monthly buckets: Apr of start_year to Mar of start_year+1
+        fy_months = []
+        for m in range(4, 13):
+            fy_months.append(f"{start_year}-{m:02d}")
+        for m in range(1, 4):
+            fy_months.append(f"{start_year + 1}-{m:02d}")
+
+        month_labels = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"]
+        monthly_map = {}
+        for idx, ym in enumerate(fy_months):
+            monthly_map[ym] = {
+                'month': ym,
+                'month_label': f"{month_labels[idx]} '{str(start_year if idx < 9 else start_year + 1)[2:]}",
+                'invoiced': 0,
+                'invoiced_revenue': 0.0,
+                'progressed': 0,
+                'progressed_revenue': 0.0,
+                'cancelled': 0,
+                'cancelled_revenue': 0.0,
+                'other': 0,
+                'other_revenue': 0.0,
+                'all': 0,
+                'all_revenue': 0.0
+            }
+
+        totals = {
+            'all': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0},
+            'invoiced': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0},
+            'progressed': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0},
+            'cancelled': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0},
+            'other': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0}
+        }
+
+        deals = []
+        for r in rows:
+            st = _classify_backend_status(r['enquiryStatus'])
+            amt = float(r['bill_amount'] or 0.0)
+            edate = str(r['effective_date'] or '')[:10]
+            ym = edate[:7]
+
+            totals[st]['count'] += 1
+            totals[st]['revenue'] += amt
+            totals['all']['count'] += 1
+            totals['all']['revenue'] += amt
+
+            if ym in monthly_map:
+                monthly_map[ym][st] += 1
+                monthly_map[ym][f"{st}_revenue"] += amt
+                monthly_map[ym]['all'] += 1
+                monthly_map[ym]['all_revenue'] += amt
+
+            raw_our_share = r.get('inv_our_share')
+            raw_f_share = r.get('inv_franchisee_share')
+            if raw_our_share is not None and float(raw_our_share) > 0:
+                deal_our_share = float(raw_our_share)
+                is_ver = True
+            else:
+                deal_our_share = amt * 0.25
+                is_ver = False
+
+            if raw_f_share is not None and float(raw_f_share) > 0:
+                deal_f_share = float(raw_f_share)
+            else:
+                deal_f_share = max(0.0, amt - deal_our_share)
+
+            deals.append({
+                'id': r['id'],
+                'referenceId': f"ENQ-{r['id']}",
+                'companyName': r.get('companyName') or 'Corporate Client',
+                'positionName': r.get('positionName') or 'Mandate',
+                'candidateName': r.get('info') or r.get('positionName') or 'Candidate Placement',
+                'bdMemberName': r.get('bdMemberName') or '',
+                'teamLeaderName': r.get('teamLeaderName') or '',
+                'franchiseeName': r.get('franchiseeName') or '',
+                'date': edate,
+                'amount': amt,
+                'our_share': round(deal_our_share, 2),
+                'is_verified': is_ver,
+                'franchisee_share': round(deal_f_share, 2),
+                'raw_status': r.get('enquiryStatus') or '',
+                'status': st,
+                'bill_no': r.get('bill_no') or '',
+                'industry': r.get('industry') or ''
+            })
+
+        for k in ('all', 'invoiced', 'progressed', 'cancelled', 'other'):
+            cnt = totals[k]['count']
+            rev = totals[k]['revenue']
+            totals[k]['avg_deal'] = round(rev / cnt, 2) if cnt > 0 else 0.0
+            totals[k]['revenue'] = round(rev, 2)
+
+        monthly_series = [monthly_map[ym] for ym in fy_months]
+        for m in monthly_series:
+            m['invoiced_revenue'] = round(m['invoiced_revenue'], 2)
+            m['progressed_revenue'] = round(m['progressed_revenue'], 2)
+            m['cancelled_revenue'] = round(m['cancelled_revenue'], 2)
+            m['other_revenue'] = round(m['other_revenue'], 2)
+            m['all_revenue'] = round(m['all_revenue'], 2)
+
+        # 2. Fetch prior FY enquiries
+        prior_where = [
+            "LOWER(TRIM(COALESCE(e.bdMemberName, ''))) NOT IN ('head office', 'head  - office', 'head - office', '')",
+            "LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) >= %s",
+            "LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) <= %s"
+        ]
+        prior_params = [prior_start, prior_end]
+        if entity_type == 'bd' and is_specific_name:
+            prior_where.append("(LOWER(TRIM(e.bdMemberName)) = %s OR LOWER(TRIM(e.bdMemberName)) LIKE %s)")
+            prior_params.extend([entity_name.lower(), f"%{entity_name.lower()}%"])
+        elif entity_type == 'tl' and is_specific_name:
+            prior_where.append("(LOWER(TRIM(e.teamLeaderName)) = %s OR LOWER(TRIM(e.teamLeaderName)) LIKE %s)")
+            prior_params.extend([entity_name.lower(), f"%{entity_name.lower()}%"])
+        elif entity_type == 'franchise' and is_specific_name:
+            prior_where.append("(LOWER(TRIM(e.franchiseeName)) = %s OR LOWER(TRIM(e.franchiseeName)) LIKE %s)")
+            prior_params.extend([entity_name.lower(), f"%{entity_name.lower()}%"])
+
+        prior_query = f"""
+            SELECT e.enquiryStatus, SUM(COALESCE(e.bill_amount, 0.0)) as rev, COUNT(*) as cnt
+            FROM enquiries e
+            WHERE {' AND '.join(prior_where)}
+            GROUP BY e.enquiryStatus
+        """
+        cursor.execute(prior_query, prior_params)
+        prior_rows = cursor.fetchall()
+
+        prior_totals = {
+            'all': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0},
+            'invoiced': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0},
+            'progressed': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0},
+            'cancelled': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0},
+            'other': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0}
+        }
+        for pr in prior_rows:
+            pst = _classify_backend_status(pr['enquiryStatus'])
+            p_cnt = int(pr['cnt'] or 0)
+            p_rev = float(pr['rev'] or 0.0)
+            prior_totals[pst]['count'] += p_cnt
+            prior_totals[pst]['revenue'] += p_rev
+            prior_totals['all']['count'] += p_cnt
+            prior_totals['all']['revenue'] += p_rev
+
+        for k in ('all', 'invoiced', 'progressed', 'cancelled', 'other'):
+            cnt = prior_totals[k]['count']
+            rev = prior_totals[k]['revenue']
+            prior_totals[k]['avg_deal'] = round(rev / cnt, 2) if cnt > 0 else 0.0
+            prior_totals[k]['revenue'] = round(rev, 2)
+
+        def calc_pct_delta(cur, prev):
+            if prev and prev > 0:
+                return round(((cur - prev) / prev) * 100.0, 1)
+            return None
+
+        deltas = {
+            'all_revenue_pct': calc_pct_delta(totals['all']['revenue'], prior_totals['all']['revenue']),
+            'all_count_pct': calc_pct_delta(totals['all']['count'], prior_totals['all']['count']),
+            'invoiced_revenue_pct': calc_pct_delta(totals['invoiced']['revenue'], prior_totals['invoiced']['revenue']),
+            'invoiced_count_pct': calc_pct_delta(totals['invoiced']['count'], prior_totals['invoiced']['count']),
+            'progressed_revenue_pct': calc_pct_delta(totals['progressed']['revenue'], prior_totals['progressed']['revenue']),
+            'cancelled_revenue_pct': calc_pct_delta(totals['cancelled']['revenue'], prior_totals['cancelled']['revenue'])
+        }
+
+        # 3. Team Average benchmark
+        team_bench_query = f"""
+            SELECT 
+                COUNT(DISTINCT {'e.bdMemberName' if entity_type == 'bd' else ('e.teamLeaderName' if entity_type == 'tl' else 'e.franchiseeName')}) as member_count,
+                COUNT(*) as total_deals,
+                SUM(COALESCE(e.bill_amount, 0.0)) as total_rev
+            FROM enquiries e
+            WHERE LOWER(TRIM(COALESCE(e.bdMemberName, ''))) NOT IN ('head office', 'head  - office', 'head - office', '')
+              AND LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) >= %s
+              AND LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) <= %s
+        """
+        cursor.execute(team_bench_query, [cur_start, cur_end])
+        t_row = cursor.fetchone() or {}
+        active_members = max(1, int(t_row.get('member_count') or 1))
+        team_deals = int(t_row.get('total_deals') or 0)
+        team_rev = float(t_row.get('total_rev') or 0.0)
+
+        team_closed_query = f"""
+            SELECT COUNT(*) as closed_deals, SUM(COALESCE(e.bill_amount, 0.0)) as closed_rev
+            FROM enquiries e
+            WHERE LOWER(TRIM(COALESCE(e.bdMemberName, ''))) NOT IN ('head office', 'head  - office', 'head - office', '')
+              AND LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) >= %s
+              AND LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) <= %s
+              AND LOWER(TRIM(e.enquiryStatus)) IN ('closed', 'offered_and_accepted', 'invoiced')
+        """
+        cursor.execute(team_closed_query, [cur_start, cur_end])
+        tc_row = cursor.fetchone() or {}
+        team_closed_deals = int(tc_row.get('closed_deals') or 0)
+        team_closed_rev = float(tc_row.get('closed_rev') or 0.0)
+
+        team_avg = {
+            'closed_deals': round(team_closed_deals / active_members, 1),
+            'revenue': round(team_closed_rev / active_members, 2),
+            'avg_deal': round(team_closed_rev / team_closed_deals, 2) if team_closed_deals > 0 else 0.0,
+            'active_members': active_members
+        }
+
+        # 4. Pace and Headline
+        closed_cnt = totals['invoiced']['count']
+        closed_rev = totals['invoiced']['revenue']
+        monthly_pace = round(closed_cnt / max(1, months_elapsed), 1) if months_elapsed > 0 else 0.0
+        projected_by_march = round(closed_cnt + (monthly_pace * months_remaining)) if months_elapsed > 0 else closed_cnt
+
+        if is_specific_name:
+            display_name = entity_name.split()[0]
+        else:
+            display_name = "Overall Company" if entity_type == 'all' else f"All {entity_type.upper()}s"
+
+        if closed_cnt > 0:
+            if months_remaining > 0:
+                headline = f"{display_name} has closed {closed_cnt} deals ({_format_inr_short(closed_rev)}) this FY. At this pace: {projected_by_march} by March."
+            else:
+                headline = f"{display_name} closed {closed_cnt} deals ({_format_inr_short(closed_rev)}) in {fy_str}."
+        else:
+            headline = f"{display_name} has closed 0 deals this FY. Pipeline: {totals['progressed']['count']} deals ({_format_inr_short(totals['progressed']['revenue'])})."
+
+        tot_all_cnt = max(1, totals['all']['count'])
+        funnel = {
+            'progressed_count': totals['progressed']['count'],
+            'progressed_pct': round((totals['progressed']['count'] / tot_all_cnt) * 100, 1),
+            'invoiced_count': totals['invoiced']['count'],
+            'invoiced_pct': round((totals['invoiced']['count'] / tot_all_cnt) * 100, 1),
+            'cancelled_count': totals['cancelled']['count'],
+            'cancelled_pct': round((totals['cancelled']['count'] / tot_all_cnt) * 100, 1),
+            'other_count': totals['other']['count'],
+            'other_pct': round((totals['other']['count'] / tot_all_cnt) * 100, 1)
+        }
+
+        response_data = {
+            'entity_type': entity_type,
+            'entity_name': entity_name,
+            'display_name': display_name,
+            'fy': fy_str,
+            'period': {
+                'start_date': cur_start,
+                'end_date': cur_end,
+                'months_elapsed': months_elapsed,
+                'months_remaining': months_remaining
+            },
+            'headline': headline,
+            'totals': totals,
+            'prior_fy': {
+                'fy': f"FY {start_year - 1}-{str(start_year)[2:]}",
+                'totals': prior_totals
+            },
+            'deltas_vs_prior': deltas,
+            'monthly_series': monthly_series,
+            'deals': deals,
+            'funnel': funnel,
+            'pace': {
+                'closed_count': closed_cnt,
+                'closed_revenue': closed_rev,
+                'current_monthly_pace': monthly_pace,
+                'projected_total_by_fy_end': projected_by_march,
+                'months_elapsed': months_elapsed,
+                'months_remaining': months_remaining,
+                'is_low_volume': closed_cnt < 10
+            },
+            'comparisons': {
+                'this_period': {
+                    'closed_deals': closed_cnt,
+                    'revenue': closed_rev,
+                    'avg_deal': totals['invoiced']['avg_deal'],
+                    'cancelled_pct': round((totals['cancelled']['count'] / tot_all_cnt) * 100, 1)
+                },
+                'prior_period': {
+                    'closed_deals': prior_totals['invoiced']['count'],
+                    'revenue': prior_totals['invoiced']['revenue'],
+                    'avg_deal': prior_totals['invoiced']['avg_deal'],
+                    'cancelled_pct': round((prior_totals['cancelled']['count'] / max(1, prior_totals['all']['count'])) * 100, 1)
+                },
+                'team_average': {
+                    'closed_deals': team_avg['closed_deals'],
+                    'revenue': team_avg['revenue'],
+                    'avg_deal': team_avg['avg_deal'],
+                    'active_members': team_avg['active_members']
+                }
+            },
+            'money_box': _calculate_money_box(
+                cursor, entity_type, entity_name, fy_months,
+                [d for d in deals if d['status'] == 'invoiced'],
+                totals['invoiced']['revenue'],
+                cur_start, cur_end, request
+            )
+        }
+
+        _set_cached(cache_key, response_data, ttl_seconds=60)
+        return jsonify(response_data)
+    except Exception as e:
+        print(f"[get_growth_targets_summary] Error: {e}")
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
@@ -1952,49 +2574,42 @@ def _fetch_entity_portfolio(cursor, entity_type, entity_id_or_name, start_date=N
 
     # Build formatted monthly trend array
     month_keys = sorted(monthly_map.keys())
-    if not month_keys:
-        curr = datetime.date.today()
-        for i in range(6, -1, -1):
-            m_dt = curr - datetime.timedelta(days=i*30)
-            month_keys.append(m_dt.strftime('%Y-%m'))
-            monthly_map[m_dt.strftime('%Y-%m')] = {
-                'gross': tot_gross / 7.0,
-                'received': tot_received / 7.0,
-                'outstanding': tot_outstanding / 7.0,
-                'cancelled': tot_cancelled / 7.0,
-                'credit_notes': tot_credit_notes / 7.0
-            }
-
     monthly_trend = []
-    for ym in month_keys[-12:]: # Trailing 12 months max
-        data_m = monthly_map.get(ym, {'gross': 0.0, 'received': 0.0, 'outstanding': 0.0, 'cancelled': 0.0, 'credit_notes': 0.0})
-        try:
-            dt_obj = datetime.datetime.strptime(ym, '%Y-%m')
-            lbl = dt_obj.strftime('%b %y')
-        except Exception:
-            lbl = ym
-        monthly_trend.append({
-            'month': ym,
-            'label': lbl,
-            'gross': round(data_m['gross'], 2),
-            'received': round(data_m['received'], 2),
-            'outstanding': round(data_m['outstanding'], 2),
-            'cancelled': round(data_m['cancelled'], 2),
-            'credit_notes': round(data_m['credit_notes'], 2)
-        })
+    if month_keys:
+        for ym in month_keys[-12:]: # Trailing 12 months max
+            data_m = monthly_map.get(ym, {'gross': 0.0, 'received': 0.0, 'outstanding': 0.0, 'cancelled': 0.0, 'credit_notes': 0.0})
+            try:
+                dt_obj = datetime.datetime.strptime(ym, '%Y-%m')
+                lbl = dt_obj.strftime('%b %y')
+            except Exception:
+                lbl = ym
+            monthly_trend.append({
+                'month': ym,
+                'label': lbl,
+                'gross': round(data_m['gross'], 2),
+                'received': round(data_m['received'], 2),
+                'outstanding': round(data_m['outstanding'], 2),
+                'cancelled': round(data_m['cancelled'], 2),
+                'credit_notes': round(data_m['credit_notes'], 2)
+            })
 
-    # Calculate period deltas (last 3 vs prior 3 months)
-    recent_gross = sum(m['gross'] for m in monthly_trend[-3:]) if len(monthly_trend) >= 3 else tot_gross
-    prior_gross = sum(m['gross'] for m in monthly_trend[-6:-3]) if len(monthly_trend) >= 6 else (recent_gross * 0.9)
-    gross_delta_pct = round(((recent_gross - prior_gross) / max(1.0, prior_gross)) * 100.0, 1)
+    # Calculate period deltas (last 3 vs prior 3 months) - only if at least 6 months of data
+    if len(monthly_trend) >= 6:
+        recent_gross = sum(m['gross'] for m in monthly_trend[-3:])
+        prior_gross = sum(m['gross'] for m in monthly_trend[-6:-3])
+        gross_delta_pct = round(((recent_gross - prior_gross) / max(1.0, prior_gross)) * 100.0, 1)
 
-    recent_rec = sum(m['received'] for m in monthly_trend[-3:]) if len(monthly_trend) >= 3 else tot_received
-    prior_rec = sum(m['received'] for m in monthly_trend[-6:-3]) if len(monthly_trend) >= 6 else (recent_rec * 0.88)
-    received_delta_pct = round(((recent_rec - prior_rec) / max(1.0, prior_rec)) * 100.0, 1)
+        recent_rec = sum(m['received'] for m in monthly_trend[-3:])
+        prior_rec = sum(m['received'] for m in monthly_trend[-6:-3])
+        received_delta_pct = round(((recent_rec - prior_rec) / max(1.0, prior_rec)) * 100.0, 1)
 
-    recent_out = sum(m['outstanding'] for m in monthly_trend[-3:]) if len(monthly_trend) >= 3 else tot_outstanding
-    prior_out = sum(m['outstanding'] for m in monthly_trend[-6:-3]) if len(monthly_trend) >= 6 else (recent_out * 1.05)
-    outstanding_delta_pct = round(((recent_out - prior_out) / max(1.0, prior_out)) * 100.0, 1)
+        recent_out = sum(m['outstanding'] for m in monthly_trend[-3:])
+        prior_out = sum(m['outstanding'] for m in monthly_trend[-6:-3])
+        outstanding_delta_pct = round(((recent_out - prior_out) / max(1.0, prior_out)) * 100.0, 1)
+    else:
+        gross_delta_pct = None
+        received_delta_pct = None
+        outstanding_delta_pct = None
 
     resolved_info = _resolve_entity_info(cursor, 'employee', entity_id_or_name)
 
