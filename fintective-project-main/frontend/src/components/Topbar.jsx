@@ -324,31 +324,6 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
             </span>
           </div>
         )}
-
-        <div className="filter-dropdown-wrapper" style={{ display: 'flex', gap: '8px' }}>
-          <select 
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(e.target.value)}
-            className="month-select"
-            style={{ width: '120px' }}
-          >
-            {availableYears.map(y => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
-
-          <select 
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="month-select"
-            style={{ width: '130px' }}
-          >
-            {availableMonths.map(m => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </select>
-        </div>
-
       </div>
 
       {/* Sync modal portal */}
