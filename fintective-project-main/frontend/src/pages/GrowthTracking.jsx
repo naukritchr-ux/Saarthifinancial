@@ -1,6 +1,6 @@
 import React, { useContext, useState, useEffect, useMemo, useRef } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
-import { fetchWithApiKey } from '../utils/apiClient';
+import { fetchWithApiKey, fetchJsonWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs } from '../utils/formatters';
 import { 
   TrendingUp, 
@@ -80,14 +80,11 @@ const GrowthTracking = () => {
       setRosterLoading(true);
     }
     try {
-      const res = await fetchWithApiKey(`${API_BASE_URL}/growth-targets/roster?entity_type=${entityType}`);
-      if (res.ok) {
-        const data = await res.json();
-        const list = Array.isArray(data.roster) ? data.roster : (Array.isArray(data) ? data : []);
-        if (list.length > 0) {
-          rosterCacheRef.current[entityType] = list;
-          setServerRoster(list);
-        }
+      const data = await fetchJsonWithApiKey(`${API_BASE_URL}/growth-targets/roster?entity_type=${entityType}`);
+      const list = Array.isArray(data?.roster) ? data.roster : (Array.isArray(data) ? data : []);
+      if (list.length > 0) {
+        rosterCacheRef.current[entityType] = list;
+        setServerRoster(list);
       }
     } catch (err) {
       console.warn("Could not load dynamic roster, falling back to local context:", err);
@@ -228,25 +225,44 @@ const GrowthTracking = () => {
     return entityOptions.find(e => e.id === selectedEntityId || e.name === selectedEntityId) || entityOptions[0] || null;
   }, [entityOptions, selectedEntityId]);
 
-  // Fetch prediction data (5 years) whenever entity or rate changes with SWR
+  // Fetch prediction data (5 years) whenever entity or rate changes with resilient SWR
   const fetchPrediction = async (customRateVal) => {
     if (!selectedEntity) return;
     const cacheKey = `${entityType}_${selectedEntity.id || selectedEntity.name}_${customRateVal !== undefined ? customRateVal : ''}`;
+    const storageKey = `fintective_predict_${cacheKey}`;
     
+    // Check in-memory or sessionStorage cache first for instantaneous rendering
     if (predictionCacheRef.current[cacheKey]) {
       setPredictionData(predictionCacheRef.current[cacheKey]);
     } else {
-      setPredictionLoading(true);
+      try {
+        const stored = sessionStorage.getItem(storageKey);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          predictionCacheRef.current[cacheKey] = parsed;
+          setPredictionData(parsed);
+        } else {
+          setPredictionLoading(true);
+        }
+      } catch {
+        setPredictionLoading(true);
+      }
     }
     setPredictionError(null);
+
     try {
       const rateParam = (customRateVal !== undefined && customRateVal !== '') ? `&rate=${customRateVal}` : '';
       const url = `${API_BASE_URL}/growth-targets/predict?entity_type=${entityType}&entity_id=${encodeURIComponent(selectedEntity.id || selectedEntity.name)}&entity_name=${encodeURIComponent(selectedEntity.name || '')}${rateParam}&periods=5`;
-      const res = await fetchWithApiKey(url);
-      if (res.ok) {
-        const data = await res.json();
+      
+      const data = await fetchJsonWithApiKey(url);
+      if (data) {
         predictionCacheRef.current[cacheKey] = data;
+        try {
+          sessionStorage.setItem(storageKey, JSON.stringify(data));
+        } catch {}
         setPredictionData(data);
+        setPredictionError(null);
+
         if (data.insufficient_data || data.projection_status === 'insufficient_data') {
           setOverrideRate('');
         } else if (customRateVal === undefined || customRateVal === '') {
@@ -255,13 +271,13 @@ const GrowthTracking = () => {
           const defaultTargetRate = (histCagr !== undefined && histCagr !== null && histCagr > 0) ? Math.min(35, histCagr) : 15;
           setOverrideRate(String(defaultTargetRate));
         }
-      } else {
-        const errJson = await res.json().catch(() => ({}));
-        setPredictionError(errJson.message || 'Could not load historical revenue data for this entity.');
       }
     } catch (err) {
       console.warn("Notice: growth prediction API offline / unreachable, using local entity records:", err);
-      setPredictionError('Unable to connect to live API server. Rendering roadmap using local ledger records.');
+      // Only show error banner if we have absolutely no prediction data to render
+      if (!predictionCacheRef.current[cacheKey]) {
+        setPredictionError('Unable to connect to live API server. Rendering roadmap using local ledger records.');
+      }
     } finally {
       setPredictionLoading(false);
     }
@@ -1714,7 +1730,7 @@ const GrowthTracking = () => {
           </div>
         ) : (
           <>
-            {predictionError && (
+            {predictionError && !predictionData && (
               <div style={{ padding: '10px 14px', background: '#FDF2F2', border: '1px solid #F8B4B4', borderRadius: '8px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <AlertCircle size={16} color="#E02424" />

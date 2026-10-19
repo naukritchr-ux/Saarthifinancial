@@ -239,6 +239,37 @@ def add_cors_headers(response):
         print(f"[Fintective API Log] {request.method} {request.path} -> {response.status_code} ({duration_ms}ms)")
     return response
 
+@app.errorhandler(404)
+def handle_404_error(err):
+    if request.path.startswith('/api/'):
+        return jsonify({
+            "success": False,
+            "error": "Not Found",
+            "message": f"Endpoint '{request.path}' was not found.",
+            "status": 404
+        }), 404
+    return jsonify({"error": "Not Found", "status": 404}), 404
+
+@app.errorhandler(500)
+def handle_500_error(err):
+    print(f"[Fintective Error 500] Handled server error on {request.method} {request.path}: {err}")
+    return jsonify({
+        "success": False,
+        "error": "Internal Server Error",
+        "message": str(err),
+        "status": 500
+    }), 500
+
+@app.errorhandler(Exception)
+def handle_uncaught_exception(err):
+    print(f"[Fintective Exception] Uncaught exception on {request.method} {request.path}: {err}")
+    return jsonify({
+        "success": False,
+        "error": "Server Exception",
+        "message": str(err),
+        "status": 500
+    }), 500
+
 from invoice_controller import invoice_bp
 from growth_tracking_controller import growth_tracking_bp
 from cost_performance_controller import cost_performance_bp
@@ -3682,6 +3713,22 @@ def start_background_sync_daemon():
 
     threading.Thread(target=warmup_ml, daemon=True).start()
 
+    def render_keepalive():
+        import urllib.request
+        time.sleep(30)
+        while True:
+            try:
+                ext_url = os.environ.get('RENDER_EXTERNAL_URL') or 'https://saarthifinancial.onrender.com'
+                health_url = f"{ext_url.rstrip('/')}/api/health"
+                req = urllib.request.Request(health_url, headers={'User-Agent': 'Fintective-Self-Keepalive/1.0'})
+                with urllib.request.urlopen(req, timeout=15) as res:
+                    print(f"[Render Keepalive] Successfully pinged {health_url} (HTTP {res.status})")
+            except Exception as e:
+                pass
+            time.sleep(540)  # Ping every 9 minutes to prevent 15-min Render idle sleep
+
+    threading.Thread(target=render_keepalive, daemon=True).start()
+
     def sync_loop():
         time.sleep(3)
         while True:
@@ -3697,9 +3744,14 @@ def start_background_sync_daemon():
     t = threading.Thread(target=sync_loop, daemon=True)
     t.start()
 
+# Automatically start background daemons on module import (covers Gunicorn/WSGI on Render)
+_daemon_started = False
+if not _daemon_started:
+    _daemon_started = True
+    start_background_sync_daemon()
+
 if __name__ == '__main__':
     init_db()
-    start_background_sync_daemon()
     
     port = int(os.getenv("PORT", 5000))
     print(f"Starting Python Flask server on port {port}...")

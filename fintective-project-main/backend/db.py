@@ -1,4 +1,5 @@
 import os
+import time
 import pymysql
 import pymysql.cursors
 import urllib.parse
@@ -36,10 +37,11 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "") or parsed_password
 DB_NAME = (os.getenv("DB_NAME", "").strip() or parsed_name or "crm_db")
 DB_SSL = os.getenv("DB_SSL", "false").lower() in ("true", "1", "yes")
 
-def get_db_connection(select_db=True):
+def get_db_connection(select_db=True, max_retries=3, retry_delay=1.0):
     """
     Creates and returns a connection to MySQL / Aiven MySQL with DictCursor.
     Supports SSL for hosted cloud databases like Aiven.
+    Includes automated retry with exponential backoff on transient network/Aiven drops.
     """
     conn_params = {
         "host": DB_HOST.strip().replace("https://", "").replace("http://", "").split(":")[0],
@@ -48,6 +50,8 @@ def get_db_connection(select_db=True):
         "password": DB_PASSWORD,
         "cursorclass": pymysql.cursors.DictCursor,
         "connect_timeout": 15,
+        "read_timeout": 30,
+        "write_timeout": 30,
         "autocommit": True,
         "charset": "utf8mb4"
     }
@@ -59,7 +63,23 @@ def get_db_connection(select_db=True):
     if DB_SSL or "aivencloud.com" in DB_HOST:
         conn_params["ssl"] = {"ssl_mode": "REQUIRED"}
 
-    return pymysql.connect(**conn_params)
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            conn = pymysql.connect(**conn_params)
+            # Reconnect ping ensures the connection socket is actively responsive
+            conn.ping(reconnect=True)
+            return conn
+        except (pymysql.OperationalError, pymysql.InterfaceError, pymysql.InternalError, ConnectionError, TimeoutError, OSError) as conn_err:
+            last_error = conn_err
+            print(f"[DB Warning] Attempt {attempt}/{max_retries} connecting to MySQL failed: {conn_err}")
+            if attempt < max_retries:
+                time.sleep(retry_delay * attempt)
+        except Exception as e:
+            last_error = e
+            break
+
+    raise last_error
 
 def test_connection():
     """Tests connection to MySQL and returns connection status."""
