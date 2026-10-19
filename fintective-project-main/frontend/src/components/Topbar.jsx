@@ -263,16 +263,6 @@ const Topbar = ({ activePage, setActivePage }) => {
           </button>
         </div>
 
-        <button 
-          className="btn btn-secondary"
-          onClick={() => setIsSyncOpen(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', border: '1.5px solid #0284c7', color: '#0369a1', background: '#f0f9ff', fontWeight: '700' }}
-          title="Synchronize live CRM data from Saarthi 360"
-        >
-          <CloudDownload size={16} />
-          <span>Sync Saarthi CRM</span>
-        </button>
-
         <div className="topbar-badge" style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
           <span className="badge-label" style={{ color: '#475569', fontWeight: '600' }}>In hand:</span>
           <span className={`badge-value ${netBalance >= 0 ? 'positive' : 'negative'}`} style={{ fontWeight: '800' }}>
@@ -415,6 +405,17 @@ const Topbar = ({ activePage, setActivePage }) => {
             </div>
 
             <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                onClick={() => {
+                  setShowHealthModal(false);
+                  setIsSyncOpen(true);
+                }}
+                className="btn btn-secondary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '8px 14px', border: '1.5px solid #0284c7', color: '#0369a1', background: '#f0f9ff', fontWeight: '700' }}
+              >
+                <CloudDownload size={14} />
+                Sync Saarthi CRM
+              </button>
               <button
                 onClick={() => {
                   setShowHealthModal(false);
