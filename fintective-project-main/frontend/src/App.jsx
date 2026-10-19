@@ -2,6 +2,7 @@ import React, { useState, useContext } from 'react';
 import { FinanceProvider, FinanceContext } from './context/FinanceContext';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
+import DataStateBanner from './components/DataStateBanner';
 import BudgetSettingsModal from './components/BudgetSettingsModal';
 
 // Page Views
@@ -96,6 +97,7 @@ function AppContent() {
       {/* Primary Page Layout */}
       <main className="main-content">
         <Topbar activePage={activePage} setActivePage={setActivePage} />
+        <DataStateBanner />
         <ErrorBoundary>
           {renderPage()}
         </ErrorBoundary>

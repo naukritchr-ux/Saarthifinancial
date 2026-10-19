@@ -10,10 +10,27 @@ class TestSaarthiAPI(unittest.TestCase):
     def setUp(self):
         self.app = app.test_client()
         self.app.testing = True
+        self.api_key = os.environ.get('API_KEY', 'saarthi-secret-api-key-2026')
+        self.headers = {'X-API-Key': self.api_key}
+
+    def test_health_endpoint_unauthenticated(self):
+        print("\nTesting /api/health (unauthenticated)...")
+        response = self.app.get('/api/health')
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertEqual(data.get('status'), 'ok')
+        self.assertIn('database', data)
+
+    def test_unauthorized_when_wrong_key(self):
+        print("\nTesting /api/transactions with invalid key...")
+        response = self.app.get('/api/transactions', headers={'X-API-Key': 'invalid-secret-key'})
+        self.assertEqual(response.status_code, 401)
+        data = json.loads(response.data)
+        self.assertFalse(data.get('success'))
 
     def test_verify_attribution_endpoint(self):
         print("\nTesting /api/finance/verify-attribution...")
-        response = self.app.get('/api/finance/verify-attribution')
+        response = self.app.get('/api/finance/verify-attribution', headers=self.headers)
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         print("  Attribution verify response keys:", list(data.keys()))
@@ -21,7 +38,7 @@ class TestSaarthiAPI(unittest.TestCase):
 
     def test_bd_revenue_endpoint(self):
         print("\nTesting /api/finance/bd-revenue...")
-        response = self.app.get('/api/finance/bd-revenue')
+        response = self.app.get('/api/finance/bd-revenue', headers=self.headers)
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         print(f"  Leaderboard count: {len(data)}")
@@ -32,7 +49,7 @@ class TestSaarthiAPI(unittest.TestCase):
     def test_bd_revenue_detail_endpoint(self):
         print("\nTesting /api/finance/bd-revenue/Komal Suresh Bhanushali/detail...")
         # URL encode spaces safely
-        response = self.app.get('/api/finance/bd-revenue/Komal%20Suresh%20Bhanushali/detail')
+        response = self.app.get('/api/finance/bd-revenue/Komal%20Suresh%20Bhanushali/detail', headers=self.headers)
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         print(f"  Detail rows count for Komal: {len(data)}")
@@ -42,7 +59,7 @@ class TestSaarthiAPI(unittest.TestCase):
 
     def test_bd_enquiry_status_endpoint(self):
         print("\nTesting /api/finance/bd-enquiry-status...")
-        response = self.app.get('/api/finance/bd-enquiry-status')
+        response = self.app.get('/api/finance/bd-enquiry-status', headers=self.headers)
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         print(f"  BD enquiry status count: {len(data)}")
@@ -53,7 +70,7 @@ class TestSaarthiAPI(unittest.TestCase):
 
     def test_action_items_endpoint(self):
         print("\nTesting /api/finance/action-items...")
-        response = self.app.get('/api/finance/action-items')
+        response = self.app.get('/api/finance/action-items', headers=self.headers)
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.data)
         self.assertIn('ghost_deals', data)
@@ -72,7 +89,7 @@ class TestSaarthiAPI(unittest.TestCase):
             'bdAgentId': 'bd-1',
             'franchiseeId': 'f-1'
         }
-        response = self.app.post('/api/transactions', json=tx_data)
+        response = self.app.post('/api/transactions', json=tx_data, headers=self.headers)
         self.assertEqual(response.status_code, 201)
         res_data = json.loads(response.data)
         tx_id = res_data['id']
@@ -90,7 +107,7 @@ class TestSaarthiAPI(unittest.TestCase):
         conn.close()
 
         # Delete the transaction
-        del_response = self.app.delete(f'/api/transactions/{tx_id}')
+        del_response = self.app.delete(f'/api/transactions/{tx_id}', headers=self.headers)
         self.assertEqual(del_response.status_code, 200)
         print(f"  Deleted test transaction: {tx_id}")
 
@@ -113,13 +130,13 @@ class TestSaarthiAPI(unittest.TestCase):
             'category': 'Other',
             'bdAgentId': 'bd-1'
         }
-        response = self.app.post('/api/transactions', json=tx_data)
+        response = self.app.post('/api/transactions', json=tx_data, headers=self.headers)
         self.assertEqual(response.status_code, 201)
         tx_id = json.loads(response.data)['id']
         print(f"  Created test transaction: {tx_id}")
 
         # 2. Call soft-delete
-        sd_response = self.app.post(f'/api/finance/action-items/{tx_id}/soft-delete')
+        sd_response = self.app.post(f'/api/finance/action-items/{tx_id}/soft-delete', headers=self.headers)
         self.assertEqual(sd_response.status_code, 200)
         print(f"  Soft-deleted transaction: {tx_id}")
 
@@ -140,7 +157,7 @@ class TestSaarthiAPI(unittest.TestCase):
         conn.close()
 
         # 3. Call restore
-        r_response = self.app.post(f'/api/finance/action-items/{tx_id}/restore')
+        r_response = self.app.post(f'/api/finance/action-items/{tx_id}/restore', headers=self.headers)
         self.assertEqual(r_response.status_code, 200)
         print(f"  Restored transaction: {tx_id}")
 

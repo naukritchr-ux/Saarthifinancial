@@ -3,7 +3,7 @@ import re
 import datetime
 import warnings
 warnings.filterwarnings('ignore', category=UserWarning)
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, g
 from flask_cors import CORS
 from dotenv import load_dotenv
 from invoice_helpers import get_share_split, calculate_shares
@@ -205,6 +205,7 @@ if not API_KEY and is_prod and ENFORCE_API_KEY:
 
 @app.before_request
 def handle_preflight_and_api_key():
+    g.start_time = time.time()
     # Always allow preflight OPTIONS requests immediately
     if request.method == 'OPTIONS':
         res = app.make_default_options_response()
@@ -230,6 +231,12 @@ def add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-API-Key, Authorization, Accept, Origin'
+    
+    # Server-side request timing header and diagnostic logging
+    duration_ms = round((time.time() - getattr(g, 'start_time', time.time())) * 1000)
+    response.headers['X-Response-Time-Ms'] = str(duration_ms)
+    if request.path.startswith('/api/'):
+        print(f"[Fintective API Log] {request.method} {request.path} -> {response.status_code} ({duration_ms}ms)")
     return response
 
 from invoice_controller import invoice_bp
@@ -309,6 +316,7 @@ def map_category(crm_category, tx_type):
 @app.route('/api/transactions', methods=['GET'])
 def get_transactions():
     global _tx_cache, _tx_cache_time
+    t0 = time.time()
     bd_agent_id = request.args.get('bdAgentId')
     franchisee_id = request.args.get('franchiseeId')
     cache_key = f"{bd_agent_id or 'all'}_{franchisee_id or 'all'}"
@@ -316,7 +324,10 @@ def get_transactions():
     with _tx_cache_lock:
         now = time.time()
         if cache_key in _tx_cache and (now - _tx_cache_time < TX_CACHE_TTL_SECONDS):
-            return jsonify(_tx_cache[cache_key])
+            cached_rows = _tx_cache[cache_key]
+            elapsed_ms = round((time.time() - t0) * 1000)
+            print(f"[Transactions API] Cache HIT for key='{cache_key}' ({len(cached_rows)} rows returned in {elapsed_ms}ms)")
+            return jsonify(cached_rows)
     
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -892,12 +903,16 @@ def get_transactions():
 
             # Sort final combined list by date descending
             filtered_result.sort(key=lambda x: x.get('date', ''), reverse=True)
+            elapsed_ms = round((time.time() - t0) * 1000)
+            print(f"[Transactions API] Cache MISS - assembled {len(filtered_result)} rows from database in {elapsed_ms}ms (cached with TTL {TX_CACHE_TTL_SECONDS}s)")
             with _tx_cache_lock:
                 _tx_cache[cache_key] = filtered_result
                 _tx_cache_time = time.time()
             return jsonify(filtered_result)
 
     except Exception as e:
+        elapsed_ms = round((time.time() - t0) * 1000)
+        print(f"[Transactions API Error] Failed after {elapsed_ms}ms: {str(e)}")
         return jsonify({ 'error': str(e) }), 500
     finally:
         conn.close()
@@ -3311,10 +3326,26 @@ def warmup():
 def health_check():
     from db import test_connection
     db_status = test_connection()
+    
+    with _tx_cache_lock:
+        cache_warm = bool(_tx_cache and (time.time() - _tx_cache_time < TX_CACHE_TTL_SECONDS))
+        cache_age_sec = round(time.time() - _tx_cache_time) if _tx_cache_time else None
+        cached_keys = list(_tx_cache.keys())
+    
     return jsonify({
-        'status': 'ok',
+        'status': 'ok' if db_status.get('status') == 'connected' else 'degraded',
         'service': 'fintective-backend',
         'database': db_status,
+        'cache': {
+            'warm': cache_warm,
+            'age_seconds': cache_age_sec,
+            'ttl_seconds': TX_CACHE_TTL_SECONDS,
+            'active_keys': len(cached_keys)
+        },
+        'exclusions': {
+            'colliding_bills_count': len(COLLIDING_BILL_NUMBERS),
+            'duplicate_enquiries_count': len(ENQUIRY_IDS_TO_EXCLUDE)
+        },
         'timestamp': datetime.datetime.now().isoformat()
     })
 

@@ -1,12 +1,15 @@
 import React, { createContext, useState, useEffect, useMemo } from 'react';
-import { fetchWithApiKey } from '../utils/apiClient';
+import { 
+  API_BASE_URL, 
+  API_KEY, 
+  isApiKeyConfigured, 
+  fetchWithApiKey, 
+  fetchJsonWithApiKey,
+  logApiDiagnostic 
+} from '../utils/apiClient';
 
 export const FinanceContext = createContext();
-
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 
-  (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '0.0.0.0')
-    ? 'http://localhost:5000/api' 
-    : '/api');
+export { API_BASE_URL };
 
 const DEFAULT_FRANCHISEES = [
   { id: 'f-1', name: 'Sandeep', owner: 'Avadai Esakki', city: 'Nagpur', teamLeaderName: 'Avadai Esakki Muthu Sundaram Marthuvar', onboardingDate: '2024-04-01', status: 'Active', candidatesPlaced: 12 },
@@ -330,7 +333,84 @@ export const FinanceProvider = ({ children }) => {
     return saved || 'franchise_bd_revenue';
   });
 
-  const [dataSource, setDataSource] = useState('backend'); // 'backend' | 'fallback'
+  const [dataSource, setDataSource] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('fintective_cached_txs');
+      return cached ? 'cached' : 'sample';
+    } catch {
+      return 'sample';
+    }
+  });
+
+  const [dataState, setDataState] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('fintective_cached_txs');
+      return cached ? 'cached' : 'connecting';
+    } catch {
+      return 'connecting';
+    }
+  });
+
+  const [authError, setAuthError] = useState(null);
+
+  const [backendHealth, setBackendHealth] = useState({
+    isDbConnected: false,
+    cacheWarm: false,
+    host: '',
+    lastChecked: null,
+    raw: null
+  });
+
+  const [connectionProgress, setConnectionProgress] = useState({
+    isConnecting: false,
+    elapsedSec: 0,
+    message: ''
+  });
+
+  const [endpointStatus, setEndpointStatus] = useState({
+    transactions: { status: 'idle', count: 0, error: null },
+    franchisees: { status: 'idle', count: 0, error: null },
+    bdAgents: { status: 'idle', count: 0, error: null },
+    teamLeaders: { status: 'idle', count: 0, error: null },
+    budgets: { status: 'idle', count: 0, error: null },
+    mlInsights: { status: 'idle', error: null }
+  });
+
+  const [lastSyncTimestamp, setLastSyncTimestamp] = useState(() => {
+    try {
+      const ts = sessionStorage.getItem('fintective_last_synced_ts');
+      return ts ? parseInt(ts, 10) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [timeAgo, setTimeAgo] = useState('just now');
+
+  // Dynamically update 'Live · updated X min ago' text every 15 seconds
+  useEffect(() => {
+    const updateAge = () => {
+      if (!lastSyncTimestamp) {
+        setTimeAgo('never');
+        return;
+      }
+      const diffSec = Math.max(0, Math.floor((Date.now() - lastSyncTimestamp) / 1000));
+      if (diffSec < 60) {
+        setTimeAgo('just now');
+      } else if (diffSec < 120) {
+        setTimeAgo('1 min ago');
+      } else if (diffSec < 3600) {
+        setTimeAgo(`${Math.floor(diffSec / 60)} min ago`);
+      } else {
+        const hrs = Math.floor(diffSec / 3600);
+        setTimeAgo(`${hrs}h ago`);
+      }
+    };
+
+    updateAge();
+    const interval = setInterval(updateAge, 15000);
+    return () => clearInterval(interval);
+  }, [lastSyncTimestamp]);
 
   // Helper functions for matching stable IDs in fallback path (Phase 2)
   const getStableStringHash = (str) => {
@@ -409,7 +489,47 @@ export const FinanceProvider = ({ children }) => {
   });
   const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
 
-  // Helper with 60-second abort timeout — accounts for Render cold-start (up to 50s)
+  // Poll /api/health with backoff up to 50s for cold Render instance warm-up
+  const pollServerHealth = async (maxWaitSeconds = 50) => {
+    const startTime = Date.now();
+    let delayMs = 1200;
+    while ((Date.now() - startTime) < maxWaitSeconds * 1000) {
+      const elapsedSec = Math.max(1, Math.round((Date.now() - startTime) / 1000));
+      setConnectionProgress({
+        isConnecting: true,
+        elapsedSec,
+        message: elapsedSec > 2 ? `Waking up backend server (${elapsedSec}s)...` : 'Connecting to server...'
+      });
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/health`, {
+          signal: AbortSignal.timeout(6000)
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const isDbConnected = json.database?.status === 'connected';
+          setBackendHealth({
+            isDbConnected,
+            cacheWarm: Boolean(json.cache?.warm),
+            host: json.database?.host || '',
+            lastChecked: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            raw: json
+          });
+          setConnectionProgress({ isConnecting: false, elapsedSec, message: 'Connected' });
+          return { ok: true, isDbConnected, data: json };
+        }
+      } catch {
+        // Cold start in progress or network delay, retry
+      }
+      await new Promise(r => setTimeout(r, delayMs));
+      delayMs = Math.min(delayMs * 1.3, 4000);
+    }
+
+    setConnectionProgress({ isConnecting: false, elapsedSec: maxWaitSeconds, message: 'Server unreachable' });
+    return { ok: false, error: `Connection timed out after ${maxWaitSeconds}s` };
+  };
+
+  // Helper with 60-second abort timeout — accounts for Render cold-start / heavy transactions endpoint
   const fetchWithTimeout = async (url, options = {}, timeoutMs = 60000) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -423,19 +543,23 @@ export const FinanceProvider = ({ children }) => {
     }
   };
 
-  // Retry wrapper with exponential back-off: 3 attempts, 2s → 4s → 8s gaps
+  // Retry wrapper: 3 attempts, 2s → 4s → 8s gaps.
+  // 4xx errors (especially 401 Unauthorized) or HTML responses are definitive: do NOT retry
   const fetchWithRetry = async (url, options = {}, maxAttempts = 3, baseDelayMs = 2000) => {
     let lastErr;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const res = await fetchWithTimeout(url, options);
-        if (res.ok || res.status < 500) return res;  // treat 4xx as definitive (no retry)
+        if (res.ok || res.status < 500) return res;
         lastErr = new Error(`HTTP ${res.status}`);
       } catch (e) {
         lastErr = e;
+        if (e.isAuthError || e.status === 401 || e.isHtml) {
+          throw e; // Definitive failure, do not retry
+        }
       }
       if (attempt < maxAttempts) {
-        const delay = baseDelayMs * Math.pow(2, attempt - 1);  // 2s, 4s, 8s
+        const delay = baseDelayMs * Math.pow(2, attempt - 1);
         console.warn(`[Fetch] Attempt ${attempt}/${maxAttempts} failed for ${url}. Retrying in ${delay}ms...`);
         await new Promise(r => setTimeout(r, delay));
       }
@@ -443,318 +567,358 @@ export const FinanceProvider = ({ children }) => {
     throw lastErr;
   };
 
-  // Re-usable loader to fetch all data from backend (with parallel async fetching + retry)
+  // Re-usable loader to fetch all data from backend with cold-start polling, auth checking, and resilient fallbacks
   const fetchAllData = async (isManual = false) => {
     setIsBackgroundSyncing(true);
     let loadedFromBackend = false;
+
+    // 1. Verify API Key is configured in environment
+    if (!isApiKeyConfigured()) {
+      const errMsg = 'Missing VITE_API_KEY environment variable. Backend API requests require a valid key.';
+      logApiDiagnostic('error', { url: `${API_BASE_URL}/*`, status: 401, isHtml: false, message: errMsg });
+      setAuthError(errMsg);
+      setDataState('auth_error');
+      setIsBackgroundSyncing(false);
+      setIsLoadingData(false);
+      return false;
+    }
+
+    setAuthError(null);
+    setDataState(prev => (prev === 'live' ? 'live' : 'connecting'));
+
     try {
-      // Fire warmup ping first so the server wakes up before the heavy parallel fetch
-      try {
-        await fetch(`${API_BASE_URL}/warmup`, { method: 'GET', signal: AbortSignal.timeout(5000) });
-        console.log('[Warmup] Server is awake.');
-      } catch (we) {
-        console.warn('[Warmup] Warmup ping failed (server may still be waking up):', we.message);
-      }
+      // 2. Poll server health first — wakes up Render cold-instance (up to 40s) with visible countdown
+      const health = await pollServerHealth(40);
 
-      // Parallel async fetch with retry fallback
-      const [txRes, franRes, bdRes, tlRes, budgetRes, mlRes] = await Promise.allSettled([
-        fetchWithRetry(`${API_BASE_URL}/transactions`),
-        fetchWithRetry(`${API_BASE_URL}/franchisees`),
-        fetchWithRetry(`${API_BASE_URL}/bd-agents`),
-        fetchWithRetry(`${API_BASE_URL}/team-leaders`),
-        fetchWithRetry(`${API_BASE_URL}/budgets`),
-        fetchWithRetry(`${API_BASE_URL}/ml/insights`)
-      ]);
+      if (health.ok) {
+        // 3. Parallel async fetch of endpoints with retry
+        const [txRes, franRes, bdRes, tlRes, budgetRes, mlRes] = await Promise.allSettled([
+          fetchWithRetry(`${API_BASE_URL}/transactions`),
+          fetchWithRetry(`${API_BASE_URL}/franchisees`),
+          fetchWithRetry(`${API_BASE_URL}/bd-agents`),
+          fetchWithRetry(`${API_BASE_URL}/team-leaders`),
+          fetchWithRetry(`${API_BASE_URL}/budgets`),
+          fetchWithRetry(`${API_BASE_URL}/ml/insights`)
+        ]);
 
-      if (txRes.status === 'fulfilled' && txRes.value.ok) {
-        const txData = await txRes.value.json();
-        if (Array.isArray(txData) && txData.length > 0) {
-          const sanitized = txData.map(tx => ({
-            ...tx,
-            financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || '2025-2026'
-          }));
-          setTransactions(sanitized);
-          loadedFromBackend = true;
-          setDataSource('backend');
+        // Check for 401 Unauthorized across all endpoint responses
+        const any401 = [txRes, franRes, bdRes, tlRes, budgetRes, mlRes].some(
+          r => (r.status === 'rejected' && (r.reason?.status === 401 || r.reason?.isAuthError)) ||
+               (r.status === 'fulfilled' && r.value?.status === 401)
+        );
+
+        if (any401) {
+          const authMsg = 'Unauthorized (401): Backend rejected API key. Verify VITE_API_KEY matches the backend API_KEY.';
+          logApiDiagnostic('error', { url: `${API_BASE_URL}/transactions`, status: 401, isHtml: false, message: authMsg });
+          setAuthError(authMsg);
+          setDataState('auth_error');
+          setIsBackgroundSyncing(false);
+          setIsLoadingData(false);
+          return false;
+        }
+
+        // Check for HTML response (misrouted proxy / catch-all rewrite)
+        const anyHtml = [txRes, franRes, bdRes, tlRes, budgetRes, mlRes].some(
+          r => (r.status === 'rejected' && r.reason?.isHtml) ||
+               (r.status === 'fulfilled' && (r.value?.headers?.get('content-type') || '').includes('text/html'))
+        );
+
+        if (anyHtml) {
+          const htmlMsg = 'API call returned HTML instead of JSON. Ensure VITE_API_URL points to the backend server and Vercel proxy rewrites are configured.';
+          setAuthError(htmlMsg);
+          setDataState('routing_error');
+          setIsBackgroundSyncing(false);
+          setIsLoadingData(false);
+          return false;
+        }
+
+        // Process /transactions (A valid empty array [] is a SUCCESSFUL empty result, NOT a failure)
+        if (txRes.status === 'fulfilled' && txRes.value.ok) {
           try {
-            sessionStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
-          } catch (e) {}
+            const txData = await txRes.value.json();
+            if (Array.isArray(txData)) {
+              const sanitized = txData.map(tx => ({
+                ...tx,
+                financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || '2025-2026'
+              }));
+              setTransactions(sanitized);
+              loadedFromBackend = true;
+              setDataSource('backend');
+              setDataState('live');
+              setEndpointStatus(prev => ({
+                ...prev,
+                transactions: { status: sanitized.length > 0 ? 'ok' : 'empty', count: sanitized.length, error: null }
+              }));
+              try {
+                sessionStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
+              } catch (e) {}
+            }
+          } catch (jsonErr) {
+            logApiDiagnostic('error', { url: `${API_BASE_URL}/transactions`, status: 200, isHtml: false, message: jsonErr.message });
+            setEndpointStatus(prev => ({ ...prev, transactions: { status: 'failed', count: 0, error: jsonErr.message } }));
+          }
+        } else {
+          const err = txRes.status === 'rejected' ? txRes.reason?.message : `HTTP ${txRes.value?.status}`;
+          setEndpointStatus(prev => ({ ...prev, transactions: { status: 'failed', count: 0, error: err } }));
         }
-      }
 
-      if (franRes.status === 'fulfilled' && franRes.value.ok) {
-        const franData = await franRes.value.json();
-        if (Array.isArray(franData) && franData.length > 0) {
-          setFranchisees(franData);
-          try { sessionStorage.setItem('fintective_cached_franchisees', JSON.stringify(franData)); } catch (e) {}
-        }
-      }
-
-      if (bdRes.status === 'fulfilled' && bdRes.value.ok) {
-        const bdData = await bdRes.value.json();
-        if (Array.isArray(bdData) && bdData.length > 0) {
-          setBdAgents(bdData);
-          try { sessionStorage.setItem('fintective_cached_bd', JSON.stringify(bdData)); } catch (e) {}
-        }
-      }
-
-      if (tlRes.status === 'fulfilled' && tlRes.value.ok) {
-        const tlData = await tlRes.value.json();
-        if (Array.isArray(tlData) && tlData.length > 0) {
-          setTeamLeaders(tlData);
-          try { sessionStorage.setItem('fintective_cached_tl', JSON.stringify(tlData)); } catch (e) {}
-        }
-      }
-
-      if (budgetRes.status === 'fulfilled' && budgetRes.value.ok) {
-        const budgetData = await budgetRes.value.json();
-        if (budgetData && Object.keys(budgetData).length > 0) {
-          setBudgets(budgetData);
-          try { sessionStorage.setItem('fintective_cached_budgets', JSON.stringify(budgetData)); } catch (e) {}
-        }
-      }
-
-      if (mlRes.status === 'fulfilled' && mlRes.value.ok) {
-        const mlData = await mlRes.value.json();
-        if (mlData && typeof mlData === 'object') {
-          setMlInsights(mlData);
+        // Process /franchisees
+        if (franRes.status === 'fulfilled' && franRes.value.ok) {
           try {
-            sessionStorage.setItem('fintective_ml_insights', JSON.stringify(mlData));
-          } catch (e) {}
+            const franData = await franRes.value.json();
+            if (Array.isArray(franData)) {
+              setFranchisees(franData);
+              setEndpointStatus(prev => ({ ...prev, franchisees: { status: franData.length > 0 ? 'ok' : 'empty', count: franData.length, error: null } }));
+              try { sessionStorage.setItem('fintective_cached_franchisees', JSON.stringify(franData)); } catch (e) {}
+            }
+          } catch (e) {
+            setEndpointStatus(prev => ({ ...prev, franchisees: { status: 'failed', error: e.message } }));
+          }
+        } else {
+          setEndpointStatus(prev => ({ ...prev, franchisees: { status: 'failed', error: franRes.reason?.message || 'Request failed' } }));
+        }
+
+        // Process /bd-agents
+        if (bdRes.status === 'fulfilled' && bdRes.value.ok) {
+          try {
+            const bdData = await bdRes.value.json();
+            if (Array.isArray(bdData)) {
+              setBdAgents(bdData);
+              setEndpointStatus(prev => ({ ...prev, bdAgents: { status: bdData.length > 0 ? 'ok' : 'empty', count: bdData.length, error: null } }));
+              try { sessionStorage.setItem('fintective_cached_bd', JSON.stringify(bdData)); } catch (e) {}
+            }
+          } catch (e) {
+            setEndpointStatus(prev => ({ ...prev, bdAgents: { status: 'failed', error: e.message } }));
+          }
+        } else {
+          setEndpointStatus(prev => ({ ...prev, bdAgents: { status: 'failed', error: bdRes.reason?.message || 'Request failed' } }));
+        }
+
+        // Process /team-leaders
+        if (tlRes.status === 'fulfilled' && tlRes.value.ok) {
+          try {
+            const tlData = await tlRes.value.json();
+            if (Array.isArray(tlData)) {
+              setTeamLeaders(tlData);
+              setEndpointStatus(prev => ({ ...prev, teamLeaders: { status: tlData.length > 0 ? 'ok' : 'empty', count: tlData.length, error: null } }));
+              try { sessionStorage.setItem('fintective_cached_tl', JSON.stringify(tlData)); } catch (e) {}
+            }
+          } catch (e) {
+            setEndpointStatus(prev => ({ ...prev, teamLeaders: { status: 'failed', error: e.message } }));
+          }
+        } else {
+          setEndpointStatus(prev => ({ ...prev, teamLeaders: { status: 'failed', error: tlRes.reason?.message || 'Request failed' } }));
+        }
+
+        // Process /budgets
+        if (budgetRes.status === 'fulfilled' && budgetRes.value.ok) {
+          try {
+            const budgetData = await budgetRes.value.json();
+            if (budgetData && typeof budgetData === 'object') {
+              setBudgets(budgetData);
+              setEndpointStatus(prev => ({ ...prev, budgets: { status: 'ok', error: null } }));
+              try { sessionStorage.setItem('fintective_cached_budgets', JSON.stringify(budgetData)); } catch (e) {}
+            }
+          } catch (e) {
+            setEndpointStatus(prev => ({ ...prev, budgets: { status: 'failed', error: e.message } }));
+          }
+        } else {
+          setEndpointStatus(prev => ({ ...prev, budgets: { status: 'failed', error: budgetRes.reason?.message || 'Request failed' } }));
+        }
+
+        // Process /ml/insights
+        if (mlRes.status === 'fulfilled' && mlRes.value.ok) {
+          try {
+            const mlData = await mlRes.value.json();
+            if (mlData && typeof mlData === 'object') {
+              setMlInsights(mlData);
+              setEndpointStatus(prev => ({ ...prev, mlInsights: { status: 'ok', error: null } }));
+              try { sessionStorage.setItem('fintective_ml_insights', JSON.stringify(mlData)); } catch (e) {}
+            }
+          } catch (e) {
+            setEndpointStatus(prev => ({ ...prev, mlInsights: { status: 'failed', error: e.message } }));
+          }
+        } else {
+          setEndpointStatus(prev => ({ ...prev, mlInsights: { status: 'failed', error: mlRes.reason?.message || 'Request failed' } }));
         }
       }
     } catch (err) {
-      console.warn('Backend connection issue, checking fallback...', err.message);
+      logApiDiagnostic('error', { url: `${API_BASE_URL}/*`, status: 0, isHtml: false, message: err.message });
     }
 
-    // Direct live API fetch fallback if backend is unreachable
-    if (!loadedFromBackend) {
-      setDataSource('fallback');
+    // 4. If backend was reached and transactions were loaded:
+    if (loadedFromBackend) {
+      const now = Date.now();
+      setLastSyncTimestamp(now);
+      const nowFormatted = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setLastSyncedAt(nowFormatted);
       try {
-        console.log('Fetching live recruitment & expense data directly from HTTPS URL APIs...');
-        const [enqRes, invRes, franRes, expRes] = await Promise.allSettled([
-          fetch('https://api.sarthi360.in/api/enquiries'),
-          fetch('https://api.sarthi360.in/api/Invoice'),
-          fetch('https://api.sarthi360.in/api/franchisees'),
-          fetch('https://api.sarthi360.in/api/expenses')
-        ]);
+        sessionStorage.setItem('fintective_last_synced_at', nowFormatted);
+        sessionStorage.setItem('fintective_last_synced_ts', String(now));
+      } catch (e) {}
+      setIsLoadingData(false);
+      setIsBackgroundSyncing(false);
+      return true;
+    }
 
-        let enquiries = [];
-        if (enqRes.status === 'fulfilled' && enqRes.value.ok) {
-          const json = await enqRes.value.json();
-          enquiries = Array.isArray(json) ? json : (json.data || json.enquiries || []);
+    // 5. Backend offline or failed: check if valid cached transactions exist in sessionStorage
+    const cachedTxsStr = sessionStorage.getItem('fintective_cached_txs');
+    if (cachedTxsStr) {
+      try {
+        const cachedTxs = JSON.parse(cachedTxsStr);
+        if (Array.isArray(cachedTxs) && cachedTxs.length > 0) {
+          console.log('[Fintective Data State] Backend offline. Using cached transactions from sessionStorage.');
+          setTransactions(cachedTxs);
+          setDataSource('cached');
+          setDataState('cached');
+          setIsLoadingData(false);
+          setIsBackgroundSyncing(false);
+          return false;
         }
+      } catch (e) {}
+    }
 
-        let invoices = [];
-        if (invRes.status === 'fulfilled' && invRes.value.ok) {
-          const json = await invRes.value.json();
-          invoices = Array.isArray(json) ? json : (json.data || json.invoices || []);
+    // 6. Resilient Fallback: Directly pull latest from Saarthi 360 CRM endpoints (api.sarthi360.in)
+    let crmFallbackSuccess = false;
+    try {
+      console.log('[Fintective Data State] Pulling from upstream CRM API (api.sarthi360.in) in Limited Data Mode...');
+      const [enqRes, invRes, franRes, expRes] = await Promise.allSettled([
+        fetch('https://api.sarthi360.in/api/enquiries', { signal: AbortSignal.timeout(12000) }),
+        fetch('https://api.sarthi360.in/api/Invoice', { signal: AbortSignal.timeout(12000) }),
+        fetch('https://api.sarthi360.in/api/franchisees', { signal: AbortSignal.timeout(12000) }),
+        fetch('https://api.sarthi360.in/api/expenses', { signal: AbortSignal.timeout(12000) })
+      ]);
+
+      let enquiries = [];
+      if (enqRes.status === 'fulfilled' && enqRes.value.ok) {
+        const json = await enqRes.value.json();
+        enquiries = Array.isArray(json) ? json : (json.data || json.enquiries || []);
+      }
+
+      let invoices = [];
+      if (invRes.status === 'fulfilled' && invRes.value.ok) {
+        const json = await invRes.value.json();
+        invoices = Array.isArray(json) ? json : (json.data || json.invoices || []);
+      }
+
+      let currentFranList = franchisees;
+      if (franRes.status === 'fulfilled' && franRes.value.ok) {
+        const json = await franRes.value.json();
+        const fData = Array.isArray(json) ? json : (json.data || json.franchisees || []);
+        if (fData.length > 0) {
+          currentFranList = fData;
+          setFranchisees(fData);
         }
+      }
 
-        let currentFranList = franchisees;
-        if (franRes.status === 'fulfilled' && franRes.value.ok) {
-          const json = await franRes.value.json();
-          const fData = Array.isArray(json) ? json : (json.data || json.franchisees || []);
-          if (fData.length > 0) {
-            currentFranList = fData;
-            setFranchisees(fData);
-          }
-        }
+      let liveExp = [];
+      if (expRes.status === 'fulfilled' && expRes.value.ok) {
+        const json = await expRes.value.json();
+        liveExp = Array.isArray(json) ? json : (json.data || json.expenses || []);
+      }
 
-        let liveExp = [];
-        if (expRes.status === 'fulfilled' && expRes.value.ok) {
-          const json = await expRes.value.json();
-          liveExp = Array.isArray(json) ? json : (json.data || json.expenses || []);
-        }
+      const liveTxs = [];
 
-        const liveTxs = [];
-
-        // 1. Build income transactions from live Invoices
-        invoices.forEach(inv => {
-          if (!inv.id) return;
-          const amt = parseFloat(inv.serviceCharges || inv.totalBillAmt || inv.amountReceived || 0);
-          const dateStr = (inv.billDate || inv.dateReceived || inv.createdAt || '').split('T')[0];
-          if (amt > 0 && dateStr) {
-            const franName = inv.franchiseName || '';
-            const bdName = inv.nameOfBd || '';
-            const ourShareVal = parseFloat(inv.ourShare || 0) || (amt * 0.25);
-            const franShareVal = parseFloat(inv.franchiseeShare || 0) || (amt * 0.75);
-            liveTxs.push({
-              id: `inv-${inv.id}`,
-              title: `${inv.companyName || 'Client Placement'} - ${inv.postOfCandidate || 'Recruitment'}`,
-              amount: amt,
-              type: (inv.info === 'CN' || inv.enquiryStatus === 'credit_note') ? 'credit_note' : 'income',
-              category: 'Recruitment Fee',
-              subCategory: 'Placement Invoice',
-              date: dateStr,
-              companyName: inv.companyName || '',
-              bdAgentName: bdName,
-              teamLeaderName: inv.teamLeader || '',
-              franchiseeName: franName,
-              franchiseeId: matchFranchiseeId(franName, currentFranList),
-              bdAgentId: matchBdAgentId(bdName, bdAgents),
-              financialYear: inv.financialYear || 'N/A',
-              city: inv.companyCity || inv.city || 'Mumbai',
-              industry: inv.industry || 'Information Technology & Software',
-              ourShare: ourShareVal,
-              franchiseeShare: franShareVal,
-              info: inv.info || 'RV'
-            });
-          }
-        });
-
-        // 2. Build income transactions from Enquiries if missing in invoices
-        enquiries.forEach(enq => {
-          if (!enq.id) return;
-          const amt = parseFloat(enq.bill_amount || enq.placementFees || 0);
-          const dateStr = (enq.bill_date || enq.dateOfAllocation || enq.created_at || '').split('T')[0];
-          if (amt > 0 && dateStr && !invoices.some(i => i.enquiry_id === enq.id)) {
-            const franName = enq.franchiseeName || '';
-            const bdName = enq.bdMemberName || '';
-            liveTxs.push({
-              id: `enq-${enq.id}`,
-              title: `${enq.companyName || 'Client Placement'} - ${enq.positionName || 'Role'}`,
-              amount: amt,
-              type: 'income',
-              category: 'Recruitment Fee',
-              subCategory: 'Placement',
-              date: dateStr,
-              companyName: enq.companyName || '',
-              bdAgentName: bdName,
-              teamLeaderName: enq.teamLeaderName || '',
-              franchiseeName: franName,
-              franchiseeId: matchFranchiseeId(franName, currentFranList),
-              bdAgentId: matchBdAgentId(bdName, bdAgents)
-            });
-          }
-        });
-
-        // 3. Process live expenses
-        const liveExpenseTxs = [];
-        liveExp.forEach(exp => {
-          const total = (parseFloat(exp.franchisee || 0) + parseFloat(exp.recruitment || 0)) * 1000;
-          if (total > 0) {
-            liveExpenseTxs.push({
-              id: `exp-api-${exp.id}`,
-              title: exp.head_component || 'Operating Expense',
-              amount: total,
-              type: 'expense',
-              category: exp.head_component?.includes('Rent') ? 'Office & infra' : (exp.head_component?.includes('Software') ? 'Portal subscriptions' : 'Marketing'),
-              subCategory: exp.head_component || 'Operations',
-              date: '2026-08-01',
-              companyName: 'Saarthi Corporate'
-            });
-          }
-        });
-
-        // If live expenses from API is empty, generate standard recurring operational expense ledgers across 2024-2026
-        if (liveExpenseTxs.length === 0) {
-          const expenseTemplates = [
-            { title: 'Employee Payroll & Salaries', amount: 450000, category: 'Salaries', subCategory: 'Salaries' },
-            { title: 'Corporate Office Rent & Infra', amount: 45000, category: 'Office & infra', subCategory: 'Commercial Rent' },
-            { title: 'Naukri & LinkedIn Recruiter Licenses', amount: 85000, category: 'Portal subscriptions', subCategory: 'Job Portals' },
-            { title: 'Google & Meta Performance Ads', amount: 55000, category: 'Marketing', subCategory: 'Digital Marketing' },
-            { title: 'AWS Cloud & Database Infrastructure', amount: 28000, category: 'Office & infra', subCategory: 'Cloud Hosting' },
-            { title: 'Office Pantry & Operational Supplies', amount: 15000, category: 'Other', subCategory: 'Office Supplies' },
-            { title: 'BD Agent Performance Commissions', amount: 95000, category: 'BD commissions', subCategory: 'Payouts' }
-          ];
-
-          for (const yr of [2024, 2025, 2026]) {
-            for (let mo = 1; mo <= 12; mo++) {
-              if (yr === 2026 && mo > 9) continue;
-              const moStr = String(mo).padStart(2, '0');
-              const fyStr = mo >= 4 ? `${yr}-${yr+1}` : `${yr-1}-${yr}`;
-              expenseTemplates.forEach((tpl, idx) => {
-                const day = String((idx * 4 + 3) % 28 + 1).padStart(2, '0');
-                liveExpenseTxs.push({
-                  id: `exp-auto-${yr}-${moStr}-${idx}`,
-                  title: `${tpl.title} (${moStr}/${yr})`,
-                  amount: tpl.amount,
-                  type: 'expense',
-                  category: tpl.category,
-                  subCategory: tpl.subCategory,
-                  date: `${yr}-${moStr}-${day}`,
-                  financialYear: fyStr,
-                  companyName: 'Saarthi Corporate'
-                });
-              });
-            }
-          }
-        }
-
-        if (liveTxs.length === 0) {
-          const seedItems = [
-            { id: 'inv-180010', title: 'JAYATMA TECHNOLOGIES - Hr', amount: 85000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2025-06-07', companyName: 'JAYATMA TECHNOLOGIES', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Avadai Esakki', franchiseeName: 'Sandeep', financialYear: '2025-2026' },
-            { id: 'inv-180019', title: 'TEMA BUSINESS SYSTEMS - Hr Executive', amount: 62499, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2024-05-09', companyName: 'TEMA BUSINESS SYSTEMS', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Unknown', financialYear: '2024-2025' },
-            { id: 'inv-180025', title: 'ACCUPEX AIR SOLUTIONS - Senior Engineer', amount: 141650, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-10', companyName: 'ACCUPEX AIR SOLUTIONS', bdAgentName: 'Rahul Patil', teamLeaderName: 'Joyeeta Joydeb Khaskel', franchiseeName: 'Preshita Rane', financialYear: '2026-2027' },
-            { id: 'inv-180030', title: 'SUNDARAM TECHNOLOGIES - Software Architect', amount: 212500, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-15', companyName: 'SUNDARAM TECHNOLOGIES', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Vedika Girish Tolani', franchiseeName: 'Razia Begum', financialYear: '2026-2027' },
-            { id: 'inv-180035', title: 'COIGN CONSULTING - Lead Developer', amount: 145000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-20', companyName: 'COIGN CONSULTING', bdAgentName: 'Sneha Kulkarni', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Anita Mandar Kulkarni', financialYear: '2026-2027' },
-            { id: 'inv-180040', title: 'EMBASSY TECH HUB - Senior HRBP', amount: 165000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2025-11-12', companyName: 'EMBASSY TECH HUB', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Joyeeta Joydeb Khaskel', franchiseeName: 'Subhash Pande', financialYear: '2025-2026' },
-            { id: 'inv-180045', title: 'INFOSYS LIMITED - Technical Lead', amount: 280000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2025-09-05', companyName: 'INFOSYS LIMITED', bdAgentName: 'Ankur Sharma', teamLeaderName: 'Vedika Girish Tolani', franchiseeName: 'Ankur Sharma', financialYear: '2025-2026' },
-            { id: 'inv-180050', title: 'TATA CONSULTANCY SERVICES - Java Architect', amount: 320000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-07-22', companyName: 'TATA CONSULTANCY SERVICES', bdAgentName: 'Rahul Patil', teamLeaderName: 'Joyeeta Joydeb Khaskel', franchiseeName: 'Preshita Rane', financialYear: '2026-2027' },
-            { id: 'inv-180055', title: 'WIPRO ENTERPRISES - Data Analyst', amount: 125000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-06-18', companyName: 'WIPRO ENTERPRISES', bdAgentName: 'Sneha Kulkarni', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Anita Mandar Kulkarni', financialYear: '2026-2027' },
-            { id: 'inv-180060', title: 'TECH MAHINDRA - Cloud Solutions Architect', amount: 245000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-09-04', companyName: 'TECH MAHINDRA', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Avadai Esakki', franchiseeName: 'Sandeep', financialYear: '2026-2027' }
-          ];
-          seedItems.forEach(st => {
-            st.franchiseeId = matchFranchiseeId(st.franchiseeName, currentFranList);
-            st.bdAgentId = matchBdAgentId(st.bdAgentName, bdAgents);
-            liveTxs.push(st);
+      invoices.forEach(inv => {
+        if (!inv.id) return;
+        const amt = parseFloat(inv.serviceCharges || inv.totalBillAmt || inv.amountReceived || 0);
+        const dateStr = (inv.billDate || inv.dateReceived || inv.createdAt || '').split('T')[0];
+        if (amt > 0 && dateStr) {
+          const franName = inv.franchiseName || '';
+          const bdName = inv.nameOfBd || '';
+          liveTxs.push({
+            id: `inv-${inv.id}`,
+            title: `${inv.companyName || 'Client Placement'} - ${inv.postOfCandidate || 'Recruitment'}`,
+            amount: amt,
+            type: (inv.info === 'CN' || inv.enquiryStatus === 'credit_note') ? 'credit_note' : 'income',
+            category: 'Recruitment Fee',
+            subCategory: 'Placement Invoice',
+            date: dateStr,
+            companyName: inv.companyName || '',
+            bdAgentName: bdName,
+            teamLeaderName: inv.teamLeader || '',
+            franchiseeName: franName,
+            franchiseeId: matchFranchiseeId(franName, currentFranList),
+            bdAgentId: matchBdAgentId(bdName, bdAgents),
+            financialYear: inv.financialYear || 'N/A',
+            city: inv.companyCity || inv.city || 'Mumbai',
+            industry: inv.industry || 'Information Technology & Software',
+            ourShare: parseFloat(inv.ourShare || 0) || (amt * 0.25),
+            franchiseeShare: parseFloat(inv.franchiseeShare || 0) || (amt * 0.75),
+            info: inv.info || 'RV'
           });
         }
+      });
 
-        // Add Recurring Job Portal Employer Package Subscriptions (Income)
-        const portalEmployers = [
-          { company: 'Wipro Technologies', amount: 83200, tier: 'Enterprise Unlimited' },
-          { company: 'TCS QA Hub', amount: 55000, tier: 'Standard Premium' },
-          { company: 'Cognizant Pune', amount: 67500, tier: 'Enterprise Unlimited' },
-          { company: 'Infosys Central', amount: 45000, tier: 'Basic Recruitment' }
-        ];
-        for (const yr of [2024, 2025, 2026]) {
-          for (let mo = 1; mo <= 12; mo++) {
-            if (yr === 2026 && mo > 9) continue;
-            const moStr = String(mo).padStart(2, '0');
-            const fyStr = mo >= 4 ? `${yr}-${yr+1}` : `${yr-1}-${yr}`;
-            portalEmployers.forEach((pe, pIdx) => {
-              liveTxs.push({
-                id: `portal-sub-${yr}-${moStr}-${pIdx}`,
-                title: `Employer Subscription - ${pe.company} (${pe.tier})`,
-                companyName: pe.company,
-                amount: pe.amount,
-                type: 'income',
-                category: 'Job portal',
-                subCategory: 'Employer Package',
-                date: `${yr}-${moStr}-15`,
-                paymentMode: 'Net Banking',
-                referenceId: `SUB-PORTAL-${yr}${moStr}-${pIdx}`,
-                description: `Active employer talent search package for ${pe.company}`,
-                bdAgentId: null,
-                franchiseeId: null,
-                financialYear: fyStr
-              });
-            });
-          }
+      enquiries.forEach(enq => {
+        if (!enq.id) return;
+        const amt = parseFloat(enq.bill_amount || enq.placementFees || 0);
+        const dateStr = (enq.bill_date || enq.dateOfAllocation || enq.created_at || '').split('T')[0];
+        if (amt > 0 && dateStr && !invoices.some(i => i.enquiry_id === enq.id)) {
+          const franName = enq.franchiseeName || '';
+          const bdName = enq.bdMemberName || '';
+          liveTxs.push({
+            id: `enq-${enq.id}`,
+            title: `${enq.companyName || 'Client Placement'} - ${enq.positionName || 'Role'}`,
+            amount: amt,
+            type: 'income',
+            category: 'Recruitment Fee',
+            subCategory: 'Placement',
+            date: dateStr,
+            companyName: enq.companyName || '',
+            bdAgentName: bdName,
+            teamLeaderName: enq.teamLeaderName || '',
+            franchiseeName: franName,
+            franchiseeId: matchFranchiseeId(franName, currentFranList),
+            bdAgentId: matchBdAgentId(bdName, bdAgents)
+          });
         }
+      });
 
-        const combined = [...liveTxs, ...liveExpenseTxs].map(tx => ({
-          ...tx,
-          financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || '2025-2026'
-        }));
-        if (combined.length > 0) {
-          setTransactions(combined);
+      const liveExpenseTxs = [];
+      liveExp.forEach(exp => {
+        const total = (parseFloat(exp.franchisee || 0) + parseFloat(exp.recruitment || 0)) * 1000;
+        if (total > 0) {
+          liveExpenseTxs.push({
+            id: `exp-api-${exp.id}`,
+            title: exp.head_component || 'Operating Expense',
+            amount: total,
+            type: 'expense',
+            category: exp.head_component?.includes('Rent') ? 'Office & infra' : (exp.head_component?.includes('Software') ? 'Portal subscriptions' : 'Marketing'),
+            subCategory: exp.head_component || 'Operations',
+            date: '2026-08-01',
+            companyName: 'Saarthi Corporate'
+          });
         }
-      } catch (liveErr) {
-        console.error('Direct HTTPS live API fetch failed:', liveErr);
+      });
+
+      const combined = [...liveTxs, ...liveExpenseTxs].map(tx => ({
+        ...tx,
+        financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || '2025-2026'
+      }));
+
+      if (combined.length > 0) {
+        setTransactions(combined);
+        crmFallbackSuccess = true;
+        setDataSource('crm_limited');
+        setDataState('crm_limited');
       }
+    } catch (crmErr) {
+      console.error('[Fintective] Direct CRM fallback failed:', crmErr);
     }
 
-    // Always update lastSyncedAt and release syncing spinner upon completion
-    const nowFormatted = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    setLastSyncedAt(nowFormatted);
-    try { sessionStorage.setItem('fintective_last_synced_at', nowFormatted); } catch (e) {}
+    // 7. If even CRM fallback failed: explicit Sample mode (Never pretend this is real data)
+    if (!crmFallbackSuccess) {
+      console.warn('[Fintective Data State] Both backend and CRM unreachable. Switching to explicit sample data mode.');
+      setDataSource('sample');
+      setDataState('sample');
+      setTransactions(DEFAULT_TRANSACTIONS);
+    }
+
+    // Always release loading and sync state
     setIsLoadingData(false);
     setIsBackgroundSyncing(false);
-
-    return loadedFromBackend;
+    return false;
   };
 
   const syncWithSaarthi = async () => {
@@ -1151,6 +1315,13 @@ export const FinanceProvider = ({ children }) => {
     activeModule,
     setActiveModule,
     dataSource,
+    dataState,
+    authError,
+    backendHealth,
+    connectionProgress,
+    endpointStatus,
+    lastSyncTimestamp,
+    timeAgo,
     addTransaction,
     deleteTransaction,
     updateBudget,
@@ -1187,6 +1358,13 @@ export const FinanceProvider = ({ children }) => {
     availableYears,
     activeModule,
     dataSource,
+    dataState,
+    authError,
+    backendHealth,
+    connectionProgress,
+    endpointStatus,
+    lastSyncTimestamp,
+    timeAgo,
     currentCashBalance,
     movingAvgBurn,
     isSidebarOpen,
