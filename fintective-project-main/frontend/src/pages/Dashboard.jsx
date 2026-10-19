@@ -382,6 +382,7 @@ const Dashboard = ({ setActivePage }) => {
     let currentMonthRevenue = revenue;
     let comparisonRevenue = prevRevenue;
     let targetMonthLabel = selectedMonth;
+    let sortedMonths = [];
 
     if (selectedMonth === 'All Months') {
       const monthlyRevenues = {};
@@ -390,7 +391,7 @@ const Dashboard = ({ setActivePage }) => {
         monthlyRevenues[my] = (monthlyRevenues[my] || 0) + t.amount;
       });
 
-      const sortedMonths = Object.keys(monthlyRevenues)
+      sortedMonths = Object.keys(monthlyRevenues)
         .filter(myStr => {
           const year = parseInt(myStr.split(' ')[1]);
           return year <= 2026;
@@ -411,8 +412,6 @@ const Dashboard = ({ setActivePage }) => {
       } else if (sortedMonths.length === 1) {
         targetMonthLabel = sortedMonths[0];
         currentMonthRevenue = monthlyRevenues[targetMonthLabel];
-        comparisonRevenue = 0;
-      } else {
       } else {
         const dNow = new Date();
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
