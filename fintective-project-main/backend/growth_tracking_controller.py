@@ -1325,6 +1325,59 @@ def create_growth_target():
 
 
 # --------------------------------------------------------------------------
+# 3a. GET /api/growth-targets/filter-options (Distinct BD, TL, Franchise, FY lists)
+# --------------------------------------------------------------------------
+@growth_tracking_bp.route("/api/growth-targets/filter-options", methods=["GET"])
+def get_growth_filter_options():
+    cached_val = _get_cached("growth_filter_options")
+    if cached_val is not None:
+        return jsonify(cached_val)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT DISTINCT TRIM(bdMemberName) as name
+            FROM enquiries
+            WHERE bdMemberName IS NOT NULL AND TRIM(bdMemberName) != ''
+              AND LOWER(TRIM(bdMemberName)) NOT IN ('head office', 'head  - office', 'head - office', 'unknown', 'prospect', '')
+            ORDER BY name ASC
+        """)
+        bds = [r['name'] for r in cursor.fetchall()]
+
+        cursor.execute("""
+            SELECT DISTINCT TRIM(teamLeaderName) as name
+            FROM enquiries
+            WHERE teamLeaderName IS NOT NULL AND TRIM(teamLeaderName) != ''
+              AND LOWER(TRIM(teamLeaderName)) NOT IN ('head office', 'head  - office', 'head - office', 'unknown', 'prospect', '')
+            ORDER BY name ASC
+        """)
+        tls = [r['name'] for r in cursor.fetchall()]
+
+        cursor.execute("""
+            SELECT DISTINCT TRIM(franchiseeName) as name
+            FROM enquiries
+            WHERE franchiseeName IS NOT NULL AND TRIM(franchiseeName) != ''
+              AND LOWER(TRIM(franchiseeName)) NOT IN ('head office', 'head  - office', 'head - office', 'unknown', 'prospect', '')
+            ORDER BY name ASC
+        """)
+        franchises = [r['name'] for r in cursor.fetchall()]
+
+        res_data = {
+            'bds': ['All'] + bds,
+            'tls': ['All'] + tls,
+            'franchises': ['All'] + franchises,
+            'fys': ['FY 2026-27', 'FY 2025-26', 'FY 2024-25', 'FY 2023-24']
+        }
+        _set_cached("growth_filter_options", res_data, ttl_seconds=300)
+        return jsonify(res_data)
+    except Exception as e:
+        print(f"[get_growth_filter_options] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+# --------------------------------------------------------------------------
 # 3b. GET /api/growth-targets/summary (Live enquiry-level summary for Growth targets)
 # --------------------------------------------------------------------------
 def _classify_backend_status(raw_status):
@@ -1582,14 +1635,28 @@ def _calculate_money_box(cursor, entity_type, entity_name, fy_months, invoiced_d
     tax_rate = 0.25
     tax_amount = round(net * tax_rate, 2) if net > 0 else 0.0
     surplus = round(net - tax_amount, 2)
+    company_count = len(set(d['companyName'] for d in invoiced_deals if d.get('companyName')))
 
     return {
+        'company_count': company_count,
+        'deals_count': len(invoiced_deals),
         'revenue': round(total_invoiced_rev, 2),
         'our_share': our_share_sum,
         'verified_count': verified_count,
         'unverified_count': unverified_count,
-        'total_deals_count': len(invoiced_deals),
+        'salary': earnings,
         'earnings': earnings,
+        'expense': {
+            'amount': other_costs_amount,
+            'label': 'Fix',
+            'allocation_method': allocation_basis,
+            'tooltip': other_costs_tooltip,
+            'breakdown': {
+                'tl_allocation': tl_allocation,
+                'travel': travel_expense,
+                'overhead_share': overhead_share
+            }
+        },
         'other_costs': {
             'amount': other_costs_amount,
             'allocation_method': allocation_basis,
@@ -1600,7 +1667,13 @@ def _calculate_money_box(cursor, entity_type, entity_name, fy_months, invoiced_d
                 'overhead_share': overhead_share
             }
         },
+        'balance': net,
         'net': net,
+        'income_tax': {
+            'amount': tax_amount,
+            'rate': tax_rate,
+            'label': '25%'
+        },
         'tax': {
             'amount': tax_amount,
             'rate': tax_rate,
@@ -1616,6 +1689,10 @@ def get_growth_targets_summary():
     entity_id = request.args.get("entity_id", "").strip()
     fy_str = request.args.get("fy", "FY 2026-27").strip()
 
+    bd_param = request.args.get('bd', '').strip()
+    tl_param = request.args.get('tl', '').strip()
+    franchise_param = request.args.get('franchise', '').strip()
+
     # Normalize entity_type
     if raw_type in ('bd', 'bd_agent', 'bd_specialist'):
         entity_type = 'bd'
@@ -1625,6 +1702,15 @@ def get_growth_targets_summary():
         entity_type = 'franchise'
     else:
         entity_type = 'all'
+
+    is_specific_name = entity_name and entity_name.lower() != 'all'
+
+    if not bd_param and entity_type == 'bd' and is_specific_name:
+        bd_param = entity_name
+    if not tl_param and entity_type == 'tl' and is_specific_name:
+        tl_param = entity_name
+    if not franchise_param and entity_type == 'franchise' and is_specific_name:
+        franchise_param = entity_name
 
     import re
     match = re.search(r'(\d{4})', fy_str)
@@ -1657,7 +1743,7 @@ def get_growth_targets_summary():
         months_remaining = max(0, 12 - months_elapsed)
 
     user_role = (request.headers.get('X-User-Role') or request.args.get('role') or 'admin').strip().lower()
-    cache_key = f"growth_summary_{entity_type}_{entity_name}_{start_year}_{user_role}"
+    cache_key = f"growth_summary_{bd_param}_{tl_param}_{franchise_param}_{start_year}_{user_role}"
     cached_val = _get_cached(cache_key)
     if cached_val is not None:
         return jsonify(cached_val)
@@ -1673,17 +1759,15 @@ def get_growth_targets_summary():
         ]
         params = [cur_start, cur_end]
 
-        is_specific_name = entity_name and entity_name.lower() != 'all'
-
-        if entity_type == 'bd' and is_specific_name:
+        if bd_param and bd_param.lower() != 'all':
             where_clauses.append("(LOWER(TRIM(e.bdMemberName)) = %s OR LOWER(TRIM(e.bdMemberName)) LIKE %s)")
-            params.extend([entity_name.lower(), f"%{entity_name.lower()}%"])
-        elif entity_type == 'tl' and is_specific_name:
+            params.extend([bd_param.lower(), f"%{bd_param.lower()}%"])
+        if tl_param and tl_param.lower() != 'all':
             where_clauses.append("(LOWER(TRIM(e.teamLeaderName)) = %s OR LOWER(TRIM(e.teamLeaderName)) LIKE %s)")
-            params.extend([entity_name.lower(), f"%{entity_name.lower()}%"])
-        elif entity_type == 'franchise' and is_specific_name:
+            params.extend([tl_param.lower(), f"%{tl_param.lower()}%"])
+        if franchise_param and franchise_param.lower() != 'all':
             where_clauses.append("(LOWER(TRIM(e.franchiseeName)) = %s OR LOWER(TRIM(e.franchiseeName)) LIKE %s)")
-            params.extend([entity_name.lower(), f"%{entity_name.lower()}%"])
+            params.extend([franchise_param.lower(), f"%{franchise_param.lower()}%"])
 
         query = f"""
             SELECT 
@@ -1825,15 +1909,15 @@ def get_growth_targets_summary():
             "LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) <= %s"
         ]
         prior_params = [prior_start, prior_end]
-        if entity_type == 'bd' and is_specific_name:
+        if bd_param and bd_param.lower() != 'all':
             prior_where.append("(LOWER(TRIM(e.bdMemberName)) = %s OR LOWER(TRIM(e.bdMemberName)) LIKE %s)")
-            prior_params.extend([entity_name.lower(), f"%{entity_name.lower()}%"])
-        elif entity_type == 'tl' and is_specific_name:
+            prior_params.extend([bd_param.lower(), f"%{bd_param.lower()}%"])
+        if tl_param and tl_param.lower() != 'all':
             prior_where.append("(LOWER(TRIM(e.teamLeaderName)) = %s OR LOWER(TRIM(e.teamLeaderName)) LIKE %s)")
-            prior_params.extend([entity_name.lower(), f"%{entity_name.lower()}%"])
-        elif entity_type == 'franchise' and is_specific_name:
+            prior_params.extend([tl_param.lower(), f"%{tl_param.lower()}%"])
+        if franchise_param and franchise_param.lower() != 'all':
             prior_where.append("(LOWER(TRIM(e.franchiseeName)) = %s OR LOWER(TRIM(e.franchiseeName)) LIKE %s)")
-            prior_params.extend([entity_name.lower(), f"%{entity_name.lower()}%"])
+            prior_params.extend([franchise_param.lower(), f"%{franchise_param.lower()}%"])
 
         prior_query = f"""
             SELECT e.enquiryStatus, SUM(COALESCE(e.bill_amount, 0.0)) as rev, COUNT(*) as cnt
@@ -1923,10 +2007,28 @@ def get_growth_targets_summary():
         monthly_pace = round(closed_cnt / max(1, months_elapsed), 1) if months_elapsed > 0 else 0.0
         projected_by_march = round(closed_cnt + (monthly_pace * months_remaining)) if months_elapsed > 0 else closed_cnt
 
-        if is_specific_name:
-            display_name = entity_name.split()[0]
+        calc_entity_type = 'all'
+        calc_entity_name = 'All'
+        if bd_param and bd_param.lower() != 'all':
+            calc_entity_type = 'bd'
+            calc_entity_name = bd_param
+            display_name = bd_param
+        elif tl_param and tl_param.lower() != 'all':
+            calc_entity_type = 'tl'
+            calc_entity_name = tl_param
+            display_name = tl_param
+        elif franchise_param and franchise_param.lower() != 'all':
+            calc_entity_type = 'franchise'
+            calc_entity_name = franchise_param
+            display_name = franchise_param
+        elif is_specific_name:
+            calc_entity_type = entity_type
+            calc_entity_name = entity_name
+            display_name = entity_name
         else:
-            display_name = "Overall Company" if entity_type == 'all' else f"All {entity_type.upper()}s"
+            calc_entity_type = entity_type
+            calc_entity_name = 'All'
+            display_name = "Overall Portfolio" if entity_type == 'all' else f"All {entity_type.upper()}s"
 
         if closed_cnt > 0:
             if months_remaining > 0:
@@ -1949,9 +2051,12 @@ def get_growth_targets_summary():
         }
 
         response_data = {
-            'entity_type': entity_type,
-            'entity_name': entity_name,
+            'entity_type': calc_entity_type,
+            'entity_name': calc_entity_name,
             'display_name': display_name,
+            'bd': bd_param,
+            'tl': tl_param,
+            'franchise': franchise_param,
             'fy': fy_str,
             'period': {
                 'start_date': cur_start,
@@ -1999,7 +2104,10 @@ def get_growth_targets_summary():
                 }
             },
             'money_box': _calculate_money_box(
-                cursor, entity_type, entity_name, fy_months,
+                cursor, 
+                calc_entity_type,
+                calc_entity_name,
+                fy_months,
                 [d for d in deals if d['status'] == 'invoiced'],
                 totals['invoiced']['revenue'],
                 cur_start, cur_end, request

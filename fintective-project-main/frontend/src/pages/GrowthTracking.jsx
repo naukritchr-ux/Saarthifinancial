@@ -47,34 +47,69 @@ const GrowthTracking = () => {
   const isAdminOrManager = userRole === 'admin' || userRole === 'manager' || currentUser?.role === 'admin' || currentUser?.role === 'manager';
 
 
-  // Step 2 URL-synced Selectors State
+  // Step 2 & 4 URL-synced Selectors State: BD — FY — TL — Fn
   const getInitialUrlState = () => {
     try {
       const p = new URLSearchParams(window.location.search);
       return {
-        type: p.get('type') || 'all',
-        name: p.get('name') || 'all',
-        fy: p.get('fy') || 'FY 2026-27'
+        bd: p.get('bd') || 'Komal Suresh Bhanushali',
+        fy: p.get('fy') || 'FY 2026-27',
+        tl: p.get('tl') || 'All',
+        franchise: p.get('franchise') || 'All'
       };
     } catch {
-      return { type: 'all', name: 'all', fy: 'FY 2026-27' };
+      return { bd: 'Komal Suresh Bhanushali', fy: 'FY 2026-27', tl: 'All', franchise: 'All' };
     }
   };
 
   const initialUrl = getInitialUrlState();
-  const [type, setType] = useState(initialUrl.type); // 'bd' | 'tl' | 'franchise' | 'all'
-  const [selectedName, setSelectedName] = useState(initialUrl.name);
+  const [bdFilter, setBdFilter] = useState(initialUrl.bd);
   const [selectedFy, setSelectedFy] = useState(initialUrl.fy);
-  const [nameSearchQuery, setNameSearchQuery] = useState('');
-  const [isNameDropdownOpen, setIsNameDropdownOpen] = useState(false);
-  const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const [ariaAnnouncement, setAriaAnnouncement] = useState('');
-  const nameSelectContainerRef = useRef(null);
+  const [tlFilter, setTlFilter] = useState(initialUrl.tl);
+  const [franchiseFilter, setFranchiseFilter] = useState(initialUrl.franchise);
 
-  // Entity selection state (underlying state mapped from selectors)
-  const [entityType, setEntityType] = useState(initialUrl.type === 'all' ? 'company' : (initialUrl.type === 'bd' ? 'bd_agent' : (initialUrl.type === 'tl' ? 'team_leader' : 'franchisee')));
-  const [selectedEntityId, setSelectedEntityId] = useState(initialUrl.type === 'all' ? 'comp-overall' : (initialUrl.name !== 'all' ? initialUrl.name : ''));
-  
+  // Search/combobox state
+  const [bdSearchQuery, setBdSearchQuery] = useState('');
+  const [isBdDropdownOpen, setIsBdDropdownOpen] = useState(false);
+  const [fnSearchQuery, setFnSearchQuery] = useState('');
+  const [isFnDropdownOpen, setIsFnDropdownOpen] = useState(false);
+  const bdContainerRef = useRef(null);
+  const fnContainerRef = useRef(null);
+  const [ariaAnnouncement, setAriaAnnouncement] = useState('');
+
+  // Distinct filter lists fetched from /api/growth-targets/filter-options
+  const [filterOptions, setFilterOptions] = useState({
+    bds: ['All', 'Komal Suresh Bhanushali'],
+    tls: ['All'],
+    franchises: ['All'],
+    fys: ['FY 2026-27', 'FY 2025-26', 'FY 2024-25', 'FY 2023-24']
+  });
+
+  useEffect(() => {
+    fetchWithApiKey(`${API_BASE_URL}/growth-targets/filter-options`)
+      .then(res => res && res.ok ? res.json() : null)
+      .then(data => {
+        if (data && data.bds) {
+          setFilterOptions(data);
+        }
+      })
+      .catch(err => console.error("Notice: Filter options fetch notice:", err));
+  }, []);
+
+  // Close comboboxes when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (bdContainerRef.current && !bdContainerRef.current.contains(e.target)) {
+        setIsBdDropdownOpen(false);
+      }
+      if (fnContainerRef.current && !fnContainerRef.current.contains(e.target)) {
+        setIsFnDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // Dynamic Roster state
   const [serverRoster, setServerRoster] = useState([]);
   const [rosterLoading, setRosterLoading] = useState(false);
@@ -99,15 +134,36 @@ const GrowthTracking = () => {
   const [isSavingFixedSalary, setIsSavingFixedSalary] = useState(false);
   const [fixedSalaryStatusMsg, setFixedSalaryStatusMsg] = useState(null);
 
+  // Derive primary entity type & name for legacy compatibility (modals, charts)
+  const primaryType = useMemo(() => {
+    if (bdFilter && bdFilter !== 'All') return 'bd_agent';
+    if (tlFilter && tlFilter !== 'All') return 'team_leader';
+    if (franchiseFilter && franchiseFilter !== 'All') return 'franchisee';
+    return 'company';
+  }, [bdFilter, tlFilter, franchiseFilter]);
+
+  const primaryName = useMemo(() => {
+    if (bdFilter && bdFilter !== 'All') return bdFilter;
+    if (tlFilter && tlFilter !== 'All') return tlFilter;
+    if (franchiseFilter && franchiseFilter !== 'All') return franchiseFilter;
+    return 'Overall Portfolio';
+  }, [bdFilter, tlFilter, franchiseFilter]);
+
+  const type = primaryType === 'bd_agent' ? 'bd' : (primaryType === 'team_leader' ? 'tl' : (primaryType === 'franchisee' ? 'franchise' : 'all'));
+  const selectedName = primaryName;
+  const entityType = primaryType;
+  const selectedEntityId = primaryName === 'Overall Portfolio' ? 'comp-overall' : primaryName;
+
   // Step 3 & 4: Fetch Live Summary & Deal Analytics
   const fetchSummaryData = () => {
     setSummaryLoading(true);
     setSummaryError(null);
 
     const queryParams = new URLSearchParams();
-    queryParams.set('entity_type', type);
-    queryParams.set('entity_name', selectedName || 'all');
+    queryParams.set('bd', bdFilter || 'All');
     queryParams.set('fy', selectedFy || 'FY 2026-27');
+    queryParams.set('tl', tlFilter || 'All');
+    queryParams.set('franchise', franchiseFilter || 'All');
     queryParams.set('role', userRole || 'admin');
 
     return fetchWithApiKey(`${API_BASE_URL}/growth-targets/summary?${queryParams.toString()}`, {
@@ -135,7 +191,24 @@ const GrowthTracking = () => {
 
   useEffect(() => {
     fetchSummaryData();
-  }, [type, selectedName, selectedFy, userRole]);
+  }, [bdFilter, selectedFy, tlFilter, franchiseFilter, userRole]);
+
+  // Sync Selectors to URL Query Parameters
+  useEffect(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      if (bdFilter && bdFilter !== 'All') p.set('bd', bdFilter); else p.delete('bd');
+      if (selectedFy && selectedFy !== 'FY 2026-27') p.set('fy', selectedFy); else p.delete('fy');
+      if (tlFilter && tlFilter !== 'All') p.set('tl', tlFilter); else p.delete('tl');
+      if (franchiseFilter && franchiseFilter !== 'All') p.set('franchise', franchiseFilter); else p.delete('franchise');
+      
+      const newQuery = p.toString();
+      const newUrl = newQuery ? `${window.location.pathname}?${newQuery}` : window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
+    } catch (e) {
+      console.warn("Could not sync URL params:", e);
+    }
+  }, [bdFilter, selectedFy, tlFilter, franchiseFilter]);
 
   // Step 4 Save Fixed Salary (writes fixed_salary through /api/cost-performance/inputs)
   const handleSaveFixedSalary = async () => {
@@ -250,6 +323,20 @@ const GrowthTracking = () => {
       ];
     }
   }, [type, bdAgents, teamLeaders, franchisees]);
+
+  const visibleBdOptions = useMemo(() => {
+    const list = filterOptions.bds || ['All', 'Komal Suresh Bhanushali'];
+    if (!bdSearchQuery) return list;
+    const q = bdSearchQuery.toLowerCase();
+    return list.filter(b => b.toLowerCase().includes(q));
+  }, [filterOptions.bds, bdSearchQuery]);
+
+  const visibleFnOptions = useMemo(() => {
+    const list = filterOptions.franchises || ['All'];
+    if (!fnSearchQuery) return list;
+    const q = fnSearchQuery.toLowerCase();
+    return list.filter(f => f.toLowerCase().includes(q));
+  }, [filterOptions.franchises, fnSearchQuery]);
 
   const visibleNameOptions = useMemo(() => {
     if (!nameSearchQuery) return filteredNameOptions;
@@ -1040,7 +1127,7 @@ const GrowthTracking = () => {
         </span>
       </div>
 
-      {/* Step 2 Accessible Selectors Toolbar */}
+      {/* Step 2 Accessible Selectors Toolbar: BD — FY — TL — Fn */}
       <div 
         className="growth-selectors-card"
         style={{
@@ -1048,78 +1135,37 @@ const GrowthTracking = () => {
           border: '1px solid var(--border-color)',
           borderRadius: '10px',
           padding: '16px 20px',
-          marginBottom: '20px',
+          marginBottom: '16px',
           boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: '16px', flex: '1 1 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: '14px', flex: '1 1 auto' }}>
             
-            {/* 1. Type Selector */}
-            <div style={{ display: 'flex', flexDirection: 'column', minWidth: '150px' }}>
+            {/* 1. BD Selector */}
+            <div ref={bdContainerRef} style={{ display: 'flex', flexDirection: 'column', position: 'relative', minWidth: '190px', flex: '1 1 190px', maxWidth: '280px' }}>
               <label 
-                htmlFor="growth-type-select" 
-                style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)', marginBottom: '6px' }}
+                style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '5px' }}
               >
-                Type
-              </label>
-              <select
-                id="growth-type-select"
-                value={type}
-                onChange={(e) => handleTypeChange(e.target.value)}
-                style={{
-                  height: '40px',
-                  padding: '0 12px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  background: '#FFFFFF',
-                  color: 'var(--text-main)',
-                  fontSize: '0.88rem',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                <option value="bd">BD Specialist</option>
-                <option value="tl">Team Leader</option>
-                <option value="franchise">Franchise Partner</option>
-                <option value="all">All</option>
-              </select>
-            </div>
-
-            {/* 2. Name Searchable Select */}
-            <div 
-              ref={nameSelectContainerRef} 
-              style={{ display: 'flex', flexDirection: 'column', position: 'relative', minWidth: '240px', flex: '1 1 240px', maxWidth: '380px' }}
-            >
-              <label 
-                htmlFor="growth-name-search" 
-                style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)', marginBottom: '6px' }}
-              >
-                Name
+                BD
               </label>
               <div style={{ position: 'relative' }}>
                 <input
-                  id="growth-name-search"
                   type="text"
-                  role="combobox"
-                  aria-expanded={isNameDropdownOpen}
-                  aria-autocomplete="list"
-                  aria-controls="growth-name-listbox"
-                  placeholder={displayName}
-                  value={isNameDropdownOpen ? nameSearchQuery : displayName}
-                  onFocus={() => { setIsNameDropdownOpen(true); setNameSearchQuery(''); }}
-                  onChange={(e) => setNameSearchQuery(e.target.value)}
-                  onKeyDown={handleNameKeyDown}
+                  placeholder="Select BD..."
+                  value={isBdDropdownOpen ? bdSearchQuery : (bdFilter || 'All')}
+                  onFocus={() => { setIsBdDropdownOpen(true); setBdSearchQuery(''); }}
+                  onChange={(e) => setBdSearchQuery(e.target.value)}
                   style={{
                     width: '100%',
                     height: '40px',
-                    padding: '0 32px 0 12px',
+                    padding: '0 30px 0 12px',
                     borderRadius: '6px',
                     border: '1px solid var(--border-color)',
                     background: '#FFFFFF',
                     color: 'var(--text-main)',
                     fontSize: '0.88rem',
-                    fontWeight: '500',
+                    fontWeight: '600',
                     boxSizing: 'border-box'
                   }}
                 />
@@ -1128,11 +1174,8 @@ const GrowthTracking = () => {
                 </div>
               </div>
 
-              {/* Dropdown Options */}
-              {isNameDropdownOpen && (
+              {isBdDropdownOpen && (
                 <ul
-                  id="growth-name-listbox"
-                  role="listbox"
                   style={{
                     position: 'absolute',
                     top: '100%',
@@ -1150,56 +1193,40 @@ const GrowthTracking = () => {
                     listStyle: 'none'
                   }}
                 >
-                  {visibleNameOptions.length === 0 ? (
-                    <li style={{ padding: '10px 12px', fontSize: '0.84rem', color: 'var(--text-muted)' }}>
-                      No matching names found
+                  {visibleBdOptions.map(b => (
+                    <li
+                      key={b}
+                      onClick={() => {
+                        setBdFilter(b);
+                        setIsBdDropdownOpen(false);
+                      }}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: '4px',
+                        fontSize: '0.86rem',
+                        fontWeight: bdFilter === b ? '700' : '400',
+                        color: bdFilter === b ? 'var(--accent-teal)' : 'var(--text-main)',
+                        background: bdFilter === b ? 'rgba(15, 110, 86, 0.08)' : 'transparent',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {b}
                     </li>
-                  ) : (
-                    visibleNameOptions.map((opt, idx) => {
-                      const isSelected = selectedName === opt.id || selectedName === opt.name;
-                      const isHighlighted = highlightedIndex === idx;
-                      return (
-                        <li
-                          key={opt.id || opt.name}
-                          role="option"
-                          aria-selected={isSelected}
-                          onClick={() => handleSelectName(opt)}
-                          onMouseEnter={() => setHighlightedIndex(idx)}
-                          style={{
-                            padding: '8px 12px',
-                            borderRadius: '4px',
-                            fontSize: '0.86rem',
-                            fontWeight: isSelected ? '700' : '400',
-                            color: isSelected ? 'var(--accent-teal)' : 'var(--text-main)',
-                            background: isHighlighted ? 'rgba(15, 110, 86, 0.08)' : (isSelected ? 'rgba(15, 110, 86, 0.04)' : 'transparent'),
-                            cursor: 'pointer',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center'
-                          }}
-                        >
-                          <span>{opt.name}</span>
-                          {opt.role && <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{opt.role}</span>}
-                        </li>
-                      );
-                    })
-                  )}
+                  ))}
                 </ul>
               )}
             </div>
 
-            {/* 3. FY Selector */}
+            {/* 2. FY Selector */}
             <div style={{ display: 'flex', flexDirection: 'column', minWidth: '130px' }}>
               <label 
-                htmlFor="growth-fy-select" 
-                style={{ fontSize: '0.8rem', fontWeight: '600', color: 'var(--text-main)', marginBottom: '6px' }}
+                style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '5px' }}
               >
                 FY
               </label>
               <select
-                id="growth-fy-select"
                 value={selectedFy}
-                onChange={(e) => handleFyChange(e.target.value)}
+                onChange={(e) => setSelectedFy(e.target.value)}
                 style={{
                   height: '40px',
                   padding: '0 12px',
@@ -1212,15 +1239,118 @@ const GrowthTracking = () => {
                   cursor: 'pointer'
                 }}
               >
-                <option value="FY 2026-27">FY 2026-27</option>
-                <option value="FY 2025-26">FY 2025-26</option>
-                <option value="FY 2024-25">FY 2024-25</option>
-                <option value="FY 2023-24">FY 2023-24</option>
+                {(filterOptions.fys || ['FY 2026-27', 'FY 2025-26', 'FY 2024-25', 'FY 2023-24']).map(fy => (
+                  <option key={fy} value={fy}>{fy}</option>
+                ))}
               </select>
             </div>
+
+            {/* 3. TL Selector */}
+            <div style={{ display: 'flex', flexDirection: 'column', minWidth: '170px', flex: '1 1 170px', maxWidth: '260px' }}>
+              <label 
+                style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '5px' }}
+              >
+                TL
+              </label>
+              <select
+                value={tlFilter}
+                onChange={(e) => setTlFilter(e.target.value)}
+                style={{
+                  height: '40px',
+                  padding: '0 12px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  background: '#FFFFFF',
+                  color: 'var(--text-main)',
+                  fontSize: '0.88rem',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                {(filterOptions.tls || ['All']).map(tl => (
+                  <option key={tl} value={tl}>{tl}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* 4. Fn (Franchise) Selector */}
+            <div ref={fnContainerRef} style={{ display: 'flex', flexDirection: 'column', position: 'relative', minWidth: '190px', flex: '1 1 190px', maxWidth: '280px' }}>
+              <label 
+                style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '5px' }}
+              >
+                Fn (Franchise)
+              </label>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  placeholder="Select Franchise..."
+                  value={isFnDropdownOpen ? fnSearchQuery : (franchiseFilter || 'All')}
+                  onFocus={() => { setIsFnDropdownOpen(true); setFnSearchQuery(''); }}
+                  onChange={(e) => setFnSearchQuery(e.target.value)}
+                  style={{
+                    width: '100%',
+                    height: '40px',
+                    padding: '0 30px 0 12px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    background: '#FFFFFF',
+                    color: 'var(--text-main)',
+                    fontSize: '0.88rem',
+                    fontWeight: '600',
+                    boxSizing: 'border-box'
+                  }}
+                />
+                <div style={{ position: 'absolute', right: '10px', top: '12px', pointerEvents: 'none', color: 'var(--text-muted)' }}>
+                  <ChevronDown size={16} />
+                </div>
+              </div>
+
+              {isFnDropdownOpen && (
+                <ul
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    maxHeight: '260px',
+                    overflowY: 'auto',
+                    background: '#FFFFFF',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '6px',
+                    boxShadow: '0 8px 20px rgba(0,0,0,0.12)',
+                    zIndex: 50,
+                    margin: '4px 0 0 0',
+                    padding: '4px',
+                    listStyle: 'none'
+                  }}
+                >
+                  {visibleFnOptions.map(f => (
+                    <li
+                      key={f}
+                      onClick={() => {
+                        setFranchiseFilter(f);
+                        setIsFnDropdownOpen(false);
+                      }}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: '4px',
+                        fontSize: '0.86rem',
+                        fontWeight: franchiseFilter === f ? '700' : '400',
+                        color: franchiseFilter === f ? 'var(--accent-teal)' : 'var(--text-main)',
+                        background: franchiseFilter === f ? 'rgba(15, 110, 86, 0.08)' : 'transparent',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
           </div>
 
-          {/* 4. [Set goal] Action Button */}
+          {/* Action: Set Goal */}
           <div style={{ display: 'flex', alignItems: 'flex-end' }}>
             <button
               type="button"
@@ -1255,11 +1385,29 @@ const GrowthTracking = () => {
       </div>
 
       {/* =========================================================================
-          STEP 3: PAGE CONTENT (FILTERS, SUMMARY LINE, STATUS VIEW, PLAN, COMPARE)
+          STEP 3: PAGE CONTENT (HEADLINE, EXECUTIVE REPORT CARD, STATUS VIEW, PLAN, COMPARE)
           ========================================================================= */}
 
       {/* 1. Live Headline Sentence on Top */}
-      {summaryData?.headline && (
+      {summaryLoading ? (
+        <div 
+          style={{
+            background: 'rgba(15, 110, 86, 0.04)',
+            border: '1px solid rgba(15, 110, 86, 0.15)',
+            borderRadius: '8px',
+            padding: '10px 16px',
+            marginBottom: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            fontSize: '0.86rem',
+            color: 'var(--text-muted)'
+          }}
+        >
+          <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '2px solid var(--border-color)', borderTopColor: 'var(--accent-teal)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+          <span>Loading live performance & deal metrics for {bdFilter !== 'All' ? bdFilter : (tlFilter !== 'All' ? tlFilter : (franchiseFilter !== 'All' ? franchiseFilter : 'portfolio'))}...</span>
+        </div>
+      ) : summaryData?.headline ? (
         <div 
           style={{
             background: 'linear-gradient(90deg, rgba(15, 110, 86, 0.08) 0%, rgba(37, 99, 235, 0.05) 100%)',
@@ -1300,7 +1448,339 @@ const GrowthTracking = () => {
             Full Portfolio Audit <ChevronRight size={13} />
           </button>
         </div>
-      )}
+      ) : null}
+
+      {/* =========================================================================
+          THE EXECUTIVE REPORT CARD (Handwritten Diagram Layout)
+          ========================================================================= */}
+      {isAdminOrManager && summaryData?.money_box && (() => {
+        const mb = summaryData.money_box;
+        return (
+          <div 
+            style={{ 
+              background: '#FFFFFF', 
+              border: '1.5px solid var(--border-color)', 
+              borderRadius: '12px', 
+              padding: '20px 24px', 
+              marginBottom: '20px',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.04)'
+            }}
+          >
+            {/* Header with Title and Subject */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '14px', borderBottom: '1.5px solid var(--border-color)', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(15, 110, 86, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Landmark size={20} color="var(--accent-teal)" />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                      Financial Performance Report: {summaryData.display_name || 'Portfolio'}
+                    </h3>
+                    <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: '#FEF3C7', color: '#92400E', fontWeight: '700' }}>
+                      Admin & Manager Access
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    {selectedFy} • BD: {bdFilter} • TL: {tlFilter} • Franchise: {franchiseFilter}
+                  </span>
+                </div>
+              </div>
+
+              {/* Status message if fixed salary saved */}
+              {fixedSalaryStatusMsg && (
+                <div style={{ 
+                  padding: '6px 12px', 
+                  borderRadius: '6px', 
+                  fontSize: '0.78rem',
+                  background: fixedSalaryStatusMsg.type === 'success' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                  color: fixedSalaryStatusMsg.type === 'success' ? '#065F46' : '#991B1B',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span>{fixedSalaryStatusMsg.text}</span>
+                  <button type="button" onClick={() => setFixedSalaryStatusMsg(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'inherit' }}>
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Exact Breakdown Lines from Handwritten Diagram */}
+            <div style={{ marginTop: '16px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                <tbody>
+                  
+                  {/* Line 1: No of com */}
+                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700', width: '45%' }}>
+                      No. of com (companies / clients)
+                    </td>
+                    <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                      <span 
+                        style={{ 
+                          display: 'inline-block', 
+                          padding: '3px 14px', 
+                          background: '#F1F5F9', 
+                          border: '1.5px solid #CBD5E1', 
+                          borderRadius: '6px', 
+                          fontWeight: '800', 
+                          fontSize: '1rem', 
+                          color: '#0F172A' 
+                        }}
+                      >
+                        {mb.company_count ?? 0}
+                      </span>
+                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '10px' }}>
+                        ({mb.deals_count ?? 0} invoiced deals)
+                      </span>
+                    </td>
+                  </tr>
+
+                  {/* Line 2: Revenue */}
+                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
+                      Revenue
+                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: '400' }}>
+                        (gross billed)
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '800', fontSize: '1rem', color: 'var(--text-main)' }}>
+                      {formatCurrency(mb.revenue)}
+                    </td>
+                  </tr>
+
+                  {/* Line 3: Our share */}
+                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
+                      Our share
+                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: '400' }}>
+                        (company portion)
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                      <span style={{ fontWeight: '800', fontSize: '1rem', color: '#0F6E56' }}>
+                        {formatCurrency(mb.our_share)}
+                      </span>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
+                        ({mb.verified_count ?? 0} verified, {mb.unverified_count ?? 0} unverified)
+                      </span>
+                    </td>
+                  </tr>
+
+                  {/* Line 4: Salary — Picking from payroll */}
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', background: 'rgba(0, 0, 0, 0.01)' }}>
+                    <td style={{ padding: '12px 8px', color: 'var(--text-main)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: '700' }}>Salary</span>
+                        <span style={{ fontSize: '0.76rem', padding: '2px 8px', borderRadius: '4px', background: '#E0F2FE', color: '#0369A1', fontWeight: '700' }}>
+                          Picking from payroll
+                        </span>
+                        <div style={{ display: 'inline-flex', borderRadius: '5px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+                          <button
+                            type="button"
+                            onClick={() => setMoneyBoxMode('live')}
+                            style={{
+                              padding: '2px 8px',
+                              fontSize: '0.72rem',
+                              fontWeight: '700',
+                              background: moneyBoxMode === 'live' ? 'var(--accent-teal)' : '#FFFFFF',
+                              color: moneyBoxMode === 'live' ? '#FFFFFF' : 'var(--text-muted)',
+                              border: 'none',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Live ▾
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMoneyBoxMode('fixed')}
+                            style={{
+                              padding: '2px 8px',
+                              fontSize: '0.72rem',
+                              fontWeight: '700',
+                              background: moneyBoxMode === 'fixed' ? 'var(--accent-teal)' : '#FFFFFF',
+                              color: moneyBoxMode === 'fixed' ? '#FFFFFF' : 'var(--text-muted)',
+                              border: 'none',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Fixed
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                      {moneyBoxMode === 'live' ? (
+                        mb.salary?.status === 'not_set' || mb.salary?.amount === null ? (
+                          <div>
+                            <span style={{ color: '#DC2626', fontWeight: '700' }}>Not set</span>
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
+                              (0 of {mb.salary?.total_months || 12} months entered in payroll)
+                            </span>
+                          </div>
+                        ) : (
+                          <div>
+                            <span style={{ fontWeight: '800', color: 'var(--text-main)' }}>
+                              {formatCurrency(mb.salary.amount)}
+                            </span>
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
+                              ({mb.salary.label})
+                            </span>
+                          </div>
+                        )
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Monthly fixed:</span>
+                          <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '2px 6px', background: '#FFFFFF' }}>
+                            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginRight: '4px' }}>₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="e.g. 50000"
+                              value={fixedSalaryInput}
+                              onChange={e => setFixedSalaryInput(e.target.value)}
+                              style={{ width: '85px', border: 'none', outline: 'none', fontSize: '0.78rem' }}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleSaveFixedSalary}
+                            disabled={isSavingFixedSalary}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: '4px',
+                              background: 'var(--accent-teal)',
+                              color: '#FFFFFF',
+                              border: 'none',
+                              fontSize: '0.72rem',
+                              fontWeight: '700',
+                              cursor: isSavingFixedSalary ? 'not-allowed' : 'pointer'
+                            }}
+                          >
+                            {isSavingFixedSalary ? 'Saving...' : 'Save Fixed'}
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+
+                  {/* Line 5: Expense — Fix */}
+                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '12px 8px', color: 'var(--text-main)' }}>
+                      <span style={{ fontWeight: '700' }}>Expense</span>
+                      <span style={{ fontSize: '0.74rem', padding: '2px 8px', borderRadius: '4px', background: '#F3F4F6', color: '#4B5563', fontWeight: '700', marginLeft: '8px' }}>
+                        Fix
+                      </span>
+                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '6px' }}>
+                        (direct & overhead share)
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
+                      {formatCurrency(mb.expense?.amount ?? mb.other_costs?.amount ?? 0)}
+                    </td>
+                  </tr>
+
+                  {/* Line 6: Balance — [ ... ] */}
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', background: 'rgba(248, 250, 252, 0.7)' }}>
+                    <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
+                      Balance
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: '400' }}>
+                        (Our share − Salary − Expense)
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                      <span 
+                        style={{ 
+                          display: 'inline-block', 
+                          padding: '4px 14px', 
+                          background: '#FFFFFF', 
+                          border: '1.5px solid #94A3B8', 
+                          borderRadius: '6px', 
+                          fontWeight: '800', 
+                          fontSize: '1.02rem', 
+                          color: (mb.balance ?? mb.net) >= 0 ? '#0F6E56' : '#DC2626' 
+                        }}
+                      >
+                        {formatCurrency(mb.balance ?? mb.net)}
+                      </span>
+                    </td>
+                  </tr>
+
+                  {/* Line 7: Net — [ ... ] */}
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', background: 'rgba(15, 110, 86, 0.03)' }}>
+                    <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
+                      Net
+                    </td>
+                    <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                      <span 
+                        style={{ 
+                          display: 'inline-block', 
+                          padding: '4px 14px', 
+                          background: '#F0FDF4', 
+                          border: '1.5px solid #86EFAC', 
+                          borderRadius: '6px', 
+                          fontWeight: '800', 
+                          fontSize: '1.05rem', 
+                          color: mb.net >= 0 ? '#15803D' : '#DC2626' 
+                        }}
+                      >
+                        {formatCurrency(mb.net)}
+                      </span>
+                    </td>
+                  </tr>
+
+                  {/* Line 8: Income tax : 25% */}
+                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
+                      Income tax
+                      <span style={{ fontSize: '0.74rem', padding: '2px 8px', borderRadius: '4px', background: '#FEF3C7', color: '#92400E', fontWeight: '700', marginLeft: '8px' }}>
+                        25%
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
+                      {formatCurrency(mb.income_tax?.amount ?? mb.tax?.amount ?? 0)}
+                    </td>
+                  </tr>
+
+                  {/* Line 9: Surplus — [ ... ] */}
+                  <tr style={{ background: mb.surplus >= 0 ? 'rgba(15, 110, 86, 0.08)' : 'rgba(220, 38, 38, 0.08)' }}>
+                    <td style={{ padding: '14px 8px' }}>
+                      <strong style={{ fontSize: '1.05rem', color: 'var(--text-main)' }}>Surplus</strong>
+                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
+                        (Retained earnings after tax)
+                      </span>
+                    </td>
+                    <td style={{ padding: '14px 8px', textAlign: 'right' }}>
+                      <span 
+                        style={{ 
+                          display: 'inline-block', 
+                          padding: '6px 18px', 
+                          background: '#ECFDF5', 
+                          border: '2px solid #10B981', 
+                          borderRadius: '8px', 
+                          fontWeight: '900', 
+                          fontSize: '1.2rem', 
+                          color: mb.surplus >= 0 ? '#047857' : '#DC2626' 
+                        }}
+                      >
+                        {formatCurrency(mb.surplus)}
+                      </span>
+                    </td>
+                  </tr>
+
+                </tbody>
+              </table>
+
+              <div style={{ marginTop: '12px', fontSize: '0.74rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                <span>Reconciliation verified: Balance = Our share − Salary − Expense. Surplus = Net − 25% Tax.</span>
+                <span>Tax estimate: 25% corporate rate.</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 2. FILTER ROW (single-select radio group) */}
       <div 
@@ -1494,7 +1974,12 @@ const GrowthTracking = () => {
       </div>
 
       {/* 3. SUMMARY LINE (below filter, no cards) */}
-      {(() => {
+      {summaryLoading ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px 16px 6px', fontSize: '0.88rem', color: 'var(--text-muted)' }}>
+          <span style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid var(--border-color)', borderTopColor: 'var(--accent-teal)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+          <span>Fetching live fiscal analytics...</span>
+        </div>
+      ) : (() => {
         const curTotals = summaryData?.totals?.[activeFilter] || { revenue: 0, count: 0, avg_deal: 0 };
         const deltaPct = activeFilter === 'invoiced'
           ? summaryData?.deltas_vs_prior?.invoiced_revenue_pct
@@ -1675,7 +2160,12 @@ const GrowthTracking = () => {
         </div>
 
         {/* Table Content */}
-        {filteredDeals.length === 0 ? (
+        {summaryLoading ? (
+          <div style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.86rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+            <span style={{ display: 'inline-block', width: '16px', height: '16px', border: '2px solid var(--border-color)', borderTopColor: 'var(--accent-teal)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+            <span>Loading live mandate and invoice records...</span>
+          </div>
+        ) : filteredDeals.length === 0 ? (
           <div style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.86rem' }}>
             No deals found for this selection ({activeFilter}).
           </div>
@@ -1803,276 +2293,7 @@ const GrowthTracking = () => {
         )}
       </div>
 
-      {/* STEP 4: MONEY BOX (Admin and Manager only; collapsible, real per-deal shares, reconciliation) */}
-      {isAdminOrManager && summaryData?.money_box && (() => {
-        const mb = summaryData.money_box;
-        return (
-          <details 
-            style={{ 
-              background: '#FFFFFF', 
-              border: '1px solid var(--border-color)', 
-              borderRadius: '10px', 
-              padding: '16px 20px', 
-              marginBottom: '22px' 
-            }}
-          >
-            <summary 
-              style={{ 
-                cursor: 'pointer', 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center', 
-                listStyle: 'none', 
-                userSelect: 'none', 
-                gap: '12px', 
-                flexWrap: 'wrap' 
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(15, 110, 86, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Landmark size={18} color="var(--accent-teal)" />
-                </div>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: '700', color: 'var(--text-main)' }}>
-                      Money Box — Financial Margin & Real Surplus
-                    </h3>
-                    <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: '4px', background: '#FEF3C7', color: '#92400E', fontWeight: '700' }}>
-                      Admin & Manager Only
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    Real per-deal revenue shares, person earnings, allocated overhead, estimated corporate tax, and net retained.
-                  </span>
-                </div>
-              </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '0.84rem' }}>
-                <span>Net: <strong style={{ color: mb.net >= 0 ? '#0F6E56' : '#DC2626' }}>{formatCurrency(mb.net)}</strong></span>
-                <span>Surplus: <strong style={{ color: mb.surplus >= 0 ? '#0F6E56' : '#DC2626' }}>{formatCurrency(mb.surplus)}</strong></span>
-                <ChevronDown size={16} color="var(--text-muted)" />
-              </div>
-            </summary>
-
-            <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
-              {fixedSalaryStatusMsg && (
-                <div style={{ 
-                  marginBottom: '14px', 
-                  padding: '8px 12px', 
-                  borderRadius: '6px', 
-                  fontSize: '0.78rem',
-                  background: fixedSalaryStatusMsg.type === 'success' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                  color: fixedSalaryStatusMsg.type === 'success' ? '#065F46' : '#991B1B',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between'
-                }}>
-                  <span>{fixedSalaryStatusMsg.text}</span>
-                  <button type="button" onClick={() => setFixedSalaryStatusMsg(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'inherit' }}>
-                    <X size={14} />
-                  </button>
-                </div>
-              )}
-
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.86rem' }}>
-                <tbody>
-                  {/* 1. Revenue (gross billed) */}
-                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '10px 8px', color: 'var(--text-main)', fontWeight: '600' }}>
-                      Revenue (gross billed)
-                    </td>
-                    <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
-                      {formatCurrency(mb.revenue)}
-                    </td>
-                  </tr>
-
-                  {/* 2. Our share */}
-                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '10px 8px', color: 'var(--text-main)' }}>
-                      <span style={{ fontWeight: '600' }}>Our share</span>
-                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
-                        (company's portion of that revenue)
-                      </span>
-                    </td>
-                    <td style={{ padding: '10px 8px', textAlign: 'right' }}>
-                      <div style={{ fontWeight: '700', color: '#0F6E56' }}>
-                        {formatCurrency(mb.our_share)}
-                      </div>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }} title="Real per-deal database shares; unverified fallback to 25% default rate">
-                        ({mb.verified_count} verified, {mb.unverified_count} unverified)
-                      </span>
-                    </td>
-                  </tr>
-
-                  {/* 3. - Earnings (salary + incentive) */}
-                  <tr style={{ borderBottom: '1px solid var(--border-color)', background: 'rgba(0, 0, 0, 0.01)' }}>
-                    <td style={{ padding: '10px 8px', color: 'var(--text-main)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                        <span style={{ fontWeight: '600' }}>− Earnings (salary + incentive)</span>
-                        <div style={{ display: 'inline-flex', borderRadius: '5px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-                          <button
-                            type="button"
-                            onClick={() => setMoneyBoxMode('live')}
-                            style={{
-                              padding: '2px 8px',
-                              fontSize: '0.72rem',
-                              fontWeight: '700',
-                              background: moneyBoxMode === 'live' ? 'var(--accent-teal)' : '#FFFFFF',
-                              color: moneyBoxMode === 'live' ? '#FFFFFF' : 'var(--text-muted)',
-                              border: 'none',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Live ▾
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setMoneyBoxMode('fixed')}
-                            style={{
-                              padding: '2px 8px',
-                              fontSize: '0.72rem',
-                              fontWeight: '700',
-                              background: moneyBoxMode === 'fixed' ? 'var(--accent-teal)' : '#FFFFFF',
-                              color: moneyBoxMode === 'fixed' ? '#FFFFFF' : 'var(--text-muted)',
-                              border: 'none',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Fixed
-                          </button>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: '10px 8px', textAlign: 'right' }}>
-                      {moneyBoxMode === 'live' ? (
-                        mb.earnings?.status === 'not_set' || mb.earnings?.amount === null ? (
-                          <div>
-                            <span style={{ color: '#DC2626', fontWeight: '700' }}>Not set</span>
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
-                              (0 of {mb.earnings?.total_months || 12} months entered in cost performance)
-                            </span>
-                          </div>
-                        ) : (
-                          <div>
-                            <span style={{ fontWeight: '700', color: 'var(--text-main)' }}>
-                              {formatCurrency(mb.earnings.amount)}
-                            </span>
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
-                              ({mb.earnings.label})
-                            </span>
-                          </div>
-                        )
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Monthly fixed:</span>
-                          <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '2px 6px', background: '#FFFFFF' }}>
-                            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginRight: '4px' }}>₹</span>
-                            <input
-                              type="number"
-                              min="0"
-                              placeholder="e.g. 50000"
-                              value={fixedSalaryInput}
-                              onChange={e => setFixedSalaryInput(e.target.value)}
-                              style={{ width: '85px', border: 'none', outline: 'none', fontSize: '0.78rem' }}
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={handleSaveFixedSalary}
-                            disabled={isSavingFixedSalary}
-                            style={{
-                              padding: '4px 10px',
-                              borderRadius: '4px',
-                              background: 'var(--accent-teal)',
-                              color: '#FFFFFF',
-                              border: 'none',
-                              fontSize: '0.72rem',
-                              fontWeight: '700',
-                              cursor: isSavingFixedSalary ? 'not-allowed' : 'pointer'
-                            }}
-                          >
-                            {isSavingFixedSalary ? 'Saving...' : 'Save Fixed'}
-                          </button>
-                          <span style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', background: '#EFF6FF', color: '#1D4ED8', fontWeight: '700' }}>
-                            Fixed (manual)
-                          </span>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-
-                  {/* 4. - Other costs */}
-                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '10px 8px', color: 'var(--text-main)' }}>
-                      <span style={{ fontWeight: '600' }}>− Other costs</span>
-                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
-                        (TL allocation, travel, overhead share)
-                      </span>
-                      <span 
-                        title={mb.other_costs?.tooltip} 
-                        style={{ marginLeft: '6px', cursor: 'help', fontSize: '0.76rem', color: 'var(--accent-teal)' }}
-                      >
-                        ℹ️
-                      </span>
-                    </td>
-                    <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: '600', color: 'var(--text-main)' }}>
-                      {formatCurrency(mb.other_costs?.amount || 0)}
-                    </td>
-                  </tr>
-
-                  {/* 5. = Net */}
-                  <tr style={{ borderBottom: '1px solid var(--border-color)', background: 'rgba(15, 110, 86, 0.03)' }}>
-                    <td style={{ padding: '12px 8px' }}>
-                      <strong style={{ fontSize: '0.96rem', color: 'var(--text-main)' }}>= Net</strong>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
-                        (Earnings + Other costs = Total Report Cost · Matches Cost of Performance)
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 8px', textAlign: 'right' }}>
-                      <strong style={{ fontSize: '1.05rem', color: mb.net >= 0 ? '#0F6E56' : '#DC2626' }}>
-                        {formatCurrency(mb.net)}
-                      </strong>
-                    </td>
-                  </tr>
-
-                  {/* 6. - Tax (estimate, 25%) */}
-                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '10px 8px', color: 'var(--text-main)' }}>
-                      <span style={{ fontWeight: '600' }}>− Tax (estimate, {DEFAULT_ESTIMATED_TAX_RATE * 100}%)</span>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
-                        (Configurable shared rate; ₹0 if Net ≤ 0)
-                      </span>
-                    </td>
-                    <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: '600', color: 'var(--text-main)' }}>
-                      {formatCurrency(mb.tax?.amount || 0)}
-                    </td>
-                  </tr>
-
-                  {/* 7. = Surplus */}
-                  <tr style={{ background: mb.surplus >= 0 ? 'rgba(15, 110, 86, 0.08)' : 'rgba(220, 38, 38, 0.08)' }}>
-                    <td style={{ padding: '14px 8px' }}>
-                      <strong style={{ fontSize: '1.02rem', color: 'var(--text-main)' }}>= Surplus</strong>
-                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
-                        (Net margin retained after estimated tax)
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 8px', textAlign: 'right' }}>
-                      <strong style={{ fontSize: '1.18rem', color: mb.surplus >= 0 ? '#0F6E56' : '#DC2626' }}>
-                        {formatCurrency(mb.surplus)}
-                      </strong>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-
-              <div style={{ marginTop: '12px', fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                <span>Reconciliation test verified: Net = Our share − Earnings − Other costs.</span>
-                <span>Tax rate: {DEFAULT_ESTIMATED_TAX_RATE * 100}% standard corporate estimate.</span>
-              </div>
-            </div>
-          </details>
-        );
-      })()}
 
       {/* 5. PLAN SECTION: Goals Table, Pace to FY End, Needed Pace */}
       <div style={{ background: '#FFFFFF', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '16px 20px', marginBottom: '22px' }}>
