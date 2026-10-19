@@ -2,8 +2,7 @@ import React, { useContext, useState, useMemo } from 'react';
 import { FinanceContext } from '../context/FinanceContext';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { getTransactionShares } from '../config/financeConfig';
-import { DonutChart, BarChart } from '../components/CustomCharts';
-import FilterBar from '../components/FilterBar';
+import { DonutChart } from '../components/CustomCharts';
 import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Activity, Percent, X, Calendar, Landmark, CreditCard, Tag } from 'lucide-react';
 
 const Dashboard = ({ setActivePage }) => {
@@ -535,54 +534,10 @@ const Dashboard = ({ setActivePage }) => {
   }
   const avgNet = avgInflow - avgOutflow;
 
-  // Monthly trend historical data calculation
-  const barChartData = monthsList.map(m => {
-    const monthTxs = roleTxs.filter(tx => getMonthAndYear(tx.date).monthYear === m);
-    return {
-      label: m.split(' ')[0],
-      revenue: monthTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0),
-      expense: monthTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0)
-    };
-  });
 
-  // Calculate dynamic days count for the target month
-  const getDaysInMonth = (monthLabel) => {
-    const parts = (monthLabel || currentCalendarMonth).split(' ');
-    const mName = parts[0];
-    const yVal = parseInt(parts[1]) || now.getFullYear();
-    const mIdx = monthNamesList.indexOf(mName);
-    return new Date(yVal, mIdx + 1, 0).getDate();
-  };
-
-  const daysCount = getDaysInMonth(timelineTargetMonth);
-
-  // Filter transactions for timeline month
-  const timelineTxs = roleTxs.filter(tx => {
-    return getMonthAndYear(tx.date).monthYear === timelineTargetMonth;
-  });
-
-  const dailyFlows = Array.from({ length: daysCount }, (_, index) => {
-    const dayNum = index + 1;
-    const dayTxs = timelineTxs.filter(tx => {
-      const parts = tx.date.split('-');
-      return parseInt(parts[2]) === dayNum;
-    });
-
-    const inc = dayTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-    const exp = dayTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-
-    return {
-      day: dayNum,
-      income: inc,
-      expense: exp
-    };
-  });
 
   return (
     <div className="dashboard-page animate-fade-in">
-
-      {/* Shared FilterBar */}
-      <FilterBar showGroupBy={false} />
 
       {/* Narrative AI Insight Sentence */}
       <div className="dashboard-insight-banner" style={{ background: '#ffffff', border: '1px solid var(--border-color)', borderLeft: '3px solid var(--accent-teal)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: 'var(--shadow-sm)' }}>
@@ -644,50 +599,6 @@ const Dashboard = ({ setActivePage }) => {
                 <span>Exp. Outflow: <strong style={{ color: '#0f172a' }}>{formatLakhs(avgOutflow)}</strong></span>
                 <span>Projected Net: <strong style={{ color: avgNet >= 0 ? 'var(--accent-teal)' : '#ef4444' }}>{formatLakhs(avgNet)}</strong></span>
               </div>
-            </div>
-          </div>
-
-          <div className="hero-right">
-            <div className="daily-flow-title-wrapper">
-              <h4 className="flow-title">
-                {isAllMonths ? `Daily Operations (${timelineTargetMonth})` : 'Daily Cash Operations'}
-              </h4>
-              <span className="flow-subtitle" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                <span>Green spikes = Income, Red = Expense</span>
-                {isAllMonths && <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontStyle: 'italic', marginTop: '2px' }}>*Showing {timelineTargetMonth} (the current active period) for All Months view</span>}
-              </span>
-            </div>
-
-            <div className="daily-spikes-timeline">
-              {dailyFlows.map((flow, i) => {
-                const maxAmount = Math.max(1000, ...dailyFlows.map(f => Math.max(f.income || 0, f.expense || 0)));
-                let incPercent = Math.min((flow.income / maxAmount) * 100, 100);
-                let expPercent = Math.min((flow.expense / maxAmount) * 100, 100);
-
-                if (flow.income > 0 && incPercent < 15) incPercent = 15;
-                if (flow.expense > 0 && expPercent < 15) expPercent = 15;
-
-                return (
-                  <div className="spike-column" key={i} title={`Day ${flow.day}: +₹${flow.income.toLocaleString()} | -₹${flow.expense.toLocaleString()}`}>
-                    <div className="spike-upper">
-                      {flow.income > 0 && (
-                        <div className="spike-bar positive" style={{ height: `${incPercent}%` }}></div>
-                      )}
-                    </div>
-                    <div className="spike-axis"></div>
-                    <div className="spike-lower">
-                      {flow.expense > 0 && (
-                        <div className="spike-bar negative" style={{ height: `${expPercent}%` }}></div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="daily-spikes-labels">
-              <span>Day 1</span>
-              <span>Day {Math.floor(daysCount / 2)}</span>
-              <span>Day {daysCount}</span>
             </div>
           </div>
         </div>
@@ -889,14 +800,8 @@ const Dashboard = ({ setActivePage }) => {
         </section>
       )}
 
-      {/* BOTTOM HISTORICAL TREND AND RECENT ENTRIES ROW */}
+      {/* RECENT ENTRIES ROW */}
       <section className="charts-grid-row">
-        <div className="dashboard-card flex-1">
-          <h3 className="card-title">Historical Outflows</h3>
-          <div className="card-content">
-            <BarChart data={barChartData} />
-          </div>
-        </div>
 
         {/* Recent logs - Clickable for detailed Auditor Card */}
         <div className="dashboard-card flex-1">
