@@ -338,66 +338,13 @@ const GrowthTracking = () => {
     return list.filter(f => f.toLowerCase().includes(q));
   }, [filterOptions.franchises, fnSearchQuery]);
 
-  const visibleNameOptions = useMemo(() => {
-    if (!nameSearchQuery) return filteredNameOptions;
-    const q = nameSearchQuery.toLowerCase();
-    return filteredNameOptions.filter(o => o.name.toLowerCase().includes(q) || (o.role && o.role.toLowerCase().includes(q)));
-  }, [filteredNameOptions, nameSearchQuery]);
-
   const displayName = useMemo(() => {
-    if (selectedName === 'all') return 'All Profiles (Entire Agency)';
-    const match = filteredNameOptions.find(o => o.id === selectedName || o.name === selectedName);
-    return match ? match.name : (selectedName || 'Select Name...');
-  }, [selectedName, filteredNameOptions]);
-
-  const handleTypeChange = (newType) => {
-    setType(newType);
-    let defaultOpt = 'all';
-    if (newType === 'bd' && bdAgents?.length > 0) defaultOpt = String(bdAgents[0].id || bdAgents[0].name);
-    else if (newType === 'tl' && teamLeaders?.length > 0) defaultOpt = String(teamLeaders[0].id || teamLeaders[0].name);
-    else if (newType === 'franchise' && franchisees?.length > 0) defaultOpt = String(franchisees[0].id || franchisees[0].name);
-    setSelectedName(defaultOpt);
-    setNameSearchQuery('');
-    setIsNameDropdownOpen(false);
-    setAriaAnnouncement(`Filter type changed to ${newType}. Showing ${defaultOpt}.`);
-  };
-
-  const handleSelectName = (opt) => {
-    setSelectedName(opt.id || opt.name);
-    setNameSearchQuery('');
-    setIsNameDropdownOpen(false);
-    setAriaAnnouncement(`Selected name ${opt.name}.`);
-  };
+    return primaryName || 'Overall Portfolio';
+  }, [primaryName]);
 
   const handleFyChange = (newFy) => {
     setSelectedFy(newFy);
     setAriaAnnouncement(`Financial year updated to ${newFy}.`);
-  };
-
-  const handleNameKeyDown = (e) => {
-    if (!isNameDropdownOpen) {
-      if (e.key === 'ArrowDown' || e.key === 'Enter') {
-        setIsNameDropdownOpen(true);
-        e.preventDefault();
-      }
-      return;
-    }
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setHighlightedIndex(prev => (prev < visibleNameOptions.length - 1 ? prev + 1 : 0));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setHighlightedIndex(prev => (prev > 0 ? prev - 1 : visibleNameOptions.length - 1));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (highlightedIndex >= 0 && highlightedIndex < visibleNameOptions.length) {
-        handleSelectName(visibleNameOptions[highlightedIndex]);
-      } else if (visibleNameOptions.length > 0) {
-        handleSelectName(visibleNameOptions[0]);
-      }
-    } else if (e.key === 'Escape') {
-      setIsNameDropdownOpen(false);
-    }
   };
 
   // Step 3 Filter Row Keys & Keyboard Interaction
