@@ -151,8 +151,13 @@ const GrowthTracking = () => {
 
   const type = primaryType === 'bd_agent' ? 'bd' : (primaryType === 'team_leader' ? 'tl' : (primaryType === 'franchisee' ? 'franchise' : 'all'));
   const selectedName = primaryName;
-  const entityType = primaryType;
-  const selectedEntityId = primaryName === 'Overall Portfolio' ? 'comp-overall' : primaryName;
+  const [entityType, setEntityType] = useState(primaryType);
+  const [selectedEntityId, setSelectedEntityId] = useState(primaryName === 'Overall Portfolio' ? 'comp-overall' : primaryName);
+
+  useEffect(() => {
+    setEntityType(primaryType);
+    setSelectedEntityId(primaryName === 'Overall Portfolio' ? 'comp-overall' : primaryName);
+  }, [primaryType, primaryName]);
 
   // Step 3 & 4: Fetch Live Summary & Deal Analytics
   const fetchSummaryData = () => {
@@ -262,49 +267,7 @@ const GrowthTracking = () => {
     }
   };
 
-  // Close searchable select on outside click
-  useEffect(() => {
-    const handleOutsideClick = (e) => {
-      if (nameSelectContainerRef.current && !nameSelectContainerRef.current.contains(e.target)) {
-        setIsNameDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, []);
 
-  // Sync Selectors to URL Query Parameters
-  useEffect(() => {
-    try {
-      const p = new URLSearchParams(window.location.search);
-      if (type !== 'all') { p.set('type', type); } else { p.delete('type'); }
-      if (selectedName && selectedName !== 'all') { p.set('name', selectedName); } else { p.delete('name'); }
-      if (selectedFy && selectedFy !== 'FY 2026-27') { p.set('fy', selectedFy); } else { p.delete('fy'); }
-      
-      const newQuery = p.toString();
-      const newUrl = newQuery ? `${window.location.pathname}?${newQuery}` : window.location.pathname;
-      window.history.replaceState({}, '', newUrl);
-    } catch (e) {
-      console.warn("Could not sync URL params:", e);
-    }
-  }, [type, selectedName, selectedFy]);
-
-  // Synchronize Type & Name into underlying entityType and selectedEntityId
-  useEffect(() => {
-    if (type === 'all') {
-      setEntityType('company');
-      setSelectedEntityId('comp-overall');
-    } else if (type === 'bd') {
-      setEntityType('bd_agent');
-      setSelectedEntityId(selectedName !== 'all' ? selectedName : '');
-    } else if (type === 'tl') {
-      setEntityType('team_leader');
-      setSelectedEntityId(selectedName !== 'all' ? selectedName : '');
-    } else if (type === 'franchise') {
-      setEntityType('franchisee');
-      setSelectedEntityId(selectedName !== 'all' ? selectedName : '');
-    }
-  }, [type, selectedName]);
 
   // Available names filtered by selected Type
   const filteredNameOptions = useMemo(() => {
