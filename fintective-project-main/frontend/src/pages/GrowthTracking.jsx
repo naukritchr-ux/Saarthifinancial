@@ -2,6 +2,7 @@ import React, { useContext, useState, useEffect, useMemo, useRef } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey, fetchJsonWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs } from '../utils/formatters';
+import { DEFAULT_COMPANY_SHARE_RATE } from '../config/financeConfig';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -378,8 +379,11 @@ const GrowthTracking = () => {
         { period: 'FY 2025-26', revenue: 109805461, net_revenue: 16879856, deals_count: 1798 }
       ];
     }
-    const baseRev = selectedEntity?.total_revenue || selectedEntity?.revenue || 1000000;
-    const baseD = selectedEntity?.total_deals || selectedEntity?.deals_count || 10;
+    const baseRev = selectedEntity?.total_revenue || selectedEntity?.revenue || 0;
+    const baseD = selectedEntity?.total_deals || selectedEntity?.deals_count || 0;
+    if (baseRev === 0 && baseD === 0) {
+      return [];
+    }
     return [
       { period: 'FY 2024-25', revenue: Math.round(baseRev * 0.88), deals_count: Math.max(1, Math.round(baseD * 0.88)) },
       { period: 'FY 2025-26', revenue: baseRev, deals_count: baseD }
@@ -587,7 +591,7 @@ const GrowthTracking = () => {
     if (companyBreakdown?.net_retention_rate && companyBreakdown.net_retention_rate > 0) {
       return companyBreakdown.net_retention_rate;  // live from DB e.g. 0.1913
     }
-    return 0.191;  // fallback: 19.1% — audited historical average from live invoices
+    return DEFAULT_COMPANY_SHARE_RATE;  // standard 25% company retained share
   }, [companyBreakdown]);
 
   // Scale chart data formatted for BarChart (1x to 5x)
@@ -703,7 +707,7 @@ const GrowthTracking = () => {
             Growth Targets & Performance Intelligence
           </h2>
           <span style={{ fontSize: '0.84rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
-            5-Year forward compounding forecasts ($t=1..5$), employee productivity scoring engine, and automated performance target memos.
+            5-Year forward compounding forecasts (Years 1 to 5), employee productivity scoring engine, and automated performance target memos.
           </span>
         </div>
 
@@ -1430,7 +1434,7 @@ const GrowthTracking = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '4px' }}>
               <h3 className="card-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Sparkles size={18} color="var(--accent-teal)" />
-                5-Year Forward Horizon ($t=1..5$)
+                5-Year Forward Horizon (Years 1 to 5)
               </h3>
 
               {/* Distinct Mode Switcher: Target vs Inertia */}
@@ -1482,7 +1486,7 @@ const GrowthTracking = () => {
 
             <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
               {forecastTab === 'target'
-                ? `Aspirational growth roadmap ($t=1..5$) calculated from your specified growth velocity (+${targetRatePct}%) or deal placement targets.`
+                ? `Aspirational growth roadmap (Years 1 to 5) calculated from your specified growth velocity (+${targetRatePct}%) or deal placement targets.`
                 : `Passive CAGR run-rate (${historicalCagrPct}%/yr) based on historical performance — showing risk exposure if no intervention occurs.`}
             </span>
           </div>

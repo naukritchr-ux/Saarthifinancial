@@ -6,6 +6,7 @@
  */
 
 import { formatCurrency, formatLakhs } from './formatters';
+import { getTransactionShares, DEFAULT_COMPANY_SHARE_RATE } from '../config/financeConfig';
 
 const DEFAULT_CREDIT_REASONS = [
   'Tax & TDS Adjustment Agreement',
@@ -104,7 +105,7 @@ export function synthesizePortfolio({
         id: t.id || `rec-${Math.random().toString(36).substr(2, 6)}`,
         date: t.date || '2026-05-10',
         amount: amt,
-        our_share: amt * 0.4375,
+        our_share: getTransactionShares(t).rShare,
         invoice_number: t.invoiceNumber || `INV-2026-${Math.floor(Math.random() * 8000 + 1000)}`,
         candidate_name: t.candidateName || t.candidate || 'Commercial Intake',
         role: t.role || 'Placement Closure',
@@ -158,7 +159,7 @@ export function synthesizePortfolio({
           id: `synth-rec-${idx}-1`,
           date: '2026-05-22',
           amount: Math.round(recAmt * 0.6),
-          our_share: Math.round(recAmt * 0.6 * 0.4375),
+          our_share: Math.round(recAmt * 0.6 * DEFAULT_COMPANY_SHARE_RATE),
           invoice_number: `INV-2026-${3100 + idx * 10 + 1}`,
           candidate_name: 'Placement Closure Batch Alpha',
           role: 'Full-time Placements',
@@ -169,7 +170,7 @@ export function synthesizePortfolio({
           id: `synth-rec-${idx}-2`,
           date: '2026-06-08',
           amount: Math.round(recAmt * 0.4),
-          our_share: Math.round(recAmt * 0.4 * 0.4375),
+          our_share: Math.round(recAmt * 0.4 * DEFAULT_COMPANY_SHARE_RATE),
           invoice_number: `INV-2026-${3100 + idx * 10 + 2}`,
           candidate_name: 'Placement Closure Batch Beta',
           role: 'Contract Staffing',
@@ -183,7 +184,7 @@ export function synthesizePortfolio({
           id: `synth-out-${idx}-1`,
           date: '2026-06-14',
           amount: outAmt,
-          our_share: Math.round(outAmt * 0.4375),
+          our_share: Math.round(outAmt * DEFAULT_COMPANY_SHARE_RATE),
           invoice_number: `INV-PEND-${4200 + idx}`,
           candidate_name: 'Pending Intake Verification',
           role: 'Senior Executive Candidate',

@@ -57,9 +57,11 @@ export const IndustryPredictiveTab = ({
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
             <span style={{ fontSize: '1.75rem', fontWeight: '800', color: '#2563eb' }}>
-              {potential.score}
+              {potential.score !== null && potential.score !== undefined ? potential.score : '—'}
             </span>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '600' }}>/ 100</span>
+            {potential.score !== null && potential.score !== undefined && (
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: '600' }}>/ 100</span>
+            )}
           </div>
           <div style={{
             fontSize: '0.75rem',
@@ -72,6 +74,9 @@ export const IndustryPredictiveTab = ({
           }}>
             <Zap size={13} /> {potential.band}
           </div>
+          <p style={{ margin: '8px 0 0 0', fontSize: '0.68rem', color: 'var(--text-muted)', lineHeight: '1.35' }}>
+            Score from 0–100 combining past deal volume, collection speed, and open pipeline to estimate revenue potential.
+          </p>
         </div>
 
         {/* Card 2: Projected Next Quarter Inflows */}
@@ -240,21 +245,27 @@ export const IndustryPredictiveTab = ({
 
                     {/* Win Rate */}
                     <td style={{ padding: '12px 16px', minWidth: '140px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{ flex: 1, height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
-                          <div 
-                            style={{ 
-                              width: `${Math.min(100, item.winRate)}%`, 
-                              height: '100%', 
-                              background: item.winRate >= 85 ? '#10b981' : (item.winRate >= 70 ? '#f59e0b' : '#ef4444'),
-                              borderRadius: '3px'
-                            }} 
-                          />
+                      {item.winRate !== null && item.winRate !== undefined ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{ flex: 1, height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div 
+                              style={{ 
+                                width: `${Math.min(100, item.winRate)}%`, 
+                                height: '100%', 
+                                background: item.winRate >= 85 ? '#10b981' : (item.winRate >= 70 ? '#f59e0b' : '#ef4444'),
+                                borderRadius: '3px'
+                              }} 
+                            />
+                          </div>
+                          <span style={{ fontSize: '0.75rem', fontWeight: '700', color: item.winRate >= 85 ? '#10b981' : '#f59e0b', width: '38px', textAlign: 'right' }}>
+                            {item.winRate}%
+                          </span>
                         </div>
-                        <span style={{ fontSize: '0.75rem', fontWeight: '700', color: item.winRate >= 85 ? '#10b981' : '#f59e0b', width: '38px', textAlign: 'right' }}>
-                          {item.winRate}%
+                      ) : (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                          N/A (No closed/cancelled deals)
                         </span>
-                      </div>
+                      )}
                     </td>
                   </tr>
                 );

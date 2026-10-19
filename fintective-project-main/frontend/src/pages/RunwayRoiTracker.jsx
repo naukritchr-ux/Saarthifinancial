@@ -2,6 +2,7 @@ import React, { useContext, useState, useEffect, useMemo, useRef, useCallback } 
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
+import { getTransactionShares } from '../config/financeConfig';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -31,7 +32,7 @@ const ArrowUpRight = TrendingUp;
 const ArrowDownRight = TrendingDown;
 
 
-const RunwayRoiTracker = () => {
+const RunwayRoiTracker = ({ setActivePage }) => {
   const { transactions, franchisees, bdAgents, selectedMonth, selectedYear, activeModule, currentCashBalance: contextCashBalance, movingAvgBurn: contextMovingBurn } = useContext(FinanceContext);
   const [activeTab, setActiveTab] = useState('summary'); // summary, invoices, franchise-roi, companies, scenario, mom-pivot, leakage
   const [leaderboard, setLeaderboard] = useState([]);
@@ -356,12 +357,9 @@ const RunwayRoiTracker = () => {
   // Calculate 3-Month Moving Average based on historical data (May, June, July)
   const last3Months = historicalFlows.slice(1); // May, June, July
   const rawInflowAvg = last3Months.reduce((sum, m) => sum + m.inflow, 0) / 3;
-  const rawOutflowAvg = last3Months.reduce((sum, m) => sum + m.outflow, 0) / 3;
-
-  // Self-correcting fallbacks: if database has mostly unbilled ghost deals (meaning raw averages are very small),
-  // fallback to the true historical averages from the master final CSV dataset.
-  const avgHistoricalInflow = rawInflowAvg < 500000 ? 2750000 : rawInflowAvg;
-  const avgHistoricalOutflow = rawOutflowAvg < 100000 ? 870000 : rawOutflowAvg;
+  // Verified 3-Month Moving Average directly derived from transactions
+  const avgHistoricalInflow = rawInflowAvg;
+  const avgHistoricalOutflow = rawOutflowAvg;
 
   // Real variable-cost ratio: franchisee royalty payout + BD/TL accrued commissions,
   // as a share of income, over the same 3-month window. Replaces the fixed 0.47 estimate.
@@ -715,8 +713,8 @@ const RunwayRoiTracker = () => {
           teamLeader: t.teamLeaderName || 'Team Leader',
           franchiseName: t.franchiseeName || 'Franchise Network',
           serviceCharges: Number(t.serviceAmt || t.amount || 0),
-          ourShare: Number(t.rShare || (t.amount * 0.4375) || t.amount),
-          franchiseeShare: Number(t.franchiseeShare || 0),
+          ourShare: getTransactionShares(t).rShare,
+          franchiseeShare: getTransactionShares(t).franchiseeShare,
           totalBillAmt: Number(t.amount || 0),
           status: t.info || 'Reconciled'
         }));
@@ -747,19 +745,22 @@ const RunwayRoiTracker = () => {
   const totalInvoicePages = Math.max(1, Math.ceil(filteredInvoices.length / invoicePageSize));
   const paginatedInvoices = filteredInvoices.slice((invoicePage - 1) * invoicePageSize, invoicePage * invoicePageSize);
 
-  // Effective Leaderboard fallback to all bdAgents
+  // Effective Leaderboard derived from live leaderboard or verified transactions
   const effectiveLeaderboard = (leaderboard && leaderboard.length > 0)
     ? leaderboard
     : (bdAgents && bdAgents.length > 0
         ? bdAgents.map(a => {
             const agentTxs = transactions.filter(t => t.bdAgentId === a.id || (t.bdAgentName && t.bdAgentName.toLowerCase().includes(a.name.toLowerCase())));
             const gross = agentTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
-            const net = agentTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.rShare || t.amount * 0.4375 || t.amount), 0);
+            const net = agentTxs.filter(t => t.type === 'income').reduce((sum, t) => {
+              const shares = getTransactionShares(t);
+              return sum + shares.rShare;
+            }, 0);
             return {
               bd_name: a.name,
-              invoices_closed: agentTxs.filter(t => t.type === 'income').length || a.leadsConverted || 14,
-              gross_revenue: gross || 1250000,
-              net_revenue: net || 546875,
+              invoices_closed: agentTxs.filter(t => t.type === 'income').length,
+              gross_revenue: gross,
+              net_revenue: net,
               potential_loss: 0
             };
           })
@@ -814,22 +815,28 @@ const RunwayRoiTracker = () => {
             </span>
           </div>
           <h2 className="kpi-value">
-            {isSimulatedActive ? (
-              isSimCashExhaustionRisk 
-                ? `${simRunwayMonths ? simRunwayMonths.toFixed(1) : 0} Months`
-                : 'Infinite runway'
-            ) : (
-              isCashExhaustionRisk 
+            {(() => {
+              if (currentCashBalance <= 0 || allTimeInflow === 0) {
+                return 'Not enough data';
+              }
+              if (isSimulatedActive) {
+                return isSimCashExhaustionRisk 
+                  ? `${simRunwayMonths ? simRunwayMonths.toFixed(1) : 0} Months`
+                  : 'Self-sustaining';
+              }
+              return isCashExhaustionRisk 
                 ? `${runwayMonths ? runwayMonths.toFixed(1) : 0} Months`
-                : 'Infinite runway'
-            )}
+                : 'Self-sustaining';
+            })()}
           </h2>
           <div className={`kpi-change ${isSimulatedActive ? (isSimCashExhaustionRisk ? 'down' : 'up') : (isCashExhaustionRisk ? 'down' : 'up')}`}>
             <span>
               {isSimulatedActive ? (
-                `Baseline: ${runwayMonths ? runwayMonths.toFixed(1) + ' Months' : 'Infinite'}`
+                `Baseline: ${currentCashBalance > 0 && allTimeInflow > 0 ? (runwayMonths ? `${runwayMonths.toFixed(1)} Months` : 'Self-sustaining') : 'Not enough data'}`
               ) : (
-                isCashExhaustionRisk ? 'Burn rate exceeds inflows' : 'Cash flow positive (Inflow > Burn)'
+                currentCashBalance <= 0 || allTimeInflow === 0 
+                  ? 'Historical cash records pending'
+                  : (isCashExhaustionRisk ? 'Burn rate exceeds inflows' : 'Cash flow positive (Inflows >= Burn)')
               )}
             </span>
           </div>
@@ -1120,7 +1127,7 @@ const RunwayRoiTracker = () => {
                     <th className="text-right">{monthsList[1]}</th>
                     <th className="text-right">{monthsList[2]}</th>
                     <th className="text-right font-bold" style={{ color: 'var(--accent-teal)' }}>{monthsList[3]}</th>
-                    <th className="text-right">MoM Growth (Jun-Jul)</th>
+                    <th className="text-right">MoM Growth ({getMonthAbbr(monthsList[2])}-{getMonthAbbr(monthsList[3])})</th>
                     <th className="text-center" style={{ width: '90px' }}>4-Month Trend</th>
                   </tr>
                 </thead>
@@ -1558,9 +1565,29 @@ const RunwayRoiTracker = () => {
 
               {/* DECK 2: DUPLICATE EXPENSES */}
               <div>
-                <h5 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: '#0f172a', fontWeight: '800' }}>
-                  <AlertTriangle size={18} style={{ color: '#dc2626' }} />
-                  Action Box: Potential Expense Duplicates ({duplicateExpenses.length})
+                <h5 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', color: '#0f172a', fontWeight: '800' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <AlertTriangle size={18} style={{ color: '#dc2626' }} />
+                    Action Box: Potential Expense Duplicates ({duplicateExpenses.length})
+                  </span>
+                  {setActivePage && (
+                    <button
+                      onClick={() => setActivePage('reports')}
+                      style={{
+                        background: '#f8fafc',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
+                        padding: '4px 10px',
+                        fontSize: '0.72rem',
+                        cursor: 'pointer',
+                        color: '#334155',
+                        fontWeight: '600'
+                      }}
+                      title="Inspect full audit ledger in Reports"
+                    >
+                      Audit in Reports →
+                    </button>
+                  )}
                 </h5>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '420px', overflowY: 'auto' }}>
                   <table className="data-table" style={{ fontSize: '0.8rem' }}>

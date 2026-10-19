@@ -1,4 +1,12 @@
 import { formatCurrency, formatLakhs } from './formatters';
+import { isInvoiced, isCancelled, isProgressed } from './statusMapping';
+import { 
+  DEFAULT_BD_COMMISSION_OF_COMPANY_POOL, 
+  DEFAULT_COMPANY_SHARE_RATE, 
+  DEFAULT_FRANCHISEE_SHARE_RATE,
+  SENIOR_COMPANY_SHARE_RATE,
+  SENIOR_FRANCHISEE_SHARE_RATE
+} from '../config/financeConfig';
 
 /**
  * Industry Analytics & Predictive Potential Engine
@@ -128,9 +136,9 @@ export function analyzeIndustryPotential({
     ? Number(yearsCompleted) 
     : calculateTenureYears(onboardingDate);
   const is3YearsCompleted = tenure >= 3.0;
-  const franchiseShareRate = is3YearsCompleted ? 0.70 : 0.75;
-  const companyShareRate = is3YearsCompleted ? 0.30 : 0.25;
-  const bdCommissionRate = 0.02; // Standard 2%
+  const franchiseShareRate = is3YearsCompleted ? SENIOR_FRANCHISEE_SHARE_RATE : DEFAULT_FRANCHISEE_SHARE_RATE;
+  const companyShareRate = is3YearsCompleted ? SENIOR_COMPANY_SHARE_RATE : DEFAULT_COMPANY_SHARE_RATE;
+  const bdCommissionRate = DEFAULT_BD_COMMISSION_OF_COMPANY_POOL; // Standard 20% of company pool (5% gross)
 
   // 2. Aggregate metrics by industry
   const industryMap = {};
@@ -145,6 +153,7 @@ export function analyzeIndustryPotential({
       outstandingAmount: 0,
       cancelledAmount: 0,
       closedDeals: 0,
+      cancelledDeals: 0,
       activePipeline: 0,
       dealAmounts: [],
       clients: new Set(),
@@ -163,6 +172,7 @@ export function analyzeIndustryPotential({
         outstandingAmount: 0,
         cancelledAmount: 0,
         closedDeals: 0,
+        cancelledDeals: 0,
         activePipeline: 0,
         dealAmounts: [],
         clients: new Set(),
@@ -176,9 +186,11 @@ export function analyzeIndustryPotential({
     if (t.companyName) bucket.clients.add(t.companyName);
     if (t.title || t.positionName) bucket.positions.add(t.title || t.positionName);
 
-    if (t.status === 'Cancelled' || t.info === 'CN' || t.info === 'RV' || t.type === 'loss') {
+    const st = t.status || t.enquiryStatus || '';
+    if (isCancelled(st) || t.info === 'CN' || t.info === 'RV' || t.type === 'loss') {
       bucket.cancelledAmount += amt;
-    } else if (t.status === 'Pending' || t.status === 'in-progress' || (t.amountDue && Number(t.amountDue) > 0)) {
+      bucket.cancelledDeals++;
+    } else if (isProgressed(st) || st.toLowerCase() === 'pending' || (t.amountDue && Number(t.amountDue) > 0)) {
       bucket.outstandingAmount += amt;
       bucket.totalGross += amt;
       bucket.activePipeline++;
@@ -194,12 +206,15 @@ export function analyzeIndustryPotential({
 
   // 3. Format industry breakdown items
   const industryList = Object.values(industryMap)
-    .filter(b => b.totalGross > 0 || b.closedDeals > 0 || b.activePipeline > 0)
+    .filter(b => b.totalGross > 0 || b.closedDeals > 0 || b.activePipeline > 0 || b.cancelledDeals > 0)
     .map(b => {
       const avgTicket = b.dealAmounts.length > 0 ? b.totalGross / b.dealAmounts.length : 0;
-      const winRate = (b.totalGross + b.cancelledAmount) > 0 
-        ? (b.receivedAmount / (b.totalGross + b.cancelledAmount)) * 100 
-        : 85;
+      
+      // True Win Rate: closed deals / (closed deals + cancelled deals)
+      const totalResolved = b.closedDeals + b.cancelledDeals;
+      const winRate = totalResolved > 0 
+        ? Number(((b.closedDeals / totalResolved) * 100).toFixed(1)) 
+        : null;
 
       const fShare = Math.round(b.totalGross * franchiseShareRate);
       const cShare = Math.round(b.totalGross * companyShareRate);
@@ -213,9 +228,10 @@ export function analyzeIndustryPotential({
         outstandingAmount: b.outstandingAmount,
         cancelledAmount: b.cancelledAmount,
         closedDeals: b.closedDeals,
+        cancelledDeals: b.cancelledDeals,
         activePipeline: b.activePipeline,
         avgTicketSize: Math.round(avgTicket),
-        winRate: Number(winRate.toFixed(1)),
+        winRate,
         clientCount: b.clients.size,
         franchiseeShare: fShare,
         companyShare: cShare,
@@ -224,72 +240,56 @@ export function analyzeIndustryPotential({
     })
     .sort((a, b) => b.totalGross - a.totalGross);
 
-  // Fallback if no specific deals yet
+  // Return empty unverified state if no transactions exist for entity
   if (industryList.length === 0) {
-    industryList.push(
-      {
-        industry: 'IT & Software',
-        color: INDUSTRY_COLORS['IT & Software'],
-        totalGross: 4500000,
-        receivedAmount: 3800000,
-        outstandingAmount: 700000,
-        closedDeals: 18,
-        activePipeline: 4,
-        avgTicketSize: 250000,
-        winRate: 88.5,
-        clientCount: 8,
-        franchiseeShare: Math.round(4500000 * franchiseShareRate),
-        companyShare: Math.round(4500000 * companyShareRate),
-        bdCommission: Math.round(4500000 * companyShareRate * bdCommissionRate)
-      },
-      {
-        industry: 'Banking & Financial Services (BFSI)',
-        color: INDUSTRY_COLORS['Banking & Financial Services (BFSI)'],
-        totalGross: 2800000,
-        receivedAmount: 2400000,
-        outstandingAmount: 400000,
-        closedDeals: 12,
-        activePipeline: 3,
-        avgTicketSize: 233333,
-        winRate: 85.7,
-        clientCount: 5,
-        franchiseeShare: Math.round(2800000 * franchiseShareRate),
-        companyShare: Math.round(2800000 * companyShareRate),
-        bdCommission: Math.round(2800000 * companyShareRate * bdCommissionRate)
-      },
-      {
-        industry: 'Engineering & Manufacturing',
-        color: INDUSTRY_COLORS['Engineering & Manufacturing'],
-        totalGross: 1950000,
-        receivedAmount: 1650000,
-        outstandingAmount: 300000,
-        closedDeals: 9,
-        activePipeline: 2,
-        avgTicketSize: 216666,
-        winRate: 84.6,
-        clientCount: 4,
-        franchiseeShare: Math.round(1950000 * franchiseShareRate),
-        companyShare: Math.round(1950000 * companyShareRate),
-        bdCommission: Math.round(1950000 * companyShareRate * bdCommissionRate)
+    return {
+      industryBreakdown: [],
+      tenureYears: Number(tenure.toFixed(1)),
+      is3YearsCompleted,
+      franchiseShareRate,
+      companyShareRate,
+      potential: {
+        score: null,
+        band: 'No Historical Deals Yet',
+        totalGross: 0,
+        closedDeals: 0,
+        activePipeline: 0,
+        pipelineValue: 0,
+        overallWinRate: null,
+        projectedQuarterlyRevenue: 0,
+        projectedAnnualRunRate: 0,
+        projectedFranchiseeShare: 0,
+        projectedCompanyMargin: 0,
+        projectedBdCommission: 0,
+        topIndustry: 'N/A',
+        bestWinIndustry: 'N/A',
+        highestTicketIndustry: 'N/A',
+        recommendations: [
+          'No closed or pipeline deals found in the ledger for this entity yet.',
+          'Transactions will automatically populate once client placements are logged in the CRM.'
+        ]
       }
-    );
+    };
   }
 
   // 4. Calculate Predictive Potential Model
   const totalRevenue = industryList.reduce((s, i) => s + i.totalGross, 0);
   const totalClosed = industryList.reduce((s, i) => s + i.closedDeals, 0);
+  const totalCancelled = industryList.reduce((s, i) => s + i.cancelledDeals, 0);
   const totalPipeline = industryList.reduce((s, i) => s + i.activePipeline, 0);
   const totalPipelineVal = industryList.reduce((s, i) => s + i.outstandingAmount, 0);
-  const overallWinRate = totalRevenue > 0 
-    ? (industryList.reduce((s, i) => s + i.receivedAmount, 0) / totalRevenue) * 100 
-    : 85;
+  
+  const totalConcluded = totalClosed + totalCancelled;
+  const overallWinRate = totalConcluded > 0 
+    ? Number(((totalClosed / totalConcluded) * 100).toFixed(1)) 
+    : null;
 
   // Potential Score formula (Ticket size weight + Win rate + Pipeline momentum)
   const avgTicketAcross = totalClosed > 0 ? totalRevenue / totalClosed : 150000;
   const ticketScore = Math.min(35, (avgTicketAcross / 250000) * 35);
-  const winRateScore = Math.min(35, (overallWinRate / 100) * 35);
+  const winRateScore = overallWinRate !== null ? Math.min(35, (overallWinRate / 100) * 35) : 20;
   const pipelineScore = Math.min(30, (totalPipeline / 8) * 30 + (totalClosed / 20) * 15);
-  const potentialScore = Math.min(99, Math.max(50, Math.round(ticketScore + winRateScore + pipelineScore)));
+  const potentialScore = Math.min(99, Math.max(30, Math.round(ticketScore + winRateScore + pipelineScore)));
 
   let potentialBand = 'High Production & Scaling';
   if (potentialScore >= 88) potentialBand = 'Top Tier Dominance (High Potential)';
@@ -298,8 +298,8 @@ export function analyzeIndustryPotential({
   else potentialBand = 'Emerging Potential Hub';
 
   // Forward Projections: Next Quarter (Q+1) and Annual Run Rate
-  const growthMultiplier = 1.0 + (potentialScore - 50) / 200; // e.g. 1.15 to 1.25
-  const baselineMonthly = totalRevenue > 0 ? totalRevenue / 12 : 350000;
+  const growthMultiplier = 1.0 + (potentialScore - 50) / 200; // e.g. 1.05 to 1.25
+  const baselineMonthly = totalRevenue > 0 ? totalRevenue / 12 : 0;
   const projectedQuarterlyRevenue = Math.round((baselineMonthly * 3 + totalPipelineVal * 0.75) * growthMultiplier);
   const projectedAnnualRunRate = Math.round(projectedQuarterlyRevenue * 4.2);
 
@@ -308,14 +308,17 @@ export function analyzeIndustryPotential({
   const projectedBdCommission = Math.round(projectedCompanyMargin * bdCommissionRate);
 
   // Strategic Insights & Opportunities
-  const topIndustry = industryList[0] || { industry: 'IT & Software', totalGross: 0 };
-  const bestWinIndustry = [...industryList].sort((a, b) => b.winRate - a.winRate)[0] || topIndustry;
+  const topIndustry = industryList[0] || { industry: 'General Recruitment', totalGross: 0, avgTicketSize: 0 };
+  const validWinIndustries = industryList.filter(i => i.winRate !== null);
+  const bestWinIndustry = validWinIndustries.length > 0 
+    ? [...validWinIndustries].sort((a, b) => (b.winRate || 0) - (a.winRate || 0))[0] 
+    : topIndustry;
   const highestTicketIndustry = [...industryList].sort((a, b) => b.avgTicketSize - a.avgTicketSize)[0] || topIndustry;
 
   const recommendations = [
-    `🎯 High-Yield Sector: ${topIndustry.industry} generates ${((topIndustry.totalGross / (totalRevenue || 1)) * 100).toFixed(0)}% of billings with ${formatCurrency(topIndustry.avgTicketSize)} avg ticket size.`,
-    `⚡ Conversion Leader: ${bestWinIndustry.industry} maintains strongest cash collection velocity at ${bestWinIndustry.winRate}% win rate.`,
-    `📈 Untapped Upside: Reallocating 20% active pipeline toward ${highestTicketIndustry.industry} yields an estimated +₹${Math.round(highestTicketIndustry.avgTicketSize * 0.4 / 1000)}K gross uplift per placement.`
+    `🎯 High-Yield Sector: ${topIndustry.industry} generates ${totalRevenue > 0 ? ((topIndustry.totalGross / totalRevenue) * 100).toFixed(0) : 0}% of billings with ${formatCurrency(topIndustry.avgTicketSize)} avg ticket size.`,
+    `⚡ Conversion Leader: ${bestWinIndustry.industry} maintains strongest conversion velocity${bestWinIndustry.winRate !== null ? ` at ${bestWinIndustry.winRate}% win rate` : ''}.`,
+    `📈 Pipeline Optimization: Active pipeline holds ${totalPipeline} open deals worth ${formatCurrency(totalPipelineVal)}. Focus on high-ticket positions in ${highestTicketIndustry.industry}.`
   ];
 
   return {
@@ -331,7 +334,7 @@ export function analyzeIndustryPotential({
       closedDeals: totalClosed,
       activePipeline: totalPipeline,
       pipelineValue: totalPipelineVal,
-      overallWinRate: Number(overallWinRate.toFixed(1)),
+      overallWinRate: overallWinRate !== null ? Number(overallWinRate.toFixed(1)) : null,
       projectedQuarterlyRevenue,
       projectedAnnualRunRate,
       projectedFranchiseeShare,

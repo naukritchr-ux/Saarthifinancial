@@ -2,6 +2,7 @@ import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
+import { getTransactionShares } from '../config/financeConfig';
 import { synthesizePortfolio } from '../utils/portfolioSynthesizer';
 import { 
   TrendingUp, 
@@ -315,7 +316,7 @@ const TLPerformance = () => {
         const cancelled = item.enquiries_cancelled !== undefined ? item.enquiries_cancelled : (item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : (tl.enquiriesCancelled || 0));
         const internallyClosed = item.enquiries_internally_closed !== undefined ? item.enquiries_internally_closed : (item.potential_loss > 0 ? Math.ceil(item.potential_loss / 75000) : (tl.enquiriesInternallyClosed || 0));
         const inprogress = item.enquiries_inprogress || 0;
-        const totalEnquiries = Math.max(rawTotal, progressed + cancelled + internallyClosed + inprogress, progressed + cancelled + internallyClosed);
+        const other = Math.max(0, totalEnquiries - (progressed + cancelled + internallyClosed + inprogress));
 
         return {
           ...tl,
@@ -326,7 +327,8 @@ const TLPerformance = () => {
           enquiriesProgressed: progressed,
           enquiriesCancelled: cancelled,
           enquiriesInternallyClosed: internallyClosed,
-          enquiriesInprogress: inprogress
+          enquiriesInprogress: inprogress,
+          enquiriesOther: other
         };
       }
       return {
@@ -424,7 +426,7 @@ const TLPerformance = () => {
       const tlFirstName = tlClean.split(' ')[0];
       const tlTxs = tlTxsMap[tlClean] || tlTxsMap[tlFirstName] || [];
       const contextGross = tlTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
-      const contextNet = contextGross * 0.4375;
+      const contextNet = tlTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + getTransactionShares(t).rShare, 0);
 
       const grossRevenue = lbMatch ? lbMatch.gross_revenue : (contextGross > 0 ? contextGross : 0.0);
       const netRevenue = lbMatch ? lbMatch.net_revenue : (contextNet > 0 ? contextNet : 0.0);
@@ -830,7 +832,7 @@ const TLPerformance = () => {
               </div>
               <div className="kpi-change" style={{ color: '#6B7268', fontSize: '0.74rem', marginTop: '6px' }}>
                 <span>
-                  Expected Loss: <strong style={{ color: '#A8402E' }}>{formatLakhs(pTotals.expected_loss)}</strong> ({pTotals.outstanding > 0 ? ((pTotals.expected_collectible / pTotals.outstanding) * 100).toFixed(0) : 0}% recovery)
+                  Expected Loss: <strong style={{ color: '#A8402E' }}>{formatLakhs(pTotals.expected_loss)}</strong> {pTotals.outstanding > 0 ? `(${((pTotals.expected_collectible / pTotals.outstanding) * 100).toFixed(0)}% expected collection)` : '(No uncollected balance at risk)'}
                 </span>
               </div>
             </div>
@@ -1282,7 +1284,7 @@ const TLPerformance = () => {
                                 </div>
                                 {f.outstanding > 0 && (
                                   <div style={{ display: 'inline-block', padding: '1px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: '600', background: f.avg_days_outstanding > 75 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)', color: f.avg_days_outstanding > 75 ? '#A8402E' : '#B7791F' }}>
-                                    Avg {f.avg_days_outstanding}d SLA
+                                    Avg age: {f.avg_days_outstanding}d
                                   </div>
                                 )}
                               </td>
@@ -1636,7 +1638,7 @@ const TLPerformance = () => {
                     {formatCurrency(selectedFranchiseeDetail.outstanding)}
                   </h4>
                   <span style={{ fontSize: '0.68rem', color: '#B7791F', display: 'block', marginTop: '2px' }}>
-                    Avg {selectedFranchiseeDetail.avg_days_outstanding}d SLA
+                    Avg age: {selectedFranchiseeDetail.avg_days_outstanding}d
                   </span>
                 </div>
 

@@ -2,6 +2,7 @@ import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
+import { getTransactionShares } from '../config/financeConfig';
 import { synthesizePortfolio } from '../utils/portfolioSynthesizer';
 import { 
   TrendingUp, 
@@ -362,10 +363,10 @@ const BDPerformance = () => {
     const agentTxs = agentTxsMap[safeAgent.id] || agentTxsMap[nameKey] || [];
     
     const contextGross = agentTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
-    const contextNet = agentTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.rShare || t.amount * 0.4375 || t.amount), 0);
+    const contextNet = agentTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + getTransactionShares(t).rShare, 0);
 
     const grossRevenue = lbMatch ? lbMatch.gross_revenue : (contextGross > 0 ? contextGross : 0.0);
-    const netRevenue = lbMatch ? lbMatch.net_revenue : (contextNet > 0 ? contextNet : (contextGross * 0.4375));
+    const netRevenue = lbMatch ? lbMatch.net_revenue : (contextNet > 0 ? contextNet : 0.0);
     const lossAmount = lbMatch ? lbMatch.potential_loss : 0.0;
     const unverifiedAmount = lbMatch ? (lbMatch.unverified_amount || 0.0) : 0.0;
     
@@ -452,30 +453,43 @@ const BDPerformance = () => {
     const baseRoster = bdAgents && bdAgents.length > 0 ? bdAgents : [];
     const lbItems = leaderboard && leaderboard.length > 0 ? leaderboard : [];
     const matchedLbIndices = new Set();
+    const BD_EXCLUSIONS = new Set([
+      'head office',
+      'head - office',
+      'head  - office',
+      'unknown',
+      'prospect',
+      'old . tl',
+      'pune . office',
+      ''
+    ]);
+    const isExcluded = (name) => BD_EXCLUSIONS.has((name || '').trim().toLowerCase().replace(/\s+/g, ' '));
 
-    const merged = baseRoster.map((agent) => {
-      const cleanName = (agent.name || '').trim().toLowerCase();
-      const lbIdx = lbItems.findIndex(item => (item.bd_name || '').trim().toLowerCase() === cleanName);
-      if (lbIdx !== -1) {
-        matchedLbIndices.add(lbIdx);
-        const item = lbItems[lbIdx];
+    const merged = baseRoster
+      .filter(agent => !isExcluded(agent.name))
+      .map((agent) => {
+        const cleanName = (agent.name || '').trim().toLowerCase();
+        const lbIdx = lbItems.findIndex(item => (item.bd_name || '').trim().toLowerCase() === cleanName);
+        if (lbIdx !== -1) {
+          matchedLbIndices.add(lbIdx);
+          const item = lbItems[lbIdx];
+          return {
+            ...agent,
+            leadsProgressed: item.invoices_closed ?? (agent.leadsProgressed || 0),
+            leadsCancelled: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : (agent.leadsCancelled || 0),
+          };
+        }
         return {
           ...agent,
-          leadsProgressed: item.invoices_closed ?? (agent.leadsProgressed || 0),
-          leadsCancelled: item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : (agent.leadsCancelled || 0),
         };
-      }
-      return {
-        ...agent,
-      };
-    });
+      });
 
     // Also include any BD present in live transactions not yet in merged roster
     const existingNames = new Set(merged.map(a => (a.name || '').trim().toLowerCase()));
     if (Array.isArray(transactions)) {
       transactions.forEach((t, idx) => {
         const bName = (t.bdAgentName || '').trim();
-        if (bName && bName.toLowerCase() !== 'unknown' && bName.toLowerCase() !== 'head office' && !existingNames.has(bName.toLowerCase())) {
+        if (bName && !isExcluded(bName) && !existingNames.has(bName.toLowerCase())) {
           existingNames.add(bName.toLowerCase());
           const agentTxs = transactions.filter(x => (x.bdAgentName || '').trim().toLowerCase() === bName.toLowerCase());
           const closedCount = agentTxs.filter(x => x.type === 'income').length;
@@ -1064,7 +1078,7 @@ const BDPerformance = () => {
               </div>
               <div className="kpi-change" style={{ color: '#6B7268', fontSize: '0.74rem', marginTop: '6px' }}>
                 <span>
-                  Expected Loss: <strong style={{ color: '#A8402E' }}>{formatLakhs(pTotals.expected_loss)}</strong> ({pTotals.outstanding > 0 ? ((pTotals.expected_collectible / pTotals.outstanding) * 100).toFixed(0) : 0}% recovery)
+                  Expected Loss: <strong style={{ color: '#A8402E' }}>{formatLakhs(pTotals.expected_loss)}</strong> {pTotals.outstanding > 0 ? `(${((pTotals.expected_collectible / pTotals.outstanding) * 100).toFixed(0)}% expected collection)` : '(No uncollected balance at risk)'}
                 </span>
               </div>
             </div>
@@ -1478,7 +1492,7 @@ const BDPerformance = () => {
                                 </div>
                                 {f.outstanding > 0 && (
                                   <div style={{ display: 'inline-block', padding: '1px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: '600', background: f.avg_days_outstanding > 75 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)', color: f.avg_days_outstanding > 75 ? '#A8402E' : '#B7791F' }}>
-                                    Avg {f.avg_days_outstanding}d SLA
+                                    Avg age: {f.avg_days_outstanding}d
                                   </div>
                                 )}
                               </td>
@@ -2006,7 +2020,7 @@ const BDPerformance = () => {
                     {formatCurrency(selectedFranchiseeDetail.outstanding)}
                   </h4>
                   <span style={{ fontSize: '0.68rem', color: '#B7791F', display: 'block', marginTop: '2px' }}>
-                    Avg {selectedFranchiseeDetail.avg_days_outstanding}d SLA
+                    Avg age: {selectedFranchiseeDetail.avg_days_outstanding}d
                   </span>
                 </div>
 

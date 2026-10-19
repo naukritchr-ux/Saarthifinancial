@@ -1,11 +1,12 @@
 import React, { useContext, useState, useMemo } from 'react';
 import { FinanceContext } from '../context/FinanceContext';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
+import { getTransactionShares } from '../config/financeConfig';
 import { DonutChart, BarChart } from '../components/CustomCharts';
 import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Activity, Percent, X, Calendar, Landmark, CreditCard, Tag } from 'lucide-react';
 
 const Dashboard = ({ setActivePage }) => {
-  const { moduleFilteredTransactions: transactions, selectedMonth, selectedYear, budgets, userRole, franchisees, bdAgents, activeModule } = useContext(FinanceContext);
+  const { moduleFilteredTransactions: transactions, selectedMonth, selectedYear, budgets, userRole, franchisees, bdAgents, activeModule, backendHealth } = useContext(FinanceContext);
   const [selectedTx, setSelectedTx] = useState(null); // Auditor Modal state
   const [breakdownView, setBreakdownView] = useState('shares'); // 'shares' | 'franchisees' | 'streams'
 
@@ -167,19 +168,10 @@ const Dashboard = ({ setActivePage }) => {
       } else if (cat === 'Job portal' || (tx.subCategory && tx.subCategory.toLowerCase().includes('portal'))) {
         portalTotal += amt;
       } else {
-        // Recruitment / placement revenue
-        const fShare = Number(
-          tx.franchiseeShare !== undefined && tx.franchiseeShare !== null
-            ? tx.franchiseeShare
-            : (tx.serviceAmt ? tx.serviceAmt - (tx.rShare || 0) : amt * 0.73)
-        );
-        const oShare = Number(
-          tx.rShare !== undefined && tx.rShare !== null
-            ? tx.rShare
-            : (tx.ourShare !== undefined && tx.ourShare !== null ? tx.ourShare : amt - fShare)
-        );
-        fShareTotal += fShare;
-        ourShareTotal += oShare;
+        // Recruitment / placement revenue - standardized single source of truth
+        const shares = getTransactionShares(tx);
+        fShareTotal += shares.franchiseeShare;
+        ourShareTotal += shares.rShare;
       }
 
       const fName = (tx.franchiseeName || tx.owner || 'Direct / Head Office').trim();
@@ -223,13 +215,6 @@ const Dashboard = ({ setActivePage }) => {
         color: '#ea580c', // Orange
         subText: 'Employer package subscriptions'
       });
-    }
-
-    if (sharesList.length === 0) {
-      sharesList.push(
-        { label: 'Franchisee Share', value: 38800000, color: '#2563eb' },
-        { label: 'Company Retained', value: 14360000, color: '#10b981' }
-      );
     }
 
     // 2. Franchisee Divisions Data
@@ -427,23 +412,29 @@ const Dashboard = ({ setActivePage }) => {
         currentMonthRevenue = monthlyRevenues[targetMonthLabel];
         comparisonRevenue = 0;
       } else {
-        targetMonthLabel = 'June 2026'; // fallback
+      } else {
+        const dNow = new Date();
+        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        targetMonthLabel = `${monthNames[dNow.getMonth()]} ${dNow.getFullYear()}`;
         currentMonthRevenue = 0;
         comparisonRevenue = 0;
       }
     }
 
-    const momGrowth = comparisonRevenue > 0 ? ((currentMonthRevenue - comparisonRevenue) / comparisonRevenue) * 100 : 0;
-    const growthText = momGrowth >= 0 ? `up ${momGrowth.toFixed(0)}%` : `down ${Math.abs(momGrowth).toFixed(0)}%`;
+    const comparisonMonthLabel = (selectedMonth === 'All Months' && sortedMonths.length >= 2) ? sortedMonths[sortedMonths.length - 2] : prevMonthLabel;
+    const momGrowth = comparisonRevenue > 0 ? ((currentMonthRevenue - comparisonRevenue) / comparisonRevenue) * 100 : null;
+    const growthText = momGrowth !== null 
+      ? (momGrowth >= 0 ? `up ${momGrowth.toFixed(0)}% vs ${comparisonMonthLabel || 'previous period'}` : `down ${Math.abs(momGrowth).toFixed(0)}% vs ${comparisonMonthLabel || 'previous period'}`)
+      : '';
 
     if (activeModule === 'job_portal') {
-      const displayPeriod = selectedMonth === 'All Months' ? `all months (latest month ${growthText} MoM)` : selectedMonth;
-      return `Job Portal credit subscriptions are ${growthText} MoM. Net portal contribution is ${formatCurrency(profit)} at an operating margin of ${margin.toFixed(1)}% for ${displayPeriod}.`;
+      const displayPeriod = selectedMonth === 'All Months' ? `all months${growthText ? ` (${growthText})` : ''}` : selectedMonth;
+      return `Job Portal credit subscriptions: net portal contribution is ${formatCurrency(profit)} at an operating margin of ${margin.toFixed(1)}% for ${displayPeriod}.`;
     }
 
     if (userRole === 'admin') {
       let topFranName = 'N/A';
-      let maxFranNet = -999999;
+      let maxFranNet = 0; // Exclude branches <= 0 to avoid labeling 0 net contribution as 'most profitable'
       franchisees.forEach(f => {
         const fTxs = transactions.filter(t => t.franchiseeId === f.id && getMonthAndYear(t.date).monthYear === targetMonthLabel);
         const rev = fTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
@@ -456,7 +447,13 @@ const Dashboard = ({ setActivePage }) => {
       });
 
       const monthDisplay = selectedMonth === 'All Months' ? `in ${targetMonthLabel.split(' ')[0]}` : 'this month';
-      return `Overall revenue is ${growthText} MoM, driven primarily by Recruitment. Franchisee "${topFranName}" is your most profitable branch ${monthDisplay} with a net contribution of ${formatCurrency(Math.max(maxFranNet, 0))}.`;
+      const growthSnippet = growthText ? ` (${growthText})` : '';
+
+      if (maxFranNet > 0) {
+        return `Overall revenue is ${formatCurrency(currentMonthRevenue || revenue)}${growthSnippet}, driven primarily by Recruitment. Franchisee "${topFranName}" is your top performing branch ${monthDisplay} with a net contribution of ${formatCurrency(maxFranNet)}.`;
+      } else {
+        return `Overall revenue is ${formatCurrency(currentMonthRevenue || revenue)}${growthSnippet}. No branch recorded positive net contribution ${monthDisplay}.`;
+      }
     } else if (userRole.startsWith('franchise_')) {
       const fId = userRole.split('_')[1];
       const f = franchisees.find(item => item.id === fId);
@@ -596,25 +593,42 @@ const Dashboard = ({ setActivePage }) => {
       <section className="hero-balance-section">
         <div className="hero-container">
           <div className="hero-left">
-            <h3 className="hero-label">CASH FLOW SUMMARY</h3>
+            {backendHealth?.raw?.exclusions?.colliding_bills_count > 0 && (
+              <div style={{
+                fontSize: '0.75rem',
+                color: '#92400e',
+                background: '#fffbeb',
+                border: '1px solid #fde68a',
+                borderRadius: '6px',
+                padding: '4px 10px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginBottom: '12px',
+                fontWeight: '500'
+              }}>
+                <span>⚠</span>
+                <span><strong>{backendHealth.raw.exclusions.colliding_bills_count}</strong> colliding bills excluded from financials to prevent double counting</span>
+              </div>
+            )}
+            <h3 className="hero-label">
+              CASH FLOW SUMMARY • {selectedMonth === 'All Months' ? (selectedYear === 'All Years' ? 'All Time' : `FY ${selectedYear} (Full Year)`) : selectedMonth}
+            </h3>
             <div className="hero-ledger-statement">
               <div className="ledger-statement-row inflow">
-                <span className="row-symbol">(+)</span>
-                <span className="row-label">Came in (Revenue)</span>
+                <span className="row-label">Period Revenue</span>
                 <span className="row-amount font-bold">{formatCurrency(revenue)}</span>
               </div>
 
               <div className="ledger-statement-row outflow">
-                <span className="row-symbol">(-)</span>
-                <span className="row-label">Went out (Expenses)</span>
+                <span className="row-label">Period Expenses</span>
                 <span className="row-amount font-bold">{formatCurrency(expenses)}</span>
               </div>
 
               <hr className="ledger-statement-line" />
 
               <div className={`ledger-statement-row net ${profit >= 0 ? 'positive' : 'negative'}`}>
-                <span className="row-symbol">(=)</span>
-                <span className="row-label font-bold">In Hand (Liquidity)</span>
+                <span className="row-label font-bold">Profit / Loss (Period Net)</span>
                 <span className="row-amount font-bold highlight">{formatCurrency(profit)}</span>
               </div>
             </div>
@@ -643,7 +657,7 @@ const Dashboard = ({ setActivePage }) => {
 
             <div className="daily-spikes-timeline">
               {dailyFlows.map((flow, i) => {
-                const maxAmount = 120000;
+                const maxAmount = Math.max(1000, ...dailyFlows.map(f => Math.max(f.income || 0, f.expense || 0)));
                 let incPercent = Math.min((flow.income / maxAmount) * 100, 100);
                 let expPercent = Math.min((flow.expense / maxAmount) * 100, 100);
 

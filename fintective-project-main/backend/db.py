@@ -306,6 +306,30 @@ def ensure_tables_exist():
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
 
+            # 9. Incentive Rules (Standard share split & commission policies)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS incentive_rules (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    role VARCHAR(50) NOT NULL,
+                    percentage DECIMAL(5, 2) NOT NULL,
+                    description VARCHAR(255) NULL,
+                    is_active TINYINT DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_rule_role (role)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            # Seed default incentive rules if empty
+            cur.execute("SELECT COUNT(*) as cnt FROM incentive_rules;")
+            if cur.fetchone()["cnt"] == 0:
+                default_rules = [
+                    ('BD', 20.00, '20% of Company Retained Margin (equivalent to ~5% of Gross Billed)', 1),
+                    ('TL', 12.00, '12% of Company Retained Margin (equivalent to ~3% of Gross Billed)', 1)
+                ]
+                cur.executemany("INSERT INTO incentive_rules (role, percentage, description, is_active) VALUES (%s, %s, %s, %s);", default_rules)
+
+
             # Seed default budgets if empty
             cur.execute("SELECT COUNT(*) as cnt FROM budgets;")
             if cur.fetchone()["cnt"] == 0:

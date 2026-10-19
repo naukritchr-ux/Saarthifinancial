@@ -38,7 +38,8 @@ const Topbar = ({ activePage, setActivePage }) => {
     backendHealth,
     connectionProgress,
     endpointStatus,
-    timeAgo
+    timeAgo,
+    currentCashBalance
   } = useContext(FinanceContext);
 
   const [isSyncOpen, setIsSyncOpen] = useState(false);
@@ -62,11 +63,32 @@ const Topbar = ({ activePage, setActivePage }) => {
     });
   }, [moduleFilteredTransactions, userRole]);
 
-  const { netBalance } = useMemo(() => {
-    const inc = roleFilteredTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
-    const exp = roleFilteredTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
-    return { netBalance: inc - exp };
-  }, [roleFilteredTxs]);
+  // Clearly scoped P&L calculation (strictly scoped to selectedYear, or All Time if selected)
+  const { periodLabel, periodNet } = useMemo(() => {
+    let txsToUse = roleFilteredTxs;
+    if (selectedYear !== 'All Years') {
+      txsToUse = roleFilteredTxs.filter(tx => {
+        if (tx.financialYear && tx.financialYear !== 'N/A') {
+          return tx.financialYear === selectedYear;
+        }
+        const d = new Date(tx.date);
+        if (!isNaN(d.getTime())) {
+          const y = d.getFullYear();
+          const m = d.getMonth();
+          const fy = m >= 3 ? `${y}-${y+1}` : `${y-1}-${y}`;
+          return fy === selectedYear;
+        }
+        return false;
+      });
+    }
+
+    const inc = txsToUse.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
+    const exp = txsToUse.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
+    const net = inc - exp;
+
+    const label = selectedYear !== 'All Years' ? `P&L (${selectedYear}):` : 'P&L (All Time):';
+    return { periodLabel: label, periodNet: net };
+  }, [roleFilteredTxs, selectedYear]);
 
   const getPageTitle = () => {
     switch (activePage) {
@@ -264,9 +286,9 @@ const Topbar = ({ activePage, setActivePage }) => {
         </div>
 
         <div className="topbar-badge" style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <span className="badge-label" style={{ color: '#475569', fontWeight: '600' }}>In hand:</span>
-          <span className={`badge-value ${netBalance >= 0 ? 'positive' : 'negative'}`} style={{ fontWeight: '800' }}>
-            {formatLakhs(netBalance)}
+          <span className="badge-label" style={{ color: '#475569', fontWeight: '600' }}>{periodLabel}</span>
+          <span className={`badge-value ${periodNet >= 0 ? 'positive' : 'negative'}`} style={{ fontWeight: '800' }}>
+            {formatLakhs(periodNet)}
           </span>
         </div>
 

@@ -23,14 +23,27 @@ export const formatCurrency = (value, isOutflow = false) => {
 
 export const formatLakhs = (value) => {
   let num = parseFloat(value) || 0;
-  if (Math.abs(num) < 1000) {
+  if (Math.abs(num) < 10000) {
     return formatCurrency(num);
   }
-  const lakhs = num / 100000;
-  if (Math.abs(lakhs) >= 0.01) {
-    return `${lakhs < 0 ? '-' : ''}₹${Math.abs(lakhs).toFixed(1)}L`;
+  const absNum = Math.abs(num);
+  const sign = num < 0 ? '-' : '';
+
+  // Format as Crores if >= 1 Crore (10,000,000)
+  if (absNum >= 10000000) {
+    const crores = absNum / 10000000;
+    return `${sign}₹${crores.toFixed(2)} Cr`;
   }
-  return formatCurrency(num);
+
+  // Format as Lakhs if >= 1 Lakh (100,000)
+  if (absNum >= 100000) {
+    const lakhs = absNum / 100000;
+    return `${sign}₹${lakhs.toFixed(2)}L`;
+  }
+
+  // Format as Thousands (e.g. ₹45K)
+  const thousands = absNum / 1000;
+  return `${sign}₹${thousands.toFixed(1)}K`;
 };
 
 /**

@@ -751,8 +751,9 @@ def get_transactions():
                     })
 
                 # A. Generate Accrued BD/TL Commissions from Inflows (Fix 5)
-                bd_comm_rate = 0.02
-                tl_comm_rate = 0.03
+                # BD commission standard: 20% of company pool (5% gross). TL standard: 12% of company pool (3% gross).
+                bd_comm_rate = 0.20
+                tl_comm_rate = 0.12
                 try:
                     cursor.execute("SELECT percentage FROM incentive_rules WHERE role = 'BD' AND is_active = 1 LIMIT 1")
                     r_bd = cursor.fetchone()
@@ -3744,9 +3745,10 @@ def start_background_sync_daemon():
     t = threading.Thread(target=sync_loop, daemon=True)
     t.start()
 
-# Automatically start background daemons on module import (covers Gunicorn/WSGI on Render)
+import sys
+# Automatically start background daemons on module import (covers Gunicorn/WSGI on Render, disabled during tests)
 _daemon_started = False
-if not _daemon_started:
+if not _daemon_started and not os.environ.get('FLASK_TESTING') and 'unittest' not in sys.modules:
     _daemon_started = True
     start_background_sync_daemon()
 
