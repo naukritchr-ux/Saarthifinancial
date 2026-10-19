@@ -89,6 +89,52 @@ export function getStatusBucket(rawStatus) {
 }
 
 /**
+ * Classifies enquiry status into uppercase canonical identifier.
+ */
+export function classifyEnquiryStatus(rawStatus) {
+  const bucket = getStatusBucket(rawStatus);
+  if (bucket === STATUS_BUCKETS.INVOICED) return 'INVOICED';
+  if (bucket === STATUS_BUCKETS.PROGRESSED) return 'PROGRESSED';
+  if (bucket === STATUS_BUCKETS.CANCELLED) return 'CANCELLED';
+  return 'OTHER';
+}
+
+/**
+ * Classifies transaction payment state into 'RECEIVED' | 'OUTSTANDING' | 'CREDIT_NOTE'.
+ */
+export function classifyPaymentState(tx = {}) {
+  if (!tx) return 'RECEIVED';
+
+  // 1. Explicit credit notes or refunds
+  if (tx.category === 'Loss' || tx.type === 'loss' || tx.category === 'Credit Note' || tx.status === 'Cancelled' || Number(tx.amount || 0) < 0) {
+    return 'CREDIT_NOTE';
+  }
+
+  // 2. Invoice receivables balance check
+  const serviceCharges = Number(tx.serviceCharges || tx.serviceAmt || tx.amount || 0);
+  const amountReceived = Number(tx.amountReceived || 0);
+
+  if (tx.amountReceived !== undefined && tx.amountReceived !== null) {
+    if (amountReceived >= serviceCharges - 1.0) {
+      return 'RECEIVED';
+    } else {
+      return 'OUTSTANDING';
+    }
+  }
+
+  // 3. String status flags
+  const statusStr = String(tx.paymentStatus || tx.status || tx.info || '').toLowerCase();
+  if (statusStr.includes('outstanding') || statusStr.includes('pending') || statusStr.includes('unpaid')) {
+    return 'OUTSTANDING';
+  }
+  if (statusStr.includes('credit') || statusStr.includes('void') || statusStr.includes('loss')) {
+    return 'CREDIT_NOTE';
+  }
+
+  return 'RECEIVED';
+}
+
+/**
  * Checks if a status represents an officially invoiced/won deal.
  */
 export function isInvoiced(rawStatus) {
