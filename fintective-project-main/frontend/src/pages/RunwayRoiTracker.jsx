@@ -356,7 +356,8 @@ const RunwayRoiTracker = ({ setActivePage }) => {
 
   // Calculate 3-Month Moving Average based on historical data (May, June, July)
   const last3Months = historicalFlows.slice(1); // May, June, July
-  const rawInflowAvg = last3Months.reduce((sum, m) => sum + m.inflow, 0) / 3;
+  const rawInflowAvg = last3Months.length > 0 ? (last3Months.reduce((sum, m) => sum + m.inflow, 0) / last3Months.length) : 0;
+  const rawOutflowAvg = last3Months.length > 0 ? (last3Months.reduce((sum, m) => sum + m.outflow, 0) / last3Months.length) : 0;
   // Verified 3-Month Moving Average directly derived from transactions
   const avgHistoricalInflow = rawInflowAvg;
   const avgHistoricalOutflow = rawOutflowAvg;
