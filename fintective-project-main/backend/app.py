@@ -192,7 +192,7 @@ app = Flask(__name__)
 CORS(
     app,
     resources={r"/*": {"origins": "*"}},
-    allow_headers=["Content-Type", "X-API-Key", "Authorization", "Accept", "Origin"],
+    allow_headers=["Content-Type", "X-API-Key", "Authorization", "Accept", "Origin", "X-User-Role"],
     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     supports_credentials=False
 )
@@ -211,7 +211,7 @@ def handle_preflight_and_api_key():
         res = app.make_default_options_response()
         res.headers['Access-Control-Allow-Origin'] = '*'
         res.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
-        res.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-API-Key, Authorization, Accept, Origin'
+        res.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-API-Key, Authorization, Accept, Origin, X-User-Role'
         return res
 
     # Allow health diagnostic and warmup endpoints without auth
@@ -230,7 +230,7 @@ def handle_preflight_and_api_key():
 def add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-API-Key, Authorization, Accept, Origin'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-API-Key, Authorization, Accept, Origin, X-User-Role'
     
     # Server-side request timing header and diagnostic logging
     duration_ms = round((time.time() - getattr(g, 'start_time', time.time())) * 1000)

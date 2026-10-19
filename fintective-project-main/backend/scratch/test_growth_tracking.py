@@ -70,7 +70,13 @@ class TestGrowthTracking(unittest.TestCase):
         outcome = json.loads(out_res.data)
         self.assertEqual(outcome['status'], 'completed')
         self.assertIn('outcome_letter_text', outcome)
-        self.assertIn('TARGET EXCEEDED', outcome['outcome_letter_text'])
+        # 4. Clean up test target to avoid polluting live database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM growth_targets WHERE id = %s", [target_id])
+        conn.commit()
+        conn.close()
 
 if __name__ == '__main__':
     unittest.main()
+

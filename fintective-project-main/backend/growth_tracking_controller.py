@@ -718,16 +718,28 @@ def get_entity_roster():
             # Add all other active BD contributors from enquiries
             for r in enquiry_bds:
                 raw_name = r['name'].strip()
-                resolved_info = _resolve_entity_info(cursor, 'employee', raw_name)
-                canonical = resolved_info.get('canonical_name') or raw_name
+                resolved = _resolve_entity_info(cursor, 'employee', raw_name)
+                canonical = str(resolved).strip() if resolved else raw_name
                 if canonical.lower() not in seen_names and raw_name.lower() not in seen_names:
                     seen_names.add(canonical.lower())
                     seen_names.add(raw_name.lower())
+                    
+                    emp_id = f"bd-{len(bd_candidates)+1}"
+                    emp_status = 'active'
+                    try:
+                        cursor.execute("SELECT id, status FROM employees WHERE LOWER(TRIM(canonical_name)) = %s LIMIT 1", [canonical.lower()])
+                        emp_row = cursor.fetchone()
+                        if emp_row:
+                            emp_id = str(emp_row['id'])
+                            emp_status = emp_row.get('status') or 'active'
+                    except Exception:
+                        pass
+
                     bd_candidates.append({
-                        'id': resolved_info.get('id') or f"bd-{len(bd_candidates)+1}",
+                        'id': emp_id,
                         'name': canonical,
                         'role': 'BD Member',
-                        'status': resolved_info.get('status') or 'active'
+                        'status': emp_status
                     })
 
             for b in bd_candidates:
@@ -1036,22 +1048,38 @@ def predict_growth():
         # Determine Base Revenue and Historical CAGR
         is_new_hire = (months_of_history < 3) or (not historical_series)
         
+        has_real_history = False
         if historical_series:
-            base_revenue = float(historical_series[-1]['revenue'] or 0.0)
-            if base_revenue <= 0.0:
-                base_revenue = 1200000.0
-            deal_base = int(historical_series[-1].get('deals_count') or 12)
-            historical_cagr = _calculate_cagr(historical_series)
-            confidence = 'high' if months_of_history >= 6 else 'low'
-        else:
-            base_revenue = 1200000.0
-            deal_base = 15
-            historical_cagr = None
-            confidence = 'new_hire'
-            historical_series = [
-                {'period': 'FY 2024-2025', 'revenue': 1000000.0, 'net_revenue': 437500.0, 'deals_count': 12},
-                {'period': 'FY 2025-2026', 'revenue': 1200000.0, 'net_revenue': 525000.0, 'deals_count': 15}
-            ]
+            base_revenue = float(historical_series[-1].get('revenue') or 0.0)
+            deal_base = int(historical_series[-1].get('deals_count') or 0)
+            if base_revenue > 0:
+                has_real_history = True
+                historical_cagr = _calculate_cagr(historical_series)
+                confidence = 'high' if months_of_history >= 6 else 'low'
+
+        if not has_real_history:
+            return jsonify({
+                'entity_type': entity_type,
+                'entity_id': entity_id,
+                'entity_name': entity_name,
+                'projection_status': 'insufficient_data',
+                'insufficient_data': True,
+                'is_new_hire': is_new_hire,
+                'months_of_history': months_of_history,
+                'confidence': 'insufficient_data',
+                'productivity_score': score_data,
+                'base_revenue': 0.0,
+                'current_deals_count': 0,
+                'current_monthly_deals': 0.0,
+                'avg_revenue_per_deal': 0.0,
+                'historical_cagr': None,
+                'historical_cagr_pct': None,
+                'applied_rate': 0.15,
+                'applied_rate_pct': 15.0,
+                'historical_series': historical_series or [],
+                'projections': [],
+                'scenarios': {}
+            })
 
         # Target growth rate R
         if custom_rate is not None and str(custom_rate).strip() != "":
@@ -1088,18 +1116,6 @@ def predict_growth():
                 'projected_deals': proj_deals,
                 'cumulative_revenue': round(cumulative_rev, 2)
             })
-
-        # 5-Year Scale Simulator Scenarios (1x through 5x)
-        scenarios = {
-            f'scale{m}x': {
-                'multiplier': m,
-                'label': f"{m}x {'Current Base' if m == 1 else 'Scale'}",
-                'revenue': round(base_revenue * m, 2),
-                'estimated_net': round(base_revenue * m * 0.4375, 2),
-                'deals_target': max(1, int(round(deal_base * m)))
-            }
-            for m in range(1, 6)
-        }
 
         # 5-Year Scale Simulator Scenarios (1x through 5x)
         scenarios = {
@@ -1404,283 +1420,204 @@ def _format_inr_short(rev):
     else:
         return f"₹{val:,.0f}"
 
-def _calculate_money_box(cursor, entity_type, entity_name, fy_months, invoiced_deals, total_invoiced_rev, cur_start, cur_end, req):
+DEFAULT_ESTIMATED_TAX_RATE = 0.25
+
+def _calculate_money_box(invoiced_deals, total_invoiced_rev, req):
     """
-    Computes real Money Box line items according to Step 4 requirements:
-    Revenue (gross billed)
+    Computes real Money Box line items according to requirements:
+    Revenue (gross billed amount from invoiced deals)
     Our share (real per-deal company share from invoices, verified vs unverified)
-    - Earnings (salary + incentive from cost_bd_monthly / cost_tl_monthly for BD/TL, franchisee share for Franchise)
-    - Other costs (TL allocation, travel, overhead share based on active allocation rule)
-    = Net
-    - Tax (estimate, 25%)
-    = Surplus
     Enforced on server-side: only returned to admin and manager roles.
     """
     user_role = (req.headers.get('X-User-Role') or req.args.get('role') or 'admin').strip().lower()
-    is_admin_or_manager = user_role in ('admin', 'manager', 'head_office')
-
-    if not is_admin_or_manager:
+    if user_role not in ('admin', 'manager', 'head_office'):
         return None
 
-    # 1. Our share calculation (real per-deal company share)
     our_share_sum = 0.0
     verified_count = 0
     unverified_count = 0
-    franchisee_deal_shares = 0.0
+    companies = set()
 
     for d in invoiced_deals:
         d_our = float(d.get('our_share') or 0.0)
-        d_fran = float(d.get('franchisee_share') or 0.0)
         is_ver = bool(d.get('is_verified'))
+        cname = (d.get('companyName') or '').strip()
+        if cname:
+            companies.add(cname.lower())
 
         our_share_sum += d_our
-        franchisee_deal_shares += d_fran
         if is_ver:
             verified_count += 1
         else:
             unverified_count += 1
 
+    rev = round(float(total_invoiced_rev or 0.0), 2)
     our_share_sum = round(our_share_sum, 2)
-    franchisee_deal_shares = round(franchisee_deal_shares, 2)
-
-    # 2. Earnings calculation (the PERSON's earnings, not company cost allocation)
-    is_specific_name = entity_name and entity_name.lower() != 'all'
-    months_in_fy = len(fy_months)
-    placeholders = ','.join(['%s'] * len(fy_months))
-
-    earnings = {
-        'amount': None,
-        'status': 'not_set',
-        'label': 'Not set',
-        'entered_months': 0,
-        'total_months': months_in_fy,
-        'fixed_salary': 0.0,
-        'incentive_paid': 0.0
-    }
-    travel_expense = 0.0
-
-    if entity_type == 'bd':
-        if is_specific_name:
-            cursor.execute(f"""
-                SELECT fixed_salary, incentive_paid, travel_expense, month 
-                FROM cost_bd_monthly 
-                WHERE (LOWER(TRIM(bd_name)) = %s OR LOWER(TRIM(bd_name)) LIKE %s)
-                  AND month IN ({placeholders})
-            """, [entity_name.lower(), f"%{entity_name.lower()}%"] + fy_months)
-            rows = cursor.fetchall()
-            if rows:
-                fixed_sal = sum(float(r['fixed_salary'] or 0.0) for r in rows)
-                inc_paid = sum(float(r['incentive_paid'] or 0.0) for r in rows)
-                travel_expense = sum(float(r['travel_expense'] or 0.0) for r in rows)
-                tot = fixed_sal + inc_paid
-                earnings = {
-                    'amount': round(tot, 2),
-                    'status': 'entered' if len(rows) >= months_in_fy else 'partial',
-                    'label': f"Entered for {len(rows)} of {months_in_fy} months" if len(rows) < months_in_fy else "Full FY Entered",
-                    'entered_months': len(rows),
-                    'total_months': months_in_fy,
-                    'fixed_salary': round(fixed_sal, 2),
-                    'incentive_paid': round(inc_paid, 2)
-                }
-        else:
-            cursor.execute(f"""
-                SELECT fixed_salary, incentive_paid, travel_expense, month 
-                FROM cost_bd_monthly 
-                WHERE month IN ({placeholders})
-            """, fy_months)
-            rows = cursor.fetchall()
-            distinct_months = len(set(r['month'] for r in rows))
-            if rows:
-                fixed_sal = sum(float(r['fixed_salary'] or 0.0) for r in rows)
-                inc_paid = sum(float(r['incentive_paid'] or 0.0) for r in rows)
-                travel_expense = sum(float(r['travel_expense'] or 0.0) for r in rows)
-                tot = fixed_sal + inc_paid
-                earnings = {
-                    'amount': round(tot, 2),
-                    'status': 'entered' if distinct_months >= months_in_fy else 'partial',
-                    'label': f"Entered for {distinct_months} of {months_in_fy} months" if distinct_months < months_in_fy else "Full FY Entered",
-                    'entered_months': distinct_months,
-                    'total_months': months_in_fy,
-                    'fixed_salary': round(fixed_sal, 2),
-                    'incentive_paid': round(inc_paid, 2)
-                }
-
-    elif entity_type == 'tl':
-        if is_specific_name:
-            cursor.execute(f"""
-                SELECT fixed_salary, incentive_paid, month 
-                FROM cost_tl_monthly 
-                WHERE (LOWER(TRIM(tl_name)) = %s OR LOWER(TRIM(tl_name)) LIKE %s)
-                  AND month IN ({placeholders})
-            """, [entity_name.lower(), f"%{entity_name.lower()}%"] + fy_months)
-            rows = cursor.fetchall()
-            if rows:
-                fixed_sal = sum(float(r['fixed_salary'] or 0.0) for r in rows)
-                inc_paid = sum(float(r['incentive_paid'] or 0.0) for r in rows)
-                tot = fixed_sal + inc_paid
-                earnings = {
-                    'amount': round(tot, 2),
-                    'status': 'entered' if len(rows) >= months_in_fy else 'partial',
-                    'label': f"Entered for {len(rows)} of {months_in_fy} months" if len(rows) < months_in_fy else "Full FY Entered",
-                    'entered_months': len(rows),
-                    'total_months': months_in_fy,
-                    'fixed_salary': round(fixed_sal, 2),
-                    'incentive_paid': round(inc_paid, 2)
-                }
-        else:
-            cursor.execute(f"""
-                SELECT fixed_salary, incentive_paid, month 
-                FROM cost_tl_monthly 
-                WHERE month IN ({placeholders})
-            """, fy_months)
-            rows = cursor.fetchall()
-            distinct_months = len(set(r['month'] for r in rows))
-            if rows:
-                fixed_sal = sum(float(r['fixed_salary'] or 0.0) for r in rows)
-                inc_paid = sum(float(r['incentive_paid'] or 0.0) for r in rows)
-                tot = fixed_sal + inc_paid
-                earnings = {
-                    'amount': round(tot, 2),
-                    'status': 'entered' if distinct_months >= months_in_fy else 'partial',
-                    'label': f"Entered for {distinct_months} of {months_in_fy} months" if distinct_months < months_in_fy else "Full FY Entered",
-                    'entered_months': distinct_months,
-                    'total_months': months_in_fy,
-                    'fixed_salary': round(fixed_sal, 2),
-                    'incentive_paid': round(inc_paid, 2)
-                }
-
-    elif entity_type == 'franchise':
-        earnings = {
-            'amount': round(franchisee_deal_shares, 2),
-            'status': 'entered',
-            'label': 'Per-deal partner share (no salary)',
-            'entered_months': months_in_fy,
-            'total_months': months_in_fy,
-            'fixed_salary': 0.0,
-            'incentive_paid': 0.0
-        }
-
-    else: # entity_type == 'all'
-        cursor.execute(f"SELECT fixed_salary, incentive_paid, travel_expense, month FROM cost_bd_monthly WHERE month IN ({placeholders})", fy_months)
-        bd_rows = cursor.fetchall()
-        cursor.execute(f"SELECT fixed_salary, incentive_paid, month FROM cost_tl_monthly WHERE month IN ({placeholders})", fy_months)
-        tl_rows = cursor.fetchall()
-
-        bd_sal = sum(float(r['fixed_salary'] or 0.0) + float(r['incentive_paid'] or 0.0) for r in bd_rows)
-        tl_sal = sum(float(r['fixed_salary'] or 0.0) + float(r['incentive_paid'] or 0.0) for r in tl_rows)
-        travel_expense = sum(float(r['travel_expense'] or 0.0) for r in bd_rows)
-        total_sal = bd_sal + tl_sal
-
-        if len(bd_rows) == 0 and len(tl_rows) == 0:
-            earnings = {
-                'amount': round(franchisee_deal_shares, 2),
-                'status': 'partial' if franchisee_deal_shares > 0 else 'not_set',
-                'label': 'Franchise payouts (BD/TL salaries not set)',
-                'entered_months': 0,
-                'total_months': months_in_fy,
-                'fixed_salary': 0.0,
-                'incentive_paid': 0.0
-            }
-        else:
-            earnings = {
-                'amount': round(franchisee_deal_shares + total_sal, 2),
-                'status': 'entered',
-                'label': 'Company total (salaries + partner shares)',
-                'entered_months': months_in_fy,
-                'total_months': months_in_fy,
-                'fixed_salary': round(total_sal, 2),
-                'incentive_paid': 0.0
-            }
-
-    # 3. Other costs calculation
-    cursor.execute("SELECT basis FROM cost_allocation_rule WHERE is_active = 1 ORDER BY id DESC LIMIT 1")
-    rule_row = cursor.fetchone()
-    allocation_basis = rule_row.get('basis', 'revenue_share') if rule_row else 'revenue_share'
-
-    cursor.execute(f"SELECT * FROM overhead_monthly WHERE month IN ({placeholders})", fy_months)
-    ov_rows = cursor.fetchall()
-    overhead_months_entered = len(ov_rows)
-    overhead_pool = sum(
-        float(r.get('admin_team_salary', 0) or 0) +
-        float(r.get('marketing_team_salary', 0) or 0) +
-        float(r.get('rent', 0) or 0) +
-        float(r.get('other_admin_expense', 0) or 0)
-        for r in ov_rows
-    )
-
-    overhead_share = 0.0
-    if overhead_pool > 0 and our_share_sum > 0:
-        cursor.execute("""
-            SELECT SUM(COALESCE(i.ourShare, i.serviceCharges * 0.25)) as tot_company_share
-            FROM invoice i
-            WHERE i.billDate >= %s AND i.billDate <= %s
-        """, [cur_start, cur_end])
-        tot_cs_row = cursor.fetchone()
-        tot_company_share_fy = float(tot_cs_row.get('tot_company_share') or 0.0) if tot_cs_row else 0.0
-        if tot_company_share_fy > 0:
-            overhead_share = round((our_share_sum / tot_company_share_fy) * overhead_pool, 2)
-
-    tl_allocation = 0.0
-    if entity_type == 'bd' and is_specific_name:
-        tl_allocation = 0.0
-
-    other_costs_amount = round(tl_allocation + travel_expense + overhead_share, 2)
-    other_costs_tooltip = f"Allocation method: {allocation_basis} ({overhead_months_entered} of {months_in_fy} months entered in overhead_monthly). TL allocation: ₹{tl_allocation:,.0f}, Travel: ₹{travel_expense:,.0f}, Overhead share: ₹{overhead_share:,.0f}."
-
-    # 4. Net & Reconciliation
-    earnings_val = earnings['amount'] if earnings and earnings['amount'] is not None else 0.0
-    net = round(our_share_sum - earnings_val - other_costs_amount, 2)
-
-    # 5. Tax (estimate, 25%)
-    tax_rate = 0.25
-    tax_amount = round(net * tax_rate, 2) if net > 0 else 0.0
-    surplus = round(net - tax_amount, 2)
-    company_count = len(set(d['companyName'] for d in invoiced_deals if d.get('companyName')))
 
     return {
-        'company_count': company_count,
-        'deals_count': len(invoiced_deals),
-        'revenue': round(total_invoiced_rev, 2),
+        'revenue': rev,
         'our_share': our_share_sum,
         'verified_count': verified_count,
         'unverified_count': unverified_count,
-        'salary': earnings,
-        'earnings': earnings,
-        'expense': {
-            'amount': other_costs_amount,
-            'label': 'Fix',
-            'allocation_method': allocation_basis,
-            'tooltip': other_costs_tooltip,
-            'breakdown': {
-                'tl_allocation': tl_allocation,
-                'travel': travel_expense,
-                'overhead_share': overhead_share
-            }
-        },
-        'other_costs': {
-            'amount': other_costs_amount,
-            'allocation_method': allocation_basis,
-            'tooltip': other_costs_tooltip,
-            'breakdown': {
-                'tl_allocation': tl_allocation,
-                'travel': travel_expense,
-                'overhead_share': overhead_share
-            }
-        },
-        'balance': net,
-        'net': net,
-        'income_tax': {
-            'amount': tax_amount,
-            'rate': tax_rate,
-            'label': '25%'
-        },
-        'tax': {
-            'amount': tax_amount,
-            'rate': tax_rate,
-            'label': 'estimate (25%)'
-        },
-        'surplus': surplus
+        'deals_count': len(invoiced_deals),
+        'company_count': len(companies),
+        'tax_rate': DEFAULT_ESTIMATED_TAX_RATE,
+        'tax_label': f"{int(DEFAULT_ESTIMATED_TAX_RATE * 100)}%"
     }
+
+
+# --------------------------------------------------------------------------
+# Money Box Manual Inputs API: GET & POST /api/growth-targets/money-box-inputs
+# --------------------------------------------------------------------------
+@growth_tracking_bp.route("/api/growth-targets/money-box-inputs", methods=["GET"])
+def get_money_box_inputs():
+    user_role = (request.headers.get('X-User-Role') or request.args.get('role') or 'admin').strip().lower()
+    if user_role not in ('admin', 'manager', 'head_office'):
+        return jsonify({'error': 'Unauthorized: Admin or Manager role required'}), 403
+
+    bd = request.args.get('bd', 'All').strip() or 'All'
+    tl = request.args.get('tl', 'All').strip() or 'All'
+    franchise = request.args.get('franchise', 'All').strip() or 'All'
+    fy = request.args.get('fy', 'FY 2026-27').strip() or 'FY 2026-27'
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS growth_money_box_inputs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                bd VARCHAR(255) NOT NULL DEFAULT 'All',
+                tl VARCHAR(255) NOT NULL DEFAULT 'All',
+                franchise VARCHAR(255) NOT NULL DEFAULT 'All',
+                fy VARCHAR(50) NOT NULL DEFAULT 'FY 2026-27',
+                expense DECIMAL(15, 2) NULL,
+                salary DECIMAL(15, 2) NULL,
+                net DECIMAL(15, 2) NULL,
+                surplus DECIMAL(15, 2) NULL,
+                updated_by VARCHAR(100) NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uk_money_box (bd(100), tl(100), franchise(100), fy)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """)
+
+        cursor.execute("""
+            SELECT expense, salary, net, surplus, updated_at
+            FROM growth_money_box_inputs
+            WHERE LOWER(TRIM(bd)) = %s AND LOWER(TRIM(tl)) = %s AND LOWER(TRIM(franchise)) = %s AND LOWER(TRIM(fy)) = %s
+            LIMIT 1
+        """, [bd.lower(), tl.lower(), franchise.lower(), fy.lower()])
+        row = cursor.fetchone()
+        if row:
+            return jsonify({
+                'bd': bd,
+                'tl': tl,
+                'franchise': franchise,
+                'fy': fy,
+                'expense': float(row['expense']) if row['expense'] is not None else None,
+                'salary': float(row['salary']) if row['salary'] is not None else None,
+                'net': float(row['net']) if row['net'] is not None else None,
+                'surplus': float(row['surplus']) if row['surplus'] is not None else None,
+                'updated_at': str(row['updated_at']) if row.get('updated_at') else None
+            })
+        else:
+            return jsonify({
+                'bd': bd,
+                'tl': tl,
+                'franchise': franchise,
+                'fy': fy,
+                'expense': None,
+                'salary': None,
+                'net': None,
+                'surplus': None,
+                'updated_at': None
+            })
+    except Exception as e:
+        print(f"[get_money_box_inputs] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+
+@growth_tracking_bp.route("/api/growth-targets/money-box-inputs", methods=["POST"])
+def save_money_box_inputs():
+    user_role = (request.headers.get('X-User-Role') or request.args.get('role') or 'admin').strip().lower()
+    if user_role not in ('admin', 'manager', 'head_office'):
+        return jsonify({'error': 'Unauthorized: Admin or Manager role required'}), 403
+
+    data = request.get_json() or {}
+    bd = data.get('bd', 'All').strip() or 'All'
+    tl = data.get('tl', 'All').strip() or 'All'
+    franchise = data.get('franchise', 'All').strip() or 'All'
+    fy = data.get('fy', 'FY 2026-27').strip() or 'FY 2026-27'
+
+    parsed = {}
+    for f in ('expense', 'salary', 'net', 'surplus'):
+        val = data.get(f)
+        if val is None or str(val).strip() == '':
+            parsed[f] = None
+        else:
+            try:
+                num = float(val)
+                if num < 0:
+                    return jsonify({'error': f'{f} must be a number greater than or equal to 0'}), 400
+                parsed[f] = num
+            except (ValueError, TypeError):
+                return jsonify({'error': f'{f} must be a valid number'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS growth_money_box_inputs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                bd VARCHAR(255) NOT NULL DEFAULT 'All',
+                tl VARCHAR(255) NOT NULL DEFAULT 'All',
+                franchise VARCHAR(255) NOT NULL DEFAULT 'All',
+                fy VARCHAR(50) NOT NULL DEFAULT 'FY 2026-27',
+                expense DECIMAL(15, 2) NULL,
+                salary DECIMAL(15, 2) NULL,
+                net DECIMAL(15, 2) NULL,
+                surplus DECIMAL(15, 2) NULL,
+                updated_by VARCHAR(100) NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uk_money_box (bd(100), tl(100), franchise(100), fy)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        """)
+
+        cursor.execute("""
+            INSERT INTO growth_money_box_inputs (bd, tl, franchise, fy, expense, salary, net, surplus, updated_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                expense = VALUES(expense),
+                salary = VALUES(salary),
+                net = VALUES(net),
+                surplus = VALUES(surplus),
+                updated_by = VALUES(updated_by),
+                updated_at = CURRENT_TIMESTAMP
+        """, [bd, tl, franchise, fy, parsed['expense'], parsed['salary'], parsed['net'], parsed['surplus'], user_role])
+        conn.commit()
+
+        return jsonify({
+            'success': True,
+            'saved': {
+                'bd': bd,
+                'tl': tl,
+                'franchise': franchise,
+                'fy': fy,
+                'expense': parsed['expense'],
+                'salary': parsed['salary'],
+                'net': parsed['net'],
+                'surplus': parsed['surplus']
+            }
+        })
+    except Exception as e:
+        print(f"[save_money_box_inputs] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
 
 @growth_tracking_bp.route("/api/growth-targets/summary", methods=["GET"])
 def get_growth_targets_summary():
@@ -1743,7 +1680,7 @@ def get_growth_targets_summary():
         months_remaining = max(0, 12 - months_elapsed)
 
     user_role = (request.headers.get('X-User-Role') or request.args.get('role') or 'admin').strip().lower()
-    cache_key = f"growth_summary_{bd_param}_{tl_param}_{franchise_param}_{start_year}_{user_role}"
+    cache_key = f"growth_summary_{entity_type}_{entity_id}_{entity_name}_{bd_param}_{tl_param}_{franchise_param}_{start_year}_{user_role}"
     cached_val = _get_cached(cache_key)
     if cached_val is not None:
         return jsonify(cached_val)
@@ -2104,13 +2041,9 @@ def get_growth_targets_summary():
                 }
             },
             'money_box': _calculate_money_box(
-                cursor, 
-                calc_entity_type,
-                calc_entity_name,
-                fy_months,
                 [d for d in deals if d['status'] == 'invoiced'],
                 totals['invoiced']['revenue'],
-                cur_start, cur_end, request
+                request
             )
         }
 
@@ -2163,12 +2096,20 @@ def get_growth_targets():
         query = "SELECT * FROM growth_targets WHERE 1=1"
         params = []
 
-        if entity_type:
+        entity_name = request.args.get("entity_name")
+        if entity_type and entity_type.strip().lower() != 'company':
             query += " AND entity_type = %s"
             params.append(entity_type.strip().lower())
         if entity_id:
-            query += " AND entity_id = %s"
-            params.append(str(entity_id).strip())
+            if entity_name:
+                query += " AND (entity_id = %s OR LOWER(entity_id) = %s)"
+                params.extend([str(entity_id).strip(), entity_name.strip().lower()])
+            else:
+                query += " AND entity_id = %s"
+                params.append(str(entity_id).strip())
+        elif entity_name:
+            query += " AND LOWER(entity_id) = %s"
+            params.append(entity_name.strip().lower())
         if status:
             query += " AND status = %s"
             params.append(status.strip().lower())

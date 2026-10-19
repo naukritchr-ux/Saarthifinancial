@@ -3,25 +3,26 @@ import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey, fetchJsonWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs } from '../utils/formatters';
 import { DEFAULT_COMPANY_SHARE_RATE, DEFAULT_ESTIMATED_TAX_RATE } from '../config/financeConfig';
-import { 
-  TrendingUp, 
-  TrendingDown, 
-  Award, 
-  Users, 
-  Building, 
-  Building2, 
-  Briefcase, 
-  Plus, 
-  AlertCircle, 
-  Copy, 
-  Check, 
-  X, 
-  RotateCcw, 
-  DollarSign, 
-  Sparkles, 
-  Zap, 
-  Target, 
-  ArrowRight, 
+import {
+  TrendingUp,
+  TrendingDown,
+  Award,
+  Users,
+  Building,
+  Building2,
+  Briefcase,
+  Plus,
+  AlertCircle,
+  AlertTriangle,
+  Copy,
+  Check,
+  X,
+  RotateCcw,
+  DollarSign,
+  Sparkles,
+  Zap,
+  Target,
+  ArrowRight,
   Layers,
   ChevronDown,
   Search,
@@ -128,11 +129,17 @@ const GrowthTracking = () => {
   const [dealTableSearch, setDealTableSearch] = useState('');
   const DEALS_PER_PAGE = 15;
 
-  // Step 4 Money Box State
-  const [moneyBoxMode, setMoneyBoxMode] = useState('live'); // 'live' | 'fixed'
-  const [fixedSalaryInput, setFixedSalaryInput] = useState('');
-  const [isSavingFixedSalary, setIsSavingFixedSalary] = useState(false);
-  const [fixedSalaryStatusMsg, setFixedSalaryStatusMsg] = useState(null);
+  // Step 4 Money Box Manual Inputs State (saved per BD, TL, Fn, FY)
+  const [moneyBoxInputs, setMoneyBoxInputs] = useState({
+    expense: '',
+    salary: '',
+    net: '',
+    surplus: ''
+  });
+  const [moneyBoxLoading, setMoneyBoxLoading] = useState(false);
+  const [moneyBoxSaving, setMoneyBoxSaving] = useState(false);
+  const [moneyBoxSaveStatus, setMoneyBoxSaveStatus] = useState(null); // { type: 'success' | 'error', message: string }
+  const [isMoneyBoxDirty, setIsMoneyBoxDirty] = useState(false);
 
   // Derive primary entity type & name for legacy compatibility (modals, charts)
   const primaryType = useMemo(() => {
@@ -171,11 +178,7 @@ const GrowthTracking = () => {
     queryParams.set('franchise', franchiseFilter || 'All');
     queryParams.set('role', userRole || 'admin');
 
-    return fetchWithApiKey(`${API_BASE_URL}/growth-targets/summary?${queryParams.toString()}`, {
-      headers: {
-        'X-User-Role': userRole || 'admin'
-      }
-    })
+    return fetchWithApiKey(`${API_BASE_URL}/growth-targets/summary?${queryParams.toString()}`)
       .then(res => {
         if (!res || !res.ok) throw new Error(`HTTP ${res?.status || 'network error'}`);
         return res.json();
@@ -206,7 +209,7 @@ const GrowthTracking = () => {
       if (selectedFy && selectedFy !== 'FY 2026-27') p.set('fy', selectedFy); else p.delete('fy');
       if (tlFilter && tlFilter !== 'All') p.set('tl', tlFilter); else p.delete('tl');
       if (franchiseFilter && franchiseFilter !== 'All') p.set('franchise', franchiseFilter); else p.delete('franchise');
-      
+
       const newQuery = p.toString();
       const newUrl = newQuery ? `${window.location.pathname}?${newQuery}` : window.location.pathname;
       window.history.replaceState({}, '', newUrl);
@@ -215,59 +218,92 @@ const GrowthTracking = () => {
     }
   }, [bdFilter, selectedFy, tlFilter, franchiseFilter]);
 
-  // Step 4 Save Fixed Salary (writes fixed_salary through /api/cost-performance/inputs)
-  const handleSaveFixedSalary = async () => {
-    if (!fixedSalaryInput || isNaN(Number(fixedSalaryInput)) || Number(fixedSalaryInput) < 0) {
-      setFixedSalaryStatusMsg({ type: 'error', text: 'Please enter a valid monthly ₹ salary amount.' });
-      return;
-    }
-    if (type !== 'bd' && type !== 'tl') {
-      setFixedSalaryStatusMsg({ type: 'error', text: 'Fixed salary can only be configured for individual BD or TL members.' });
-      return;
-    }
-    setIsSavingFixedSalary(true);
-    setFixedSalaryStatusMsg(null);
-    try {
-      const monthlyAmt = Number(fixedSalaryInput);
-      const months = summaryData?.monthly_series?.map(m => m.month) || [
-        '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09',
-        '2026-10', '2026-11', '2026-12', '2027-01', '2027-02', '2027-03'
-      ];
-      for (const m of months) {
-        const payload = {
-          month: m,
-          bd_costs: type === 'bd' ? [{
-            bd_name: selectedName,
-            fixed_salary: monthlyAmt,
-            incentive_paid: 0,
-            travel_expense: 0
-          }] : [],
-          tl_costs: type === 'tl' ? [{
-            tl_name: selectedName,
-            fixed_salary: monthlyAmt,
-            incentive_paid: 0
-          }] : []
-        };
-        await fetchWithApiKey(`${API_BASE_URL}/cost-performance/inputs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      }
-      setFixedSalaryStatusMsg({
-        type: 'success',
-        text: `Successfully saved ₹${monthlyAmt.toLocaleString('en-IN')}/mo tagged "Fixed (manual)" across FY.`
+  // Load saved money box inputs per (BD, TL, Fn, FY) combination
+  useEffect(() => {
+    // Immediately clear inputs so nothing carries over to the new selection
+    setMoneyBoxInputs({ expense: '', salary: '', net: '', surplus: '' });
+    setIsMoneyBoxDirty(false);
+    setMoneyBoxSaveStatus(null);
+
+    if (!isAdminOrManager) return;
+
+    setMoneyBoxLoading(true);
+    const params = new URLSearchParams({
+      bd: bdFilter || 'All',
+      tl: tlFilter || 'All',
+      franchise: franchiseFilter || 'All',
+      fy: selectedFy || 'FY 2026-27',
+      role: userRole || 'admin'
+    });
+
+    fetchWithApiKey(`${API_BASE_URL}/growth-targets/money-box-inputs?${params.toString()}`)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        if (data) {
+          setMoneyBoxInputs({
+            expense: data.expense !== null && data.expense !== undefined ? String(data.expense) : '',
+            salary: data.salary !== null && data.salary !== undefined ? String(data.salary) : '',
+            net: data.net !== null && data.net !== undefined ? String(data.net) : '',
+            surplus: data.surplus !== null && data.surplus !== undefined ? String(data.surplus) : ''
+          });
+        }
+      })
+      .catch(err => {
+        console.warn("Notice: Could not load saved money box inputs:", err);
+      })
+      .finally(() => {
+        setMoneyBoxLoading(false);
       });
-      await fetchSummaryData();
+  }, [bdFilter, selectedFy, tlFilter, franchiseFilter, isAdminOrManager, userRole]);
+
+  // Save manual money box inputs
+  const handleSaveMoneyBox = async () => {
+    const fields = ['expense', 'salary', 'net', 'surplus'];
+    for (const f of fields) {
+      const val = moneyBoxInputs[f];
+      if (val !== '' && val !== null && val !== undefined) {
+        const num = Number(val);
+        if (isNaN(num) || num < 0) {
+          setMoneyBoxSaveStatus({ type: 'error', message: `${f.charAt(0).toUpperCase() + f.slice(1)} must be a valid number >= 0.` });
+          return;
+        }
+      }
+    }
+
+    setMoneyBoxSaving(true);
+    setMoneyBoxSaveStatus(null);
+    try {
+      const payload = {
+        bd: bdFilter || 'All',
+        tl: tlFilter || 'All',
+        franchise: franchiseFilter || 'All',
+        fy: selectedFy || 'FY 2026-27',
+        expense: moneyBoxInputs.expense !== '' ? Number(moneyBoxInputs.expense) : null,
+        salary: moneyBoxInputs.salary !== '' ? Number(moneyBoxInputs.salary) : null,
+        net: moneyBoxInputs.net !== '' ? Number(moneyBoxInputs.net) : null,
+        surplus: moneyBoxInputs.surplus !== '' ? Number(moneyBoxInputs.surplus) : null
+      };
+
+      const res = await fetchWithApiKey(`${API_BASE_URL}/growth-targets/money-box-inputs?role=${encodeURIComponent(userRole || 'admin')}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to save money box inputs');
+      }
+      setIsMoneyBoxDirty(false);
+      setMoneyBoxSaveStatus({ type: 'success', message: 'Saved successfully!' });
     } catch (err) {
-      console.error("Failed to save fixed salary:", err);
-      setFixedSalaryStatusMsg({ type: 'error', text: 'Error saving salary: ' + err.message });
+      setMoneyBoxSaveStatus({ type: 'error', message: err.message || 'Error saving inputs' });
     } finally {
-      setIsSavingFixedSalary(false);
+      setMoneyBoxSaving(false);
     }
   };
-
-
 
   // Available names filtered by selected Type
   const filteredNameOptions = useMemo(() => {
@@ -345,7 +381,7 @@ const GrowthTracking = () => {
     }
     if (dealTableSearch.trim()) {
       const q = dealTableSearch.toLowerCase();
-      list = list.filter(d => 
+      list = list.filter(d =>
         (d.companyName && d.companyName.toLowerCase().includes(q)) ||
         (d.positionName && d.positionName.toLowerCase().includes(q)) ||
         (d.candidateName && d.candidateName.toLowerCase().includes(q)) ||
@@ -506,13 +542,13 @@ const GrowthTracking = () => {
         });
       }
       return [
-        { 
-          id: 'comp-overall', 
-          name: 'Overall Company', 
-          type: 'company', 
-          role: 'Total Agency Portfolio', 
-          total_deals: liveDeals, 
-          total_revenue: liveRev 
+        {
+          id: 'comp-overall',
+          name: 'Overall Company',
+          type: 'company',
+          role: 'Total Agency Portfolio',
+          total_deals: liveDeals,
+          total_revenue: liveRev
         }
       ];
     }
@@ -541,28 +577,56 @@ const GrowthTracking = () => {
     }
   }, [entityType, serverRoster, franchisees, bdAgents, teamLeaders, transactions]);
 
-  // Set default selected entity if empty or switched tabs
+  // Clear serverRoster when primaryType changes
   useEffect(() => {
-    if (entityType === 'company') {
-      setSelectedEntityId('comp-overall');
-    } else if (entityOptions.length > 0) {
-      const exists = entityOptions.some(e => e.id === selectedEntityId || e.name === selectedEntityId);
-      if (!exists || selectedEntityId === 'comp-overall') {
-        setSelectedEntityId(entityOptions[0].id);
-      }
-    }
-  }, [entityType, entityOptions, selectedEntityId]);
+    setServerRoster([]);
+  }, [primaryType]);
 
+  // Derive selectedEntity directly from the filters - NEVER fall back to entityOptions[0]
   const selectedEntity = useMemo(() => {
-    return entityOptions.find(e => e.id === selectedEntityId || e.name === selectedEntityId) || entityOptions[0] || null;
-  }, [entityOptions, selectedEntityId]);
+    if (primaryType === 'company') {
+      return {
+        id: 'comp-overall',
+        name: 'Overall Company',
+        canonical_name: 'Overall Company',
+        type: 'company',
+        role: 'Total Agency Portfolio',
+        total_deals: summaryData?.totals?.all?.count || 0,
+        total_revenue: summaryData?.totals?.all?.revenue || 0
+      };
+    }
+
+    const targetName = (primaryName || '').trim().toLowerCase();
+    
+    // Look for a case-insensitive, trimmed match in entityOptions (including serverRoster)
+    const match = entityOptions.find(e => {
+      const eName = (e.name || e.canonical_name || '').trim().toLowerCase();
+      const eId = (e.id || '').trim().toLowerCase();
+      return eName === targetName || eId === targetName;
+    });
+
+    if (match) {
+      return match;
+    }
+
+    // Build synthetic entity directly from filter - NEVER fall back to entityOptions[0]!
+    return {
+      id: primaryName,
+      name: primaryName,
+      canonical_name: primaryName,
+      type: primaryType,
+      role: primaryType === 'bd_agent' ? 'BD Specialist' : (primaryType === 'team_leader' ? 'Team Leader' : 'Franchise Partner'),
+      total_deals: summaryData?.totals?.all?.count || 0,
+      total_revenue: summaryData?.totals?.all?.revenue || 0
+    };
+  }, [primaryType, primaryName, entityOptions, summaryData]);
 
   // Fetch prediction data (5 years) whenever entity or rate changes with resilient SWR
   const fetchPrediction = async (customRateVal) => {
     if (!selectedEntity) return;
     const cacheKey = `${entityType}_${selectedEntity.id || selectedEntity.name}_${customRateVal !== undefined ? customRateVal : ''}`;
     const storageKey = `fintective_predict_${cacheKey}`;
-    
+
     // Check in-memory or sessionStorage cache first for instantaneous rendering
     if (predictionCacheRef.current[cacheKey]) {
       setPredictionData(predictionCacheRef.current[cacheKey]);
@@ -584,14 +648,14 @@ const GrowthTracking = () => {
 
     try {
       const rateParam = (customRateVal !== undefined && customRateVal !== '') ? `&rate=${customRateVal}` : '';
-      const url = `${API_BASE_URL}/growth-targets/predict?entity_type=${entityType}&entity_id=${encodeURIComponent(selectedEntity.id || selectedEntity.name)}&entity_name=${encodeURIComponent(selectedEntity.name || '')}${rateParam}&periods=5`;
-      
+      const url = `${API_BASE_URL}/growth-targets/predict?entity_type=${selectedEntity.type || primaryType}&entity_id=${encodeURIComponent(selectedEntity.id || selectedEntity.name)}&entity_name=${encodeURIComponent(selectedEntity.name || '')}${rateParam}&periods=5`;
+
       const data = await fetchJsonWithApiKey(url);
       if (data) {
         predictionCacheRef.current[cacheKey] = data;
         try {
           sessionStorage.setItem(storageKey, JSON.stringify(data));
-        } catch {}
+        } catch { }
         setPredictionData(data);
         setPredictionError(null);
 
@@ -647,7 +711,7 @@ const GrowthTracking = () => {
 
     // 2. Fetch live server targets and merge
     try {
-      const url = `${API_BASE_URL}/growth-targets?entity_type=${entityType}&entity_id=${encodeURIComponent(selectedEntity.id || selectedEntity.name)}&entity_name=${encodeURIComponent(selectedEntity.name || '')}`;
+      const url = `${API_BASE_URL}/growth-targets?entity_type=${selectedEntity.type || primaryType}&entity_id=${encodeURIComponent(selectedEntity.id || selectedEntity.name)}&entity_name=${encodeURIComponent(selectedEntity.name || '')}`;
       const res = await fetchWithApiKey(url);
       if (res.ok) {
         const data = await res.json();
@@ -665,11 +729,11 @@ const GrowthTracking = () => {
   };
 
   useEffect(() => {
-    if (selectedEntity) {
+    if (selectedEntity && selectedEntity.name) {
       fetchPrediction();
       fetchTargets();
     }
-  }, [entityType, selectedEntityId]);
+  }, [selectedEntity?.id, selectedEntity?.name, selectedEntity?.type]);
 
   const handleRateChange = (newRate) => {
     setOverrideRate(newRate);
@@ -860,7 +924,7 @@ const GrowthTracking = () => {
   const inertiaRatePct = historicalCagrPct;
 
   const isInsufficientData = Boolean(
-    predictionData?.insufficient_data || 
+    predictionData?.insufficient_data ||
     predictionData?.projection_status === 'insufficient_data' ||
     effectiveBaseRevenue <= 0
   );
@@ -1025,7 +1089,7 @@ const GrowthTracking = () => {
           outline-offset: 1px;
         }
       `}</style>
-      
+
       {/* Page Title & Subtitle */}
       <div style={{ marginBottom: '18px' }}>
         <h2 style={{ margin: 0, fontSize: '1.45rem', fontWeight: '700', color: 'var(--text-main)', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1038,7 +1102,7 @@ const GrowthTracking = () => {
       </div>
 
       {/* Step 2 Accessible Selectors Toolbar: BD — FY — TL — Fn */}
-      <div 
+      <div
         className="growth-selectors-card"
         style={{
           background: '#FFFFFF',
@@ -1051,10 +1115,10 @@ const GrowthTracking = () => {
       >
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
           <div style={{ display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap', gap: '14px', flex: '1 1 auto' }}>
-            
+
             {/* 1. BD Selector */}
             <div ref={bdContainerRef} style={{ display: 'flex', flexDirection: 'column', position: 'relative', minWidth: '190px', flex: '1 1 190px', maxWidth: '280px' }}>
-              <label 
+              <label
                 style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '5px' }}
               >
                 BD
@@ -1129,7 +1193,7 @@ const GrowthTracking = () => {
 
             {/* 2. FY Selector */}
             <div style={{ display: 'flex', flexDirection: 'column', minWidth: '130px' }}>
-              <label 
+              <label
                 style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '5px' }}
               >
                 FY
@@ -1157,7 +1221,7 @@ const GrowthTracking = () => {
 
             {/* 3. TL Selector */}
             <div style={{ display: 'flex', flexDirection: 'column', minWidth: '170px', flex: '1 1 170px', maxWidth: '260px' }}>
-              <label 
+              <label
                 style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '5px' }}
               >
                 TL
@@ -1185,7 +1249,7 @@ const GrowthTracking = () => {
 
             {/* 4. Fn (Franchise) Selector */}
             <div ref={fnContainerRef} style={{ display: 'flex', flexDirection: 'column', position: 'relative', minWidth: '190px', flex: '1 1 190px', maxWidth: '280px' }}>
-              <label 
+              <label
                 style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '5px' }}
               >
                 Fn (Franchise)
@@ -1300,7 +1364,7 @@ const GrowthTracking = () => {
 
       {/* 1. Live Headline Sentence on Top */}
       {summaryLoading ? (
-        <div 
+        <div
           style={{
             background: 'rgba(15, 110, 86, 0.04)',
             border: '1px solid rgba(15, 110, 86, 0.15)',
@@ -1318,7 +1382,7 @@ const GrowthTracking = () => {
           <span>Loading live performance & deal metrics for {bdFilter !== 'All' ? bdFilter : (tlFilter !== 'All' ? tlFilter : (franchiseFilter !== 'All' ? franchiseFilter : 'portfolio'))}...</span>
         </div>
       ) : summaryData?.headline ? (
-        <div 
+        <div
           style={{
             background: 'linear-gradient(90deg, rgba(15, 110, 86, 0.08) 0%, rgba(37, 99, 235, 0.05) 100%)',
             border: '1px solid rgba(15, 110, 86, 0.22)',
@@ -1361,340 +1425,363 @@ const GrowthTracking = () => {
       ) : null}
 
       {/* =========================================================================
-          THE EXECUTIVE REPORT CARD (Handwritten Diagram Layout)
+          ERROR BANNER (Root Cause B Fix)
           ========================================================================= */}
-      {isAdminOrManager && summaryData?.money_box && (() => {
-        const mb = summaryData.money_box;
-        return (
-          <div 
-            style={{ 
-              background: '#FFFFFF', 
-              border: '1.5px solid var(--border-color)', 
-              borderRadius: '12px', 
-              padding: '20px 24px', 
-              marginBottom: '20px',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.04)'
+      {summaryError && (
+        <div style={{
+          background: '#FEF2F2',
+          border: '1px solid #F87171',
+          borderRadius: '8px',
+          padding: '12px 18px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <AlertTriangle size={18} color="#DC2626" />
+            <span style={{ fontSize: '0.88rem', fontWeight: '600', color: '#991B1B' }}>
+              Failed to load live summary data: {summaryError}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={fetchSummaryData}
+            style={{
+              padding: '6px 16px',
+              borderRadius: '5px',
+              background: '#DC2626',
+              color: '#FFFFFF',
+              border: 'none',
+              fontSize: '0.8rem',
+              fontWeight: '700',
+              cursor: 'pointer'
             }}
           >
-            {/* Header with Title and Subject */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '14px', borderBottom: '1.5px solid var(--border-color)', flexWrap: 'wrap', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(15, 110, 86, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Landmark size={20} color="var(--accent-teal)" />
-                </div>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: 'var(--text-main)' }}>
-                      Financial Performance Report: {summaryData.display_name || 'Portfolio'}
-                    </h3>
-                    <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: '#FEF3C7', color: '#92400E', fontWeight: '700' }}>
-                      Admin & Manager Access
-                    </span>
-                  </div>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    {selectedFy} • BD: {bdFilter} • TL: {tlFilter} • Franchise: {franchiseFilter}
-                  </span>
-                </div>
-              </div>
+            Retry
+          </button>
+        </div>
+      )}
 
-              {/* Status message if fixed salary saved */}
-              {fixedSalaryStatusMsg && (
-                <div style={{ 
-                  padding: '6px 12px', 
-                  borderRadius: '6px', 
+      {/* =========================================================================
+          THE MONEY BOX (Requirement I: Replaces any earlier version)
+          Selectors on top: BD | FY | TL | Fn.
+          Lines: Revenue (live DB), Our share (live DB), Expense (fixed input),
+                 Salary (manual input), Net (manual input), Income tax (25% fixed),
+                 Surplus (manual input).
+          ========================================================================= */}
+      {isAdminOrManager && (
+        <div
+          style={{
+            background: '#FFFFFF',
+            border: '1.5px solid var(--border-color)',
+            borderRadius: '12px',
+            padding: '20px 24px',
+            marginBottom: '20px',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.04)'
+          }}
+        >
+          {/* Header with Title and Subject */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '14px', borderBottom: '1.5px solid var(--border-color)', flexWrap: 'wrap', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(15, 110, 86, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Landmark size={20} color="var(--accent-teal)" />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                    Financial Performance: {primaryName !== 'Overall Portfolio' ? primaryName : 'Portfolio Overview'}
+                  </h3>
+                  <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: '#FEF3C7', color: '#92400E', fontWeight: '700' }}>
+                    Admin & Manager Access
+                  </span>
+                  {moneyBoxLoading && (
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      Loading inputs...
+                    </span>
+                  )}
+                  {isMoneyBoxDirty && (
+                    <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '4px', background: '#EFF6FF', color: '#1D4ED8', fontWeight: '600' }}>
+                      Unsaved changes
+                    </span>
+                  )}
+                </div>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  {selectedFy} • BD: {bdFilter} • TL: {tlFilter} • Franchise: {franchiseFilter}
+                </span>
+              </div>
+            </div>
+
+            {/* Save Button & Status */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              {moneyBoxSaveStatus && (
+                <span style={{
                   fontSize: '0.78rem',
-                  background: fixedSalaryStatusMsg.type === 'success' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                  color: fixedSalaryStatusMsg.type === 'success' ? '#065F46' : '#991B1B',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  background: moneyBoxSaveStatus.type === 'success' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                  color: moneyBoxSaveStatus.type === 'success' ? '#065F46' : '#991B1B',
+                  fontWeight: '600'
+                }}>
+                  {moneyBoxSaveStatus.message}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={handleSaveMoneyBox}
+                disabled={moneyBoxSaving}
+                style={{
+                  padding: '7px 18px',
+                  borderRadius: '6px',
+                  background: 'var(--accent-teal)',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  fontSize: '0.82rem',
+                  fontWeight: '700',
+                  cursor: moneyBoxSaving ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px'
-                }}>
-                  <span>{fixedSalaryStatusMsg.text}</span>
-                  <button type="button" onClick={() => setFixedSalaryStatusMsg(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'inherit' }}>
-                    <X size={14} />
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Exact Breakdown Lines from Handwritten Diagram */}
-            <div style={{ marginTop: '16px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-                <tbody>
-                  
-                  {/* Line 1: No of com */}
-                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700', width: '45%' }}>
-                      No. of com (companies / clients)
-                    </td>
-                    <td style={{ padding: '12px 8px', textAlign: 'right' }}>
-                      <span 
-                        style={{ 
-                          display: 'inline-block', 
-                          padding: '3px 14px', 
-                          background: '#F1F5F9', 
-                          border: '1.5px solid #CBD5E1', 
-                          borderRadius: '6px', 
-                          fontWeight: '800', 
-                          fontSize: '1rem', 
-                          color: '#0F172A' 
-                        }}
-                      >
-                        {mb.company_count ?? 0}
-                      </span>
-                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '10px' }}>
-                        ({mb.deals_count ?? 0} invoiced deals)
-                      </span>
-                    </td>
-                  </tr>
-
-                  {/* Line 2: Revenue */}
-                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
-                      Revenue
-                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: '400' }}>
-                        (gross billed)
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '800', fontSize: '1rem', color: 'var(--text-main)' }}>
-                      {formatCurrency(mb.revenue)}
-                    </td>
-                  </tr>
-
-                  {/* Line 3: Our share */}
-                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
-                      Our share
-                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: '400' }}>
-                        (company portion)
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 8px', textAlign: 'right' }}>
-                      <span style={{ fontWeight: '800', fontSize: '1rem', color: '#0F6E56' }}>
-                        {formatCurrency(mb.our_share)}
-                      </span>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
-                        ({mb.verified_count ?? 0} verified, {mb.unverified_count ?? 0} unverified)
-                      </span>
-                    </td>
-                  </tr>
-
-                  {/* Line 4: Salary — Picking from payroll */}
-                  <tr style={{ borderBottom: '1px solid var(--border-color)', background: 'rgba(0, 0, 0, 0.01)' }}>
-                    <td style={{ padding: '12px 8px', color: 'var(--text-main)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                        <span style={{ fontWeight: '700' }}>Salary</span>
-                        <span style={{ fontSize: '0.76rem', padding: '2px 8px', borderRadius: '4px', background: '#E0F2FE', color: '#0369A1', fontWeight: '700' }}>
-                          Picking from payroll
-                        </span>
-                        <div style={{ display: 'inline-flex', borderRadius: '5px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-                          <button
-                            type="button"
-                            onClick={() => setMoneyBoxMode('live')}
-                            style={{
-                              padding: '2px 8px',
-                              fontSize: '0.72rem',
-                              fontWeight: '700',
-                              background: moneyBoxMode === 'live' ? 'var(--accent-teal)' : '#FFFFFF',
-                              color: moneyBoxMode === 'live' ? '#FFFFFF' : 'var(--text-muted)',
-                              border: 'none',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Live ▾
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setMoneyBoxMode('fixed')}
-                            style={{
-                              padding: '2px 8px',
-                              fontSize: '0.72rem',
-                              fontWeight: '700',
-                              background: moneyBoxMode === 'fixed' ? 'var(--accent-teal)' : '#FFFFFF',
-                              color: moneyBoxMode === 'fixed' ? '#FFFFFF' : 'var(--text-muted)',
-                              border: 'none',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Fixed
-                          </button>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px 8px', textAlign: 'right' }}>
-                      {moneyBoxMode === 'live' ? (
-                        mb.salary?.status === 'not_set' || mb.salary?.amount === null ? (
-                          <div>
-                            <span style={{ color: '#DC2626', fontWeight: '700' }}>Not set</span>
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
-                              (0 of {mb.salary?.total_months || 12} months entered in payroll)
-                            </span>
-                          </div>
-                        ) : (
-                          <div>
-                            <span style={{ fontWeight: '800', color: 'var(--text-main)' }}>
-                              {formatCurrency(mb.salary.amount)}
-                            </span>
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'block' }}>
-                              ({mb.salary.label})
-                            </span>
-                          </div>
-                        )
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Monthly fixed:</span>
-                          <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '2px 6px', background: '#FFFFFF' }}>
-                            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginRight: '4px' }}>₹</span>
-                            <input
-                              type="number"
-                              min="0"
-                              placeholder="e.g. 50000"
-                              value={fixedSalaryInput}
-                              onChange={e => setFixedSalaryInput(e.target.value)}
-                              style={{ width: '85px', border: 'none', outline: 'none', fontSize: '0.78rem' }}
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={handleSaveFixedSalary}
-                            disabled={isSavingFixedSalary}
-                            style={{
-                              padding: '4px 10px',
-                              borderRadius: '4px',
-                              background: 'var(--accent-teal)',
-                              color: '#FFFFFF',
-                              border: 'none',
-                              fontSize: '0.72rem',
-                              fontWeight: '700',
-                              cursor: isSavingFixedSalary ? 'not-allowed' : 'pointer'
-                            }}
-                          >
-                            {isSavingFixedSalary ? 'Saving...' : 'Save Fixed'}
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-
-                  {/* Line 5: Expense — Fix */}
-                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '12px 8px', color: 'var(--text-main)' }}>
-                      <span style={{ fontWeight: '700' }}>Expense</span>
-                      <span style={{ fontSize: '0.74rem', padding: '2px 8px', borderRadius: '4px', background: '#F3F4F6', color: '#4B5563', fontWeight: '700', marginLeft: '8px' }}>
-                        Fix
-                      </span>
-                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '6px' }}>
-                        (direct & overhead share)
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
-                      {formatCurrency(mb.expense?.amount ?? mb.other_costs?.amount ?? 0)}
-                    </td>
-                  </tr>
-
-                  {/* Line 6: Balance — [ ... ] */}
-                  <tr style={{ borderBottom: '1px solid var(--border-color)', background: 'rgba(248, 250, 252, 0.7)' }}>
-                    <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
-                      Balance
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: '400' }}>
-                        (Our share − Salary − Expense)
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 8px', textAlign: 'right' }}>
-                      <span 
-                        style={{ 
-                          display: 'inline-block', 
-                          padding: '4px 14px', 
-                          background: '#FFFFFF', 
-                          border: '1.5px solid #94A3B8', 
-                          borderRadius: '6px', 
-                          fontWeight: '800', 
-                          fontSize: '1.02rem', 
-                          color: (mb.balance ?? mb.net) >= 0 ? '#0F6E56' : '#DC2626' 
-                        }}
-                      >
-                        {formatCurrency(mb.balance ?? mb.net)}
-                      </span>
-                    </td>
-                  </tr>
-
-                  {/* Line 7: Net — [ ... ] */}
-                  <tr style={{ borderBottom: '1px solid var(--border-color)', background: 'rgba(15, 110, 86, 0.03)' }}>
-                    <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
-                      Net
-                    </td>
-                    <td style={{ padding: '12px 8px', textAlign: 'right' }}>
-                      <span 
-                        style={{ 
-                          display: 'inline-block', 
-                          padding: '4px 14px', 
-                          background: '#F0FDF4', 
-                          border: '1.5px solid #86EFAC', 
-                          borderRadius: '6px', 
-                          fontWeight: '800', 
-                          fontSize: '1.05rem', 
-                          color: mb.net >= 0 ? '#15803D' : '#DC2626' 
-                        }}
-                      >
-                        {formatCurrency(mb.net)}
-                      </span>
-                    </td>
-                  </tr>
-
-                  {/* Line 8: Income tax : 25% */}
-                  <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
-                      Income tax
-                      <span style={{ fontSize: '0.74rem', padding: '2px 8px', borderRadius: '4px', background: '#FEF3C7', color: '#92400E', fontWeight: '700', marginLeft: '8px' }}>
-                        25%
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
-                      {formatCurrency(mb.income_tax?.amount ?? mb.tax?.amount ?? 0)}
-                    </td>
-                  </tr>
-
-                  {/* Line 9: Surplus — [ ... ] */}
-                  <tr style={{ background: mb.surplus >= 0 ? 'rgba(15, 110, 86, 0.08)' : 'rgba(220, 38, 38, 0.08)' }}>
-                    <td style={{ padding: '14px 8px' }}>
-                      <strong style={{ fontSize: '1.05rem', color: 'var(--text-main)' }}>Surplus</strong>
-                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
-                        (Retained earnings after tax)
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 8px', textAlign: 'right' }}>
-                      <span 
-                        style={{ 
-                          display: 'inline-block', 
-                          padding: '6px 18px', 
-                          background: '#ECFDF5', 
-                          border: '2px solid #10B981', 
-                          borderRadius: '8px', 
-                          fontWeight: '900', 
-                          fontSize: '1.2rem', 
-                          color: mb.surplus >= 0 ? '#047857' : '#DC2626' 
-                        }}
-                      >
-                        {formatCurrency(mb.surplus)}
-                      </span>
-                    </td>
-                  </tr>
-
-                </tbody>
-              </table>
-
-              <div style={{ marginTop: '12px', fontSize: '0.74rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                <span>Reconciliation verified: Balance = Our share − Salary − Expense. Surplus = Net − 25% Tax.</span>
-                <span>Tax estimate: 25% corporate rate.</span>
-              </div>
+                  gap: '6px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                }}
+              >
+                <Save size={14} />
+                {moneyBoxSaving ? 'Saving...' : 'Save Inputs'}
+              </button>
             </div>
           </div>
-        );
-      })()}
+
+          {/* Exact Lines from Money Box Specification */}
+          <div style={{ marginTop: '16px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+              <tbody>
+
+                {/* Line 1: No. of com (companies / clients from handwritten diagram) */}
+                <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700', width: '45%' }}>
+                    No. of com
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: '400' }}>
+                      (companies / corporate clients)
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        padding: '3px 14px',
+                        background: '#F1F5F9',
+                        border: '1.5px solid #CBD5E1',
+                        borderRadius: '6px',
+                        fontWeight: '800',
+                        fontSize: '1rem',
+                        color: '#0F172A'
+                      }}
+                    >
+                      {summaryData?.money_box?.company_count ?? 0}
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '10px' }}>
+                      ({summaryData?.money_box?.deals_count ?? summaryData?.totals?.invoiced?.count ?? 0} invoiced deals)
+                    </span>
+                  </td>
+                </tr>
+
+                {/* Line 2: Revenue (live DB) */}
+                <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
+                    Revenue
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: '400' }}>
+                      (gross billed, live from DB)
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '800', fontSize: '1.05rem', color: 'var(--text-main)' }}>
+                    {summaryLoading ? 'Loading...' : formatCurrency(summaryData?.money_box?.revenue ?? summaryData?.totals?.invoiced?.revenue ?? 0)}
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: 'normal' }}>
+                      ({summaryData?.money_box?.deals_count ?? summaryData?.totals?.invoiced?.count ?? 0} deals)
+                    </span>
+                  </td>
+                </tr>
+
+                {/* Line 3: Our share (live DB) */}
+                <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
+                    Our share
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: '400' }}>
+                      (real per-deal company share from invoices)
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                    <span style={{ fontWeight: '800', fontSize: '1.05rem', color: '#0F6E56' }}>
+                      {summaryLoading ? 'Loading...' : formatCurrency(summaryData?.money_box?.our_share ?? 0)}
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '10px' }}>
+                      ({summaryData?.money_box?.verified_count ?? 0} verified · {summaryData?.money_box?.unverified_count ?? 0} estimated)
+                    </span>
+                  </td>
+                </tr>
+
+                {/* Line 4: Expense (FIXED amount) */}
+                <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
+                    Expense
+                    <span style={{ fontSize: '0.74rem', padding: '2px 8px', borderRadius: '4px', background: '#F3F4F6', color: '#4B5563', fontWeight: '700', marginLeft: '8px' }}>
+                      Fixed
+                    </span>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '6px', fontWeight: '400' }}>
+                      (set once, not computed from other tables)
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '4px 10px', background: '#FFFFFF', minWidth: '180px', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: '600', marginRight: '6px' }}>₹</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="Enter fixed expense"
+                        value={moneyBoxInputs.expense}
+                        onChange={e => {
+                          setMoneyBoxInputs(prev => ({ ...prev, expense: e.target.value }));
+                          setIsMoneyBoxDirty(true);
+                        }}
+                        style={{ width: '130px', border: 'none', outline: 'none', fontSize: '0.9rem', fontWeight: '700', textAlign: 'right', color: 'var(--text-main)' }}
+                      />
+                    </div>
+                  </td>
+                </tr>
+
+                {/* Line 5: Salary (MANUAL entry) */}
+                <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
+                    Salary
+                    <span style={{ fontSize: '0.74rem', padding: '2px 8px', borderRadius: '4px', background: '#E0F2FE', color: '#0369A1', fontWeight: '700', marginLeft: '8px' }}>
+                      Manual Entry
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '4px 10px', background: '#FFFFFF', minWidth: '180px', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)', fontWeight: '600', marginRight: '6px' }}>₹</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="Enter salary"
+                        value={moneyBoxInputs.salary}
+                        onChange={e => {
+                          setMoneyBoxInputs(prev => ({ ...prev, salary: e.target.value }));
+                          setIsMoneyBoxDirty(true);
+                        }}
+                        style={{ width: '130px', border: 'none', outline: 'none', fontSize: '0.9rem', fontWeight: '700', textAlign: 'right', color: 'var(--text-main)' }}
+                      />
+                    </div>
+                  </td>
+                </tr>
+
+                {/* Line 6: Balance (Our share - Salary - Expense from diagram) */}
+                <tr style={{ borderBottom: '1px solid var(--border-color)', background: 'rgba(248, 250, 252, 0.7)' }}>
+                  <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
+                    Balance
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: '400' }}>
+                      (Our share − Salary − Expense)
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        padding: '4px 14px',
+                        background: '#FFFFFF',
+                        border: '1.5px solid #94A3B8',
+                        borderRadius: '6px',
+                        fontWeight: '800',
+                        fontSize: '1.02rem',
+                        color: ((summaryData?.money_box?.our_share || 0) - (Number(moneyBoxInputs.salary) || 0) - (Number(moneyBoxInputs.expense) || 0)) >= 0 ? '#0F6E56' : '#DC2626'
+                      }}
+                    >
+                      {formatCurrency((summaryData?.money_box?.our_share || 0) - (Number(moneyBoxInputs.salary) || 0) - (Number(moneyBoxInputs.expense) || 0))}
+                    </span>
+                  </td>
+                </tr>
+
+                {/* Line 7: Net (MANUAL entry) */}
+                <tr style={{ borderBottom: '1px solid var(--border-color)', background: 'rgba(15, 110, 86, 0.03)' }}>
+                  <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
+                    Net
+                    <span style={{ fontSize: '0.74rem', padding: '2px 8px', borderRadius: '4px', background: '#DCFCE7', color: '#15803D', fontWeight: '700', marginLeft: '8px' }}>
+                      Manual Entry
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 8px', textAlign: 'right' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', border: '1.5px solid #86EFAC', borderRadius: '6px', padding: '4px 10px', background: '#F0FDF4', minWidth: '180px', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#15803D', fontWeight: '700', marginRight: '6px' }}>₹</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="Enter net"
+                        value={moneyBoxInputs.net}
+                        onChange={e => {
+                          setMoneyBoxInputs(prev => ({ ...prev, net: e.target.value }));
+                          setIsMoneyBoxDirty(true);
+                        }}
+                        style={{ width: '130px', border: 'none', outline: 'none', fontSize: '0.95rem', fontWeight: '800', textAlign: 'right', color: '#15803D', background: 'transparent' }}
+                      />
+                    </div>
+                  </td>
+                </tr>
+
+                {/* Line 6: Income tax (FIXED at 25%) */}
+                <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
+                    Income tax
+                    <span style={{ fontSize: '0.74rem', padding: '2px 8px', borderRadius: '4px', background: '#FEF3C7', color: '#92400E', fontWeight: '700', marginLeft: '8px' }}>
+                      25% Fixed
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
+                    {moneyBoxInputs.net !== '' && !isNaN(Number(moneyBoxInputs.net))
+                      ? formatCurrency(Number(moneyBoxInputs.net) * DEFAULT_ESTIMATED_TAX_RATE)
+                      : '25% of Net'
+                    }
+                  </td>
+                </tr>
+
+                {/* Line 7: Surplus (MANUAL entry) */}
+                <tr style={{ background: 'rgba(15, 110, 86, 0.06)' }}>
+                  <td style={{ padding: '14px 8px' }}>
+                    <strong style={{ fontSize: '1.05rem', color: 'var(--text-main)' }}>Surplus</strong>
+                    <span style={{ fontSize: '0.74rem', padding: '2px 8px', borderRadius: '4px', background: '#ECFDF5', color: '#047857', fontWeight: '700', marginLeft: '8px' }}>
+                      Manual Entry
+                    </span>
+                  </td>
+                  <td style={{ padding: '14px 8px', textAlign: 'right' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', border: '2px solid #10B981', borderRadius: '6px', padding: '5px 12px', background: '#ECFDF5', minWidth: '180px', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#047857', fontWeight: '800', marginRight: '6px' }}>₹</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="Enter surplus"
+                        value={moneyBoxInputs.surplus}
+                        onChange={e => {
+                          setMoneyBoxInputs(prev => ({ ...prev, surplus: e.target.value }));
+                          setIsMoneyBoxDirty(true);
+                        }}
+                        style={{ width: '130px', border: 'none', outline: 'none', fontSize: '1.05rem', fontWeight: '900', textAlign: 'right', color: '#047857', background: 'transparent' }}
+                      />
+                    </div>
+                  </td>
+                </tr>
+
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* 2. FILTER ROW (single-select radio group) */}
-      <div 
-        role="radiogroup" 
+      <div
+        role="radiogroup"
         aria-label="Enquiry status filter"
         style={{
           background: '#FFFFFF',
@@ -1894,10 +1981,10 @@ const GrowthTracking = () => {
         const deltaPct = activeFilter === 'invoiced'
           ? summaryData?.deltas_vs_prior?.invoiced_revenue_pct
           : (activeFilter === 'progressed'
-              ? summaryData?.deltas_vs_prior?.progressed_revenue_pct
-              : (activeFilter === 'cancelled'
-                  ? summaryData?.deltas_vs_prior?.cancelled_revenue_pct
-                  : summaryData?.deltas_vs_prior?.all_revenue_pct));
+            ? summaryData?.deltas_vs_prior?.progressed_revenue_pct
+            : (activeFilter === 'cancelled'
+              ? summaryData?.deltas_vs_prior?.cancelled_revenue_pct
+              : summaryData?.deltas_vs_prior?.all_revenue_pct));
 
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 6px 16px 6px', fontSize: '0.88rem', color: 'var(--text-main)', flexWrap: 'wrap' }}>
@@ -1926,7 +2013,7 @@ const GrowthTracking = () => {
       })()}
 
       {/* 4. MAIN STATUS AREA: Funnel Bar + Shared Timeline + Deal Table */}
-      
+
       {/* 4a. Thin Funnel Bar (When All is active) */}
       {activeFilter === 'all' && summaryData?.funnel && (
         <div style={{ background: '#FFFFFF', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '12px 18px', marginBottom: '16px' }}>
@@ -1959,8 +2046,8 @@ const GrowthTracking = () => {
         <div style={{ background: '#FFFFFF', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '14px 18px', marginBottom: '18px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <span style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-main)' }}>
-              {activeFilter === 'all' 
-                ? `Shared 12-Month Timeline (${selectedFy})` 
+              {activeFilter === 'all'
+                ? `Shared 12-Month Timeline (${selectedFy})`
                 : `${activeFilter.charAt(0).toUpperCase() + activeFilter.slice(1)} Monthly Trend (${selectedFy})`}
             </span>
             <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
@@ -1976,7 +2063,7 @@ const GrowthTracking = () => {
               const barHeightPct = Math.min(100, Math.round((activeCount / maxCount) * 100));
 
               return (
-                <div 
+                <div
                   key={idx}
                   style={{
                     background: 'var(--bg-main)',
@@ -2002,7 +2089,7 @@ const GrowthTracking = () => {
                         <div style={{ height: `${m.all > 0 ? (m.cancelled / m.all) * 100 : 0}%`, background: '#EF4444' }} title={`Cancelled: ${m.cancelled}`} />
                       </div>
                     ) : (
-                      <div 
+                      <div
                         style={{
                           width: '12px',
                           height: `${Math.max(8, barHeightPct * 0.55)}px`,
@@ -2243,8 +2330,8 @@ const GrowthTracking = () => {
         {(() => {
           const selfTarget = targetsList.find(t => t.target_author === 'self') || null;
           const ownerTarget = targetsList.find(t => t.target_author === 'owner' || (!t.target_author && t.entity_type !== 'company')) || null;
-          const closedDeals = summaryData?.totals?.invoiced?.count ?? presentDealsCount;
-          const closedRev = summaryData?.totals?.invoiced?.revenue ?? effectiveBaseRevenue;
+          const closedDeals = summaryData?.totals?.invoiced?.count ?? 0;
+          const closedRev = summaryData?.totals?.invoiced?.revenue ?? 0;
 
           const selfDealsTarget = selfTarget?.target_placements || Math.round(Math.max(1, closedDeals) * 1.2);
           const selfRevTarget = selfTarget?.target_revenue || Math.round(closedRev * 1.2);
@@ -2444,8 +2531,8 @@ const GrowthTracking = () => {
             <tbody>
               {(() => {
                 const thisComp = summaryData?.comparisons?.this_period || {};
-                const benchComp = activeBenchmark === 'prior_year' 
-                  ? (summaryData?.comparisons?.prior_period || {}) 
+                const benchComp = activeBenchmark === 'prior_year'
+                  ? (summaryData?.comparisons?.prior_period || {})
                   : (summaryData?.comparisons?.team_average || {});
 
                 const rows = [
@@ -2564,8 +2651,8 @@ const GrowthTracking = () => {
       </details>
 
       {/* 8. ADVANCED SECTION (Collapsed <details>) */}
-      <details 
-        className="advanced-alignment-section" 
+      <details
+        className="advanced-alignment-section"
         style={{
           background: '#FFFFFF',
           border: '1px solid var(--border-color)',
@@ -2749,7 +2836,7 @@ const GrowthTracking = () => {
 
                 {/* Side-by-Side Dual Goal Comparison Columns */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '14px', marginBottom: '16px' }}>
-                  
+
                   {/* Column 1: BD Self-Commitment */}
                   <div style={{ background: 'var(--bg-main)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-color)', borderLeft: '4px solid var(--accent-teal)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -2824,8 +2911,8 @@ const GrowthTracking = () => {
 
                 {/* Performance Variance & Alignment Summary Ribbon */}
                 <div style={{
-                  background: presentDealsCount >= ownerDealsTarget 
-                    ? 'rgba(16, 185, 129, 0.08)' 
+                  background: presentDealsCount >= ownerDealsTarget
+                    ? 'rgba(16, 185, 129, 0.08)'
                     : (presentDealsCount >= selfDealsTarget ? 'rgba(15, 110, 86, 0.05)' : 'rgba(234, 179, 8, 0.06)'),
                   borderRadius: '8px',
                   border: `1px solid ${presentDealsCount >= ownerDealsTarget ? 'rgba(16, 185, 129, 0.25)' : 'var(--border-color)'}`,
@@ -2882,8 +2969,8 @@ const GrowthTracking = () => {
             </div>
             <div>
               <span style={{ fontSize: '0.88rem', fontWeight: '800', color: 'var(--text-main)', display: 'block' }}>
-                {entityType === 'company' 
-                  ? '🏢 Present Agency Baseline: Audited Ground Truth Inflow' 
+                {entityType === 'company'
+                  ? '🏢 Present Agency Baseline: Audited Ground Truth Inflow'
                   : `Present Actuals: ${selectedEntity?.name} ${selectedEntity?.role ? `(${selectedEntity.role})` : ''}`}
               </span>
               <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
@@ -2934,7 +3021,7 @@ const GrowthTracking = () => {
 
       {/* 5-Year Forward Predictive Model & Scale Simulator */}
       <div className="dashboard-card" style={{ marginBottom: '24px' }}>
-        
+
         {/* Performance Acceleration Alert Banner (When historical CAGR is declining) */}
         {!isInsufficientData && !predictionLoading && !predictionError && isHistoricalDeclining && (
           <div style={{
@@ -2958,7 +3045,7 @@ const GrowthTracking = () => {
                   ⚠️ Performance Acceleration Alert: Historical Trajectory is Declining ({historicalCagrPct}%)
                 </div>
                 <p style={{ margin: 0, fontSize: '0.8rem', color: '#7f1d1d', lineHeight: '1.45' }}>
-                  {selectedEntity?.name}'s historical run-rate indicates a compounding volume contraction ({historicalCagrPct}%/yr), projecting annual billing to compress from {formatCurrency(effectiveBaseRevenue)} down to {formatCurrency(inertiaProjections[4]?.projected_revenue || 0)} by Year 5 if no intervention occurs. 
+                  {selectedEntity?.name}'s historical run-rate indicates a compounding volume contraction ({historicalCagrPct}%/yr), projecting annual billing to compress from {formatCurrency(effectiveBaseRevenue)} down to {formatCurrency(inertiaProjections[4]?.projected_revenue || 0)} by Year 5 if no intervention occurs.
                   Below, passive inertia is separated from your <strong>Aspirational Target</strong> plan.
                 </p>
               </div>
@@ -3372,11 +3459,10 @@ const GrowthTracking = () => {
                       padding: '14px',
                       borderRadius: '10px',
                       border: '1px solid var(--border-color)',
-                      borderTop: `3px solid ${
-                        isDecliningCard 
-                          ? '#dc2626' 
+                      borderTop: `3px solid ${isDecliningCard
+                          ? '#dc2626'
                           : (idx === 4 ? '#8b5cf6' : (idx >= 2 ? '#3b82f6' : 'var(--accent-teal)'))
-                      }`,
+                        }`,
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between'
@@ -3398,12 +3484,12 @@ const GrowthTracking = () => {
                           {proj.growth_pct >= 0 ? '+' : ''}{proj.growth_pct}% {forecastTab === 'target' ? 'Target' : 'Inertia'}
                         </span>
                       </div>
-                      
-                      <div style={{ 
-                        fontSize: '1.15rem', 
-                        fontWeight: '800', 
-                        color: isDecliningCard ? '#C81E1E' : '#0F6E56', 
-                        marginBottom: '4px' 
+
+                      <div style={{
+                        fontSize: '1.15rem',
+                        fontWeight: '800',
+                        color: isDecliningCard ? '#C81E1E' : '#0F6E56',
+                        marginBottom: '4px'
                       }}>
                         {formatCurrency(proj.projected_revenue)}
                       </div>
@@ -3418,11 +3504,11 @@ const GrowthTracking = () => {
                             (~{(proj.projected_deals / 12).toFixed(1)}/mo)
                           </span>
                         </span>
-                        
+
                         <span style={{ color: proj.projected_deals >= presentDealsCount ? '#0F6E56' : '#dc2626', fontSize: '0.68rem', fontWeight: '600' }}>
                           {proj.projected_deals >= presentDealsCount ? '+' : ''}{proj.projected_deals - presentDealsCount} deals vs present baseline
                         </span>
-                        
+
                         {/* Fix #2: Distinct styling for cumulative totals */}
                         {forecastTab === 'target' ? (
                           <span style={{ color: 'var(--text-main)', fontWeight: '600' }}>
@@ -3489,7 +3575,7 @@ const GrowthTracking = () => {
 
             {/* Strategic Scale Simulator Callout */}
             <div style={{
-              background: isHistoricalDeclining 
+              background: isHistoricalDeclining
                 ? 'linear-gradient(90deg, rgba(15, 110, 86, 0.08) 0%, rgba(59, 130, 246, 0.05) 100%)'
                 : 'rgba(15, 110, 86, 0.05)',
               border: '1px solid rgba(15, 110, 86, 0.2)',
@@ -3505,8 +3591,8 @@ const GrowthTracking = () => {
               </div>
               <div>
                 <div style={{ fontSize: '0.82rem', fontWeight: '800', color: 'var(--text-main)', marginBottom: '2px' }}>
-                  {entityType === 'company' 
-                    ? '🏢 Overall Company Scale Goal (2x, 3x, 5x Portfolio Growth)' 
+                  {entityType === 'company'
+                    ? '🏢 Overall Company Scale Goal (2x, 3x, 5x Portfolio Growth)'
                     : `💡 Individual Growth Roadmap (${selectedEntity?.name || 'Selected Profile'})`}
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.45' }}>
@@ -3525,164 +3611,164 @@ const GrowthTracking = () => {
 
             {/* 2. Flat Scale Multiplier Scenarios (Exclusively for Overall Company) */}
             {entityType === 'company' && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-                <h5 style={{ margin: 0, fontSize: '0.88rem', fontWeight: '700', color: 'var(--text-main)' }}>
-                  🏢 Overall Company Scale Multiplier Scenarios (1x → 5x Production Velocity)
-                </h5>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  {[1, 2, 3, 4, 5].map(mult => (
-                    <button
-                      key={mult}
-                      onClick={() => setActiveScenarioMultiplier(mult)}
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: '6px',
-                        border: activeScenarioMultiplier === mult ? '1px solid var(--accent-teal)' : '1px solid var(--border-color)',
-                        background: activeScenarioMultiplier === mult ? 'var(--accent-teal)' : 'var(--bg-main)',
-                        color: activeScenarioMultiplier === mult ? '#ffffff' : 'var(--text-main)',
-                        fontSize: '0.74rem',
-                        fontWeight: '600',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {mult}x Company Scale
-                    </button>
-                  ))}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                  <h5 style={{ margin: 0, fontSize: '0.88rem', fontWeight: '700', color: 'var(--text-main)' }}>
+                    🏢 Overall Company Scale Multiplier Scenarios (1x → 5x Production Velocity)
+                  </h5>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    {[1, 2, 3, 4, 5].map(mult => (
+                      <button
+                        key={mult}
+                        onClick={() => setActiveScenarioMultiplier(mult)}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '6px',
+                          border: activeScenarioMultiplier === mult ? '1px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                          background: activeScenarioMultiplier === mult ? 'var(--accent-teal)' : 'var(--bg-main)',
+                          color: activeScenarioMultiplier === mult ? '#ffffff' : 'var(--text-main)',
+                          fontSize: '0.74rem',
+                          fontWeight: '600',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {mult}x Company Scale
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              {/* Scale Multiplier BarChart */}
-              <div style={{ background: 'var(--bg-main)', borderRadius: '10px', padding: '14px 16px', border: '1px solid var(--border-color)', marginBottom: '14px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--text-main)' }}>Scale Level Comparison (1x → 5x)</span>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Gross Billing Volume vs Net Contribution</span>
+                {/* Scale Multiplier BarChart */}
+                <div style={{ background: 'var(--bg-main)', borderRadius: '10px', padding: '14px 16px', border: '1px solid var(--border-color)', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--text-main)' }}>Scale Level Comparison (1x → 5x)</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Gross Billing Volume vs Net Contribution</span>
+                  </div>
+                  <BarChart
+                    data={scaleChartData}
+                    series1Key="revenue"
+                    series2Key="netRetention"
+                    series1Label="Gross Billing Target"
+                    series2Label="Company Margin (ourShare)"
+                    series1Color="#10b981"
+                    series2Color="#0F6E56"
+                    height={120}
+                  />
                 </div>
-                <BarChart
-                  data={scaleChartData}
-                  series1Key="revenue"
-                  series2Key="netRetention"
-                  series1Label="Gross Billing Target"
-                  series2Label="Company Margin (ourShare)"
-                  series1Color="#10b981"
-                  series2Color="#0F6E56"
-                  height={120}
-                />
-              </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
-                {[1, 2, 3, 4, 5].map(mult => {
-                  const key = `scale${mult}x`;
-                  const scaledDeals = presentDealsCount * mult;
-                  const scRevenue = effectiveBaseRevenue * mult;
-                  const scNet = Math.round(scRevenue * netRetentionRate);
-                  const isSelected = activeScenarioMultiplier === mult;
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
+                  {[1, 2, 3, 4, 5].map(mult => {
+                    const key = `scale${mult}x`;
+                    const scaledDeals = presentDealsCount * mult;
+                    const scRevenue = effectiveBaseRevenue * mult;
+                    const scNet = Math.round(scRevenue * netRetentionRate);
+                    const isSelected = activeScenarioMultiplier === mult;
 
-                  return (
-                    <div
-                      key={key}
-                      onClick={() => setActiveScenarioMultiplier(mult)}
-                      style={{
-                        padding: '12px',
-                        borderRadius: '8px',
-                        border: isSelected ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
-                        background: isSelected ? 'rgba(15, 110, 86, 0.04)' : 'var(--bg-main)',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
-                        <span style={{ fontSize: '0.74rem', fontWeight: '700', color: isSelected ? 'var(--accent-teal)' : 'var(--text-muted)' }}>
-                          {mult}x {mult === 1 ? 'Current Base' : 'Scale'}
-                        </span>
-                        <span style={{ fontSize: '0.68rem', fontWeight: '700', color: '#2563EB', background: 'rgba(37, 99, 235, 0.08)', padding: '1px 5px', borderRadius: '3px' }}>
-                          {scaledDeals} deals
+                    return (
+                      <div
+                        key={key}
+                        onClick={() => setActiveScenarioMultiplier(mult)}
+                        style={{
+                          padding: '12px',
+                          borderRadius: '8px',
+                          border: isSelected ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
+                          background: isSelected ? 'rgba(15, 110, 86, 0.04)' : 'var(--bg-main)',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                          <span style={{ fontSize: '0.74rem', fontWeight: '700', color: isSelected ? 'var(--accent-teal)' : 'var(--text-muted)' }}>
+                            {mult}x {mult === 1 ? 'Current Base' : 'Scale'}
+                          </span>
+                          <span style={{ fontSize: '0.68rem', fontWeight: '700', color: '#2563EB', background: 'rgba(37, 99, 235, 0.08)', padding: '1px 5px', borderRadius: '3px' }}>
+                            {scaledDeals} deals
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '1.05rem', fontWeight: '800', color: 'var(--text-main)', marginBottom: '2px' }}>
+                          {formatCurrency(scRevenue)}
+                        </div>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block' }}>
+                          Company Margin: {formatCurrency(scNet)} <span style={{ opacity: 0.7 }}>({(netRetentionRate * 100).toFixed(1)}%)</span>
                         </span>
                       </div>
-                      <div style={{ fontSize: '1.05rem', fontWeight: '800', color: 'var(--text-main)', marginBottom: '2px' }}>
-                        {formatCurrency(scRevenue)}
-                      </div>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'block' }}>
-                        Company Margin: {formatCurrency(scNet)} <span style={{ opacity: 0.7 }}>({(netRetentionRate * 100).toFixed(1)}%)</span>
+                    );
+                  })}
+                </div>
+
+                {/* Company Macro Multiplier Execution Plan across Team Leaders */}
+                <div style={{ background: 'var(--bg-card)', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '16px', marginTop: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div>
+                      <h6 style={{ margin: 0, fontSize: '0.86rem', fontWeight: '800', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>🎯 Execution Plan: How Team Leaders Deliver {activeScenarioMultiplier}x Scale ({formatCurrency(effectiveBaseRevenue * activeScenarioMultiplier)})</span>
+                        <span style={{ fontSize: '0.68rem', background: 'rgba(16, 185, 129, 0.1)', color: '#10B981', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: '700' }}>
+                          ● Live CRM Synced
+                        </span>
+                      </h6>
+                      <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                        Target quotas calculated dynamically from live CRM database ({liveTeamLeaderQuotas.length} active Team Leaders) to achieve {presentDealsCount * activeScenarioMultiplier} annual placements (~{Math.round((presentDealsCount * activeScenarioMultiplier) / 12)} deals/month).
                       </span>
                     </div>
-                  );
-                })}
-              </div>
-
-              {/* Company Macro Multiplier Execution Plan across Team Leaders */}
-              <div style={{ background: 'var(--bg-card)', borderRadius: '10px', border: '1px solid var(--border-color)', padding: '16px', marginTop: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-                  <div>
-                    <h6 style={{ margin: 0, fontSize: '0.86rem', fontWeight: '800', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span>🎯 Execution Plan: How Team Leaders Deliver {activeScenarioMultiplier}x Scale ({formatCurrency(effectiveBaseRevenue * activeScenarioMultiplier)})</span>
-                      <span style={{ fontSize: '0.68rem', background: 'rgba(16, 185, 129, 0.1)', color: '#10B981', border: '1px solid rgba(16, 185, 129, 0.3)', padding: '2px 8px', borderRadius: '4px', fontWeight: '700' }}>
-                        ● Live CRM Synced
-                      </span>
-                    </h6>
-                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                      Target quotas calculated dynamically from live CRM database ({liveTeamLeaderQuotas.length} active Team Leaders) to achieve {presentDealsCount * activeScenarioMultiplier} annual placements (~{Math.round((presentDealsCount * activeScenarioMultiplier) / 12)} deals/month).
+                    <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '4px', background: 'rgba(15, 110, 86, 0.12)', color: 'var(--accent-teal)', fontWeight: '700' }}>
+                      Macro Multiplier: {activeScenarioMultiplier}.0x
                     </span>
                   </div>
-                  <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '4px', background: 'rgba(15, 110, 86, 0.12)', color: 'var(--accent-teal)', fontWeight: '700' }}>
-                    Macro Multiplier: {activeScenarioMultiplier}.0x
-                  </span>
-                </div>
 
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
-                    <thead>
-                      <tr style={{ background: 'var(--bg-main)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', textAlign: 'left' }}>
-                        <th style={{ padding: '8px 10px' }}>Team Leader</th>
-                        <th style={{ padding: '8px 10px', textAlign: 'center' }}>Active Franchises</th>
-                        <th style={{ padding: '8px 10px', textAlign: 'center' }}>Current Deals (Live)</th>
-                        <th style={{ padding: '8px 10px', textAlign: 'center' }}>{activeScenarioMultiplier}x Target Deals</th>
-                        <th style={{ padding: '8px 10px', textAlign: 'right' }}>Target Billing</th>
-                        <th style={{ padding: '8px 10px', textAlign: 'center' }}>Franchise Productivity Needed</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {liveTeamLeaderQuotas.map((tl, idx) => {
-                        const targetDeals = Math.round(tl.baseDeals * activeScenarioMultiplier);
-                        const targetBilling = Math.round((effectiveBaseRevenue > 0 ? effectiveBaseRevenue : 95000000) * activeScenarioMultiplier * tl.share);
-                        const monthlyPerStore = (targetDeals / Math.max(1, tl.activeFranchises) / 12).toFixed(2);
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--bg-main)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', textAlign: 'left' }}>
+                          <th style={{ padding: '8px 10px' }}>Team Leader</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'center' }}>Active Franchises</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'center' }}>Current Deals (Live)</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'center' }}>{activeScenarioMultiplier}x Target Deals</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'right' }}>Target Billing</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'center' }}>Franchise Productivity Needed</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {liveTeamLeaderQuotas.map((tl, idx) => {
+                          const targetDeals = Math.round(tl.baseDeals * activeScenarioMultiplier);
+                          const targetBilling = Math.round((effectiveBaseRevenue > 0 ? effectiveBaseRevenue : 95000000) * activeScenarioMultiplier * tl.share);
+                          const monthlyPerStore = (targetDeals / Math.max(1, tl.activeFranchises) / 12).toFixed(2);
 
-                        return (
-                          <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                            <td style={{ padding: '10px', fontWeight: '700', color: 'var(--text-main)' }}>
-                              <div>{tl.name}</div>
-                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: '400' }}>
-                                {(tl.share * 100).toFixed(1)}% of agency volume
-                              </div>
-                            </td>
-                            <td style={{ padding: '10px', textAlign: 'center' }}>
-                              <span style={{ color: '#2563EB', fontWeight: '700' }}>{tl.activeFranchises} stores</span>
-                              {tl.billingStores && tl.billingStores !== tl.activeFranchises && (
-                                <span style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                                  ({tl.billingStores} active billing)
+                          return (
+                            <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                              <td style={{ padding: '10px', fontWeight: '700', color: 'var(--text-main)' }}>
+                                <div>{tl.name}</div>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: '400' }}>
+                                  {(tl.share * 100).toFixed(1)}% of agency volume
+                                </div>
+                              </td>
+                              <td style={{ padding: '10px', textAlign: 'center' }}>
+                                <span style={{ color: '#2563EB', fontWeight: '700' }}>{tl.activeFranchises} stores</span>
+                                {tl.billingStores && tl.billingStores !== tl.activeFranchises && (
+                                  <span style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                                    ({tl.billingStores} active billing)
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: '10px', textAlign: 'center', fontWeight: '600' }}>{tl.baseDeals} deals</td>
+                              <td style={{ padding: '10px', textAlign: 'center', fontWeight: '800', color: '#10B981' }}>{targetDeals} deals</td>
+                              <td style={{ padding: '10px', textAlign: 'right', fontWeight: '700' }}>{formatCurrency(targetBilling)}</td>
+                              <td style={{ padding: '10px', textAlign: 'center' }}>
+                                <span style={{ padding: '2px 8px', borderRadius: '4px', background: 'rgba(37, 99, 235, 0.08)', color: '#2563EB', fontWeight: '700' }}>
+                                  {monthlyPerStore} deals/store/mo
                                 </span>
-                              )}
-                            </td>
-                            <td style={{ padding: '10px', textAlign: 'center', fontWeight: '600' }}>{tl.baseDeals} deals</td>
-                            <td style={{ padding: '10px', textAlign: 'center', fontWeight: '800', color: '#10B981' }}>{targetDeals} deals</td>
-                            <td style={{ padding: '10px', textAlign: 'right', fontWeight: '700' }}>{formatCurrency(targetBilling)}</td>
-                            <td style={{ padding: '10px', textAlign: 'center' }}>
-                              <span style={{ padding: '2px 8px', borderRadius: '4px', background: 'rgba(37, 99, 235, 0.08)', color: '#2563EB', fontWeight: '700' }}>
-                                {monthlyPerStore} deals/store/mo
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-        </>
-      )}
-    </div>
+            )}
+          </>
+        )}
+      </div>
 
       {/* Target History & Outcome Tracking Table */}
       <div className="dashboard-card">
