@@ -610,6 +610,7 @@ def get_transactions():
                         WHERE e.enquiryStatus IN ('closed', 'offered_and_accepted')
                           AND COALESCE(e.bill_amount, e.placementFees, 0) > 0
                           AND e.id NOT IN (127907, 132500, 132501, 132505, 136084)
+                          AND e.id NOT IN (SELECT enquiry_id FROM invoice WHERE enquiry_id IS NOT NULL)
                           AND {enq_exclude_clause}
                           AND COALESCE(e.bill_date, e.dateOfAllocation, e.created_at) >= '2026-04-01'
                           AND COALESCE(e.bill_date, e.dateOfAllocation, e.created_at) < '2027-04-01'
