@@ -1142,18 +1142,26 @@ const RunwayRoiTracker = ({ setActivePage }) => {
                       }
                     })
                     .map((cat, idx) => {
+                      const matchesCategory = (t) => {
+                        if (t.type !== cat.type) return false;
+                        if (cat.name === 'Salaries') {
+                          return t.category === 'Salaries' || t.category === 'Salaries & Wages' || Boolean(t.is_payroll);
+                        }
+                        return t.category === cat.name;
+                      };
+
                       const vApr = transactions
-                        .filter(t => t.category === cat.name && t.type === cat.type && getMonthAndYear(t.date) === monthsList[0])
-                        .reduce((sum, t) => sum + t.amount, 0);
+                        .filter(t => matchesCategory(t) && getMonthAndYear(t.date) === monthsList[0])
+                        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
                       const vMay = transactions
-                        .filter(t => t.category === cat.name && t.type === cat.type && getMonthAndYear(t.date) === monthsList[1])
-                        .reduce((sum, t) => sum + t.amount, 0);
+                        .filter(t => matchesCategory(t) && getMonthAndYear(t.date) === monthsList[1])
+                        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
                       const vJun = transactions
-                        .filter(t => t.category === cat.name && t.type === cat.type && getMonthAndYear(t.date) === monthsList[2])
-                        .reduce((sum, t) => sum + t.amount, 0);
+                        .filter(t => matchesCategory(t) && getMonthAndYear(t.date) === monthsList[2])
+                        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
                       const vJul = transactions
-                        .filter(t => t.category === cat.name && t.type === cat.type && getMonthAndYear(t.date) === monthsList[3])
-                        .reduce((sum, t) => sum + t.amount, 0);
+                        .filter(t => matchesCategory(t) && getMonthAndYear(t.date) === monthsList[3])
+                        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
                       // Calculate MoM growth (June vs July)
                       let growthRate = 0;

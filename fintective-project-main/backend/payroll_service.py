@@ -368,8 +368,8 @@ def get_payroll_transactions_for_fy(financial_year: str = '2026-2027') -> List[D
                 'companyName': f"Payroll ({month_label})",
                 'amount': float(calc['ctc']),  # Company CTC cost
                 'type': 'expense',
-                'category': 'Salaries & Wages',
-                'subCategory': 'Employee CTC',
+                'category': 'Salaries',
+                'subCategory': 'Salaries & Wages',
                 'date': calc.get('payment_date') or month_date_str,
                 'paymentMode': 'Direct Bank Transfer',
                 'referenceId': calc.get('transaction_id') or f"PAY-{financial_year}-{m}-{emp_id}",
@@ -393,6 +393,52 @@ def get_all_payroll_transactions() -> List[Dict[str, Any]]:
     if _cached_all_payroll is not None:
         return _cached_all_payroll
     
+    # 1. Try reading directly from MySQL payroll_records table
+    try:
+        from db import get_db_connection
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, employee_id, employee_name, department, financial_year,
+                       DATE_FORMAT(date, '%Y-%m-%d') as date, ctc_amount, net_payable,
+                       fixed_gross, paid_days, category, sub_category, payment_mode,
+                       reference_id, description
+                FROM payroll_records
+                ORDER BY date DESC
+            """)
+            db_rows = cur.fetchall()
+            if db_rows and len(db_rows) > 0:
+                txs = []
+                for r in db_rows:
+                    txs.append({
+                        'id': r['id'],
+                        'title': f"Salary: {r['employee_name']}",
+                        'companyName': f"Payroll ({r['date'][:7]})",
+                        'amount': float(r['ctc_amount'] or 0),
+                        'type': 'expense',
+                        'category': 'Salaries',
+                        'subCategory': r.get('sub_category') or 'Salaries & Wages',
+                        'date': r['date'],
+                        'paymentMode': r.get('payment_mode') or 'Direct Bank Transfer',
+                        'referenceId': r.get('reference_id') or f"PAY-{r['id']}",
+                        'description': r.get('description') or f"Payroll CTC for {r['employee_name']}",
+                        'financialYear': r.get('financial_year') or '2026-2027',
+                        'is_payroll': True,
+                        'employeeId': r.get('employee_id'),
+                        'employeeName': r.get('employee_name'),
+                        'department': r.get('department'),
+                        'netPayable': float(r.get('net_payable') or 0),
+                        'fixedGross': float(r.get('fixed_gross') or 0),
+                        'paidDays': float(r.get('paid_days') or 0)
+                    })
+                conn.close()
+                _cached_all_payroll = txs
+                return txs
+        conn.close()
+    except Exception as db_err:
+        print("[Payroll Service] DB read notice:", db_err)
+
+    # 2. Disk cache fallback
     cache_file = os.path.join(CACHE_DIR, 'all_payroll_txs.json')
     if os.path.exists(cache_file):
         try:
@@ -402,7 +448,7 @@ def get_all_payroll_transactions() -> List[Dict[str, Any]]:
         except Exception:
             pass
 
-    # Always ensure current financial year is loaded immediately
+    # 3. Live API fallback
     all_txs = []
     try:
         fy_26_txs = get_payroll_transactions_for_fy('2026-2027')
@@ -410,20 +456,7 @@ def get_all_payroll_transactions() -> List[Dict[str, Any]]:
     except Exception as e:
         print("[Payroll Service] Note on FY 2026-2027:", e)
     
-    # Check if 2023-2024 is cached on disk
-    if os.path.exists(os.path.join(CACHE_DIR, 'att_2023-2024_0.json')):
-        try:
-            fy_23_txs = get_payroll_transactions_for_fy('2023-2024')
-            all_txs.extend(fy_23_txs)
-        except Exception:
-            pass
-    
     _cached_all_payroll = all_txs
-    try:
-        with open(cache_file, 'w', encoding='utf-8') as f:
-            json.dump(all_txs, f)
-    except Exception:
-        pass
     return all_txs
 
 
