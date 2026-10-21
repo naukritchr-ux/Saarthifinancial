@@ -1753,50 +1753,33 @@ def compare_growth_scopes():
             scope_key = r_sc['scope_key']
 
             where_clauses = [
-                "LOWER(TRIM(COALESCE(e.bdMemberName, ''))) NOT IN ('head office', 'head  - office', 'head - office', '')",
-                "(LOWER(TRIM(COALESCE(e.enquiryStatus, ''))) IN ('closed', 'offered_and_accepted', 'invoiced', 'r', 'rv', 'billed', 'collected') OR (e.bill_no IS NOT NULL AND e.bill_no != ''))",
-                "LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) >= %s",
-                "LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) <= %s"
+                "i.is_revenue = 1",
+                "i.billDate >= %s",
+                "i.billDate <= %s",
+                "LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) NOT IN ('head office', 'head  - office', 'head - office', '')"
             ]
             params = [cur_start, cur_end]
 
             if bd != 'All':
-                where_clauses.append("(LOWER(TRIM(e.bdMemberName)) = %s OR LOWER(TRIM(e.bdMemberName)) LIKE %s)")
+                where_clauses.append("(LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) = %s OR LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) LIKE %s)")
                 params.extend([bd.lower(), f"%{bd.lower()}%"])
             if tl != 'All':
-                where_clauses.append("(LOWER(TRIM(e.teamLeaderName)) = %s OR LOWER(TRIM(e.teamLeaderName)) LIKE %s)")
+                where_clauses.append("(LOWER(TRIM(COALESCE(NULLIF(TRIM(i.teamLeader), ''), NULLIF(TRIM(e.teamLeaderName), '')))) = %s OR LOWER(TRIM(COALESCE(NULLIF(TRIM(i.teamLeader), ''), NULLIF(TRIM(e.teamLeaderName), '')))) LIKE %s)")
                 params.extend([tl.lower(), f"%{tl.lower()}%"])
             if fn != 'All':
-                where_clauses.append("(LOWER(TRIM(e.franchiseeName)) = %s OR LOWER(TRIM(e.franchiseeName)) LIKE %s)")
+                where_clauses.append("(LOWER(TRIM(COALESCE(NULLIF(TRIM(i.franchiseName), ''), NULLIF(TRIM(e.franchiseeName), '')))) = %s OR LOWER(TRIM(COALESCE(NULLIF(TRIM(i.franchiseName), ''), NULLIF(TRIM(e.franchiseeName), '')))) LIKE %s)")
                 params.extend([fn.lower(), f"%{fn.lower()}%"])
 
             metric_query = f"""
                 SELECT 
-                    COUNT(DISTINCT LOWER(TRIM(e.companyName))) as companies,
+                    COUNT(DISTINCT LOWER(TRIM(i.companyName))) as companies,
                     COUNT(*) as invoiced_deals,
-                    COALESCE(SUM(COALESCE(e.bill_amount, 0)), 0) as revenue,
-                    COALESCE(SUM(
-                        COALESCE(
-                            inv_enq.ourShare, 
-                            inv_bill.ourShare, 
-                            CASE 
-                                WHEN f.onboardingDate IS NOT NULL AND TIMESTAMPDIFF(YEAR, LEFT(f.onboardingDate, 10), COALESCE(e.bill_date, e.dateOfAllocation, e.created_at)) >= 3 THEN e.bill_amount * 0.30
-                                ELSE e.bill_amount * 0.25 
-                            END
-                        )
-                    ), 0) as our_share,
-                    SUM(CASE WHEN (inv_enq.ourShare IS NOT NULL OR inv_bill.ourShare IS NOT NULL) THEN 1 ELSE 0 END) as verified_count,
-                    SUM(CASE WHEN (inv_enq.ourShare IS NULL AND inv_bill.ourShare IS NULL) THEN 1 ELSE 0 END) as estimated_count
-                FROM enquiries e
-                LEFT JOIN franchisees f ON TRIM(LOWER(f.nameAsPerAgreement)) = TRIM(LOWER(e.franchiseeName))
-                LEFT JOIN (
-                    SELECT enquiry_id, MAX(ourShare) as ourShare 
-                    FROM v_invoice_clean WHERE is_revenue = 1 AND enquiry_id IS NOT NULL AND enquiry_id > 0 GROUP BY enquiry_id
-                ) inv_enq ON inv_enq.enquiry_id = e.id
-                LEFT JOIN (
-                    SELECT billNumber, MAX(ourShare) as ourShare 
-                    FROM v_invoice_clean WHERE is_revenue = 1 AND billNumber IS NOT NULL AND billNumber != '' GROUP BY billNumber
-                ) inv_bill ON (inv_enq.enquiry_id IS NULL AND e.bill_no IS NOT NULL AND e.bill_no != '' AND inv_bill.billNumber = e.bill_no)
+                    COALESCE(SUM(i.totalBillAmt), 0.0) as revenue,
+                    COALESCE(SUM(i.ourShare), 0.0) as our_share,
+                    COUNT(*) as verified_count,
+                    0 as estimated_count
+                FROM v_invoice_clean i
+                LEFT JOIN enquiries e ON i.enquiry_id = e.id
                 WHERE {' AND '.join(where_clauses)}
             """
             cursor.execute(metric_query, params)
@@ -2084,59 +2067,77 @@ def get_growth_targets_summary():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # 1. Fetch current FY enquiries with joined invoice share information
-        where_clauses = [
-            "LOWER(TRIM(COALESCE(e.bdMemberName, ''))) NOT IN ('head office', 'head  - office', 'head - office', '')",
-            "LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) >= %s",
-            "LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) <= %s"
+        # 1. Fetch current FY invoiced deals from v_invoice_clean (single source of truth for revenue)
+        inv_where = [
+            "i.is_revenue = 1",
+            "i.billDate >= %s",
+            "i.billDate <= %s",
+            "LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) NOT IN ('head office', 'head  - office', 'head - office', '')"
         ]
-        params = [cur_start, cur_end]
-
+        inv_params = [cur_start, cur_end]
         if bd_param and bd_param.lower() != 'all':
-            where_clauses.append("(LOWER(TRIM(e.bdMemberName)) = %s OR LOWER(TRIM(e.bdMemberName)) LIKE %s)")
-            params.extend([bd_param.lower(), f"%{bd_param.lower()}%"])
+            inv_where.append("(LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) = %s OR LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) LIKE %s)")
+            inv_params.extend([bd_param.lower(), f"%{bd_param.lower()}%"])
         if tl_param and tl_param.lower() != 'all':
-            where_clauses.append("(LOWER(TRIM(e.teamLeaderName)) = %s OR LOWER(TRIM(e.teamLeaderName)) LIKE %s)")
-            params.extend([tl_param.lower(), f"%{tl_param.lower()}%"])
+            inv_where.append("(LOWER(TRIM(COALESCE(NULLIF(TRIM(i.teamLeader), ''), NULLIF(TRIM(e.teamLeaderName), '')))) = %s OR LOWER(TRIM(COALESCE(NULLIF(TRIM(i.teamLeader), ''), NULLIF(TRIM(e.teamLeaderName), '')))) LIKE %s)")
+            inv_params.extend([tl_param.lower(), f"%{tl_param.lower()}%"])
         if franchise_param and franchise_param.lower() != 'all':
-            where_clauses.append("(LOWER(TRIM(e.franchiseeName)) = %s OR LOWER(TRIM(e.franchiseeName)) LIKE %s)")
-            params.extend([franchise_param.lower(), f"%{franchise_param.lower()}%"])
+            inv_where.append("(LOWER(TRIM(COALESCE(NULLIF(TRIM(i.franchiseName), ''), NULLIF(TRIM(e.franchiseeName), '')))) = %s OR LOWER(TRIM(COALESCE(NULLIF(TRIM(i.franchiseName), ''), NULLIF(TRIM(e.franchiseeName), '')))) LIKE %s)")
+            inv_params.extend([franchise_param.lower(), f"%{franchise_param.lower()}%"])
 
-        query = f"""
+        inv_query = f"""
+            SELECT 
+                i.id as invoice_id, i.enquiry_id, i.billNumber, i.billDate, i.totalBillAmt, i.rev_ex_gst,
+                i.ourShare, i.franchiseeShare, i.companyName, i.candidateName, i.postOfCandidate,
+                COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')) as bdMemberName,
+                COALESCE(NULLIF(TRIM(i.teamLeader), ''), NULLIF(TRIM(e.teamLeaderName), '')) as teamLeaderName,
+                COALESCE(NULLIF(TRIM(i.franchiseName), ''), NULLIF(TRIM(e.franchiseeName), '')) as franchiseeName,
+                i.status as inv_status,
+                e.id as enq_id, e.industry, e.positionName as enq_position, e.info as enq_info,
+                f.onboardingDate
+            FROM v_invoice_clean i
+            LEFT JOIN enquiries e ON i.enquiry_id = e.id
+            LEFT JOIN franchisees f ON TRIM(LOWER(f.nameAsPerAgreement)) = TRIM(LOWER(COALESCE(NULLIF(TRIM(i.franchiseName), ''), NULLIF(TRIM(e.franchiseeName), ''))))
+            WHERE {' AND '.join(inv_where)}
+            ORDER BY i.billDate DESC
+        """
+        cursor.execute(inv_query, inv_params)
+        inv_rows = cursor.fetchall()
+
+        # 2. Fetch current FY pipeline enquiries (non-invoiced)
+        enq_where = [
+            "LOWER(TRIM(COALESCE(e.bdMemberName, ''))) NOT IN ('head office', 'head  - office', 'head - office', '')",
+            "LEFT(COALESCE(e.dateOfAllocation, e.created_at), 10) >= %s",
+            "LEFT(COALESCE(e.dateOfAllocation, e.created_at), 10) <= %s"
+        ]
+        enq_params = [cur_start, cur_end]
+        if bd_param and bd_param.lower() != 'all':
+            enq_where.append("(LOWER(TRIM(e.bdMemberName)) = %s OR LOWER(TRIM(e.bdMemberName)) LIKE %s)")
+            enq_params.extend([bd_param.lower(), f"%{bd_param.lower()}%"])
+        if tl_param and tl_param.lower() != 'all':
+            enq_where.append("(LOWER(TRIM(e.teamLeaderName)) = %s OR LOWER(TRIM(e.teamLeaderName)) LIKE %s)")
+            enq_params.extend([tl_param.lower(), f"%{tl_param.lower()}%"])
+        if franchise_param and franchise_param.lower() != 'all':
+            enq_where.append("(LOWER(TRIM(e.franchiseeName)) = %s OR LOWER(TRIM(e.franchiseeName)) LIKE %s)")
+            enq_params.extend([franchise_param.lower(), f"%{franchise_param.lower()}%"])
+
+        enq_query = f"""
             SELECT 
                 e.id, e.companyName, e.positionName, e.bdMemberName, e.teamLeaderName, e.franchiseeName,
                 e.enquiryStatus, e.bill_no, e.bill_date, e.bill_amount, e.placementFees,
-                e.industry, e.info,
+                e.industry, e.info, e.dateOfAllocation, e.created_at,
                 f.onboardingDate,
-                COALESCE(inv_enq.ourShare, inv_bill.ourShare) as inv_our_share,
-                COALESCE(inv_enq.franchiseeShare, inv_bill.franchiseeShare) as inv_franchisee_share,
-                LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) as effective_date
+                LEFT(COALESCE(e.dateOfAllocation, e.created_at), 10) as effective_date
             FROM enquiries e
             LEFT JOIN franchisees f ON TRIM(LOWER(f.nameAsPerAgreement)) = TRIM(LOWER(e.franchiseeName))
-            LEFT JOIN (
-                SELECT 
-                    enquiry_id,
-                    MAX(ourShare) as ourShare,
-                    MAX(franchiseeShare) as franchiseeShare
-                FROM v_invoice_clean 
-                WHERE is_revenue = 1 AND enquiry_id IS NOT NULL AND enquiry_id > 0
-                GROUP BY enquiry_id
-            ) inv_enq ON inv_enq.enquiry_id = e.id
-            LEFT JOIN (
-                SELECT 
-                    billNumber,
-                    MAX(ourShare) as ourShare,
-                    MAX(franchiseeShare) as franchiseeShare
-                FROM v_invoice_clean 
-                WHERE is_revenue = 1 AND billNumber IS NOT NULL AND billNumber != ''
-                GROUP BY billNumber
-            ) inv_bill ON (inv_enq.enquiry_id IS NULL AND e.bill_no IS NOT NULL AND e.bill_no != '' AND inv_bill.billNumber = e.bill_no)
-            WHERE {' AND '.join(where_clauses)}
+            WHERE {' AND '.join(enq_where)}
             ORDER BY effective_date DESC
         """
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
+        cursor.execute(enq_query, enq_params)
+        enq_rows = cursor.fetchall()
 
+        billed_enq_ids = set(r['enquiry_id'] for r in inv_rows if r['enquiry_id'])
+        billed_bill_nos = set(r['billNumber'] for r in inv_rows if r['billNumber'])
 
         # Monthly buckets: Apr of start_year to Mar of start_year+1
         fy_months = []
@@ -2172,8 +2173,53 @@ def get_growth_targets_summary():
         }
 
         deals = []
-        for r in rows:
+        # Populate invoiced deals from v_invoice_clean
+        for r in inv_rows:
+            amt = float(r['totalBillAmt'] or 0.0)
+            our_share = float(r['ourShare'] or 0.0)
+            f_share = float(r['franchiseeShare'] or 0.0)
+            bdate = str(r['billDate'] or '')[:10]
+            ym = bdate[:7]
+
+            totals['invoiced']['count'] += 1
+            totals['invoiced']['revenue'] += amt
+            totals['all']['count'] += 1
+            totals['all']['revenue'] += amt
+
+            if ym in monthly_map:
+                monthly_map[ym]['invoiced'] += 1
+                monthly_map[ym]['invoiced_revenue'] += amt
+                monthly_map[ym]['all'] += 1
+                monthly_map[ym]['all_revenue'] += amt
+
+            deals.append({
+                'id': f"INV-{r['invoice_id']}",
+                'referenceId': r['billNumber'] or f"INV-{r['invoice_id']}",
+                'companyName': r.get('companyName') or 'Corporate Client',
+                'positionName': r.get('postOfCandidate') or r.get('enq_position') or 'Mandate',
+                'candidateName': r.get('candidateName') or r.get('enq_info') or 'Candidate Placement',
+                'bdMemberName': r.get('bdMemberName') or '',
+                'teamLeaderName': r.get('teamLeaderName') or '',
+                'franchiseeName': r.get('franchiseeName') or '',
+                'date': bdate,
+                'amount': amt,
+                'our_share': round(our_share, 2),
+                'is_verified': True,
+                'franchisee_share': round(f_share, 2),
+                'raw_status': r.get('inv_status') or 'invoiced',
+                'status': 'invoiced',
+                'bill_no': r.get('billNumber') or '',
+                'industry': r.get('industry') or ''
+            })
+
+        # Populate open pipeline / cancelled enquiries from enquiries table
+        for r in enq_rows:
             st = _classify_backend_status(r['enquiryStatus'])
+            if r['id'] in billed_enq_ids or (r['bill_no'] and r['bill_no'] in billed_bill_nos):
+                continue
+            if st == 'invoiced':
+                continue
+
             amt = float(r['bill_amount'] or 0.0)
             edate = str(r['effective_date'] or '')[:10]
             ym = edate[:7]
@@ -2189,24 +2235,12 @@ def get_growth_targets_summary():
                 monthly_map[ym]['all'] += 1
                 monthly_map[ym]['all_revenue'] += amt
 
-            # Tenure-aware fallback: 70-30 for >=3 years, 75-25 for <3 years
             split = get_franchisee_tenure_split(
                 onboarding_date=r.get('onboardingDate'),
                 bill_date=edate
             )
-            raw_our_share = r.get('inv_our_share')
-            raw_f_share = r.get('inv_franchisee_share')
-            if raw_our_share is not None and float(raw_our_share) > 0:
-                deal_our_share = float(raw_our_share)
-                is_ver = True
-            else:
-                deal_our_share = amt * split['company_pct']
-                is_ver = False
-
-            if raw_f_share is not None and float(raw_f_share) > 0:
-                deal_f_share = float(raw_f_share)
-            else:
-                deal_f_share = amt * split['franchisee_pct']
+            deal_our_share = amt * split['company_pct']
+            deal_f_share = amt * split['franchisee_pct']
 
             deals.append({
                 'id': r['id'],
@@ -2220,7 +2254,7 @@ def get_growth_targets_summary():
                 'date': edate,
                 'amount': amt,
                 'our_share': round(deal_our_share, 2),
-                'is_verified': is_ver,
+                'is_verified': False,
                 'franchisee_share': round(deal_f_share, 2),
                 'raw_status': r.get('enquiryStatus') or '',
                 'status': st,
@@ -2242,35 +2276,63 @@ def get_growth_targets_summary():
             m['other_revenue'] = round(m['other_revenue'], 2)
             m['all_revenue'] = round(m['all_revenue'], 2)
 
-        # 2. Fetch prior FY enquiries
-        prior_where = [
-            "LOWER(TRIM(COALESCE(e.bdMemberName, ''))) NOT IN ('head office', 'head  - office', 'head - office', '')",
-            "LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) >= %s",
-            "LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) <= %s"
+        # 3. Fetch prior FY invoiced and pipeline totals
+        prior_inv_where = [
+            "i.is_revenue = 1",
+            "i.billDate >= %s",
+            "i.billDate <= %s",
+            "LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) NOT IN ('head office', 'head  - office', 'head - office', '')"
         ]
-        prior_params = [prior_start, prior_end]
+        prior_inv_params = [prior_start, prior_end]
         if bd_param and bd_param.lower() != 'all':
-            prior_where.append("(LOWER(TRIM(e.bdMemberName)) = %s OR LOWER(TRIM(e.bdMemberName)) LIKE %s)")
-            prior_params.extend([bd_param.lower(), f"%{bd_param.lower()}%"])
+            prior_inv_where.append("(LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) = %s OR LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) LIKE %s)")
+            prior_inv_params.extend([bd_param.lower(), f"%{bd_param.lower()}%"])
         if tl_param and tl_param.lower() != 'all':
-            prior_where.append("(LOWER(TRIM(e.teamLeaderName)) = %s OR LOWER(TRIM(e.teamLeaderName)) LIKE %s)")
-            prior_params.extend([tl_param.lower(), f"%{tl_param.lower()}%"])
+            prior_inv_where.append("(LOWER(TRIM(COALESCE(NULLIF(TRIM(i.teamLeader), ''), NULLIF(TRIM(e.teamLeaderName), '')))) = %s OR LOWER(TRIM(COALESCE(NULLIF(TRIM(i.teamLeader), ''), NULLIF(TRIM(e.teamLeaderName), '')))) LIKE %s)")
+            prior_inv_params.extend([tl_param.lower(), f"%{tl_param.lower()}%"])
         if franchise_param and franchise_param.lower() != 'all':
-            prior_where.append("(LOWER(TRIM(e.franchiseeName)) = %s OR LOWER(TRIM(e.franchiseeName)) LIKE %s)")
-            prior_params.extend([franchise_param.lower(), f"%{franchise_param.lower()}%"])
+            prior_inv_where.append("(LOWER(TRIM(COALESCE(NULLIF(TRIM(i.franchiseName), ''), NULLIF(TRIM(e.franchiseeName), '')))) = %s OR LOWER(TRIM(COALESCE(NULLIF(TRIM(i.franchiseName), ''), NULLIF(TRIM(e.franchiseeName), '')))) LIKE %s)")
+            prior_inv_params.extend([franchise_param.lower(), f"%{franchise_param.lower()}%"])
+
+        cursor.execute(f"""
+            SELECT COUNT(*) as cnt, COALESCE(SUM(i.totalBillAmt), 0.0) as rev
+            FROM v_invoice_clean i
+            LEFT JOIN enquiries e ON i.enquiry_id = e.id
+            WHERE {' AND '.join(prior_inv_where)}
+        """, prior_inv_params)
+        prior_inv_row = cursor.fetchone() or {}
+        prior_inv_cnt = int(prior_inv_row.get('cnt') or 0)
+        prior_inv_rev = float(prior_inv_row.get('rev') or 0.0)
+
+        prior_enq_where = [
+            "LOWER(TRIM(COALESCE(e.bdMemberName, ''))) NOT IN ('head office', 'head  - office', 'head - office', '')",
+            "LEFT(COALESCE(e.dateOfAllocation, e.created_at), 10) >= %s",
+            "LEFT(COALESCE(e.dateOfAllocation, e.created_at), 10) <= %s",
+            "LOWER(TRIM(e.enquiryStatus)) NOT IN ('closed', 'offered_and_accepted', 'invoiced', 'r', 'rv', 'billed', 'collected')"
+        ]
+        prior_enq_params = [prior_start, prior_end]
+        if bd_param and bd_param.lower() != 'all':
+            prior_enq_where.append("(LOWER(TRIM(e.bdMemberName)) = %s OR LOWER(TRIM(e.bdMemberName)) LIKE %s)")
+            prior_enq_params.extend([bd_param.lower(), f"%{bd_param.lower()}%"])
+        if tl_param and tl_param.lower() != 'all':
+            prior_enq_where.append("(LOWER(TRIM(e.teamLeaderName)) = %s OR LOWER(TRIM(e.teamLeaderName)) LIKE %s)")
+            prior_enq_params.extend([tl_param.lower(), f"%{tl_param.lower()}%"])
+        if franchise_param and franchise_param.lower() != 'all':
+            prior_enq_where.append("(LOWER(TRIM(e.franchiseeName)) = %s OR LOWER(TRIM(e.franchiseeName)) LIKE %s)")
+            prior_enq_params.extend([franchise_param.lower(), f"%{franchise_param.lower()}%"])
 
         prior_query = f"""
             SELECT e.enquiryStatus, SUM(COALESCE(e.bill_amount, 0.0)) as rev, COUNT(*) as cnt
             FROM enquiries e
-            WHERE {' AND '.join(prior_where)}
+            WHERE {' AND '.join(prior_enq_where)}
             GROUP BY e.enquiryStatus
         """
-        cursor.execute(prior_query, prior_params)
+        cursor.execute(prior_query, prior_enq_params)
         prior_rows = cursor.fetchall()
 
         prior_totals = {
-            'all': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0},
-            'invoiced': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0},
+            'all': {'count': prior_inv_cnt, 'revenue': prior_inv_rev, 'avg_deal': 0.0},
+            'invoiced': {'count': prior_inv_cnt, 'revenue': prior_inv_rev, 'avg_deal': 0.0},
             'progressed': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0},
             'cancelled': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0},
             'other': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0}
@@ -2304,7 +2366,7 @@ def get_growth_targets_summary():
             'cancelled_revenue_pct': calc_pct_delta(totals['cancelled']['revenue'], prior_totals['cancelled']['revenue'])
         }
 
-        # 3. Team Average benchmark
+        # 4. Team Average benchmark
         team_bench_query = f"""
             SELECT 
                 COUNT(DISTINCT {'e.bdMemberName' if entity_type == 'bd' else ('e.teamLeaderName' if entity_type == 'tl' else 'e.franchiseeName')}) as member_count,
@@ -2312,8 +2374,8 @@ def get_growth_targets_summary():
                 SUM(COALESCE(e.bill_amount, 0.0)) as total_rev
             FROM enquiries e
             WHERE LOWER(TRIM(COALESCE(e.bdMemberName, ''))) NOT IN ('head office', 'head  - office', 'head - office', '')
-              AND LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) >= %s
-              AND LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) <= %s
+              AND LEFT(COALESCE(e.dateOfAllocation, e.created_at), 10) >= %s
+              AND LEFT(COALESCE(e.dateOfAllocation, e.created_at), 10) <= %s
         """
         cursor.execute(team_bench_query, [cur_start, cur_end])
         t_row = cursor.fetchone() or {}
@@ -2322,12 +2384,13 @@ def get_growth_targets_summary():
         team_rev = float(t_row.get('total_rev') or 0.0)
 
         team_closed_query = f"""
-            SELECT COUNT(*) as closed_deals, SUM(COALESCE(e.bill_amount, 0.0)) as closed_rev
-            FROM enquiries e
-            WHERE LOWER(TRIM(COALESCE(e.bdMemberName, ''))) NOT IN ('head office', 'head  - office', 'head - office', '')
-              AND LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) >= %s
-              AND LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) <= %s
-              AND LOWER(TRIM(e.enquiryStatus)) IN ('closed', 'offered_and_accepted', 'invoiced')
+            SELECT COUNT(*) as closed_deals, COALESCE(SUM(i.totalBillAmt), 0.0) as closed_rev
+            FROM v_invoice_clean i
+            LEFT JOIN enquiries e ON i.enquiry_id = e.id
+            WHERE i.is_revenue = 1
+              AND i.billDate >= %s
+              AND i.billDate <= %s
+              AND LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) NOT IN ('head office', 'head  - office', 'head - office', '')
         """
         cursor.execute(team_closed_query, [cur_start, cur_end])
         tc_row = cursor.fetchone() or {}
