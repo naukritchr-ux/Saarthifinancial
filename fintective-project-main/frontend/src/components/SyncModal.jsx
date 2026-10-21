@@ -33,6 +33,9 @@ const SyncModal = ({ isOpen, onClose }) => {
         addLog(`✅ Live Expenses Synced: ${d.expenses || 0} records`, 'success');
         addLog(`✅ Clients Master Synced: ${d.clients || 0} records`, 'success');
         addLog(`✅ Legal Records Synced: ${d.legals || 0} records`, 'success');
+        if (d.payroll) {
+          addLog(`✅ Corporate Payroll Synced: ${d.payroll} records`, 'success');
+        }
         if (d.errors && d.errors.length > 0) {
           d.errors.forEach(err => addLog(`⚠️ Notice: ${err}`, 'warning'));
         }

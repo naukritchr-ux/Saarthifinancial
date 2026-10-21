@@ -607,10 +607,12 @@ def get_transactions():
                             e.placementFees, e.positionName, e.industry, e.bill_no, e.bill_date, e.bill_amount,
                             e.dateOfAllocation, e.created_at, e.enquiryStatus, e.info
                         FROM enquiries e
-                        WHERE e.enquiryStatus = 'closed'
-                          AND e.bill_amount > 0
+                        WHERE e.enquiryStatus IN ('closed', 'offered_and_accepted')
+                          AND COALESCE(e.bill_amount, e.placementFees, 0) > 0
                           AND e.id NOT IN (127907, 132500, 132501, 132505, 136084)
                           AND {enq_exclude_clause}
+                          AND COALESCE(e.bill_date, e.dateOfAllocation, e.created_at) >= '2026-04-01'
+                          AND COALESCE(e.bill_date, e.dateOfAllocation, e.created_at) < '2027-04-01'
                     """)
                     extra_enqs = cursor.fetchall()
                     for enq in extra_enqs:

@@ -807,6 +807,58 @@ def sync_saarthi_all():
                 stats["legals"] = len(l_rows)
                 print(f"[SYNC OK] Synced {stats['legals']} Legals.")
 
+            # 7. Sync Corporate Payroll Records to MySQL
+            print("[SYNC] Syncing Payroll Records from Saarthi API to MySQL...")
+            try:
+                from payroll_service import get_all_payroll_transactions
+                p_txs = get_all_payroll_transactions()
+                if p_txs:
+                    p_rows = []
+                    for t in p_txs:
+                        p_rows.append((
+                            t['id'],
+                            str(t.get('employeeId') or ''),
+                            t.get('employeeName') or '',
+                            t.get('department') or '',
+                            t.get('financialYear') or '2026-2027',
+                            str(t.get('date'))[:10],
+                            float(t.get('amount') or 0),
+                            float(t.get('netPayable') or 0),
+                            float(t.get('fixedGross') or 0),
+                            float(t.get('paidDays') or 0),
+                            'Salaries',
+                            t.get('subCategory') or 'Salaries & Wages',
+                            t.get('paymentMode') or 'Direct Bank Transfer',
+                            t.get('referenceId') or '',
+                            t.get('description') or ''
+                        ))
+                    with conn.cursor() as cur:
+                        cur.executemany("""
+                            INSERT INTO payroll_records (
+                                id, employee_id, employee_name, department, financial_year,
+                                date, ctc_amount, net_payable, fixed_gross, paid_days,
+                                category, sub_category, payment_mode, reference_id, description
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON DUPLICATE KEY UPDATE
+                                employee_name = VALUES(employee_name),
+                                department = VALUES(department),
+                                financial_year = VALUES(financial_year),
+                                date = VALUES(date),
+                                ctc_amount = VALUES(ctc_amount),
+                                net_payable = VALUES(net_payable),
+                                fixed_gross = VALUES(fixed_gross),
+                                paid_days = VALUES(paid_days),
+                                category = VALUES(category),
+                                sub_category = VALUES(sub_category),
+                                payment_mode = VALUES(payment_mode),
+                                reference_id = VALUES(reference_id),
+                                description = VALUES(description);
+                        """, p_rows)
+                    stats["payroll"] = len(p_rows)
+                    print(f"[SYNC OK] Synced {stats['payroll']} Payroll Records into MySQL.")
+            except Exception as p_err:
+                print("[SYNC WARN] Payroll sync warning (continuing):", p_err)
+
             # Finalize log entry
             duration = (datetime.datetime.now() - start_time).total_seconds()
             if stats["errors"]:
