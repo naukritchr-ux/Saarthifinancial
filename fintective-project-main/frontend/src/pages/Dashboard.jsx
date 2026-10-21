@@ -74,16 +74,30 @@ const Dashboard = ({ setActivePage }) => {
     return (currentTxs.length > 0 || selectedMonth !== 'All Months' || selectedYear !== 'All Years') ? currentTxs : roleTxs;
   }, [currentTxs, roleTxs, selectedMonth, selectedYear]);
 
-  const { revenue, expenses, profit, margin } = useMemo(() => {
+  const { revenue, expenses, profit, margin, ourShareTotal, payrollTotal, opexCommTotal, operatingProfit } = useMemo(() => {
     const rev = displayTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
     const exp = displayTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
+    const payroll = displayTxs.filter(t => t.type === 'expense' && (t.is_payroll || t.category === 'Salaries' || t.category === 'Salaries & Wages')).reduce((sum, t) => sum + (t.amount || 0), 0);
+    const opexComm = Math.max(0, exp - payroll);
     const ourShare = displayTxs.filter(t => t.type === 'income').reduce((sum, t) => {
       const shares = getTransactionShares(t);
       return sum + (shares.rShare || 0);
     }, 0);
-    const prof = rev - exp;
-    const marg = ourShare > 0 ? (prof / ourShare) * 100 : (rev > 0 ? (prof / rev) * 100 : 0);
-    return { revenue: rev, expenses: exp, profit: prof, margin: marg };
+    // Operating Profit before payroll
+    const opProfit = ourShare - opexComm;
+    // Net Corporate Profit after payroll CTC
+    const netProf = ourShare - exp;
+    const marg = ourShare > 0 ? (opProfit / ourShare) * 100 : 0;
+    return { 
+      revenue: rev, 
+      expenses: exp, 
+      profit: netProf, 
+      margin: marg, 
+      ourShareTotal: ourShare,
+      payrollTotal: payroll,
+      opexCommTotal: opexComm,
+      operatingProfit: opProfit
+    };
   }, [displayTxs]);
 
   // Comparison metrics with previous month (memoized)
@@ -116,8 +130,12 @@ const Dashboard = ({ setActivePage }) => {
 
       pRev = prevTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
       pExp = prevTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
-      pProf = pRev - pExp;
-      pMarg = pRev > 0 ? (pProf / pRev) * 100 : 0;
+      const pOurShare = prevTxs.filter(t => t.type === 'income').reduce((sum, t) => {
+        const shares = getTransactionShares(t);
+        return sum + (shares.rShare || 0);
+      }, 0);
+      pProf = pOurShare - pExp;
+      pMarg = pOurShare > 0 ? (pProf / pOurShare) * 100 : 0;
     }
 
     return { prevMonthLabel: pLabel, prevRevenue: pRev, prevExpenses: pExp, prevProfit: pProf, prevMargin: pMarg };
@@ -522,14 +540,17 @@ const Dashboard = ({ setActivePage }) => {
         return list;
       })();
 
-  // Moving Average Projections (Forecast)
+  // Moving Average Projections (Forecast based on net corporate pool)
   let avgInflow = 0;
   let avgOutflow = 0;
 
   monthsList.forEach(m => {
     const monthTxs = roleTxs.filter(tx => getMonthAndYear(tx.date).monthYear === m);
-    avgInflow += monthTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-    avgOutflow += monthTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+    avgInflow += monthTxs.filter(t => t.type === 'income').reduce((sum, t) => {
+      const shares = getTransactionShares(t);
+      return sum + (shares.rShare || 0);
+    }, 0);
+    avgOutflow += monthTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
   });
 
   if (monthsList.length > 0) {
@@ -578,19 +599,36 @@ const Dashboard = ({ setActivePage }) => {
             </h3>
             <div className="hero-ledger-statement">
               <div className="ledger-statement-row inflow">
-                <span className="row-label">Period Revenue</span>
+                <span className="row-label">Period Revenue (Gross)</span>
                 <span className="row-amount font-bold">{formatCurrency(revenue)}</span>
               </div>
 
+              <div className="ledger-statement-row inflow" style={{ fontSize: '0.82rem', color: '#0f766e', paddingLeft: '8px' }}>
+                <span className="row-label">Our Share (Company Pool)</span>
+                <span className="row-amount font-bold">{formatCurrency(ourShareTotal)}</span>
+              </div>
+
               <div className="ledger-statement-row outflow">
-                <span className="row-label">Period Expenses</span>
-                <span className="row-amount font-bold">{formatCurrency(expenses)}</span>
+                <span className="row-label">Operating Expenses & Comm</span>
+                <span className="row-amount font-bold">{formatCurrency(opexCommTotal)}</span>
+              </div>
+
+              <div className={`ledger-statement-row ${operatingProfit >= 0 ? 'positive' : 'negative'}`} style={{ fontSize: '0.82rem', paddingLeft: '8px', color: operatingProfit >= 0 ? '#15803d' : '#b91c1c' }}>
+                <span className="row-label font-medium">Operating Profit (pre-payroll)</span>
+                <span className="row-amount font-bold">{formatCurrency(operatingProfit)}</span>
+              </div>
+
+              <div className="ledger-statement-row outflow" style={{ fontSize: '0.82rem', color: '#b91c1c', paddingLeft: '8px' }}>
+                <span className="row-label">Corporate Payroll (CTC)</span>
+                <span className="row-amount font-bold">{formatCurrency(payrollTotal)}</span>
               </div>
 
               <hr className="ledger-statement-line" />
 
               <div className={`ledger-statement-row net ${profit >= 0 ? 'positive' : 'negative'}`}>
-                <span className="row-label font-bold">Profit / Loss (Period Net)</span>
+                <span className="row-label font-bold" title="Net Corporate Profit = Our Share − Operating Expenses − Accrued Commissions − Employee Payroll">
+                  Net Corporate Profit
+                </span>
                 <span className="row-amount font-bold highlight">{formatCurrency(profit)}</span>
               </div>
             </div>
@@ -656,13 +694,15 @@ const Dashboard = ({ setActivePage }) => {
 
         <div className="kpi-card card-green">
           <div className="kpi-header">
-            <span className="kpi-title">Net profit</span>
+            <span className="kpi-title" title="Corporate Net Profit after all Operating Expenses, Commissions, and Employee Payroll">
+              Corporate Net Profit
+            </span>
             <span className="kpi-icon"><TrendingUp size={18} /></span>
           </div>
           <h2 className="kpi-value">{formatLakhs(profit)}</h2>
           <div className={`kpi-change ${profitChange.positive ? 'up' : 'down'}`}>
             {profitChange.positive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-            <span>{selectedMonth === 'All Months' ? 'Overall cumulative' : profitChange.text}</span>
+            <span>{selectedMonth === 'All Months' ? `Op. Profit: ${formatLakhs(operatingProfit)}` : profitChange.text}</span>
           </div>
         </div>
 

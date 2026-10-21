@@ -8,8 +8,8 @@
 // The corporate company retains 25% - 30% gross margin.
 export const DEFAULT_COMPANY_SHARE_RATE = 0.25;      // 25% company retained
 export const DEFAULT_FRANCHISEE_SHARE_RATE = 0.75;   // 75% partner share
-export const SENIOR_COMPANY_SHARE_RATE = 0.30;       // 30% for partners > 3 years
-export const SENIOR_FRANCHISEE_SHARE_RATE = 0.70;    // 70% for partners > 3 years
+export const SENIOR_COMPANY_SHARE_RATE = 0.25;       // Standard agreement: 25% company retained
+export const SENIOR_FRANCHISEE_SHARE_RATE = 0.75;    // Standard agreement: 75% partner share
 
 // BD Commission Standard: 20% of Company Retained Margin (equivalent to ~5% of Gross Billing)
 export const DEFAULT_BD_COMMISSION_OF_COMPANY_POOL = 0.20; // 20% of company pool (5% of gross)
@@ -21,17 +21,17 @@ export const DEFAULT_ESTIMATED_TAX_RATE = 0.25; // 25% corporate tax estimate
 /**
  * Calculates real revenue shares for any transaction.
  * Prioritizes verified database fields (rShare, franchiseeShare).
- * Falls back to standard labeled configuration if missing.
+ * Falls back to standard 25% Our Share / 75% Franchisee Share.
  */
 export function getTransactionShares(tx = {}) {
-  const gross = Number(tx.serviceAmt || tx.amount || tx.totalBillAmt || 0);
+  const gross = Number(tx.amount || tx.totalBillAmt || tx.serviceAmt || 0);
 
   // 1. If explicit verified database fields are present
   const hasRealRShare = tx.rShare !== undefined && tx.rShare !== null;
   const hasRealFShare = tx.franchiseeShare !== undefined && tx.franchiseeShare !== null;
 
   if (hasRealRShare || hasRealFShare) {
-    const rShare = hasRealRShare ? Number(tx.rShare) : Math.max(0, gross - Number(tx.franchiseeShare || 0));
+    const rShare = hasRealRShare ? Number(tx.rShare) : Math.round(gross * DEFAULT_COMPANY_SHARE_RATE);
     const franchiseeShare = hasRealFShare ? Number(tx.franchiseeShare) : Math.max(0, gross - rShare);
     return {
       gross,
@@ -42,27 +42,8 @@ export function getTransactionShares(tx = {}) {
     };
   }
 
-  // 2. Unverified fallback using tenure if available, otherwise standard agreement ratio (70-30 for >=3 yrs, 75-25 for <3 yrs)
-  let companyRate = DEFAULT_COMPANY_SHARE_RATE;
-  let franchiseeRate = DEFAULT_FRANCHISEE_SHARE_RATE;
-  if (tx.tenureYears !== undefined && tx.tenureYears !== null) {
-    if (Number(tx.tenureYears) >= 3) {
-      companyRate = SENIOR_COMPANY_SHARE_RATE;
-      franchiseeRate = SENIOR_FRANCHISEE_SHARE_RATE;
-    }
-  } else if (tx.onboardingDate) {
-    const bill = tx.billDate ? new Date(tx.billDate) : new Date();
-    const onboard = new Date(tx.onboardingDate);
-    if (!isNaN(bill.getTime()) && !isNaN(onboard.getTime())) {
-      const diffYears = (bill - onboard) / (365.25 * 24 * 60 * 60 * 1000);
-      if (diffYears >= 3) {
-        companyRate = SENIOR_COMPANY_SHARE_RATE;
-        franchiseeRate = SENIOR_FRANCHISEE_SHARE_RATE;
-      }
-    }
-  }
-
-  const rShare = Math.round(gross * companyRate);
+  // 2. Standard agreement ratio: 25% company / 75% franchisee
+  const rShare = Math.round(gross * DEFAULT_COMPANY_SHARE_RATE);
   const franchiseeShare = gross - rShare;
 
   return {

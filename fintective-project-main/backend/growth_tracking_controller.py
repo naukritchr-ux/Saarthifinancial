@@ -1835,8 +1835,51 @@ def compare_growth_scopes():
                     salary = float(bd_row['baseSalary'])
                     salary_source = 'payroll'
 
+            expense = 0.0
+            expense_source = 'manual'
             if saved_input and saved_input.get('expense') is not None:
                 expense = float(saved_input['expense'])
+                expense_source = 'manual'
+            else:
+                # Dynamically query real CRM expenditure for this scope if not manually overridden
+                try:
+                    if sc_type == 'bd' and bd != 'All':
+                        cursor.execute("""
+                            SELECT COALESCE(SUM(amount), 0.0) AS total_exp 
+                            FROM expenditure 
+                            WHERE is_deleted = 0 
+                              AND LEFT(billDate, 10) >= %s AND LEFT(billDate, 10) <= %s
+                              AND (LOWER(TRIM(bdAgentId)) = %s OR LOWER(TRIM(particulars)) LIKE %s)
+                        """, [cur_start, cur_end, bd.lower(), f"%{bd.lower()}%"])
+                        exp_row = cursor.fetchone()
+                        if exp_row and exp_row.get('total_exp') and float(exp_row['total_exp']) > 0:
+                            expense = float(exp_row['total_exp'])
+                            expense_source = 'crm_ledger'
+                    elif sc_type == 'franchise' and fn != 'All':
+                        cursor.execute("""
+                            SELECT COALESCE(SUM(amount), 0.0) AS total_exp 
+                            FROM expenditure 
+                            WHERE is_deleted = 0 
+                              AND LEFT(billDate, 10) >= %s AND LEFT(billDate, 10) <= %s
+                              AND (LOWER(TRIM(franchiseeId)) = %s OR LOWER(TRIM(particulars)) LIKE %s)
+                        """, [cur_start, cur_end, fn.lower(), f"%{fn.lower()}%"])
+                        exp_row = cursor.fetchone()
+                        if exp_row and exp_row.get('total_exp') and float(exp_row['total_exp']) > 0:
+                            expense = float(exp_row['total_exp'])
+                            expense_source = 'crm_ledger'
+                    elif sc_type == 'company':
+                        cursor.execute("""
+                            SELECT COALESCE(SUM(amount), 0.0) AS total_exp 
+                            FROM expenditure 
+                            WHERE is_deleted = 0 
+                              AND LEFT(billDate, 10) >= %s AND LEFT(billDate, 10) <= %s
+                        """, [cur_start, cur_end])
+                        exp_row = cursor.fetchone()
+                        if exp_row and exp_row.get('total_exp'):
+                            expense = float(exp_row['total_exp'])
+                            expense_source = 'crm_ledger'
+                except Exception as exp_query_err:
+                    print("Dynamic expenditure query note:", str(exp_query_err))
 
             # 5. Calculations via single shared waterfall:
             wf = calculate_waterfall(
@@ -1868,6 +1911,7 @@ def compare_growth_scopes():
                 'salary': salary,
                 'salarySource': salary_source,
                 'expense': expense,
+                'expenseSource': expense_source,
                 'salaryRatio': salary_ratio,
                 'net': net,
                 'tax': tax,

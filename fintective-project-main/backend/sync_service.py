@@ -350,7 +350,26 @@ def sync_saarthi_all():
                     cur.execute("SELECT GET_LOCK(%s, 0) AS got", (DB_SYNC_LOCK_NAME,))
                     got = (cur.fetchone() or {}).get("got")
                 if got == 0:
-                    lock_busy = True
+                    # Check if the existing in_progress run is stale (> 3 minutes)
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            SELECT id, TIMESTAMPDIFF(MINUTE, started_at, NOW()) AS age_minutes 
+                            FROM crm_sync_logs 
+                            WHERE status = 'in_progress' 
+                            ORDER BY id DESC LIMIT 1
+                        """)
+                        stale_row = cur.fetchone()
+                        if stale_row and stale_row.get("age_minutes", 0) > 3:
+                            print(f"[SYNC] Detected stale in_progress sync log ID {stale_row['id']} ({stale_row['age_minutes']}m old). Auto-recovering lock...")
+                            cur.execute("SELECT RELEASE_LOCK(%s)", (DB_SYNC_LOCK_NAME,))
+                            cur.execute("UPDATE crm_sync_logs SET status = 'failed', completed_at = NOW(), message = 'Auto-recovered from stale lock' WHERE status = 'in_progress'")
+                            conn.commit()
+                            cur.execute("SELECT GET_LOCK(%s, 0) AS got", (DB_SYNC_LOCK_NAME,))
+                            got = (cur.fetchone() or {}).get("got")
+                            db_lock_held = (got == 1)
+                            lock_busy = (got == 0)
+                        else:
+                            lock_busy = True
                 else:
                     db_lock_held = (got == 1)
             except Exception as lock_err:
@@ -358,6 +377,12 @@ def sync_saarthi_all():
 
             if not lock_busy:
                 with conn.cursor() as cur:
+                    # Clean up any lingering in_progress logs from previously terminated workers
+                    cur.execute("""
+                        UPDATE crm_sync_logs 
+                        SET status = 'failed', completed_at = NOW(), message = 'Interrupted by server restart' 
+                        WHERE status = 'in_progress'
+                    """)
                     cur.execute("""
                         INSERT INTO crm_sync_logs (sync_type, status, started_at)
                         VALUES ('all', 'in_progress', NOW())
@@ -396,9 +421,37 @@ def sync_saarthi_all():
                 for i in range(0, len(iterable), size):
                     yield iterable[i:i + size]
 
+            # Parallel fetch of all upstream Saarthi CRM endpoints
+            import concurrent.futures
+            print("[SYNC] Fetching all 6 Saarthi CRM endpoints in parallel...")
+            endpoints_to_fetch = {
+                "franchisees": "franchisees",
+                "enquiries": "enquiries",
+                "invoices": "Invoice",
+                "expenses": EXPENSE_ENDPOINT,
+                "clients": "clients_info",
+                "legals": "legals_info"
+            }
+            fetched_results = {}
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+                future_map = {
+                    executor.submit(fetch_saarthi_endpoint, path): key
+                    for key, path in endpoints_to_fetch.items()
+                }
+                for fut in concurrent.futures.as_completed(future_map):
+                    key = future_map[fut]
+                    try:
+                        fetched_results[key] = fut.result()
+                    except Exception as f_err:
+                        fetched_results[key] = {"ok": False, "data": [], "error": str(f_err)}
+
+            # Fallback for invoices if "Invoice" returned no data
+            if not fetched_results.get("invoices", {}).get("ok") or not fetched_results.get("invoices", {}).get("data"):
+                fetched_results["invoices"] = fetch_saarthi_endpoint("invoice")
+
             # 1. Sync Franchisees
-            print("[SYNC] Syncing Franchisees from Saarthi API...")
-            f_res = fetch_saarthi_endpoint("franchisees")
+            print("[SYNC] Writing Franchisees to DB...")
+            f_res = fetched_results.get("franchisees", {"ok": False, "data": []})
             if f_res["ok"] and f_res["data"]:
                 fran_rows = []
                 form_rows = []
@@ -433,8 +486,8 @@ def sync_saarthi_all():
                 stats["errors"].append(f"Franchisees: {f_res.get('error', 'No data')}")
 
             # 2. Sync Enquiries
-            print("[SYNC] Syncing Enquiries from Saarthi API...")
-            enq_res = fetch_saarthi_endpoint("enquiries")
+            print("[SYNC] Writing Enquiries to DB...")
+            enq_res = fetched_results.get("enquiries", {"ok": False, "data": []})
             if enq_res["ok"] and enq_res["data"]:
                 enq_rows = []
                 for enq in enq_res["data"]:
@@ -509,10 +562,8 @@ def sync_saarthi_all():
                 stats["errors"].append(f"Enquiries: {enq_res.get('error', 'No data')}")
 
             # 3. Sync Invoices
-            print("[SYNC] Syncing Invoices from Saarthi API...")
-            inv_res = fetch_saarthi_endpoint("Invoice")
-            if not inv_res["ok"] or not inv_res["data"]:
-                inv_res = fetch_saarthi_endpoint("invoice")
+            print("[SYNC] Writing Invoices to DB...")
+            inv_res = fetched_results.get("invoices", {"ok": False, "data": []})
                 
             if inv_res["ok"] and inv_res["data"]:
                 inv_rows = []
@@ -627,8 +678,8 @@ def sync_saarthi_all():
             # 4. Sync Expenses (real transactions from the CRM expenditure router).
             # Every failure path below is reported in stats["errors"]; a wrong or empty
             # endpoint must never look like a successful sync with 0 rows.
-            print(f"[SYNC] Syncing Expenses from Saarthi API ({EXPENSE_ENDPOINT})...")
-            exp_res = fetch_saarthi_endpoint(EXPENSE_ENDPOINT, timeout=30)
+            print(f"[SYNC] Writing Expenses to DB ({EXPENSE_ENDPOINT})...")
+            exp_res = fetched_results.get("expenses", {"ok": False, "data": []})
             if not exp_res["ok"]:
                 stats["errors"].append(f"Expenses: {exp_res.get('error', 'fetch failed')}")
             elif not exp_res["data"]:
@@ -669,8 +720,8 @@ def sync_saarthi_all():
                     print(f"[SYNC OK] Synced {stats['expenses']} Expenses (latest billDate: {latest}).")
 
             # 5. Sync Clients Info
-            print("[SYNC] Syncing Clients Info from Saarthi API...")
-            c_res = fetch_saarthi_endpoint("clients_info")
+            print("[SYNC] Writing Clients Info to DB...")
+            c_res = fetched_results.get("clients", {"ok": False, "data": []})
             if c_res["ok"] and c_res["data"]:
                 c_rows = []
                 for c in c_res["data"]:
@@ -717,8 +768,8 @@ def sync_saarthi_all():
                 print(f"[SYNC OK] Synced {stats['clients']} Clients.")
 
             # 6. Sync Legals Info
-            print("[SYNC] Syncing Legals Info from Saarthi API...")
-            l_res = fetch_saarthi_endpoint("legals_info")
+            print("[SYNC] Writing Legals Info to DB...")
+            l_res = fetched_results.get("legals", {"ok": False, "data": []})
             if l_res["ok"] and l_res["data"]:
                 l_rows = []
                 for l in l_res["data"]:

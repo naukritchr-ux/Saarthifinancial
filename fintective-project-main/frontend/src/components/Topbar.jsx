@@ -324,6 +324,57 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
             </span>
           </div>
         )}
+
+        {/* Global Year and Month Filter Dropdowns */}
+        <div className="filter-dropdown-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <select 
+            id="topbar-year-select"
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(e.target.value)}
+            className="month-select"
+            aria-label="Filter by Financial Year"
+            style={{ 
+              height: '32px',
+              padding: '2px 10px',
+              borderRadius: '8px',
+              border: '1.5px solid #cbd5e1',
+              background: '#ffffff',
+              fontSize: '12px',
+              fontWeight: '700',
+              color: '#1e293b',
+              cursor: 'pointer',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
+            }}
+          >
+            {availableYears.map(y => (
+              <option key={y} value={y}>{y === 'All Years' ? 'All Years (All Time)' : `FY ${y}`}</option>
+            ))}
+          </select>
+
+          <select 
+            id="topbar-month-select"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="month-select"
+            aria-label="Filter by Month"
+            style={{ 
+              height: '32px',
+              padding: '2px 10px',
+              borderRadius: '8px',
+              border: '1.5px solid #cbd5e1',
+              background: '#ffffff',
+              fontSize: '12px',
+              fontWeight: '700',
+              color: '#1e293b',
+              cursor: 'pointer',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
+            }}
+          >
+            {availableMonths.map(m => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Sync modal portal */}

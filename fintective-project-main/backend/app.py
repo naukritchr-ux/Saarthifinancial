@@ -92,9 +92,13 @@ def refresh_live_exclusions(force=False):
                     for x in grp[1:]:
                         ids_to_exclude.append(x['id'])
 
+            # Permanently exclude known dummy / demo / test enquiry IDs
+            DEMO_ENQUIRY_IDS = [127907, 132500, 132501, 132505, 136084]
+            ids_to_exclude = list(set(ids_to_exclude + DEMO_ENQUIRY_IDS))
+
             ENQUIRY_IDS_TO_EXCLUDE = ids_to_exclude
             _last_exclusions_refresh_time = now
-            print(f"[Live Pipeline] Refreshed exclusions (TTL: {EXCLUSION_CACHE_TTL_SECONDS // 60}m): {len(COLLIDING_BILL_NUMBERS)} colliding bill numbers, {len(ENQUIRY_IDS_TO_EXCLUDE)} duplicate enquiry IDs excluded.")
+            print(f"[Live Pipeline] Refreshed exclusions (TTL: {EXCLUSION_CACHE_TTL_SECONDS // 60}m): {len(COLLIDING_BILL_NUMBERS)} colliding bill numbers, {len(ENQUIRY_IDS_TO_EXCLUDE)} duplicate/demo enquiry IDs excluded.")
         except Exception as e:
             print("Warning: Could not dynamically refresh live exclusions from database:", str(e))
 
@@ -526,15 +530,21 @@ def get_transactions():
                 
                 enquiry_inflows = []
                 seen_enq_ids = set()
+                seen_bill_numbers = set()
 
                 for inv in all_invoices:
                     inv_id = inv['id']
                     enq_id = inv.get('enquiry_id')
                     if enq_id:
                         seen_enq_ids.add(enq_id)
+                    bnum = (inv.get('billNumber') or '').strip().lower()
+                    if bnum:
+                        seen_bill_numbers.add(bnum)
                     
                     comp_name = (inv.get('companyName') or 'Client Placement').strip()
-                    amt = float(inv.get('rev_ex_gst') or 0.0)
+                    bill_amt = float(inv.get('totalBillAmt') or 0.0)
+                    rev_ex = float(inv.get('rev_ex_gst') or 0.0)
+                    amt = bill_amt if bill_amt > 0 else rev_ex
                     is_rev = bool(inv.get('is_revenue'))
                     tx_type = 'income' if is_rev else 'credit_note'
                     
@@ -552,9 +562,9 @@ def get_transactions():
                     
                     fy = inv.get('fy') or normalize_fy(inv.get('financialYear'), date_val)
 
-                    # Preserve NULL-safe values directly from DB view
-                    r_share = float(inv['ourShare']) if inv.get('ourShare') is not None else None
-                    f_share = float(inv['franchiseeShare']) if inv.get('franchiseeShare') is not None else None
+                    # Prioritize actual verified ourShare and franchiseeShare recorded in the database
+                    r_share = float(inv['ourShare']) if inv.get('ourShare') is not None else round(amt * 0.25, 2)
+                    f_share = float(inv['franchiseeShare']) if inv.get('franchiseeShare') is not None else round(amt * 0.75, 2)
                     amt_received = float(inv.get('amountReceived') or 0.0)
 
                     tx_item = {
@@ -588,7 +598,7 @@ def get_transactions():
                     enquiry_inflows.append(tx_item)
                     # Note: Franchisee royalty is a pass-through: NEVER added as an operating expense!
 
-                # 2A. Also capture closed enquiries not linked to an invoice (using data-driven fallback ourShare)
+                # 2A. Also capture real closed/accepted enquiries not linked to an invoice
                 try:
                     enq_exclude_clause = get_enq_exclude_clause("e")
                     cursor.execute(f"""
@@ -597,12 +607,17 @@ def get_transactions():
                             e.placementFees, e.positionName, e.industry, e.bill_no, e.bill_date, e.bill_amount,
                             e.dateOfAllocation, e.created_at, e.enquiryStatus, e.info
                         FROM enquiries e
-                        WHERE (e.bill_amount > 0 OR e.placementFees > 0 OR e.enquiryStatus IN ('closed', 'offered_and_accepted', 'internally_closed'))
+                        WHERE e.enquiryStatus = 'closed'
+                          AND e.bill_amount > 0
+                          AND e.id NOT IN (127907, 132500, 132501, 132505, 136084)
                           AND {enq_exclude_clause}
                     """)
                     extra_enqs = cursor.fetchall()
                     for enq in extra_enqs:
                         if enq['id'] in seen_enq_ids:
+                            continue
+                        e_bno = (enq.get('bill_no') or '').strip().lower()
+                        if e_bno and e_bno in seen_bill_numbers:
                             continue
                         e_amt = float(enq.get('bill_amount') or enq.get('placementFees') or 0.0)
                         if e_amt <= 0:
@@ -619,10 +634,9 @@ def get_transactions():
                         if not fran_id and raw_fran:
                             fran_id = make_stable_id('f', raw_fran)
                         
-                        # Data-driven fallback rate (never hardcoded 25% or 0.4375)
-                        fb_rate = fallback_our_share_rate(e_fy)
-                        e_r_share = round(e_amt * fb_rate, 2)
-                        e_f_share = round(e_amt - e_r_share, 2)
+                        # Standard Agreement Rule: 25% Our Share (Company) / 75% Franchisee Share
+                        e_r_share = round(e_amt * 0.25, 2)
+                        e_f_share = round(e_amt * 0.75, 2)
                         
                         e_item = {
                             'id': f"enq-pay-{enq['id']}",
@@ -720,7 +734,6 @@ def get_transactions():
                     FROM expenditure
                     WHERE is_deleted = 0
                     ORDER BY billDate DESC
-                    LIMIT 3000
                 """)
                 outflow_rows = cursor.fetchall()
                 for row in outflow_rows:
@@ -743,7 +756,7 @@ def get_transactions():
                     })
 
                 # A. Generate Accrued BD/TL Commissions from Inflows (Fix 5)
-                # BD commission standard: 20% of company pool (5% gross). TL standard: 12% of company pool (3% gross).
+                # BD commission standard: 20% of company pool. TL standard: 12% of company pool.
                 bd_comm_rate = 0.20
                 tl_comm_rate = 0.12
                 try:
@@ -763,13 +776,23 @@ def get_transactions():
                     pass
 
                 for row in enquiry_inflows:
-                    service_charges_calc = float(row['serviceAmt'] or 0.0)
-                    company_pool = get_share_split(row.get('date'), franchise_name=row.get('franchiseeName'))["company_pct"]
+                    # Accrue commissions strictly on real, non-credit-note revenue inflows
+                    if not row.get('is_revenue') or row.get('type') != 'income':
+                        continue
+                    if float(row.get('amount') or 0.0) <= 0:
+                        continue
+
+                    # Commission is a percentage of corporate pool (our share)
+                    our_pool = float(row.get('rShare') or 0.0)
+                    if our_pool <= 0:
+                        service_charges_calc = float(row.get('serviceAmt') or 0.0)
+                        company_pool_pct = get_share_split(row.get('date'), franchise_name=row.get('franchiseeName'))["company_pct"]
+                        our_pool = service_charges_calc * company_pool_pct
                     
                     # BD share dynamically calculated
-                    bd_comm = service_charges_calc * company_pool * bd_comm_rate
+                    bd_comm = round(our_pool * bd_comm_rate, 2)
                     # TL share dynamically calculated
-                    tl_comm = service_charges_calc * company_pool * tl_comm_rate
+                    tl_comm = round(our_pool * tl_comm_rate, 2)
                     
                     # Map IDs safely (O(1))
                     mapped_bd_agent_id = row.get('bdAgentId') or (bd_map.get((row.get('bdMemberName') or '').strip().lower()) if row.get('bdMemberName') else None)
@@ -809,44 +832,18 @@ def get_transactions():
                         'financialYear': row['financialYear']
                     })
 
-                # B. Fetch Actual Salaries from salaryandattendance table (Fix 6)
+                # B. Fetch Actual Salaries from CRM Payroll System (Fix 6 / live payroll API)
                 try:
-                    cursor.execute("""
-                        SELECT 
-                            sa.RecordID AS id,
-                            e.name AS employee_name,
-                            sa.SalaryPaid AS amount,
-                            DATE_FORMAT(sa.PaymentDate, '%Y-%m-%d') AS date,
-                            sa.TransactionID AS referenceId,
-                            sa.FinancialYear AS financialYear
-                        FROM salaryandattendance sa
-                        LEFT JOIN employees e ON e.id = sa.EmployeeID
-                        WHERE sa.SalaryPaid IS NOT NULL AND sa.SalaryPaid > 0 AND sa.PaymentDate IS NOT NULL
-                    """)
-                    salary_rows = cursor.fetchall()
-                    for row in salary_rows:
-                        emp_name = (row['employee_name'] or '').strip().lower()
-                        
-                        # Match employee to active BD agents if applicable (O(1))
-                        mapped_bd_agent_id = bd_map.get(emp_name) if emp_name else None
-                        
-                        combined.append({
-                            'id': f"real-salary-{row['id']}",
-                            'title': f"Salary Payout - {row['employee_name'] or 'Employee'}",
-                            'amount': float(row['amount']),
-                            'type': 'expense',
-                            'category': 'Salaries',
-                            'subCategory': 'Monthly Salary',
-                            'date': row['date'],
-                            'paymentMode': 'Net Banking',
-                            'referenceId': row['referenceId'] or f"TX-SAL-{row['id']}",
-                            'description': f"Payroll disbursement for {row['employee_name'] or 'Employee'}",
-                            'bdAgentId': mapped_bd_agent_id,
-                            'franchiseeId': None,
-                            'financialYear': row['financialYear'] or 'N/A'
-                        })
+                    from payroll_service import get_all_payroll_transactions
+                    payroll_txs = get_all_payroll_transactions()
+                    for ptx in payroll_txs:
+                        p_copy = dict(ptx)
+                        emp_n = (p_copy.get('employeeName') or '').strip().lower()
+                        if emp_n and emp_n in bd_map:
+                            p_copy['bdAgentId'] = bd_map[emp_n]
+                        combined.append(p_copy)
                 except Exception as sal_err:
-                    print('salaryandattendance query bypassed:', str(sal_err))
+                    print('[Payroll] Error loading payroll transactions:', str(sal_err))
 
                 # C. Fetch Actual Franchisee Setup Fees from franchisees_forms (Fix 3/MoM Pivot)
                 try:
@@ -3510,45 +3507,54 @@ def health_check():
 @app.route('/api/finance/sync-saarthi', methods=['POST'])
 @app.route('/api/sync', methods=['POST'])
 def sync_saarthi_endpoint():
+    import threading
     from sync_service import sync_saarthi_all
+    
+    # Check if a sync is already running in MySQL
+    conn = get_db_connection()
     try:
-        result = sync_saarthi_all()
-        if result.get('status') == 'locked':
-            return jsonify({
-                'success': False,
-                'error': result.get('error', 'A sync is already running. Please wait.'),
-                'message': result.get('error', 'A sync is already running. Please wait.'),
-                'data': result
-            }), 409
-        if result.get('ok') is False:
-            # Build a human-readable error from the errors array
-            err_list = result.get('errors', [])
-            err_summary = ' | '.join(err_list) if err_list else result.get('error', 'Sync failed on the backend server.')
-            return jsonify({
-                'success': False,
-                'error': err_summary,
-                'message': err_summary,
-                'data': result
-            }), 500
-        # Partial success: sync ran but some endpoints had warnings
-        err_list = result.get('errors', [])
-        invalidate_all_caches()
-        return jsonify({
-            'success': True,
-            'message': 'Saarthi Live CRM sync completed successfully',
-            'warnings': err_list,
-            'data': result
-        })
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        print('[SYNC ENDPOINT ERROR]', tb)
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'message': str(e),
-            'traceback': tb
-        }), 500
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, started_at, TIMESTAMPDIFF(SECOND, started_at, NOW()) AS age_sec
+                FROM crm_sync_logs
+                WHERE status = 'in_progress'
+                ORDER BY id DESC LIMIT 1
+            """)
+            running = cur.fetchone()
+            if running and (running.get('age_sec') or 0) < 180:
+                return jsonify({
+                    'success': True,
+                    'status': 'in_progress',
+                    'is_running': True,
+                    'message': f"A Saarthi CRM sync is already in progress (started {running.get('age_sec')}s ago).",
+                    'log_id': running['id'],
+                    'poll_url': '/api/sync/status'
+                }), 200
+    except Exception as check_err:
+        print('[SYNC CHECK NOTICE]', check_err)
+    finally:
+        conn.close()
+
+    # Launch background thread to execute sync without HTTP gateway timeout
+    def bg_sync_worker():
+        try:
+            print('[BG SYNC] Started background sync_saarthi_all...')
+            res = sync_saarthi_all()
+            invalidate_all_caches()
+            print('[BG SYNC] Completed background sync_saarthi_all:', res.get('ok'))
+        except Exception as bg_err:
+            print('[BG SYNC ERROR]', bg_err)
+
+    t = threading.Thread(target=bg_sync_worker, daemon=True)
+    t.start()
+
+    return jsonify({
+        'success': True,
+        'status': 'started',
+        'is_running': True,
+        'message': 'Saarthi Live CRM sync initiated in background.',
+        'poll_url': '/api/sync/status'
+    }), 200
 
 @app.route('/api/finance/sync-status', methods=['GET'])
 @app.route('/api/sync/status', methods=['GET'])
@@ -3559,7 +3565,8 @@ def get_sync_status():
             cur.execute("""
                 SELECT id, sync_type, status, enquiries_count, invoices_count,
                        franchisees_count, expenses_count, clients_count, legals_count,
-                       message, started_at, completed_at
+                       message, started_at, completed_at,
+                       TIMESTAMPDIFF(SECOND, started_at, COALESCE(completed_at, NOW())) AS duration_seconds
                 FROM crm_sync_logs
                 ORDER BY id DESC
                 LIMIT 5
@@ -3570,8 +3577,12 @@ def get_sync_status():
                     l['started_at'] = str(l['started_at'])
                 if l.get('completed_at'):
                     l['completed_at'] = str(l['completed_at'])
+            latest = logs[0] if logs else None
+            is_running = bool(latest and latest.get('status') == 'in_progress')
             return jsonify({
                 'success': True,
+                'is_running': is_running,
+                'latest': latest,
                 'logs': logs
             })
     except Exception as e:

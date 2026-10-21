@@ -103,12 +103,12 @@ export const FinanceProvider = ({ children }) => {
   const currentFY = getCurrentFY();
 
   const [cacheTimestamp, setCacheTimestamp] = useState(() => {
-    return sessionStorage.getItem('fintective_cache_timestamp') || null;
+    return localStorage.getItem('fintective_cache_timestamp') || sessionStorage.getItem('fintective_cache_timestamp') || null;
   });
 
   const [transactions, setTransactions] = useState(() => {
     try {
-      const cached = sessionStorage.getItem('fintective_cached_txs');
+      const cached = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -125,7 +125,7 @@ export const FinanceProvider = ({ children }) => {
   });
   const [franchisees, setFranchisees] = useState(() => {
     try {
-      const cached = sessionStorage.getItem('fintective_cached_franchisees');
+      const cached = localStorage.getItem('fintective_cached_franchisees') || sessionStorage.getItem('fintective_cached_franchisees');
       return cached ? JSON.parse(cached) : DEFAULT_FRANCHISEES;
     } catch {
       return DEFAULT_FRANCHISEES;
@@ -133,7 +133,7 @@ export const FinanceProvider = ({ children }) => {
   });
   const [bdAgents, setBdAgents] = useState(() => {
     try {
-      const cached = sessionStorage.getItem('fintective_cached_bd');
+      const cached = localStorage.getItem('fintective_cached_bd') || sessionStorage.getItem('fintective_cached_bd');
       return cached ? JSON.parse(cached) : DEFAULT_BD_AGENTS;
     } catch {
       return DEFAULT_BD_AGENTS;
@@ -141,7 +141,7 @@ export const FinanceProvider = ({ children }) => {
   });
   const [teamLeaders, setTeamLeaders] = useState(() => {
     try {
-      const cached = sessionStorage.getItem('fintective_cached_tl');
+      const cached = localStorage.getItem('fintective_cached_tl') || sessionStorage.getItem('fintective_cached_tl');
       return cached ? JSON.parse(cached) : DEFAULT_TEAM_LEADERS;
     } catch {
       return DEFAULT_TEAM_LEADERS;
@@ -149,7 +149,7 @@ export const FinanceProvider = ({ children }) => {
   });
   const [budgets, setBudgets] = useState(() => {
     try {
-      const cached = sessionStorage.getItem('fintective_cached_budgets');
+      const cached = localStorage.getItem('fintective_cached_budgets') || sessionStorage.getItem('fintective_cached_budgets');
       return cached ? JSON.parse(cached) : {
         'Salaries': 800000,
         'BD commissions': 120000,
@@ -470,12 +470,20 @@ export const FinanceProvider = ({ children }) => {
 
   // Retry wrapper: 3 attempts, 2s → 4s → 8s gaps.
   // 4xx errors (especially 401 Unauthorized) or HTML responses are definitive: do NOT retry
+  // 429 Too Many Requests is retried with backoff to protect against Render burst throttling
   const fetchWithRetry = async (url, options = {}, maxAttempts = 3, baseDelayMs = 2000) => {
     let lastErr;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const res = await fetchWithTimeout(url, options);
-        if (res.ok || res.status < 500) return res;
+        if (res.ok) return res;
+        if (res.status === 429) {
+          const delay = baseDelayMs * Math.pow(2, attempt);
+          console.warn(`[Fetch] Rate limit 429 on ${url}. Retrying in ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        if (res.status < 500) return res;
         lastErr = new Error(`HTTP ${res.status}`);
       } catch (e) {
         lastErr = e;
@@ -576,6 +584,7 @@ export const FinanceProvider = ({ children }) => {
               }));
               try {
                 sessionStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
+                localStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
               } catch (e) {}
             }
           } catch (jsonErr) {
@@ -594,7 +603,10 @@ export const FinanceProvider = ({ children }) => {
             if (Array.isArray(franData)) {
               setFranchisees(franData);
               setEndpointStatus(prev => ({ ...prev, franchisees: { status: franData.length > 0 ? 'ok' : 'empty', count: franData.length, error: null } }));
-              try { sessionStorage.setItem('fintective_cached_franchisees', JSON.stringify(franData)); } catch (e) {}
+              try {
+                sessionStorage.setItem('fintective_cached_franchisees', JSON.stringify(franData));
+                localStorage.setItem('fintective_cached_franchisees', JSON.stringify(franData));
+              } catch (e) {}
             }
           } catch (e) {
             setEndpointStatus(prev => ({ ...prev, franchisees: { status: 'failed', error: e.message } }));
@@ -703,11 +715,208 @@ export const FinanceProvider = ({ children }) => {
       } catch (e) {}
     }
 
-    // 6. If backend failed and no cache is present: clear to empty state (no fake data or direct CRM bypass)
-    console.warn('[Fintective Data State] Backend offline and no cached transactions found.');
-    setDataSource('empty');
-    setDataState('offline');
-    setTransactions([]);
+    // 6. Resilient Fallback: Directly pull latest from Saarthi 360 CRM endpoints when backend is waking up / offline
+    let crmFallbackSuccess = false;
+    try {
+      console.log('[Fintective Data State] Backend waking up or offline. Connecting directly to Saarthi CRM API for live data...');
+      const [enqRes, invRes, franRes, expRes, expendRes] = await Promise.allSettled([
+        fetch('https://api.sarthi360.in/api/enquiries', { signal: AbortSignal.timeout(12000) }),
+        fetch('https://api.sarthi360.in/api/Invoice', { signal: AbortSignal.timeout(12000) }),
+        fetch('https://api.sarthi360.in/api/franchisees', { signal: AbortSignal.timeout(12000) }),
+        fetch('https://api.sarthi360.in/api/expenses', { signal: AbortSignal.timeout(12000) }),
+        fetch('https://api.sarthi360.in/api/expenditures/expenditures/all', { signal: AbortSignal.timeout(12000) }).catch(() => null)
+      ]);
+
+      let enquiries = [];
+      if (enqRes.status === 'fulfilled' && enqRes.value?.ok) {
+        const json = await enqRes.value.json();
+        enquiries = Array.isArray(json) ? json : (json.data || json.enquiries || []);
+      }
+
+      let invoices = [];
+      if (invRes.status === 'fulfilled' && invRes.value?.ok) {
+        const json = await invRes.value.json();
+        invoices = Array.isArray(json) ? json : (json.data || json.invoices || []);
+      }
+
+      let currentFranList = franchisees;
+      if (franRes.status === 'fulfilled' && franRes.value?.ok) {
+        const json = await franRes.value.json();
+        const fData = Array.isArray(json) ? json : (json.data || json.franchisees || []);
+        if (fData.length > 0) {
+          currentFranList = fData;
+          setFranchisees(fData);
+        }
+      }
+
+      let liveExp = [];
+      if (expRes.status === 'fulfilled' && expRes.value?.ok) {
+        const json = await expRes.value.json();
+        liveExp = Array.isArray(json) ? json : (json.data || json.expenses || []);
+      }
+
+      let liveExpenditures = [];
+      if (expendRes && expendRes.status === 'fulfilled' && expendRes.value?.ok) {
+        const json = await expendRes.value.json();
+        liveExpenditures = Array.isArray(json) ? json : (json.data || []);
+      }
+
+      const liveTxs = [];
+
+      invoices.forEach(inv => {
+        if (!inv.id) return;
+        const amt = parseFloat(inv.serviceCharges || inv.totalBillAmt || inv.amountReceived || 0);
+        const dateStr = (inv.billDate || inv.dateReceived || inv.createdAt || '').split('T')[0];
+        if (amt > 0 && dateStr) {
+          const franName = inv.franchiseName || '';
+          const bdName = inv.nameOfBd || '';
+          const infoType = (inv.info || '').toUpperCase();
+          const isRev = !['CN', 'LEGAL-CN', 'LEGAL', 'RV', 'C'].includes(infoType);
+
+          // Calculate tenure-aware shares: 70-30 for >= 3 years, 75-25 for < 3 years
+          const matchedFran = currentFranList.find(f => 
+            (f.nameAsPerAgreement && f.nameAsPerAgreement.toLowerCase().trim() === franName.toLowerCase().trim()) ||
+            (f.name && f.name.toLowerCase().trim() === franName.toLowerCase().trim())
+          );
+          let compRate = 0.25;
+          let franRate = 0.75;
+          if (matchedFran && matchedFran.onboardingDate) {
+            const onb = new Date(matchedFran.onboardingDate);
+            const bill = new Date(dateStr);
+            if (!isNaN(onb.getTime()) && !isNaN(bill.getTime())) {
+              const diffY = (bill - onb) / (365.25 * 24 * 3600 * 1000);
+              if (diffY >= 3) {
+                compRate = 0.30;
+                franRate = 0.70;
+              }
+            }
+          }
+
+          const rawOurShare = parseFloat(inv.ourShare);
+          const rawFranShare = parseFloat(inv.franchiseeShare);
+          const finalOurShare = (!isNaN(rawOurShare) && rawOurShare > 0) ? rawOurShare : (amt * compRate);
+          const finalFranShare = (!isNaN(rawFranShare) && rawFranShare > 0) ? rawFranShare : (amt * franRate);
+
+          liveTxs.push({
+            id: `inv-${inv.id}`,
+            title: `${inv.companyName || 'Client Placement'} - ${inv.postOfCandidate || 'Recruitment'}`,
+            amount: amt,
+            type: (!isRev || inv.enquiryStatus === 'credit_note') ? 'credit_note' : 'income',
+            category: 'Recruitment Fee',
+            subCategory: 'Placement Invoice',
+            date: dateStr,
+            companyName: inv.companyName || '',
+            bdAgentName: bdName,
+            teamLeaderName: inv.teamLeader || '',
+            franchiseeName: franName,
+            franchiseeId: matchFranchiseeId(franName, currentFranList),
+            bdAgentId: matchBdAgentId(bdName, bdAgents),
+            financialYear: normalizeFinancialYear(inv.financialYear, dateStr) || currentFY,
+            city: inv.companyCity || inv.city || 'Mumbai',
+            industry: inv.industry || 'Information Technology & Software',
+            ourShare: finalOurShare,
+            franchiseeShare: finalFranShare,
+            info: inv.info || 'R',
+            is_revenue: isRev
+          });
+        }
+      });
+
+      enquiries.forEach(enq => {
+        if (!enq.id) return;
+        const amt = parseFloat(enq.bill_amount || enq.placementFees || 0);
+        const dateStr = (enq.bill_date || enq.dateOfAllocation || enq.created_at || '').split('T')[0];
+        if (amt > 0 && dateStr && !invoices.some(i => i.enquiry_id === enq.id)) {
+          const franName = enq.franchiseeName || '';
+          const bdName = enq.bdMemberName || '';
+          liveTxs.push({
+            id: `enq-${enq.id}`,
+            title: `${enq.companyName || 'Client Placement'} - ${enq.positionName || 'Role'}`,
+            amount: amt,
+            type: 'income',
+            category: 'Recruitment Fee',
+            subCategory: 'Placement',
+            date: dateStr,
+            companyName: enq.companyName || '',
+            bdAgentName: bdName,
+            teamLeaderName: enq.teamLeaderName || '',
+            franchiseeName: franName,
+            franchiseeId: matchFranchiseeId(franName, currentFranList),
+            bdAgentId: matchBdAgentId(bdName, bdAgents),
+            financialYear: normalizeFinancialYear(enq.financialYear, dateStr) || currentFY,
+            ourShare: amt * 0.25,
+            franchiseeShare: amt * 0.75,
+            is_revenue: true
+          });
+        }
+      });
+
+      const liveExpenseTxs = [];
+
+      // 1. Transactional Expenditures
+      if (liveExpenditures.length > 0) {
+        liveExpenditures.forEach(exp => {
+          const amt = parseFloat(exp.amount || exp.net || 0);
+          const dStr = (exp.billDate || exp.date || exp.createdAt || '').split('T')[0];
+          if (amt > 0 && dStr) {
+            liveExpenseTxs.push({
+              id: `expend-${exp.id || exp.srNo || Math.random()}`,
+              title: exp.particulars || exp.expenses || 'Operating Expense',
+              amount: amt,
+              type: 'expense',
+              category: mapCategory(exp.expenses || exp.expenseType || 'Operations', 'expense'),
+              subCategory: exp.expenseType || 'Operations',
+              date: dStr,
+              financialYear: normalizeFinancialYear(exp.financialYear, dStr) || currentFY,
+              companyName: 'Saarthi Corporate'
+            });
+          }
+        });
+      }
+
+      // 2. Monthly Expense Heads (multiplied by 1000 as per CRM format)
+      liveExp.forEach(exp => {
+        const franPart = parseFloat(exp.franchisee || 0);
+        const recPart = parseFloat(exp.recruitment || 0);
+        const total = (franPart + recPart) > 0 ? (franPart + recPart) * 1000 : parseFloat(exp.amount || 0);
+        const dStr = (exp.date || exp.billDate || '2026-08-01').split('T')[0];
+        if (total > 0) {
+          liveExpenseTxs.push({
+            id: `exp-api-${exp.id}`,
+            title: exp.head_component || exp.particulars || 'Operating Expense',
+            amount: total,
+            type: 'expense',
+            category: exp.head_component?.includes('Rent') ? 'Office & infra' : (exp.head_component?.includes('Software') ? 'Portal subscriptions' : 'Marketing'),
+            subCategory: exp.head_component || 'Operations',
+            date: dStr,
+            financialYear: normalizeFinancialYear(exp.financialYear, dStr) || currentFY,
+            companyName: 'Saarthi Corporate'
+          });
+        }
+      });
+
+      const combined = [...liveTxs, ...liveExpenseTxs];
+
+      if (combined.length > 0) {
+        setTransactions(combined);
+        crmFallbackSuccess = true;
+        setDataSource('crm_live_fallback');
+        setDataState('live');
+        try {
+          sessionStorage.setItem('fintective_cached_txs', JSON.stringify(combined));
+          localStorage.setItem('fintective_cached_txs', JSON.stringify(combined));
+        } catch (e) {}
+      }
+    } catch (crmErr) {
+      console.error('[Fintective] Direct CRM live fallback note:', crmErr);
+    }
+
+    if (!crmFallbackSuccess) {
+      console.warn('[Fintective Data State] Backend offline and CRM fallback returned no rows.');
+      setDataSource('empty');
+      setDataState('offline');
+      setTransactions([]);
+    }
 
     // Always release loading and sync state
     setIsLoadingData(false);
@@ -719,19 +928,65 @@ export const FinanceProvider = ({ children }) => {
     try {
       const response = await fetchWithApiKey(`${API_BASE_URL}/finance/sync-saarthi`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        timeoutMs: 60000
       });
       if (response && response.ok) {
         const data = await response.json();
         console.log('[Sync] Raw backend response:', data);
+
+        // If backend started asynchronous sync or reports one in progress, poll /sync/status
+        if (data && (data.status === 'started' || data.status === 'in_progress' || data.is_running)) {
+          const maxPolls = 60; // 60 * 2.5s = 150 seconds max
+          for (let i = 0; i < maxPolls; i++) {
+            await new Promise((r) => setTimeout(r, 2500));
+            try {
+              const statusRes = await fetchWithApiKey(`${API_BASE_URL}/sync/status`, { timeoutMs: 15000 });
+              if (statusRes && statusRes.ok) {
+                const sData = await statusRes.json();
+                const latest = sData.latest || (sData.logs && sData.logs[0]);
+                if (latest) {
+                  if (latest.status === 'completed' || latest.status === 'completed_with_warnings') {
+                    await fetchAllData();
+                    return {
+                      success: true,
+                      data: {
+                        ok: true,
+                        franchisees: latest.franchisees_count || 0,
+                        enquiries: latest.enquiries_count || 0,
+                        invoices: latest.invoices_count || 0,
+                        expenses: latest.expenses_count || 0,
+                        clients: latest.clients_count || 0,
+                        legals: latest.legals_count || 0,
+                        duration_seconds: latest.duration_seconds || 0,
+                        notes: latest.message ? [latest.message] : []
+                      }
+                    };
+                  }
+                  if (latest.status === 'failed') {
+                    return { success: false, error: latest.message || 'Saarthi CRM sync failed on backend.' };
+                  }
+                }
+              }
+            } catch (pollErr) {
+              console.warn('[Sync] Poll attempt error:', pollErr);
+            }
+          }
+          return { success: false, error: 'Live sync timed out waiting for backend worker.' };
+        }
+
+        // Direct synchronous response fallback
         if (data && data.success) {
           await fetchAllData();
-          return { success: true, data: data.data };
+          return { success: true, data: data.data || data };
         }
+      } else if (response) {
+        const errJson = await response.json().catch(() => ({}));
+        return { success: false, error: errJson.error || errJson.message || `HTTP ${response.status} error from server.` };
       }
     } catch (backendErr) {
       console.error('[Sync] Backend sync endpoint unreachable:', backendErr);
-      return { success: false, error: 'Backend sync endpoint unreachable. Please verify backend server is running.' };
+      return { success: false, error: backendErr.message || 'Backend sync endpoint unreachable. Please verify backend server is running.' };
     }
     return { success: false, error: 'Sync failed on server.' };
   };
