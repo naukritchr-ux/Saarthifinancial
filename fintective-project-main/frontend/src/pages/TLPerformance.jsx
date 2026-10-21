@@ -316,6 +316,7 @@ const TLPerformance = () => {
         const cancelled = item.enquiries_cancelled !== undefined ? item.enquiries_cancelled : (item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : (tl.enquiriesCancelled || 0));
         const internallyClosed = item.enquiries_internally_closed !== undefined ? item.enquiries_internally_closed : (item.potential_loss > 0 ? Math.ceil(item.potential_loss / 75000) : (tl.enquiriesInternallyClosed || 0));
         const inprogress = item.enquiries_inprogress || 0;
+        const totalEnquiries = Math.max(rawTotal, progressed + cancelled + internallyClosed + inprogress);
         const other = Math.max(0, totalEnquiries - (progressed + cancelled + internallyClosed + inprogress));
 
         return {
