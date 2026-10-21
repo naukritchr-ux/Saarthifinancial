@@ -42,8 +42,6 @@ export default function AuditPanel({
   const [showContactDetails, setShowContactDetails] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  if (!isOpen) return null;
-
   // Calculate 4 + 4 KPIs
   const metrics = useMemo(() => {
     let gross = 0;
@@ -121,6 +119,8 @@ export default function AuditPanel({
       return true;
     });
   }, [transactions, searchQuery, filterPayment, filterStage]);
+
+  if (!isOpen) return null;
 
   // Export CSV
   const handleExportCsv = () => {

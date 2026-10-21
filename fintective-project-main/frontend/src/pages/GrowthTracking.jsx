@@ -4131,15 +4131,17 @@ const GrowthTracking = () => {
       )}
 
       {/* Drill-down Audit Panel */}
-      <AuditPanel
-        isOpen={isAuditPanelOpen}
-        onClose={() => setIsAuditPanelOpen(false)}
-        title={auditPanelTitle}
-        subtitle={auditPanelSubtitle}
-        entityType={type}
-        transactions={auditTransactions}
-        periodLabel={selectedFy}
-      />
+      {isAuditPanelOpen && (
+        <AuditPanel
+          isOpen={isAuditPanelOpen}
+          onClose={() => setIsAuditPanelOpen(false)}
+          title={auditPanelTitle}
+          subtitle={auditPanelSubtitle}
+          entityType={type}
+          transactions={auditTransactions}
+          periodLabel={selectedFy}
+        />
+      )}
     </div>
   );
 };

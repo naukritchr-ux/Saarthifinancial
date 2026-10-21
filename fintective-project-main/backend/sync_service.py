@@ -114,10 +114,168 @@ def fetch_saarthi_endpoint(endpoint_path, timeout=12):
     err_summary = "; ".join(attempt_errors) if attempt_errors else f"Failed to fetch {endpoint_path}"
     return {"ok": False, "data": [], "error": f"Failed to fetch {endpoint_path}: {err_summary}"}
 
+# --------------------------------------------------------------------------
+# Expense sync + reconciliation helpers
+# --------------------------------------------------------------------------
+# The CRM's /api/expenses is only the expense-head master (id, head_component,
+# tds, franchisee, recruitment: no date, no amount). The real transactions are
+# served by the expenditure router, which is mounted at /api/expenditures and
+# defines its own "/expenditures/all" path, hence the doubled segment.
+EXPENSE_ENDPOINT = (os.environ.get("SAARTHI_EXPENSE_ENDPOINT") or "expenditures/expenditures/all").strip().lstrip("/")
+
+# Cross-process lock name (the in-process threading lock does not cover several
+# gunicorn workers, each of which starts its own sync daemon).
+DB_SYNC_LOCK_NAME = "fintective_crm_sync"
+
+# Rows that exist locally but are no longer returned by the CRM ("ghost" rows)
+# are only REPORTED for enquiries/invoices by default, because Fintective can
+# also create invoices itself. Set SYNC_PRUNE_MISSING=true to delete them.
+PRUNE_MISSING = os.environ.get("SYNC_PRUNE_MISSING", "false").strip().lower() in ("1", "true", "yes")
+
+# Old expenditure rows (loaded from a dump before crm_id existed) that cannot be
+# matched to any CRM row are soft-deleted (is_deleted=1, reversible) so they stop
+# inflating burn/cash numbers. Manual Log-Transaction rows (srNo='TX') are never touched.
+RETIRE_UNMATCHED_LEGACY_EXPENSES = os.environ.get("SYNC_RETIRE_LEGACY_EXPENSES", "true").strip().lower() in ("1", "true", "yes")
+
+
+def _chunked(items, size=500):
+    for i in range(0, len(items), size):
+        yield items[i:i + size]
+
+
+def build_expense_rows(raw_rows):
+    """
+    Converts the CRM expenditure payload into tuples for the local table:
+        (crm_id, srNo, billDate, particulars, expenses, amount, net, expenseType)
+    Returns (rows, skipped).
+    Raises ValueError when the payload is not an expenditure list (for example the
+    head-component master), so a wrong endpoint is reported instead of silently
+    syncing 0 rows.
+    """
+    if not isinstance(raw_rows, list):
+        raise ValueError("expense payload is not a list")
+
+    sample = [r for r in raw_rows[:50] if isinstance(r, dict)]
+    if raw_rows and not any(("billDate" in r or "amount" in r) for r in sample):
+        fields = sorted(sample[0].keys()) if sample else []
+        raise ValueError(
+            f"endpoint '{EXPENSE_ENDPOINT}' returned records without billDate/amount (fields: {fields})"
+        )
+
+    rows = []
+    skipped = 0
+    for exp in raw_rows:
+        if not isinstance(exp, dict):
+            skipped += 1
+            continue
+        try:
+            crm_id = int(exp.get("id"))
+        except (TypeError, ValueError):
+            skipped += 1  # e.g. "vendor-12" placeholder rows
+            continue
+
+        amt = parse_float(exp.get("amount"))
+        part = str(exp.get("particulars") or exp.get("title") or exp.get("description") or "").strip()
+        if not (amt > 0 or part):
+            skipped += 1
+            continue
+
+        sr = str(exp.get("srNo") or exp.get("id") or "").strip() or None
+        b_date = normalize_date(exp.get("billDate") or exp.get("date"))
+        exp_name = str(exp.get("expenses") or exp.get("category") or "Other").strip()
+        net = parse_float(exp.get("net") or exp.get("amount"))
+        exp_type = str(exp.get("expenseType") or exp.get("type") or "expense").strip()
+        rows.append((crm_id, sr, b_date, part, exp_name, amt, net, exp_type))
+
+    return rows, skipped
+
+
+def adopt_legacy_expense_rows(cur, rows):
+    """
+    One-time link of expenditure rows loaded before crm_id existed to their CRM
+    counterpart, matching on (srNo, billDate, amount). Without this the first sync
+    would insert every CRM row again next to the old copy. Returns rows linked.
+    """
+    cur.execute("SELECT id, srNo, billDate, amount FROM expenditure WHERE crm_id IS NULL AND COALESCE(srNo, '') <> 'TX'")
+    legacy = cur.fetchall() or []
+    if not legacy:
+        return 0
+
+    buckets = {}
+    for r in legacy:
+        key = (
+            str(r.get("srNo") or "").strip(),
+            normalize_date(r.get("billDate")) or "",
+            round(float(r.get("amount") or 0), 2),
+        )
+        buckets.setdefault(key, []).append(r["id"])
+
+    links = []
+    for (crm_id, sr, b_date, _part, _name, amt, _net, _type) in rows:
+        ids = buckets.get((sr or "", b_date or "", round(amt, 2)))
+        if ids:
+            links.append((crm_id, ids.pop(0)))
+
+    for batch in _chunked(links):
+        cur.executemany("UPDATE expenditure SET crm_id = %s WHERE id = %s AND crm_id IS NULL", batch)
+    return len(links)
+
+
+def retire_missing_expenses(cur, api_ids):
+    """
+    The CRM hard-deletes expenditure rows, so a row that disappears from the API
+    must stop counting locally. Soft-deletes (is_deleted=1) CRM-linked rows missing
+    from this payload, plus unmatched legacy rows. Skipped when the payload looks
+    partial. Returns (missing_from_crm, legacy_retired).
+    """
+    cur.execute("SELECT crm_id FROM expenditure WHERE crm_id IS NOT NULL AND is_deleted = 0")
+    local_ids = [r["crm_id"] for r in (cur.fetchall() or [])]
+    missing = [i for i in local_ids if i not in api_ids]
+
+    # Safety net against a truncated/partial response wiping good data.
+    if local_ids and len(api_ids) < 0.5 * len(local_ids):
+        print(f"[SYNC WARN] Expense payload ({len(api_ids)}) is much smaller than local ({len(local_ids)}); skipping retire step.")
+        return 0, 0
+
+    for batch in _chunked(missing):
+        placeholders = ", ".join(["%s"] * len(batch))
+        cur.execute(f"UPDATE expenditure SET is_deleted = 1 WHERE crm_id IN ({placeholders})", batch)
+
+    legacy_retired = 0
+    if RETIRE_UNMATCHED_LEGACY_EXPENSES and api_ids:
+        cur.execute("UPDATE expenditure SET is_deleted = 1 WHERE crm_id IS NULL AND is_deleted = 0 AND COALESCE(srNo, '') <> 'TX'")
+        legacy_retired = cur.rowcount or 0
+    return len(missing), legacy_retired
+
+
+def reconcile_missing_ids(cur, table, api_ids, prune=False):
+    """
+    Counts local rows whose id is no longer returned by the CRM (deleted there, but
+    the sync only upserts so they would otherwise live on and inflate revenue).
+    Reports by default; deletes only when prune=True and the payload looks complete.
+    Returns the number of ghost rows found.
+    """
+    cur.execute(f"SELECT id FROM `{table}`")
+    local_ids = [r["id"] for r in (cur.fetchall() or [])]
+    api_keys = {str(i) for i in api_ids}
+    ghosts = [i for i in local_ids if str(i) not in api_keys]
+
+    if ghosts and prune:
+        if len(api_keys) >= 0.9 * len(local_ids):
+            for batch in _chunked(ghosts):
+                placeholders = ", ".join(["%s"] * len(batch))
+                cur.execute(f"DELETE FROM `{table}` WHERE id IN ({placeholders})", batch)
+            print(f"[SYNC] Pruned {len(ghosts)} ghost rows from `{table}`.")
+        else:
+            print(f"[SYNC WARN] Not pruning `{table}`: API returned {len(api_keys)} rows vs {len(local_ids)} local.")
+    return len(ghosts)
+
+
 def sync_saarthi_all():
     """
     Main sync engine: Fetches all Saarthi APIs and upserts into MySQL.
-    Protected by sync_lock to avoid concurrent execution.
+    Protected by sync_lock (in-process) and a MySQL GET_LOCK (across workers)
+    to avoid concurrent execution.
     """
     if not sync_lock.acquire(blocking=False):
         return {
@@ -131,17 +289,44 @@ def sync_saarthi_all():
         ensure_tables_exist()
         start_time = datetime.datetime.now()
         log_id = None
-        
+        db_lock_held = False
+        lock_busy = False
+
         try:
             conn = get_db_connection()
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO crm_sync_logs (sync_type, status, started_at)
-                    VALUES ('all', 'in_progress', NOW())
-                """)
-                log_id = cur.lastrowid
+
+            # Cross-process lock: another gunicorn worker may already be syncing.
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT GET_LOCK(%s, 0) AS got", (DB_SYNC_LOCK_NAME,))
+                    got = (cur.fetchone() or {}).get("got")
+                if got == 0:
+                    lock_busy = True
+                else:
+                    db_lock_held = (got == 1)
+            except Exception as lock_err:
+                print("DB sync-lock notice (continuing without it):", str(lock_err))
+
+            if not lock_busy:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO crm_sync_logs (sync_type, status, started_at)
+                        VALUES ('all', 'in_progress', NOW())
+                    """)
+                    log_id = cur.lastrowid
         except Exception as e:
             print("Log entry notice:", str(e))
+
+        if lock_busy:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            return {
+                "ok": False,
+                "status": "locked",
+                "error": "A Saarthi sync process is already running. Please wait for it to complete."
+            }
 
         stats = {
             "ok": True,
@@ -151,7 +336,9 @@ def sync_saarthi_all():
             "expenses": 0,
             "clients": 0,
             "legals": 0,
-            "errors": []
+            "errors": [],
+            "notes": [],
+            "ghost_rows": {}
         }
 
         try:
@@ -259,6 +446,16 @@ def sync_saarthi_all():
                         """, batch)
                 stats["enquiries"] = len(enq_rows)
                 print(f"[SYNC OK] Synced {stats['enquiries']} Enquiries.")
+
+                # Rows deleted in the CRM are never removed by an upsert: count them.
+                try:
+                    with conn.cursor() as cur:
+                        ghosts = reconcile_missing_ids(cur, "enquiries", {r[0] for r in enq_rows}, PRUNE_MISSING)
+                    stats["ghost_rows"]["enquiries"] = ghosts
+                    if ghosts:
+                        stats["notes"].append(f"{ghosts} enquiries not in CRM" + (" (pruned)" if PRUNE_MISSING else " (kept)"))
+                except Exception as rec_err:
+                    print("[SYNC WARN] Enquiry reconcile failed:", str(rec_err))
             else:
                 stats["errors"].append(f"Enquiries: {enq_res.get('error', 'No data')}")
 
@@ -356,48 +553,61 @@ def sync_saarthi_all():
                         """, batch)
                 stats["invoices"] = len(inv_rows)
                 print(f"[SYNC OK] Synced {stats['invoices']} Invoices.")
+
+                try:
+                    with conn.cursor() as cur:
+                        ghosts = reconcile_missing_ids(cur, "invoice", {r[0] for r in inv_rows}, PRUNE_MISSING)
+                    stats["ghost_rows"]["invoices"] = ghosts
+                    if ghosts:
+                        stats["notes"].append(f"{ghosts} invoices not in CRM" + (" (pruned)" if PRUNE_MISSING else " (kept)"))
+                except Exception as rec_err:
+                    print("[SYNC WARN] Invoice reconcile failed:", str(rec_err))
             else:
                 stats["errors"].append(f"Invoices: {inv_res.get('error', 'No data')}")
 
-            # 4. Sync Expenses
-            print("[SYNC] Syncing Expenses from Saarthi API...")
-            exp_res = fetch_saarthi_endpoint("expenses")
-            if exp_res["ok"] and exp_res["data"]:
-                exp_rows = []
-                for exp in exp_res["data"]:
-                    sr = str(exp.get("srNo") or exp.get("id") or "").strip() or None
-                    b_date = normalize_date(exp.get("billDate") or exp.get("date"))
-                    part = str(exp.get("particulars") or exp.get("title") or exp.get("description") or "").strip()
-                    exp_name = str(exp.get("expenses") or exp.get("category") or "Other").strip()
-                    amt = parse_float(exp.get("amount"))
-                    net = parse_float(exp.get("net") or exp.get("amount"))
-                    exp_type = str(exp.get("expenseType") or exp.get("type") or "expense").strip()
-                    bd_id = str(exp.get("bdAgentId") or "").strip() or None
-                    fran_id = str(exp.get("franchiseeId") or "").strip() or None
-                    is_deleted = 1 if exp.get("is_deleted") or exp.get("isDeleted") else 0
+            # 4. Sync Expenses (real transactions from the CRM expenditure router).
+            # Every failure path below is reported in stats["errors"]; a wrong or empty
+            # endpoint must never look like a successful sync with 0 rows.
+            print(f"[SYNC] Syncing Expenses from Saarthi API ({EXPENSE_ENDPOINT})...")
+            exp_res = fetch_saarthi_endpoint(EXPENSE_ENDPOINT, timeout=30)
+            if not exp_res["ok"]:
+                stats["errors"].append(f"Expenses: {exp_res.get('error', 'fetch failed')}")
+            elif not exp_res["data"]:
+                stats["errors"].append(f"Expenses: endpoint '{EXPENSE_ENDPOINT}' returned 0 rows")
+            else:
+                exp_rows = None
+                exp_skipped = 0
+                try:
+                    exp_rows, exp_skipped = build_expense_rows(exp_res["data"])
+                except ValueError as shape_err:
+                    stats["errors"].append(f"Expenses: {shape_err}")
 
-                    if amt > 0 or part:
-                        exp_rows.append((sr, b_date, part, exp_name, amt, net, exp_type, bd_id, fran_id, is_deleted))
-
-                with conn.cursor() as cur:
-                    for batch in chunked(exp_rows, 500):
-                        cur.executemany("""
-                            INSERT INTO expenditure (
-                                srNo, billDate, particulars, expenses, amount, net, expenseType, bdAgentId, franchiseeId, is_deleted
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            ON DUPLICATE KEY UPDATE
-                                billDate = VALUES(billDate),
-                                particulars = VALUES(particulars),
-                                expenses = VALUES(expenses),
-                                amount = VALUES(amount),
-                                net = VALUES(net),
-                                expenseType = VALUES(expenseType),
-                                bdAgentId = VALUES(bdAgentId),
-                                franchiseeId = VALUES(franchiseeId),
-                                is_deleted = VALUES(is_deleted)
-                        """, batch)
-                stats["expenses"] = len(exp_rows)
-                print(f"[SYNC OK] Synced {stats['expenses']} Expenses.")
+                if exp_rows is not None:
+                    with conn.cursor() as cur:
+                        linked = adopt_legacy_expense_rows(cur, exp_rows)
+                        for batch in chunked(exp_rows, 500):
+                            cur.executemany("""
+                                INSERT INTO expenditure (
+                                    crm_id, srNo, billDate, particulars, expenses, amount, net, expenseType, is_deleted
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0)
+                                ON DUPLICATE KEY UPDATE
+                                    srNo = VALUES(srNo),
+                                    billDate = VALUES(billDate),
+                                    particulars = VALUES(particulars),
+                                    expenses = VALUES(expenses),
+                                    amount = VALUES(amount),
+                                    net = VALUES(net),
+                                    expenseType = VALUES(expenseType),
+                                    is_deleted = 0
+                            """, batch)
+                        missing_from_crm, legacy_retired = retire_missing_expenses(cur, {r[0] for r in exp_rows})
+                    stats["expenses"] = len(exp_rows)
+                    latest = max((r[2] for r in exp_rows if r[2]), default=None)
+                    stats["notes"].append(
+                        f"expenses: {len(exp_rows)} synced (latest {latest}), {linked} linked to old rows, "
+                        f"{missing_from_crm} removed in CRM, {legacy_retired} unmatched old rows retired, {exp_skipped} skipped"
+                    )
+                    print(f"[SYNC OK] Synced {stats['expenses']} Expenses (latest billDate: {latest}).")
 
             # 5. Sync Clients Info
             print("[SYNC] Syncing Clients Info from Saarthi API...")
@@ -489,11 +699,20 @@ def sync_saarthi_all():
 
             # Finalize log entry
             duration = (datetime.datetime.now() - start_time).total_seconds()
+            if stats["errors"]:
+                final_status = "completed_with_warnings"
+                final_message = f"Sync finished with warnings in {duration:.2f}s: " + " | ".join(stats["errors"])
+            else:
+                final_status = "completed"
+                final_message = f"Sync completed successfully in {duration:.2f}s"
+            if stats["notes"]:
+                final_message += " | " + " | ".join(stats["notes"])
+            final_message = final_message[:4000]
             if log_id:
                 with conn.cursor() as cur:
                     cur.execute("""
                         UPDATE crm_sync_logs
-                        SET status = 'completed',
+                        SET status = %s,
                             enquiries_count = %s,
                             invoices_count = %s,
                             franchisees_count = %s,
@@ -504,9 +723,10 @@ def sync_saarthi_all():
                             completed_at = NOW()
                         WHERE id = %s
                     """, (
+                        final_status,
                         stats["enquiries"], stats["invoices"], stats["franchisees"],
                         stats["expenses"], stats["clients"], stats["legals"],
-                        f"Sync completed successfully in {duration:.2f}s", log_id
+                        final_message, log_id
                     ))
 
         except Exception as e:
@@ -525,6 +745,12 @@ def sync_saarthi_all():
                     pass
         finally:
             if conn:
+                if db_lock_held:
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute("SELECT RELEASE_LOCK(%s)", (DB_SYNC_LOCK_NAME,))
+                    except Exception:
+                        pass
                 try:
                     conn.close()
                 except Exception:

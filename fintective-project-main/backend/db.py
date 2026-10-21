@@ -237,6 +237,7 @@ def ensure_tables_exist():
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS expenditure (
                     id INT AUTO_INCREMENT PRIMARY KEY,
+                    crm_id INT NULL,
                     srNo VARCHAR(100) NULL,
                     billDate VARCHAR(100) NULL,
                     particulars VARCHAR(255) NULL,
@@ -248,7 +249,8 @@ def ensure_tables_exist():
                     franchiseeId VARCHAR(100) NULL,
                     is_deleted TINYINT DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE KEY uq_exp_srno (srNo),
+                    UNIQUE KEY uq_exp_crm_id (crm_id),
+                    INDEX idx_exp_srno (srNo),
                     INDEX idx_exp_date (billDate),
                     INDEX idx_exp_type (expenseType)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -600,8 +602,48 @@ def ensure_tables_exist():
 
             add_unique_key_if_missing("franchisees", "uq_fran_name", "nameAsPerAgreement")
             add_unique_key_if_missing("franchisees_forms", "uq_fran_form_name", "nameAsPerAgreement")
-            add_unique_key_if_missing("expenditure", "uq_exp_srno", "srNo")
             add_unique_key_if_missing("legals_info", "uq_legal_id", "legal_id")
+
+            # Expenditure migration (replaces the old UNIQUE(srNo) + dedupe-delete):
+            # - The CRM's srNo is a running voucher number that can repeat across
+            #   financial years, and every manual Log-Transaction row uses srNo='TX',
+            #   so a UNIQUE key on srNo either overwrites/deletes real rows or rejects
+            #   new ones. Rows are now keyed on the CRM's own primary key (crm_id).
+            # - Safe to run on every start: each step checks before changing anything,
+            #   and nothing here deletes data.
+            def migrate_expenditure_schema():
+                try:
+                    def has_column(col_name):
+                        cur.execute("""
+                            SELECT COUNT(*) AS cnt FROM information_schema.COLUMNS
+                            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'expenditure' AND COLUMN_NAME = %s
+                        """, (DB_NAME, col_name))
+                        r = cur.fetchone()
+                        return bool(r and r["cnt"])
+
+                    def has_index(idx_name):
+                        cur.execute("""
+                            SELECT COUNT(*) AS cnt FROM information_schema.STATISTICS
+                            WHERE TABLE_SCHEMA = %s AND TABLE_NAME = 'expenditure' AND INDEX_NAME = %s
+                        """, (DB_NAME, idx_name))
+                        r = cur.fetchone()
+                        return bool(r and r["cnt"])
+
+                    if not has_column("crm_id"):
+                        cur.execute("ALTER TABLE expenditure ADD COLUMN crm_id INT NULL AFTER id;")
+                        print("[DB] Added column `crm_id` to `expenditure`.")
+                    if has_index("uq_exp_srno"):
+                        cur.execute("ALTER TABLE expenditure DROP INDEX uq_exp_srno;")
+                        print("[DB] Dropped UNIQUE KEY `uq_exp_srno` on `expenditure`(srNo).")
+                    if not has_index("idx_exp_srno"):
+                        cur.execute("ALTER TABLE expenditure ADD INDEX idx_exp_srno (srNo);")
+                    if not has_index("uq_exp_crm_id"):
+                        cur.execute("ALTER TABLE expenditure ADD UNIQUE KEY uq_exp_crm_id (crm_id);")
+                        print("[DB] Added UNIQUE KEY `uq_exp_crm_id` on `expenditure`(crm_id).")
+                except Exception as e:
+                    print(f"[DB WARN] Note migrating expenditure schema: {str(e)}")
+
+            migrate_expenditure_schema()
 
         conn.close()
         print("[DB] MySQL schema verified and ready.")
