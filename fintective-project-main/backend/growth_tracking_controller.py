@@ -1619,6 +1619,337 @@ def save_money_box_inputs():
         conn.close()
 
 
+# --------------------------------------------------------------------------
+# Scope-Based Financial Performance Comparison API: POST /api/growth/compare
+# --------------------------------------------------------------------------
+@growth_tracking_bp.route("/api/growth/compare", methods=["POST"])
+@growth_tracking_bp.route("/api/growth-targets/compare", methods=["POST"])
+def compare_growth_scopes():
+    user_role = (request.headers.get('X-User-Role') or request.args.get('role') or 'admin').strip().lower()
+    if user_role not in ('admin', 'manager', 'head_office'):
+        return jsonify({'error': 'Unauthorized: Admin or Manager role required'}), 403
+
+    body = request.get_json(silent=True) or {}
+    fy_str = (body.get('fy') or request.args.get('fy') or 'FY 2026-27').strip()
+    raw_scopes = body.get('scopes')
+
+    if raw_scopes is None:
+        raw_scopes = [{
+            'bd': body.get('bd') or request.args.get('bd') or 'All',
+            'tl': body.get('tl') or request.args.get('tl') or 'All',
+            'franchise': body.get('franchise') or body.get('fn') or request.args.get('franchise') or 'All'
+        }]
+
+    if not isinstance(raw_scopes, list) or len(raw_scopes) == 0:
+        return jsonify({'error': 'scopes must be a non-empty array'}), 400
+
+    if len(raw_scopes) > 4:
+        return jsonify({'error': 'Maximum 4 scopes can be compared at once'}), 400
+
+    import re
+    match = re.search(r'(\d{4})', fy_str)
+    if match:
+        start_year = int(match.group(1))
+    else:
+        m2 = re.search(r'(\d{2})[-/](\d{2})', fy_str)
+        if m2:
+            start_year = 2000 + int(m2.group(1))
+        else:
+            now = datetime.date.today()
+            start_year = now.year if now.month >= 4 else now.year - 1
+
+    cur_start = f"{start_year}-04-01"
+    cur_end = f"{start_year + 1}-03-31"
+    norm_fy = f"FY {start_year}-{str(start_year + 1)[2:]}"
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # 1. Fetch team overlap relationships in bulk
+        cursor.execute("""
+            SELECT DISTINCT LOWER(TRIM(bdMemberName)) as bd, LOWER(TRIM(teamLeaderName)) as tl, LOWER(TRIM(franchiseeName)) as fn
+            FROM enquiries
+            WHERE bdMemberName IS NOT NULL AND (teamLeaderName IS NOT NULL OR franchiseeName IS NOT NULL)
+        """)
+        rel_rows = cursor.fetchall()
+        tl_to_bds = {}
+        fn_to_bds = {}
+        for r in rel_rows:
+            b = (r.get('bd') or '').strip().lower()
+            t = (r.get('tl') or '').strip().lower()
+            f = (r.get('fn') or '').strip().lower()
+            if b and t:
+                tl_to_bds.setdefault(t, set()).add(b)
+            if b and f:
+                fn_to_bds.setdefault(f, set()).add(b)
+
+        # 2. Normalize scopes and resolve IDs if any
+        resolved_scopes = []
+        for s in raw_scopes:
+            if not isinstance(s, dict):
+                continue
+            bd_val = str(s.get('bd') or s.get('bd_id') or s.get('bdAgentId') or s.get('nameOfBd') or '').strip()
+            tl_val = str(s.get('tl') or s.get('tl_id') or s.get('teamLeader') or '').strip()
+            fn_val = str(s.get('fn') or s.get('franchise') or s.get('franchisee') or s.get('franchiseName') or '').strip()
+
+            bd = bd_val if bd_val and bd_val.lower() != 'all' else 'All'
+            tl = tl_val if tl_val and tl_val.lower() != 'all' else 'All'
+            fn = fn_val if fn_val and fn_val.lower() != 'all' else 'All'
+
+            if bd != 'All' and (bd.isdigit() or bd.startswith('bd-')):
+                cursor.execute("SELECT name FROM bd_agents WHERE id = %s OR id = %s LIMIT 1", [bd, f"bd-{bd}"])
+                row_bd = cursor.fetchone()
+                if row_bd and row_bd.get('name'):
+                    bd = row_bd['name']
+
+            if fn != 'All' and (fn.isdigit() or fn.startswith('f-') or fn.startswith('fran-')):
+                cursor.execute("SELECT nameAsPerAgreement FROM franchisees WHERE id = %s LIMIT 1", [fn])
+                row_fn = cursor.fetchone()
+                if row_fn and row_fn.get('nameAsPerAgreement'):
+                    fn = row_fn['nameAsPerAgreement']
+
+            if bd != 'All' and tl == 'All' and fn == 'All':
+                sc_type = 'bd'
+                label = bd
+            elif bd == 'All' and tl != 'All' and fn == 'All':
+                sc_type = 'tl'
+                label = tl
+            elif bd == 'All' and tl == 'All' and fn != 'All':
+                sc_type = 'franchise'
+                label = fn
+            elif bd == 'All' and tl == 'All' and fn == 'All':
+                sc_type = 'company'
+                label = 'Overall Portfolio'
+            else:
+                sc_type = 'combo'
+                parts = [p for p in [bd if bd != 'All' else None, tl if tl != 'All' else None, fn if fn != 'All' else None] if p]
+                label = " + ".join(parts) if parts else 'Overall Portfolio'
+
+            scope_key = f"bd:{bd.lower().strip()}|tl:{tl.lower().strip()}|fn:{fn.lower().strip()}"
+            resolved_scopes.append({
+                'bd': bd,
+                'tl': tl,
+                'franchise': fn,
+                'type': sc_type,
+                'label': label,
+                'scope_key': scope_key,
+                'orig': s
+            })
+
+        # 3. Query metrics for each resolved scope
+        results = []
+        for r_sc in resolved_scopes:
+            bd = r_sc['bd']
+            tl = r_sc['tl']
+            fn = r_sc['franchise']
+            sc_type = r_sc['type']
+            label = r_sc['label']
+            scope_key = r_sc['scope_key']
+
+            where_clauses = [
+                "LOWER(TRIM(COALESCE(e.bdMemberName, ''))) NOT IN ('head office', 'head  - office', 'head - office', '')",
+                "(LOWER(TRIM(COALESCE(e.enquiryStatus, ''))) IN ('closed', 'offered_and_accepted', 'invoiced', 'r', 'rv', 'billed', 'collected') OR (e.bill_no IS NOT NULL AND e.bill_no != ''))",
+                "LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) >= %s",
+                "LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) <= %s"
+            ]
+            params = [cur_start, cur_end]
+
+            if bd != 'All':
+                where_clauses.append("(LOWER(TRIM(e.bdMemberName)) = %s OR LOWER(TRIM(e.bdMemberName)) LIKE %s)")
+                params.extend([bd.lower(), f"%{bd.lower()}%"])
+            if tl != 'All':
+                where_clauses.append("(LOWER(TRIM(e.teamLeaderName)) = %s OR LOWER(TRIM(e.teamLeaderName)) LIKE %s)")
+                params.extend([tl.lower(), f"%{tl.lower()}%"])
+            if fn != 'All':
+                where_clauses.append("(LOWER(TRIM(e.franchiseeName)) = %s OR LOWER(TRIM(e.franchiseeName)) LIKE %s)")
+                params.extend([fn.lower(), f"%{fn.lower()}%"])
+
+            metric_query = f"""
+                SELECT 
+                    COUNT(DISTINCT LOWER(TRIM(e.companyName))) as companies,
+                    COUNT(*) as invoiced_deals,
+                    COALESCE(SUM(COALESCE(e.bill_amount, 0)), 0) as revenue,
+                    COALESCE(SUM(COALESCE(inv_enq.ourShare, inv_bill.ourShare, e.bill_amount * 0.25)), 0) as our_share,
+                    SUM(CASE WHEN (inv_enq.ourShare IS NOT NULL OR inv_bill.ourShare IS NOT NULL) THEN 1 ELSE 0 END) as verified_count,
+                    SUM(CASE WHEN (inv_enq.ourShare IS NULL AND inv_bill.ourShare IS NULL) THEN 1 ELSE 0 END) as estimated_count
+                FROM enquiries e
+                LEFT JOIN (
+                    SELECT enquiry_id, MAX(ourShare) as ourShare 
+                    FROM invoice WHERE enquiry_id IS NOT NULL AND enquiry_id > 0 GROUP BY enquiry_id
+                ) inv_enq ON inv_enq.enquiry_id = e.id
+                LEFT JOIN (
+                    SELECT billNumber, MAX(ourShare) as ourShare 
+                    FROM invoice WHERE billNumber IS NOT NULL AND billNumber != '' GROUP BY billNumber
+                ) inv_bill ON (inv_enq.enquiry_id IS NULL AND e.bill_no IS NOT NULL AND e.bill_no != '' AND inv_bill.billNumber = e.bill_no)
+                WHERE {' AND '.join(where_clauses)}
+            """
+            cursor.execute(metric_query, params)
+            m_row = cursor.fetchone() or {}
+
+            companies = int(m_row.get('companies') or 0)
+            invoiced_deals = int(m_row.get('invoiced_deals') or 0)
+            revenue = round(float(m_row.get('revenue') or 0.0), 2)
+            our_share = round(float(m_row.get('our_share') or 0.0), 2)
+            verified_count = int(m_row.get('verified_count') or 0)
+            estimated_count = int(m_row.get('estimated_count') or 0)
+
+            # 4. Fetch saved manual inputs (salary, expense) from growth_money_box_inputs
+            cursor.execute("""
+                SELECT expense, salary, net, surplus
+                FROM growth_money_box_inputs
+                WHERE (
+                    (LOWER(TRIM(bd)) = %s AND LOWER(TRIM(tl)) = %s AND LOWER(TRIM(franchise)) = %s AND (LOWER(TRIM(fy)) = %s OR LOWER(TRIM(fy)) = %s))
+                    OR (scope_key = %s AND (LOWER(TRIM(fy)) = %s OR LOWER(TRIM(fy)) = %s))
+                )
+                ORDER BY updated_at DESC LIMIT 1
+            """, [bd.lower(), tl.lower(), fn.lower(), fy_str.lower(), norm_fy.lower(), scope_key, fy_str.lower(), norm_fy.lower()])
+            saved_input = cursor.fetchone()
+
+            salary = 0.0
+            salary_source = 'manual'
+            expense = 0.0
+
+            if saved_input and saved_input.get('salary') is not None:
+                salary = float(saved_input['salary'])
+                salary_source = 'manual'
+            elif sc_type == 'bd':
+                cursor.execute("SELECT baseSalary FROM bd_agents WHERE LOWER(TRIM(name)) = %s OR LOWER(TRIM(name)) LIKE %s LIMIT 1", [bd.lower(), f"%{bd.lower()}%"])
+                bd_row = cursor.fetchone()
+                if bd_row and bd_row.get('baseSalary') and float(bd_row['baseSalary']) > 0:
+                    salary = float(bd_row['baseSalary'])
+                    salary_source = 'payroll'
+
+            if saved_input and saved_input.get('expense') is not None:
+                expense = float(saved_input['expense'])
+
+            # 5. Calculations as specified:
+            salary_ratio = round((salary / our_share) * 100, 1) if our_share > 0 else 0.0
+            net = round(our_share - salary - expense, 2)
+            tax = round(net * 0.25, 2) if net > 0 else 0.0
+            surplus = round(net - tax, 2)
+
+            results.append({
+                'scope': {
+                    'bd': bd,
+                    'tl': tl,
+                    'franchise': fn,
+                    'fn': fn
+                },
+                'scope_key': scope_key,
+                'label': label,
+                'type': sc_type,
+                'companies': companies,
+                'invoicedDeals': invoiced_deals,
+                'revenue': revenue,
+                'ourShare': our_share,
+                'verifiedCount': verified_count,
+                'estimatedCount': estimated_count,
+                'salary': salary,
+                'salarySource': salary_source,
+                'expense': expense,
+                'salaryRatio': salary_ratio,
+                'net': net,
+                'tax': tax,
+                'surplus': surplus,
+                'overlapsWith': []
+            })
+
+        # 6. Overlap detection across the scopes in this comparison
+        for i in range(len(results)):
+            for j in range(len(results)):
+                if i == j:
+                    continue
+                si = results[i]
+                sj = results[j]
+                if si['type'] == 'bd' and sj['type'] == 'tl':
+                    bd_lower = si['scope']['bd'].lower().strip()
+                    tl_lower = sj['scope']['tl'].lower().strip()
+                    if bd_lower in tl_to_bds.get(tl_lower, set()):
+                        if sj['label'] not in si['overlapsWith']:
+                            si['overlapsWith'].append(sj['label'])
+                        if si['label'] not in sj['overlapsWith']:
+                            sj['overlapsWith'].append(si['label'])
+                if si['type'] == 'bd' and sj['type'] == 'franchise':
+                    bd_lower = si['scope']['bd'].lower().strip()
+                    fn_lower = sj['scope']['franchise'].lower().strip()
+                    if bd_lower in fn_to_bds.get(fn_lower, set()):
+                        if sj['label'] not in si['overlapsWith']:
+                            si['overlapsWith'].append(sj['label'])
+                        if si['label'] not in sj['overlapsWith']:
+                            sj['overlapsWith'].append(si['label'])
+
+        return jsonify(results)
+    except Exception as e:
+        print(f"[compare_growth_scopes] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+
+@growth_tracking_bp.route("/api/growth/save-inputs", methods=["POST"])
+def save_growth_scope_inputs():
+    user_role = (request.headers.get('X-User-Role') or request.args.get('role') or 'admin').strip().lower()
+    if user_role not in ('admin', 'manager', 'head_office'):
+        return jsonify({'error': 'Unauthorized: Admin or Manager role required'}), 403
+
+    data = request.get_json(silent=True) or {}
+    sc = data.get('scope') or {}
+    bd = (sc.get('bd') or data.get('bd') or 'All').strip() or 'All'
+    tl = (sc.get('tl') or data.get('tl') or 'All').strip() or 'All'
+    fn = (sc.get('franchise') or sc.get('fn') or data.get('franchise') or data.get('fn') or 'All').strip() or 'All'
+    fy = (data.get('fy') or 'FY 2026-27').strip() or 'FY 2026-27'
+    scope_key = f"bd:{bd.lower().strip()}|tl:{tl.lower().strip()}|fn:{fn.lower().strip()}"
+
+    parsed = {}
+    for f in ('expense', 'salary', 'net', 'surplus'):
+        val = data.get(f)
+        if val is None or str(val).strip() == '':
+            parsed[f] = None
+        else:
+            try:
+                num = float(val)
+                if num < 0 and f in ('expense', 'salary'):
+                    return jsonify({'error': f'{f} must be a number >= 0'}), 400
+                parsed[f] = num
+            except (ValueError, TypeError):
+                return jsonify({'error': f'{f} must be a valid number'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO growth_money_box_inputs (bd, tl, franchise, scope_key, fy, expense, salary, net, surplus, updated_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                scope_key = VALUES(scope_key),
+                expense = VALUES(expense),
+                salary = VALUES(salary),
+                net = VALUES(net),
+                surplus = VALUES(surplus),
+                updated_by = VALUES(updated_by),
+                updated_at = CURRENT_TIMESTAMP
+        """, [bd, tl, fn, scope_key, fy, parsed['expense'], parsed['salary'], parsed['net'], parsed['surplus'], user_role])
+        conn.commit()
+
+        return jsonify({
+            'success': True,
+            'saved': {
+                'scope': {'bd': bd, 'tl': tl, 'franchise': fn},
+                'scope_key': scope_key,
+                'fy': fy,
+                'expense': parsed['expense'],
+                'salary': parsed['salary'],
+                'net': parsed['net'],
+                'surplus': parsed['surplus']
+            }
+        })
+    except Exception as e:
+        print(f"[save_growth_scope_inputs] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+
 @growth_tracking_bp.route("/api/growth-targets/summary", methods=["GET"])
 def get_growth_targets_summary():
     raw_type = request.args.get("entity_type", "all").strip().lower()

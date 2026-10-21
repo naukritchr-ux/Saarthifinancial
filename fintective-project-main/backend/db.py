@@ -308,6 +308,26 @@ def ensure_tables_exist():
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
 
+            # 8b. Growth Tracking Money Box Manual Inputs
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS growth_money_box_inputs (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    bd VARCHAR(255) NOT NULL DEFAULT 'All',
+                    tl VARCHAR(255) NOT NULL DEFAULT 'All',
+                    franchise VARCHAR(255) NOT NULL DEFAULT 'All',
+                    scope_key VARCHAR(255) NULL,
+                    fy VARCHAR(50) NOT NULL,
+                    expense DECIMAL(15, 2) NULL,
+                    salary DECIMAL(15, 2) NULL,
+                    net DECIMAL(15, 2) NULL,
+                    surplus DECIMAL(15, 2) NULL,
+                    updated_by VARCHAR(100) NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_scope_fy (bd, tl, franchise, fy),
+                    INDEX idx_scope_key_fy (scope_key, fy)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
             # 9. Incentive Rules (Standard share split & commission policies)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS incentive_rules (
