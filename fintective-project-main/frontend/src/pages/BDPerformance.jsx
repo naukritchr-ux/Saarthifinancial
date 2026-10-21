@@ -165,8 +165,8 @@ const BDMonthlyTrendChart = ({ trendData = [] }) => {
 const BDPerformance = () => {
   const { bdAgents, transactions, franchisees, addBdAgent, updateBdAgent, selectedMonth, selectedYear } = useContext(FinanceContext);
   
-  // Navigation Sub-Tabs within BD tab: 'portfolio' | 'leaderboard' | 'industry_potential'
-  const [activeTab, setActiveTab] = useState('portfolio');
+  // Navigation Sub-Tabs within BD tab: 'leaderboard' | 'industry_potential'
+  const [activeTab, setActiveTab] = useState('leaderboard');
   const [selectedBdForIndustry, setSelectedBdForIndustry] = useState('all');
 
   // Selected BD Agent for Franchisee Portfolio breakdown view
@@ -765,30 +765,9 @@ const BDPerformance = () => {
   return (
     <div className="bd-performance-page animate-fade-in">
       
-      {/* Top Navigation Sub-Tabs: Portfolio vs Leaderboard */}
+      {/* Top Navigation Sub-Tabs: Leaderboard vs Industry Potential */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-card)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-          <button
-            onClick={() => setActiveTab('portfolio')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              border: 'none',
-              background: activeTab === 'portfolio' ? 'var(--accent-teal)' : 'transparent',
-              color: activeTab === 'portfolio' ? '#ffffff' : 'var(--text-muted)',
-              fontWeight: activeTab === 'portfolio' ? '700' : '500',
-              fontSize: '0.88rem',
-              cursor: 'pointer',
-              boxShadow: activeTab === 'portfolio' ? '0 2px 4px rgba(15, 110, 86, 0.2)' : 'none',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <Layers size={16} />
-            Franchisee Portfolio & Collection Risk
-          </button>
           <button
             onClick={() => setActiveTab('leaderboard')}
             style={{
@@ -1830,15 +1809,9 @@ const BDPerformance = () => {
                       return paginatedAgents.map(agent => (
                         <tr 
                           key={agent.id}
-                          onClick={() => { setSelectedBdId(agent.name); setActiveTab('portfolio'); setKpiFilter('all'); }}
-                          className="clickable-row-item"
-                          style={{ cursor: 'pointer' }}
                         >
                           <td className="font-bold">
                             <div>{agent.name}</div>
-                            <span style={{ fontSize: '0.7rem', color: 'var(--accent-teal)', fontWeight: 'normal' }}>
-                              Click to view Franchisee Portfolio →
-                            </span>
                           </td>
                           <td>
                             <div style={{ fontWeight: 'bold', fontSize: '0.8rem' }}>
