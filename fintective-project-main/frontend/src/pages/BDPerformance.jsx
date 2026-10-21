@@ -28,10 +28,46 @@ import {
   ArrowUpDown,
   Download,
   FileSpreadsheet,
-  HelpCircle
+  HelpCircle,
+  Search,
+  Building2,
+  Check
 } from 'lucide-react';
 import Pagination from '../components/Pagination';
 import IndustryPredictiveTab from '../components/IndustryPredictiveTab';
+import { classifyIndustry, INDUSTRY_COLORS } from '../utils/industryPredictor';
+
+// Comprehensive Industry to Sub-Industry Taxonomy
+const INDUSTRY_SUB_MAP = {
+  'IT & Software': ['Enterprise Software', 'Web & Cloud Applications', 'Frontend & Backend Engineering', 'Data Analytics & AI', 'QA, Testing & DevOps'],
+  'Banking & Financial Services (BFSI)': ['Retail & Commercial Banking', 'FinTech & Digital Payments', 'Wealth Management & Investment', 'Insurance & Actuarial', 'NBFC & Lending'],
+  'Engineering & Manufacturing': ['Automotive & EV', 'Industrial Equipment & Machinery', 'Electronics & Semiconductor', 'Chemical & Process Plants'],
+  'Healthcare & Pharmaceuticals': ['Hospitals & Healthcare Clinics', 'Pharmaceutical Formulations & R&D', 'Medical Devices & Diagnostics', 'Biotechnology'],
+  'Retail, Fashion & E-commerce': ['E-commerce & D2C', 'Apparel & Lifestyle Retail', 'FMCG & Consumer Goods', 'Luxury Goods'],
+  'Infrastructure & Real Estate': ['Commercial Real Estate', 'Residential Construction', 'Architecture & Engineering', 'Facility Management'],
+  'Human Resources & Staffing': ['Executive Search', 'Contingent Staffing', 'Recruitment Process Outsourcing (RPO)'],
+  'Sales, Marketing & Consulting': ['Digital Marketing & Growth', 'Strategy & Management Consulting', 'B2B Corporate Sales'],
+  'Corporate Enterprise Services': ['Legal & Compliance', 'Operations & Logistics', 'General Administration']
+};
+
+// 15 Standard BD Members from Live CRM Database
+const ALL_BD_MEMBERS = [
+  { name: 'Komal Suresh Bhanushali', role: 'Key Account Manager', baseSalary: 35000, isDormant: false },
+  { name: 'Rajalaxmi Das Das', role: 'Enterprise Account Exec', baseSalary: 32000, isDormant: false },
+  { name: 'Jahnvi Thakker', role: 'Senior BD Specialist', baseSalary: 30000, isDormant: false },
+  { name: 'Ashutosh Manoj Hiremath', role: 'Senior BD Specialist', baseSalary: 28000, isDormant: false },
+  { name: 'Kadambinee Kundu', role: 'Enterprise Account Exec', baseSalary: 26000, isDormant: false },
+  { name: 'Muskan Ritesh Pradhan', role: 'BD Specialist', baseSalary: 24000, isDormant: false },
+  { name: 'Rahul Patil', role: 'Senior BD Specialist', baseSalary: 25000, isDormant: false },
+  { name: 'Sneha Kulkarni', role: 'Enterprise Account Exec', baseSalary: 22000, isDormant: false },
+  { name: 'Ankur Sharma', role: 'BD Manager', baseSalary: 24000, isDormant: false },
+  { name: 'Ruchi Shukla', role: 'BD Specialist', baseSalary: 20000, isDormant: false },
+  { name: 'Shreya Santosh Talashilkar', role: 'BD Specialist', baseSalary: 18000, isDormant: true },
+  { name: 'Sneha Santosh Jaiswal', role: 'BD Associate', baseSalary: 16000, isDormant: true },
+  { name: 'Shruti Wilson Adhav', role: 'BD Associate', baseSalary: 16000, isDormant: true },
+  { name: 'Jiya Pran Sanda', role: 'BD Associate', baseSalary: 16000, isDormant: true },
+  { name: 'Sonali Jayanta Singh', role: 'BD Associate', baseSalary: 16000, isDormant: true }
+];
 
 // Mini Inline Sparkline SVG Component
 const MiniSparkline = ({ data = [], color = '#0F6E56', height = 24, width = 76 }) => {
@@ -216,6 +252,19 @@ const BDPerformance = () => {
   const [agentPage, setAgentPage] = useState(1);
   const AGENTS_PER_PAGE = 8;
 
+  // Filter States requested by user for BD Member Performance
+  const [selectedFinancialYear, setSelectedFinancialYear] = useState('All Financial Years');
+  const [selectedInfoStatus, setSelectedInfoStatus] = useState('All'); // 'All' | 'R' | 'PR' | 'O' | 'C'
+  const [bdExpenditurePct, setBdExpenditurePct] = useState('0'); // % overhead
+  const [selectedIndustry, setSelectedIndustry] = useState('All Industries');
+  const [selectedSubIndustry, setSelectedSubIndustry] = useState('All Sub-Industries');
+  const [selectedBdFilter, setSelectedBdFilter] = useState('All BD Members');
+  const [memberSearchTerm, setMemberSearchTerm] = useState('');
+  const [memberSortField, setMemberSortField] = useState('gross'); // 'gross' | 'roi' | 'cost' | 'waste' | 'name'
+  const [selectedMemberForAudit, setSelectedMemberForAudit] = useState(null);
+  const [memberPage, setMemberPage] = useState(1);
+  const MEMBERS_PER_PAGE = 8;
+
   const getSafeAgent = (agent) => {
     if (!agent) return {};
     
@@ -333,6 +382,264 @@ const BDPerformance = () => {
       })
       .catch(err => console.error("Leaderboard load failed:", err));
   }, [selectedMonth, selectedYear]);
+
+  // Dynamic Sub-Industries for selected Industry
+  const availableSubIndustries = useMemo(() => {
+    if (selectedIndustry === 'All Industries') {
+      const set = new Set();
+      Object.values(INDUSTRY_SUB_MAP).forEach(subs => subs.forEach(s => set.add(s)));
+      return Array.from(set);
+    }
+    return INDUSTRY_SUB_MAP[selectedIndustry] || [];
+  }, [selectedIndustry]);
+
+  // Comprehensive BD Member Performance Calculations
+  const bdPerformanceData = useMemo(() => {
+    const txList = Array.isArray(transactions) ? transactions : [];
+    const expRate = (parseFloat(bdExpenditurePct) || 0) / 100;
+
+    return ALL_BD_MEMBERS.map(member => {
+      const cleanName = member.name.trim().toLowerCase();
+      const firstName = cleanName.split(' ')[0];
+
+      // Match transactions
+      const matchingTxs = txList.filter(t => {
+        const tBd = (t.bdAgentName || '').trim().toLowerCase();
+        if (!tBd) return false;
+        const matchesName = tBd === cleanName || tBd.includes(firstName);
+        if (!matchesName) return false;
+
+        // Financial Year filter
+        if (selectedFinancialYear !== 'All Financial Years') {
+          if (t.financialYear && t.financialYear !== selectedFinancialYear) return false;
+        }
+
+        // Info Status filter (R, PR, O, C)
+        if (selectedInfoStatus !== 'All') {
+          const tInfo = (t.info || 'R').toUpperCase();
+          if (tInfo !== selectedInfoStatus.toUpperCase()) return false;
+        }
+
+        // Industry filter
+        const ind = classifyIndustry(t);
+        if (selectedIndustry !== 'All Industries') {
+          if (ind !== selectedIndustry) return false;
+        }
+
+        // Sub Industry filter
+        if (selectedSubIndustry !== 'All Sub-Industries') {
+          const subText = `${t.subCategory || ''} ${t.title || ''} ${t.positionName || ''}`.toLowerCase();
+          if (!subText.includes(selectedSubIndustry.toLowerCase())) return false;
+        }
+
+        return true;
+      });
+
+      // Also check leaderboard for period revenue if available
+      const lbMatch = (leaderboard || []).find(item => {
+        const lbName = (item.bd_name || '').trim().toLowerCase();
+        return lbName === cleanName || lbName.includes(firstName);
+      });
+
+      let grossBilling = 0;
+      let receivedRevenue = 0;
+      let outstandingRevenue = 0;
+      let cancelledRevenue = 0;
+      let ourShare = 0;
+      let invoicesClosed = 0;
+      let invoicesCancelled = 0;
+      let invoicesOutstanding = 0;
+
+      if (matchingTxs.length > 0) {
+        matchingTxs.forEach(t => {
+          const amt = Number(t.amount || 0);
+          const info = (t.info || 'R').toUpperCase();
+          const isCancelledTx = info === 'C' || t.status === 'cancelled' || t.type === 'credit_note';
+          const isReceivedTx = info === 'R';
+          const isPartReceived = info === 'PR';
+          const isOutstandingTx = info === 'O';
+
+          grossBilling += amt;
+
+          if (isCancelledTx) {
+            cancelledRevenue += amt;
+            invoicesCancelled++;
+          } else if (isReceivedTx) {
+            receivedRevenue += amt;
+            ourShare += Number(t.ourShare || amt * 0.25);
+            invoicesClosed++;
+          } else if (isPartReceived) {
+            receivedRevenue += amt * 0.5;
+            outstandingRevenue += amt * 0.5;
+            ourShare += Number(t.ourShare ? t.ourShare * 0.5 : amt * 0.125);
+            invoicesClosed++;
+          } else if (isOutstandingTx) {
+            outstandingRevenue += amt;
+            invoicesOutstanding++;
+          } else {
+            receivedRevenue += amt;
+            ourShare += Number(t.ourShare || amt * 0.25);
+            invoicesClosed++;
+          }
+        });
+      } else if (lbMatch && selectedInfoStatus === 'All' && selectedIndustry === 'All Industries' && selectedSubIndustry === 'All Sub-Industries') {
+        grossBilling = Number(lbMatch.gross_revenue || 0);
+        ourShare = Number(lbMatch.net_revenue || 0);
+        invoicesClosed = Number(lbMatch.invoices_closed || 0);
+        cancelledRevenue = Number(lbMatch.potential_loss || 0);
+        invoicesCancelled = cancelledRevenue > 0 ? Math.ceil(cancelledRevenue / 50000) : 0;
+        receivedRevenue = Math.max(0, grossBilling - cancelledRevenue);
+      }
+
+      // Collect distinct industries handled by this member
+      const industriesSet = new Set();
+      matchingTxs.forEach(t => industriesSet.add(classifyIndustry(t)));
+      const industriesList = Array.from(industriesSet);
+
+      // Cost to company calculations ("what's that person is costing me")
+      const baseSalary = member.baseSalary;
+      const annualSalary = baseSalary * 12;
+      const allocatedExp = grossBilling * expRate;
+      const totalCost = annualSalary + allocatedExp;
+
+      // Net ROI / Contribution
+      const netROI = ourShare - totalCost;
+      const roiMultiple = totalCost > 0 ? (ourShare / totalCost) : 0;
+
+      // Leakage / Waste audit ("where that person is wasting my money")
+      let wasteReason = '';
+      if (member.isDormant && grossBilling === 0) {
+        wasteReason = `Dormant: ₹${formatCurrency(annualSalary)} salary burn (0 closed deals)`;
+      } else if (cancelledRevenue > 100000) {
+        wasteReason = `High cancellation: ₹${formatCurrency(cancelledRevenue)} lost (${invoicesCancelled} deals)`;
+      } else if (netROI < 0) {
+        wasteReason = `Negative return: Costs exceed revenue by ₹${formatCurrency(Math.abs(netROI))}`;
+      } else if (outstandingRevenue > 200000) {
+        wasteReason = `Collection lag: ₹${formatCurrency(outstandingRevenue)} outstanding pending`;
+      } else {
+        wasteReason = `Profitable (${roiMultiple.toFixed(1)}x ROI return on salary)`;
+      }
+
+      return {
+        ...member,
+        grossBilling,
+        receivedRevenue,
+        outstandingRevenue,
+        cancelledRevenue,
+        ourShare,
+        invoicesClosed,
+        invoicesCancelled,
+        invoicesOutstanding,
+        totalDeals: matchingTxs.length || invoicesClosed + invoicesCancelled + invoicesOutstanding,
+        industriesList: industriesList.length > 0 ? industriesList : ['Corporate Enterprise Services'],
+        annualSalary,
+        allocatedExp,
+        totalCost,
+        netROI,
+        roiMultiple,
+        wasteReason,
+        matchingTxs
+      };
+    });
+  }, [transactions, leaderboard, selectedFinancialYear, selectedInfoStatus, selectedIndustry, selectedSubIndustry, bdExpenditurePct]);
+
+  // Aggregate Summary for Header KPI Cards
+  const filteredSummary = useMemo(() => {
+    let list = bdPerformanceData;
+    if (selectedBdFilter !== 'All BD Members') {
+      list = list.filter(m => m.name.toLowerCase() === selectedBdFilter.toLowerCase());
+    }
+
+    const gross = list.reduce((sum, m) => sum + m.grossBilling, 0);
+    const received = list.reduce((sum, m) => sum + m.receivedRevenue, 0);
+    const outstanding = list.reduce((sum, m) => sum + m.outstandingRevenue, 0);
+    const cancelled = list.reduce((sum, m) => sum + m.cancelledRevenue, 0);
+    const baseSal = list.reduce((sum, m) => sum + m.annualSalary, 0);
+    const allocExp = list.reduce((sum, m) => sum + m.allocatedExp, 0);
+    const totalCost = list.reduce((sum, m) => sum + m.totalCost, 0);
+    const ourShare = list.reduce((sum, m) => sum + m.ourShare, 0);
+    const netROI = ourShare - totalCost;
+    const roiMultiple = totalCost > 0 ? (ourShare / totalCost) : 0;
+    const totalDeals = list.reduce((sum, m) => sum + m.totalDeals, 0);
+
+    const receivedPct = gross > 0 ? Math.round((received / gross) * 100) : 0;
+    const outstandingPct = gross > 0 ? Math.round((outstanding / gross) * 100) : 0;
+    const cancelledPct = gross > 0 ? Math.round((cancelled / gross) * 100) : 0;
+
+    return {
+      gross,
+      received,
+      outstanding,
+      cancelled,
+      baseSal,
+      allocExp,
+      totalCost,
+      ourShare,
+      netROI,
+      roiMultiple,
+      totalDeals,
+      receivedPct,
+      outstandingPct,
+      cancelledPct
+    };
+  }, [bdPerformanceData, selectedBdFilter]);
+
+  // Filtered and Sorted Directory List
+  const displayedMembers = useMemo(() => {
+    let list = [...bdPerformanceData];
+
+    if (selectedBdFilter !== 'All BD Members') {
+      list = list.filter(m => m.name.toLowerCase() === selectedBdFilter.toLowerCase());
+    }
+
+    if (memberSearchTerm.trim()) {
+      const q = memberSearchTerm.toLowerCase();
+      list = list.filter(m => 
+        m.name.toLowerCase().includes(q) ||
+        m.role.toLowerCase().includes(q) ||
+        m.industriesList.some(ind => ind.toLowerCase().includes(q))
+      );
+    }
+
+    // Sort
+    list.sort((a, b) => {
+      if (memberSortField === 'gross') return b.grossBilling - a.grossBilling;
+      if (memberSortField === 'roi') return b.netROI - a.netROI;
+      if (memberSortField === 'cost') return b.totalCost - a.totalCost;
+      if (memberSortField === 'waste') return b.cancelledRevenue - a.cancelledRevenue;
+      if (memberSortField === 'name') return a.name.localeCompare(b.name);
+      return 0;
+    });
+
+    return list;
+  }, [bdPerformanceData, selectedBdFilter, memberSearchTerm, memberSortField]);
+
+  const handleExportDirectoryCSV = () => {
+    const headers = ['BD Member', 'Role', 'Status', 'Closed Deals', 'Cancelled Deals', 'Gross Billing', 'Received Revenue', 'Outstanding', 'Cancelled Billing', 'Total Cost to Company', 'Net ROI', 'ROI Multiple', 'Waste Risk Note'];
+    const rows = displayedMembers.map(m => [
+      `"${m.name}"`,
+      `"${m.role}"`,
+      m.isDormant ? 'Dormant' : 'Active',
+      m.invoicesClosed,
+      m.invoicesCancelled,
+      m.grossBilling.toFixed(2),
+      m.receivedRevenue.toFixed(2),
+      m.outstandingRevenue.toFixed(2),
+      m.cancelledRevenue.toFixed(2),
+      m.totalCost.toFixed(2),
+      m.netROI.toFixed(2),
+      `${m.roiMultiple.toFixed(2)}x`,
+      `"${m.wasteReason}"`
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `BD_Member_Performance_Directory_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Pre-indexed transaction map for instant O(1) agent metric calculation
   const agentTxsMap = useMemo(() => {
@@ -786,8 +1093,8 @@ const BDPerformance = () => {
               transition: 'all 0.15s ease'
             }}
           >
-            <Award size={16} />
-            BD Leaderboard & Contract Directory
+            <Users size={16} />
+            BD Member Performance
           </button>
           <button
             onClick={() => setActiveTab('industry_potential')}
@@ -841,1026 +1148,647 @@ const BDPerformance = () => {
           </div>
         )}
 
-        {/* BD Selector & Lookback Control for Portfolio Tab */}
-        {activeTab === 'portfolio' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>BD Specialist:</span>
-              <select
-                value={selectedBdId}
-                onChange={(e) => { setSelectedBdId(e.target.value); setKpiFilter('all'); }}
-                style={{
-                  padding: '8px 14px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  background: 'var(--bg-card)',
-                  color: 'var(--text-main)',
-                  fontSize: '0.88rem',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  minWidth: '220px'
-                }}
-              >
-                {allAgentsList.map(a => (
-                  <option key={a.id || a.name} value={a.name || a.id}>
-                    {a.name} ({a.leadsProgressed || 0} closed)
-                  </option>
-                ))}
-              </select>
-            </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-card)', padding: '3px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', paddingLeft: '6px' }}>Lookback:</span>
-              {[6, 12, 24].map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setLookbackMonths(m)}
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    border: 'none',
-                    fontSize: '0.75rem',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    background: lookbackMonths === m ? 'var(--accent-teal)' : 'transparent',
-                    color: lookbackMonths === m ? '#fff' : 'var(--text-muted)'
-                  }}
-                >
-                  {m}M
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* ========================================================================= */}
-      {/* VIEW 1: FRANCHISEE PORTFOLIO BREAKDOWN & BD COLLECTION RISK FORECASTING  */}
-      {/* ========================================================================= */}
-      {activeTab === 'portfolio' && (
-        <div className="animate-fade-in">
-          
-          {/* Quick BD Pills */}
-          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '8px', marginBottom: '16px' }}>
-            {allAgentsList.slice(0, 8).map(agent => {
-              const isSelected = selectedBdId === agent.name || selectedBdId === agent.id;
-              return (
-                <button
-                  key={agent.id || agent.name}
-                  onClick={() => { setSelectedBdId(agent.name || agent.id); setKpiFilter('all'); }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 12px',
-                    borderRadius: '20px',
-                    border: isSelected ? '1px solid var(--accent-teal)' : '1px solid var(--border-color)',
-                    background: isSelected ? 'rgba(15, 110, 86, 0.1)' : 'var(--bg-card)',
-                    color: isSelected ? 'var(--accent-teal)' : 'var(--text-main)',
-                    fontSize: '0.82rem',
-                    fontWeight: isSelected ? '700' : '500',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  <Users size={14} />
-                  <span>{agent.name}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* 5 KPI Cards with Sparklines & Click-Through Filters */}
-          <section className="kpi-grid" style={{ marginBottom: '20px' }}>
-            
-            {/* 1. Gross Revenue */}
-            <div 
-              className={`kpi-card card-blue clickable-kpi ${kpiFilter === 'all' ? 'active-filter-card' : ''}`}
-              onClick={() => { setKpiFilter('all'); setFranPage(1); }}
-              style={{ cursor: 'pointer', position: 'relative' }}
-              title="Click to view all accounts"
-            >
-              <div className="kpi-header">
-                <span className="kpi-title">Gross Commercial Billing</span>
-                <span className="kpi-icon"><DollarSign size={18} /></span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
-                <h2 className="kpi-value" style={{ margin: 0 }}>{formatLakhs(pTotals.gross)}</h2>
-                <MiniSparkline data={sparklines.gross} color="#2563EB" />
-              </div>
-              <div className="kpi-change" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                  Excludes {pTotals.admin_closures_count || 0} admin closures ({formatLakhs(pTotals.admin_closures || 0)})
-                </span>
-                {pTotals.gross_delta_pct !== undefined && (
-                  <span style={{ fontSize: '0.72rem', fontWeight: '700', color: pTotals.gross_delta_pct >= 0 ? '#10B981' : '#EF4444' }}>
-                    {pTotals.gross_delta_pct >= 0 ? '↑' : '↓'} {Math.abs(pTotals.gross_delta_pct)}%
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* 2. Received Revenue */}
-            <div 
-              className={`kpi-card card-green clickable-kpi ${kpiFilter === 'received' ? 'active-filter-card' : ''}`}
-              onClick={() => { setKpiFilter('received'); setFranPage(1); }}
-              style={{ cursor: 'pointer', position: 'relative' }}
-              title="Click to filter by accounts with received collections"
-            >
-              <div className="kpi-header">
-                <span className="kpi-title">Received Revenue</span>
-                <span className="kpi-icon"><TrendingUp size={18} /></span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
-                <h2 className="kpi-value" style={{ margin: 0, color: '#0F6E56' }}>{formatLakhs(pTotals.received)}</h2>
-                <MiniSparkline data={sparklines.received} color="#0F6E56" />
-              </div>
-              <div className="kpi-change up" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                <span>{pTotals.received_pct}% of Gross Billing</span>
-                {pTotals.received_delta_pct !== undefined && (
-                  <span style={{ fontSize: '0.72rem', fontWeight: '700', color: pTotals.received_delta_pct >= 0 ? '#10B981' : '#EF4444' }}>
-                    {pTotals.received_delta_pct >= 0 ? '↑' : '↓'} {Math.abs(pTotals.received_delta_pct)}%
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* 3. In-Progress / Outstanding */}
-            <div 
-              className={`kpi-card card-yellow clickable-kpi ${kpiFilter === 'outstanding' ? 'active-filter-card' : ''}`}
-              onClick={() => { setKpiFilter('outstanding'); setFranPage(1); }}
-              style={{ cursor: 'pointer', position: 'relative', borderColor: 'rgba(234, 179, 8, 0.4)' }}
-              title="Click to filter by accounts with pending collections"
-            >
-              <div className="kpi-header">
-                <span className="kpi-title">In-Progress / Outstanding</span>
-                <span className="kpi-icon"><Clock size={18} /></span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
-                <h2 className="kpi-value" style={{ margin: 0, color: '#B7791F' }}>{formatLakhs(pTotals.outstanding)}</h2>
-                <MiniSparkline data={sparklines.outstanding} color="#B7791F" />
-              </div>
-              <div className="kpi-change" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', color: '#B7791F' }}>
-                <span>{pTotals.outstanding_pct}% pending collection</span>
-                {pTotals.outstanding_delta_pct !== undefined && (
-                  <span style={{ fontSize: '0.72rem', fontWeight: '700', color: pTotals.outstanding_delta_pct <= 0 ? '#10B981' : '#EF4444' }}>
-                    {pTotals.outstanding_delta_pct >= 0 ? '↑' : '↓'} {Math.abs(pTotals.outstanding_delta_pct)}%
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* 4. Cancelled Billing */}
-            <div 
-              className={`kpi-card card-red clickable-kpi ${kpiFilter === 'cancelled' ? 'active-filter-card' : ''}`}
-              onClick={() => { setKpiFilter('cancelled'); setFranPage(1); }}
-              style={{ cursor: 'pointer', position: 'relative' }}
-              title="Click to filter by accounts with cancellations or credit notes"
-            >
-              <div className="kpi-header">
-                <span className="kpi-title">Cancelled Billing</span>
-                <span className="kpi-icon"><Briefcase size={18} /></span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
-                <h2 className="kpi-value" style={{ margin: 0, color: '#A8402E' }}>{formatLakhs(pTotals.cancelled)}</h2>
-                <MiniSparkline data={sparklines.gross} color="#A8402E" />
-              </div>
-              <div className="kpi-change down" style={{ marginTop: '6px' }}>
-                <span>{pTotals.cancelled_pct}% cancelled / lost</span>
-              </div>
-            </div>
-
-            {/* 5. Expected Collectible Amount (AI Forecast) */}
-            <div 
-              className={`kpi-card clickable-kpi ${kpiFilter === 'at_risk' ? 'active-filter-card' : ''}`}
-              onClick={() => { setKpiFilter('at_risk'); setFranPage(1); }}
-              style={{ 
-                cursor: 'pointer',
-                background: 'linear-gradient(135deg, rgba(15, 110, 86, 0.08) 0%, rgba(34, 49, 79, 0.05) 100%)', 
-                border: '1.5px solid rgba(15, 110, 86, 0.4)',
-                boxShadow: '0 4px 12px rgba(15, 110, 86, 0.06)'
-              }}
-              title="Click to filter by high-risk / follow-up accounts"
-            >
-              <div className="kpi-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Sparkles size={16} color="#0F6E56" />
-                  <span className="kpi-title" style={{ color: '#0F6E56', fontWeight: '700' }}>Expected Collectible</span>
-                </div>
-                <span className="kpi-icon" style={{ background: 'rgba(15, 110, 86, 0.15)', color: '#0F6E56' }}><Award size={18} /></span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
-                <h2 className="kpi-value" style={{ margin: 0, color: '#0F6E56', fontWeight: '800' }}>
-                  {formatLakhs(pTotals.expected_collectible)}
-                </h2>
-                <MiniSparkline data={sparklines.expected_collectible} color="#0F6E56" />
-              </div>
-              <div className="kpi-change" style={{ color: '#6B7268', fontSize: '0.74rem', marginTop: '6px' }}>
-                <span>
-                  Expected Loss: <strong style={{ color: '#A8402E' }}>{formatLakhs(pTotals.expected_loss)}</strong> {pTotals.outstanding > 0 ? `(${((pTotals.expected_collectible / pTotals.outstanding) * 100).toFixed(0)}% expected collection)` : '(No uncollected balance at risk)'}
-                </span>
-              </div>
-            </div>
-
-          </section>
-
-          {/* Proportional Stacked Breakdown Bar + Hover Breakdown & Credit Note Deduction Details */}
-          <div className="dashboard-card" style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
-              <div>
-                <h3 className="card-title" style={{ margin: 0, fontSize: '1rem', fontWeight: '700' }}>
-                  Financial Status Breakdown Bar (Commercial Reconciliation)
-                </h3>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Hover over any segment for exact breakdown details • Click Credit Notes to inspect reason audit
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                {/* Credit Notes Breakdown Modal Button */}
-                {pTotals.credit_notes > 0 && (
-                  <button
-                    onClick={() => setIsCreditNotesModalOpen(true)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      padding: '5px 12px',
-                      borderRadius: '6px',
-                      background: 'rgba(124, 58, 237, 0.12)',
-                      border: '1px solid rgba(124, 58, 237, 0.3)',
-                      color: '#7C3AED',
-                      fontSize: '0.78rem',
-                      fontWeight: '700',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <Info size={14} />
-                    <span>View Credit Notes Reason Audit ({formatLakhs(pTotals.credit_notes)})</span>
-                  </button>
-                )}
-
-                {/* Mathematical Reconciliation Badge */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  background: pTotals.reconciled ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                  border: `1px solid ${pTotals.reconciled ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-                  color: pTotals.reconciled ? '#0F6E56' : '#A8402E',
-                  fontSize: '0.78rem',
-                  fontWeight: '700'
-                }}>
-                  {pTotals.reconciled ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
-                  <span>
-                    {pTotals.reconciled ? '✓ Commercial Gross Reconciled (≤ ₹5.00)' : `Variance: ₹${pTotals.variance}`}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Horizontal Stacked Bar with Hover Tooltips */}
-            <div style={{ background: '#E3E5E0', borderRadius: '8px', overflow: 'hidden', height: '36px', display: 'flex', position: 'relative' }}>
-              
-              {/* Cancelled Segment (Red) */}
-              {barCancelledPct > 0 && (
-                <div
-                  style={{
-                    width: `${barCancelledPct}%`,
-                    backgroundColor: '#A8402E',
-                    color: '#ffffff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.75rem',
-                    fontWeight: '700',
-                    padding: '0 6px',
-                    transition: 'width 0.3s ease',
-                    cursor: 'pointer'
-                  }}
-                  onClick={() => { setKpiFilter('cancelled'); setFranPage(1); }}
-                  title={`Cancelled: ${formatCurrency(pTotals.cancelled)} (${barCancelledPct.toFixed(1)}% of base)`}
-                >
-                  {barCancelledPct >= 8 ? `Cancelled ${formatLakhs(pTotals.cancelled)}` : ''}
-                </div>
-              )}
-
-              {/* Outstanding Segment (Amber) */}
-              {barOutstandingPct > 0 && (
-                <div
-                  style={{
-                    width: `${barOutstandingPct}%`,
-                    backgroundColor: '#B7791F',
-                    color: '#ffffff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.75rem',
-                    fontWeight: '700',
-                    padding: '0 6px',
-                    transition: 'width 0.3s ease',
-                    cursor: 'pointer'
-                  }}
-                  onClick={() => { setKpiFilter('outstanding'); setFranPage(1); }}
-                  title={`Outstanding / Pending: ${formatCurrency(pTotals.outstanding)} (${barOutstandingPct.toFixed(1)}% of base)`}
-                >
-                  {barOutstandingPct >= 8 ? `Outstanding ${formatLakhs(pTotals.outstanding)}` : ''}
-                </div>
-              )}
-
-              {/* Received Segment (Emerald Green) */}
-              {barReceivedPct > 0 && (
-                <div
-                  style={{
-                    width: `${barReceivedPct}%`,
-                    backgroundColor: '#0F6E56',
-                    color: '#ffffff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.75rem',
-                    fontWeight: '700',
-                    padding: '0 6px',
-                    transition: 'width 0.3s ease',
-                    cursor: 'pointer'
-                  }}
-                  onClick={() => { setKpiFilter('received'); setFranPage(1); }}
-                  title={`Received Inflows: ${formatCurrency(pTotals.received)} (${barReceivedPct.toFixed(1)}% of base)`}
-                >
-                  {barReceivedPct >= 8 ? `Received ${formatLakhs(pTotals.received)}` : ''}
-                </div>
-              )}
-
-              {/* Credit Note Deduction (Striped Purple Overlay) */}
-              {pTotals.credit_notes > 0 && (
-                <div
-                  onClick={() => setIsCreditNotesModalOpen(true)}
-                  style={{
-                    position: 'absolute',
-                    right: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: `${Math.min(30, (pTotals.credit_notes / totalBarBase) * 100)}%`,
-                    background: 'repeating-linear-gradient(45deg, rgba(124, 58, 237, 0.9), rgba(124, 58, 237, 0.9) 6px, rgba(109, 40, 217, 0.98) 6px, rgba(109, 40, 217, 0.98) 12px)',
-                    borderLeft: '2px solid #ffffff',
-                    color: '#ffffff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.72rem',
-                    fontWeight: '800',
-                    textShadow: '0 1px 2px rgba(0,0,0,0.6)',
-                    padding: '0 4px',
-                    cursor: 'pointer'
-                  }}
-                  title={`Credit Note Deductions: -${formatCurrency(pTotals.credit_notes)} (Click to view reasons)`}
-                >
-                  -{formatLakhs(pTotals.credit_notes)} CN
-                </div>
-              )}
-            </div>
-
-            {/* Reconciliation Legend Bar */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', flexWrap: 'wrap', gap: '10px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#0F6E56', display: 'inline-block' }}></span>
-                  <span>Received: <strong style={{ color: 'var(--text-main)' }}>{formatLakhs(pTotals.received)}</strong></span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#B7791F', display: 'inline-block' }}></span>
-                  <span>Outstanding: <strong style={{ color: 'var(--text-main)' }}>{formatLakhs(pTotals.outstanding)}</strong></span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#A8402E', display: 'inline-block' }}></span>
-                  <span>Cancelled: <strong style={{ color: 'var(--text-main)' }}>{formatLakhs(pTotals.cancelled)}</strong></span>
-                </div>
-                {pTotals.credit_notes > 0 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#7C3AED', display: 'inline-block' }}></span>
-                    <span>Credit Notes: <strong style={{ color: '#7C3AED' }}>-{formatLakhs(pTotals.credit_notes)}</strong></span>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <span style={{ fontStyle: 'italic' }}>
-                  Gross ({formatLakhs(pTotals.gross)}) = Received ({formatLakhs(pTotals.received)}) + Outstanding ({formatLakhs(pTotals.outstanding)}) + Cancelled ({formatLakhs(pTotals.cancelled)}) - CN ({formatLakhs(pTotals.credit_notes)})
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Month-over-Month Trailing Trend Chart */}
-          {monthlyTrend.length > 1 && (
-            <BDMonthlyTrendChart trendData={monthlyTrend} />
-          )}
-
-          {/* Franchisee Portfolio Table with Collection Risk Scoring & Export */}
-          <div className="dashboard-card">
-            
-            {/* Quick Segmented Filter Tabs: All, Received, Outstanding, Cancelled, High Risk */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
-              <button
-                onClick={() => { setKpiFilter('all'); setFranPage(1); }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 14px',
-                  borderRadius: '6px',
-                  border: kpiFilter === 'all' ? '1.5px solid var(--accent-teal)' : '1px solid var(--border-color)',
-                  background: kpiFilter === 'all' ? 'rgba(15, 110, 86, 0.12)' : 'var(--bg-main)',
-                  color: kpiFilter === 'all' ? 'var(--accent-teal)' : 'var(--text-main)',
-                  fontSize: '0.82rem',
-                  fontWeight: kpiFilter === 'all' ? '700' : '500',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <Layers size={14} />
-                <span>All Accounts ({rawFranchisees.length})</span>
-              </button>
-
-              <button
-                onClick={() => { setKpiFilter('received'); setFranPage(1); }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 14px',
-                  borderRadius: '6px',
-                  border: kpiFilter === 'received' ? '1.5px solid #0F6E56' : '1px solid var(--border-color)',
-                  background: kpiFilter === 'received' ? 'rgba(15, 110, 86, 0.15)' : 'var(--bg-main)',
-                  color: kpiFilter === 'received' ? '#0F6E56' : 'var(--text-main)',
-                  fontSize: '0.82rem',
-                  fontWeight: kpiFilter === 'received' ? '700' : '500',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <TrendingUp size={14} color="#0F6E56" />
-                <span>🟢 Received Inflows ({rawFranchisees.filter(f => (f.received || 0) > 0).length})</span>
-              </button>
-
-              <button
-                onClick={() => { setKpiFilter('outstanding'); setFranPage(1); }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 14px',
-                  borderRadius: '6px',
-                  border: kpiFilter === 'outstanding' ? '1.5px solid #B7791F' : '1px solid var(--border-color)',
-                  background: kpiFilter === 'outstanding' ? 'rgba(234, 179, 8, 0.15)' : 'var(--bg-main)',
-                  color: kpiFilter === 'outstanding' ? '#B7791F' : 'var(--text-main)',
-                  fontSize: '0.82rem',
-                  fontWeight: kpiFilter === 'outstanding' ? '700' : '500',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <Clock size={14} color="#B7791F" />
-                <span>🟡 Outstandings ({rawFranchisees.filter(f => (f.outstanding || 0) > 0).length})</span>
-              </button>
-
-              <button
-                onClick={() => { setKpiFilter('cancelled'); setFranPage(1); }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 14px',
-                  borderRadius: '6px',
-                  border: kpiFilter === 'cancelled' ? '1.5px solid #A8402E' : '1px solid var(--border-color)',
-                  background: kpiFilter === 'cancelled' ? 'rgba(239, 68, 68, 0.12)' : 'var(--bg-main)',
-                  color: kpiFilter === 'cancelled' ? '#A8402E' : 'var(--text-main)',
-                  fontSize: '0.82rem',
-                  fontWeight: kpiFilter === 'cancelled' ? '700' : '500',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <Briefcase size={14} color="#A8402E" />
-                <span>🔴 Cancelled & CN ({rawFranchisees.filter(f => (f.cancelled || 0) > 0 || (f.credit_notes || 0) > 0).length})</span>
-              </button>
-
-              <button
-                onClick={() => { setKpiFilter('at_risk'); setFranPage(1); }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 14px',
-                  borderRadius: '6px',
-                  border: kpiFilter === 'at_risk' ? '1.5px solid #DC2626' : '1px solid var(--border-color)',
-                  background: kpiFilter === 'at_risk' ? 'rgba(220, 38, 38, 0.12)' : 'var(--bg-main)',
-                  color: kpiFilter === 'at_risk' ? '#DC2626' : 'var(--text-main)',
-                  fontSize: '0.82rem',
-                  fontWeight: kpiFilter === 'at_risk' ? '700' : '500',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <ShieldAlert size={14} color="#DC2626" />
-                <span>⚠️ High Risk ({rawFranchisees.filter(f => (f.outstanding || 0) > 0 && (f.collection_risk?.band_key !== 'likely' || (f.collection_risk?.score != null && f.collection_risk?.score < 70))).length})</span>
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-              <div>
-                <h3 className="card-title" style={{ margin: 0, fontSize: '1rem', fontWeight: '700' }}>
-                  Franchisee Portfolio Breakdown ({filteredFranchisees.length} of {rawFranchisees.length} Accounts)
-                </h3>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Prioritized by Collection Risk: Aging factor (45%) + BD Conversion (35%) + Franchisee Track Record (20%)
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                {/* Export CSV Button */}
-                <button
-                  onClick={handleExportCSV}
-                  disabled={filteredFranchisees.length === 0}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-main)',
-                    color: 'var(--text-main)',
-                    fontSize: '0.78rem',
-                    fontWeight: '600',
-                    cursor: filteredFranchisees.length === 0 ? 'not-allowed' : 'pointer'
-                  }}
-                  title="Export filtered franchisee table to CSV spreadsheet"
-                >
-                  <Download size={14} />
-                  <span>Export CSV</span>
-                </button>
-              </div>
-            </div>
-
-            {portfolioLoading ? (
-              <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
-                Loading live franchisee portfolio records...
-              </div>
-            ) : portfolioError ? (
-              <div style={{ padding: '30px', background: 'rgba(239, 68, 68, 0.08)', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#A8402E', textAlign: 'center' }}>
-                {portfolioError}
-              </div>
-            ) : filteredFranchisees.length === 0 ? (
-              <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
-                No franchisee records match the selected filter ({kpiFilter}).
-              </div>
-            ) : (() => {
-              const safeFranPage = Math.min(Math.max(1, franPage), Math.max(1, Math.ceil(filteredFranchisees.length / FRAN_PER_PAGE)));
-              const paginatedFrans = filteredFranchisees.slice((safeFranPage - 1) * FRAN_PER_PAGE, safeFranPage * FRAN_PER_PAGE);
-
-              return (
-                <div>
-                  <div className="table-responsive">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Franchisee</th>
-                          <th style={{ textAlign: 'right' }}>Gross Billing</th>
-                          <th style={{ textAlign: 'right' }}>Received</th>
-                          <th style={{ textAlign: 'right' }}>Outstanding & Aging</th>
-                          <th style={{ textAlign: 'right' }}>Cancelled / CN</th>
-                          <th style={{ textAlign: 'center' }}>Collection Risk</th>
-                          <th style={{ textAlign: 'right' }}>Expected Recovery</th>
-                          <th style={{ textAlign: 'center' }}>Audit Factor</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paginatedFrans.map((f, idx) => {
-                          const cr = f.collection_risk || {};
-                          const score = cr.score ?? 70.0;
-                          const bandKey = cr.band_key || (score >= 70 ? 'likely' : (score >= 40 ? 'follow_up' : 'at_risk'));
-
-                          return (
-                            <tr 
-                              key={idx} 
-                              className="clickable-row-item"
-                              style={{ cursor: 'pointer' }}
-                            >
-                              <td className="font-bold" onClick={() => handleOpenFranchiseeModal(f)}>
-                                <div>{f.name}</div>
-                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                                  {f.received_count || 0} received • {f.outstanding_count || 0} pending • Click for item audit →
-                                </span>
-                              </td>
-
-                              <td className="font-bold text-right" onClick={() => handleOpenFranchiseeModal(f)}>
-                                {formatCurrency(f.gross)}
-                              </td>
-
-                              <td className="text-right" onClick={() => handleOpenFranchiseeModal(f, 'received')} title="Click to view Received Inflows itemization">
-                                <div style={{ color: '#0F6E56', fontWeight: '700' }}>{formatCurrency(f.received)}</div>
-                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{f.received_pct}% ({f.received_count || 0} items)</div>
-                              </td>
-
-                              <td className="text-right" onClick={() => handleOpenFranchiseeModal(f, 'outstanding')} title="Click to view Outstanding Invoices itemization">
-                                <div style={{ color: f.outstanding > 0 ? '#B7791F' : 'var(--text-muted)', fontWeight: '700' }}>
-                                  {formatCurrency(f.outstanding)}
-                                </div>
-                                {f.outstanding > 0 && (
-                                  <div style={{ display: 'inline-block', padding: '1px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: '600', background: f.avg_days_outstanding > 75 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)', color: f.avg_days_outstanding > 75 ? '#A8402E' : '#B7791F' }}>
-                                    Avg age: {f.avg_days_outstanding}d
-                                  </div>
-                                )}
-                              </td>
-
-                              <td className="text-right" onClick={() => handleOpenFranchiseeModal(f, 'cancelled')} title="Click to view Cancelled & CN itemization">
-                                <div style={{ color: f.cancelled > 0 ? '#A8402E' : 'var(--text-muted)', fontWeight: '600' }}>
-                                  {formatCurrency(f.cancelled)}
-                                </div>
-                                {f.credit_notes > 0 && (
-                                  <div style={{ fontSize: '0.7rem', color: '#7C3AED', fontWeight: '600' }}>
-                                    CN: -{formatCurrency(f.credit_notes)}
-                                  </div>
-                                )}
-                              </td>
-
-                              <td style={{ textAlign: 'center' }} onClick={() => handleOpenFranchiseeModal(f, 'outstanding')}>
-                                <span style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  padding: '4px 10px',
-                                  borderRadius: '16px',
-                                  fontSize: '0.74rem',
-                                  fontWeight: '700',
-                                  background: bandKey === 'likely' ? 'rgba(16, 185, 129, 0.15)' : (bandKey === 'follow_up' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(239, 68, 68, 0.15)'),
-                                  color: bandKey === 'likely' ? '#0F6E56' : (bandKey === 'follow_up' ? '#B7791F' : '#A8402E'),
-                                  border: `1px solid ${bandKey === 'likely' ? 'rgba(16, 185, 129, 0.3)' : (bandKey === 'follow_up' ? 'rgba(234, 179, 8, 0.3)' : 'rgba(239, 68, 68, 0.3)')}`
-                                }}>
-                                  {score}% {bandKey === 'likely' ? '🟢 Likely' : (bandKey === 'follow_up' ? '🟡 Follow-up' : '🔴 At Risk')}
-                                </span>
-                              </td>
-
-                              <td className="text-right font-bold" style={{ color: '#0F6E56' }} onClick={() => handleOpenFranchiseeModal(f, 'outstanding')}>
-                                {f.outstanding > 0 ? formatCurrency(f.expected_collectible) : '—'}
-                              </td>
-
-                              <td style={{ textAlign: 'center' }} onClick={() => handleOpenFranchiseeModal(f)}>
-                                <div 
-                                  title={`Aging Factor: ${cr.aging_factor}% (45%) | BD Conv: ${cr.conversion_rate}% (35%) | Fran Record: ${cr.franchisee_track_record}% (20%)`}
-                                  style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--accent-teal)', fontSize: '0.75rem', fontWeight: '600' }}
-                                >
-                                  <Info size={14} />
-                                  <span>{score}/100</span>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <Pagination
-                    currentPage={safeFranPage}
-                    totalItems={filteredFranchisees.length}
-                    pageSize={FRAN_PER_PAGE}
-                    onPageChange={setFranPage}
-                    itemName="franchisees"
-                  />
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* VIEW 2: BD LEADERBOARD & DIRECTORY (CONTRACT RECONCILIATION)              */}
+      {/* VIEW 1: BD MEMBER PERFORMANCE OVERVIEW, COST, ROI & DIRECTORY            */}
       {/* ========================================================================= */}
       {activeTab === 'leaderboard' && (
         <div className="animate-fade-in">
           
-          {/* Overview Cards */}
-          <section className="kpi-grid">
-            <div className="kpi-card card-blue">
-              <div className="kpi-header">
-                <span className="kpi-title">Gross Revenue (Service Amt) • {selectedMonth !== 'All Months' ? selectedMonth : (selectedYear !== 'All Years' ? selectedYear : 'All Years')}</span>
-                <span className="kpi-icon"><TrendingUp size={18} /></span>
-              </div>
-              <h2 className="kpi-value">{formatLakhs(overallRevenue)}</h2>
-              <div className="kpi-change up">
-                <span>Aggregated billing charges generated by BD team</span>
-              </div>
-            </div>
-
-            <div className="kpi-card card-purple">
-              <div className="kpi-header">
-                <span className="kpi-title">Net Revenue (R Share)</span>
-                <span className="kpi-icon"><Percent size={18} /></span>
-              </div>
-              <h2 className="kpi-value">{formatLakhs(overallNetRevenue)}</h2>
-              <div className="kpi-change up">
-                <span>Company net share from closures</span>
-              </div>
-            </div>
-
-            <div className="kpi-card card-red">
-              <div className="kpi-header">
-                <span className="kpi-title">Total Potential Revenue Loss</span>
-                <span className="kpi-icon"><Briefcase size={18} /></span>
-              </div>
-              <h2 className="kpi-value">{formatLakhs(overallLossAmount)}</h2>
-              <div className="kpi-change down">
-                <span>From cancelled & internally closed enquiries</span>
-              </div>
-            </div>
-
-            <div className={`kpi-card ${Math.abs(overallVariance) < 1 ? 'card-green' : (overallVariance > 0 ? 'card-red' : 'card-blue')}`}>
-              <div className="kpi-header">
-                <span className="kpi-title">Net Payout Variance</span>
-                <span className="kpi-icon"><Award size={18} /></span>
-              </div>
-              <h2 className="kpi-value">
-                {overallVariance > 0 ? '+' : ''}{formatCurrency(overallVariance)}
-              </h2>
-              <div className={`kpi-change ${Math.abs(overallVariance) < 1 ? 'up' : 'down'}`}>
-                <span>
-                  {Math.abs(overallVariance) < 1 
-                    ? 'Accounts fully reconciled' 
-                    : (overallVariance > 0 ? 'Ledger payouts exceed contract formula' : 'Outstanding pending payouts')}
-                </span>
-              </div>
-            </div>
-          </section>
-
-          <div className="charts-grid-row">
-            {/* Leaderboard Chart */}
-            <div className="dashboard-card flex-1">
-              <h3 className="card-title">BD Revenue Leaderboard (Gross)</h3>
-              <div className="card-content">
-                <div className="leaderboard-bars">
-                  {agentSummaries.map((agent, index) => {
-                    const maxRevenue = Math.max(...agentSummaries.map(a => a.grossRevenue), 10000);
-                    const percentage = (agent.grossRevenue / maxRevenue) * 100;
-                    const colors = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6'];
-                    const barColor = colors[index % colors.length];
-
-                    return (
-                      <div className="leaderboard-item" key={agent.id}>
-                        <div className="leaderboard-item-header">
-                          <div className="agent-rank-name">
-                            <span className="rank-num">#{index + 1}</span>
-                            <span className="agent-name font-bold">{agent.name}</span>
-                          </div>
-                          <span className="agent-revenue-value">{formatCurrency(agent.grossRevenue)}</span>
-                        </div>
-                        
-                        <div className="leaderboard-bar-track">
-                          <div 
-                            className="leaderboard-bar-fill" 
-                            style={{ width: `${percentage}%`, backgroundColor: barColor }}
-                          ></div>
-                        </div>
-                        
-                        <div className="leaderboard-item-footer" style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start', fontSize: '0.7rem' }}>
-                          <div>
-                            Enquiries: {agent.leadsProgressed || 0} Prog
-                            {' / '}{agent.leadsCancelled || 0} Cancel
-                            {' / '}{agent.leadsInternallyClosed || 0} Int. Close
-                            {(agent.leadsInprogress || 0) > 0 && <span style={{color:'#60a5fa'}}> / {agent.leadsInprogress} Active</span>}
-                            {(agent.leadsOnHold || 0) > 0 && <span style={{color:'#f59e0b'}}> / {agent.leadsOnHold} On Hold</span>}
-                            {(agent.leadsReallocated || 0) > 0 && <span style={{color:'#a78bfa'}}> / {agent.leadsReallocated} Reallocated</span>}
-                            {(agent.leadsCreditNotes || 0) > 0 && <span style={{color:'#f87171'}}> / {agent.leadsCreditNotes} Credit Notes</span>}
-                            {' / '}{agent.leadsBought || 0} Total
-                          </div>
-                          <div style={{ color: 'var(--text-muted)' }}>
-                            Gross: {formatCurrency(agent.grossRevenue)} 
-                            {' | '}Net Share: {formatCurrency(agent.netRevenue)} 
-                            {' | '}Loss: {formatCurrency(agent.lossAmount)}
-                            {agent.unverifiedAmount > 0 && (
-                              <span style={{ color: 'var(--color-pending)', marginLeft: '6px', fontWeight: 'bold' }}>
-                                ⚠️ Unverified: {formatCurrency(agent.unverifiedAmount)}
-                              </span>
-                            )}
-                            {(agent.creditNoteReversals || 0) > 0 && (
-                              <span style={{ color: '#f87171' }}>
-                                {' | '}Reversals: -{formatCurrency(agent.creditNoteReversals)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+          {/* Header Card with Member Count & Description */}
+          <div style={{
+            background: 'var(--bg-card)',
+            borderRadius: '12px',
+            border: '1px solid var(--border-color)',
+            padding: '20px 24px',
+            marginBottom: '20px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <h2 style={{ fontSize: '1.45rem', fontWeight: '800', margin: 0, color: 'var(--text-main)', letterSpacing: '-0.02em' }}>
+                    BD Member Performance
+                  </h2>
+                </div>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.88rem', color: 'var(--text-muted)' }}>
+                  Complete BD member-wise performance overview
+                </p>
+                <div style={{ marginTop: '6px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Monitor BD member acquisition, billing, cost to company and financial ROI performance.
                 </div>
               </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', background: 'var(--bg-main)', padding: '6px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '1.6rem', fontWeight: '800', color: 'var(--text-main)' }}>15</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-muted)' }}>BD Members</span>
+              </div>
             </div>
 
-            {/* Ledger and Add Form */}
-            <div className="dashboard-card flex-1">
-              <div className="card-header-flex">
-                <h3 className="card-title">BD Team Directory</h3>
-                <button 
-                  className="btn btn-primary"
-                  onClick={() => setShowAddForm(!showAddForm)}
+            {/* Filter Controls Row (Matching user screenshot: Financial Year, Info Status, BD Expenditure %, Industry, Sub Industry, BD Name) */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+              gap: '14px',
+              marginTop: '20px',
+              paddingTop: '18px',
+              borderTop: '1px solid var(--border-color)'
+            }}>
+              {/* Financial Year */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
+                  Financial Year
+                </label>
+                <select
+                  value={selectedFinancialYear}
+                  onChange={(e) => { setSelectedFinancialYear(e.target.value); setMemberPage(1); }}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.86rem', fontWeight: '600' }}
                 >
-                  <Plus size={16} />
-                  <span>Add BD Agent</span>
+                  <option value="All Financial Years">All Financial Years</option>
+                  <option value="2026-2027">2026-2027 (FY27)</option>
+                  <option value="2025-2026">2025-2026 (FY26)</option>
+                  <option value="2024-2025">2024-2025 (FY25)</option>
+                </select>
+              </div>
+
+              {/* Info Status */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
+                  Info Status
+                </label>
+                <select
+                  value={selectedInfoStatus}
+                  onChange={(e) => { setSelectedInfoStatus(e.target.value); setMemberPage(1); }}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.86rem', fontWeight: '600' }}
+                >
+                  <option value="All">All</option>
+                  <option value="R">R (Received / Paid)</option>
+                  <option value="PR">PR (Part Received)</option>
+                  <option value="O">O (Outstanding / Unpaid)</option>
+                  <option value="C">C (Cancelled / Void)</option>
+                </select>
+              </div>
+
+              {/* BD Expenditure % */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
+                  BD Expenditure %
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="Enter %"
+                    value={bdExpenditurePct}
+                    onChange={(e) => setBdExpenditurePct(e.target.value)}
+                    style={{ width: '100%', padding: '9px 26px 9px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.86rem', fontWeight: '600' }}
+                  />
+                  <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.82rem', pointerEvents: 'none' }}>%</span>
+                </div>
+              </div>
+
+              {/* Industry */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
+                  Industry
+                </label>
+                <select
+                  value={selectedIndustry}
+                  onChange={(e) => { setSelectedIndustry(e.target.value); setSelectedSubIndustry('All Sub-Industries'); setMemberPage(1); }}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.86rem', fontWeight: '600' }}
+                >
+                  <option value="All Industries">All Industries</option>
+                  {Object.keys(INDUSTRY_COLORS).map(ind => (
+                    <option key={ind} value={ind}>{ind}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Sub Industry */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
+                  Sub Industry
+                </label>
+                <select
+                  value={selectedSubIndustry}
+                  onChange={(e) => { setSelectedSubIndustry(e.target.value); setMemberPage(1); }}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.86rem', fontWeight: '600' }}
+                >
+                  <option value="All Sub-Industries">All Sub-Industries</option>
+                  {availableSubIndustries.map(sub => (
+                    <option key={sub} value={sub}>{sub}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* BD Member Filter */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
+                  BD Specialist
+                </label>
+                <select
+                  value={selectedBdFilter}
+                  onChange={(e) => { setSelectedBdFilter(e.target.value); setMemberPage(1); }}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.86rem', fontWeight: '600' }}
+                >
+                  <option value="All BD Members">All BD Members (15)</option>
+                  {ALL_BD_MEMBERS.map(m => (
+                    <option key={m.name} value={m.name}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* KPI Cards Grid */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+            gap: '14px',
+            marginBottom: '20px'
+          }}>
+            {/* Card 1: Gross Commercial Billing */}
+            <div className="dashboard-card" style={{ padding: '18px', borderLeft: '4px solid #3b82f6' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  GROSS COMMERCIAL BILLING
+                </span>
+                <span style={{ color: '#3b82f6', background: 'rgba(59,130,246,0.1)', padding: '5px', borderRadius: '6px' }}>
+                  <DollarSign size={16} />
+                </span>
+              </div>
+              <h2 style={{ fontSize: '1.65rem', fontWeight: '800', margin: '4px 0', color: 'var(--text-main)' }}>
+                {formatCurrency(filteredSummary.gross)}
+              </h2>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Across {filteredSummary.totalDeals} candidate placement deals
+              </div>
+            </div>
+
+            {/* Card 2: Received Revenue */}
+            <div className="dashboard-card" style={{ padding: '18px', borderLeft: '4px solid #10b981' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  RECEIVED REVENUE
+                </span>
+                <span style={{ color: '#10b981', background: 'rgba(16,185,129,0.1)', padding: '5px', borderRadius: '6px' }}>
+                  <TrendingUp size={16} />
+                </span>
+              </div>
+              <h2 style={{ fontSize: '1.65rem', fontWeight: '800', margin: '4px 0', color: '#10b981' }}>
+                {formatCurrency(filteredSummary.received)}
+              </h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#10b981', fontWeight: '600', marginTop: '4px' }}>
+                <span>{filteredSummary.receivedPct}% of Gross Billing</span>
+                <span>↑</span>
+              </div>
+            </div>
+
+            {/* Card 3: In-Progress / Outstanding */}
+            <div className="dashboard-card" style={{ padding: '18px', borderLeft: '4px solid #f59e0b' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  IN-PROGRESS / OUTSTANDING
+                </span>
+                <span style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.1)', padding: '5px', borderRadius: '6px' }}>
+                  <Clock size={16} />
+                </span>
+              </div>
+              <h2 style={{ fontSize: '1.65rem', fontWeight: '800', margin: '4px 0', color: '#f59e0b' }}>
+                {formatCurrency(filteredSummary.outstanding)}
+              </h2>
+              <div style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: '600', marginTop: '4px' }}>
+                {filteredSummary.outstandingPct}% pending collection
+              </div>
+            </div>
+
+            {/* Card 4: Cancelled Billing (Wasted Revenue) */}
+            <div className="dashboard-card" style={{ padding: '18px', borderLeft: '4px solid #ef4444' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  CANCELLED BILLING
+                </span>
+                <span style={{ color: '#ef4444', background: 'rgba(239,68,68,0.1)', padding: '5px', borderRadius: '6px' }}>
+                  <Briefcase size={16} />
+                </span>
+              </div>
+              <h2 style={{ fontSize: '1.65rem', fontWeight: '800', margin: '4px 0', color: '#ef4444' }}>
+                {formatCurrency(filteredSummary.cancelled)}
+              </h2>
+              <div style={{ fontSize: '0.75rem', color: '#ef4444', fontWeight: '600', marginTop: '4px' }}>
+                {filteredSummary.cancelledPct}% cancelled / lost deals
+              </div>
+            </div>
+
+            {/* Card 5: What Person Costs Me */}
+            <div className="dashboard-card" style={{ padding: '18px', borderLeft: '4px solid #8b5cf6' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  COST TO COMPANY (CTC)
+                </span>
+                <span style={{ color: '#8b5cf6', background: 'rgba(139,92,246,0.1)', padding: '5px', borderRadius: '6px' }}>
+                  <Users size={16} />
+                </span>
+              </div>
+              <h2 style={{ fontSize: '1.65rem', fontWeight: '800', margin: '4px 0', color: '#8b5cf6' }}>
+                {formatCurrency(filteredSummary.totalCost)}
+              </h2>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Salary: {formatCurrency(filteredSummary.baseSal)} + Exp: {formatCurrency(filteredSummary.allocExp)}
+              </div>
+            </div>
+
+            {/* Card 6: Net ROI / Profit or Loss */}
+            <div className="dashboard-card" style={{ padding: '18px', borderLeft: `4px solid ${filteredSummary.netROI >= 0 ? '#0F6E56' : '#dc2626'}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  NET ROI / CONTRIBUTION
+                </span>
+                <span style={{ color: filteredSummary.netROI >= 0 ? '#0F6E56' : '#dc2626', background: filteredSummary.netROI >= 0 ? 'rgba(15,110,86,0.1)' : 'rgba(220,38,38,0.1)', padding: '5px', borderRadius: '6px' }}>
+                  <Sparkles size={16} />
+                </span>
+              </div>
+              <h2 style={{ fontSize: '1.65rem', fontWeight: '800', margin: '4px 0', color: filteredSummary.netROI >= 0 ? '#0F6E56' : '#dc2626' }}>
+                {filteredSummary.netROI >= 0 ? '+' : ''}{formatCurrency(filteredSummary.netROI)}
+              </h2>
+              <div style={{ fontSize: '0.75rem', fontWeight: '600', color: filteredSummary.netROI >= 0 ? '#0F6E56' : '#dc2626', marginTop: '4px' }}>
+                {filteredSummary.roiMultiple.toFixed(1)}x ROI Multiple • {filteredSummary.netROI >= 0 ? 'Net Profitable' : 'Loss-Making'}
+              </div>
+            </div>
+          </div>
+
+          {/* Financial Status Breakdown Bar (Commercial Reconciliation) */}
+          <div className="dashboard-card" style={{ padding: '18px 22px', marginBottom: '22px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <span style={{ fontSize: '0.94rem', fontWeight: '700', color: 'var(--text-main)' }}>
+                  Financial Status Breakdown Bar (Commercial Reconciliation)
+                </span>
+                <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Visual reconciliation across Received inflows, Outstanding invoices, and Cancelled deals.
+                </p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', fontWeight: '700', color: '#0F6E56', background: 'rgba(15,110,86,0.1)', padding: '4px 10px', borderRadius: '20px' }}>
+                <CheckCircle2 size={14} /> Commercial Reconciled
+              </div>
+            </div>
+
+            {/* Segmented Progress Bar */}
+            <div style={{ height: '20px', borderRadius: '6px', overflow: 'hidden', display: 'flex', background: 'var(--border-color)', margin: '10px 0' }}>
+              <div style={{ width: `${filteredSummary.receivedPct}%`, background: '#10b981', transition: 'width 0.3s' }} title={`Received: ${formatCurrency(filteredSummary.received)} (${filteredSummary.receivedPct}%)`} />
+              <div style={{ width: `${filteredSummary.outstandingPct}%`, background: '#f59e0b', transition: 'width 0.3s' }} title={`Outstanding: ${formatCurrency(filteredSummary.outstanding)} (${filteredSummary.outstandingPct}%)`} />
+              <div style={{ width: `${filteredSummary.cancelledPct}%`, background: '#ef4444', transition: 'width 0.3s' }} title={`Cancelled / Lost: ${formatCurrency(filteredSummary.cancelled)} (${filteredSummary.cancelledPct}%)`} />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px', fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#10b981' }} />
+                Received: <strong style={{ color: 'var(--text-main)' }}>{formatCurrency(filteredSummary.received)}</strong> ({filteredSummary.receivedPct}%)
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#f59e0b' }} />
+                Outstanding: <strong style={{ color: 'var(--text-main)' }}>{formatCurrency(filteredSummary.outstanding)}</strong> ({filteredSummary.outstandingPct}%)
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#ef4444' }} />
+                Cancelled: <strong style={{ color: 'var(--text-main)' }}>{formatCurrency(filteredSummary.cancelled)}</strong> ({filteredSummary.cancelledPct}%)
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#8b5cf6' }} />
+                Total Cost: <strong style={{ color: 'var(--text-main)' }}>{formatCurrency(filteredSummary.totalCost)}</strong>
+              </span>
+            </div>
+          </div>
+
+          {/* BD Member Performance Directory Table (Requested by user) */}
+          <div className="dashboard-card" style={{ padding: '22px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-main)' }}>
+                  BD Member Performance Directory
+                </h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  Member-wise commercial billing, CTC cost, ROI return multiple, and money waste analysis. Click any row for invoice audit.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{ position: 'relative', minWidth: '240px' }}>
+                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input
+                    type="text"
+                    placeholder="Search BD member or industry..."
+                    value={memberSearchTerm}
+                    onChange={(e) => { setMemberSearchTerm(e.target.value); setMemberPage(1); }}
+                    style={{ width: '100%', padding: '7px 12px 7px 30px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.82rem' }}
+                  />
+                </div>
+
+                <select
+                  value={memberSortField}
+                  onChange={(e) => setMemberSortField(e.target.value)}
+                  style={{ padding: '7px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.82rem', fontWeight: '600' }}
+                >
+                  <option value="gross">Sort: Gross Billing (High to Low)</option>
+                  <option value="roi">Sort: Net ROI (High to Low)</option>
+                  <option value="cost">Sort: Cost to Company (High to Low)</option>
+                  <option value="waste">Sort: Money Wasted (High to Low)</option>
+                  <option value="name">Sort: Name (A-Z)</option>
+                </select>
+
+                <button
+                  onClick={handleExportDirectoryCSV}
+                  className="btn btn-secondary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 14px', fontSize: '0.82rem' }}
+                >
+                  <Download size={14} /> Export CSV
                 </button>
               </div>
+            </div>
 
-              {showAddForm && (
-                <form onSubmit={handleSubmit} className="inline-add-form animate-fade-in" style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '20px', marginBottom: '24px' }}>
-                  <h4 style={{ marginBottom: '16px', color: 'var(--text-main)' }}>Register New BD Agent & Define Contract Rules</h4>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '16px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>Agent Name</label>
-                      <input 
-                        type="text" 
-                        value={name} 
-                        onChange={(e) => setName(e.target.value)} 
-                        placeholder="e.g. Sameer Dixit" 
-                        required 
-                        style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'transparent', color: 'inherit' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>Base Salary (₹)</label>
-                      <input 
-                        type="number" 
-                        value={baseSalary} 
-                        onChange={(e) => setBaseSalary(e.target.value)} 
-                        placeholder="12000" 
-                        required 
-                        min="0"
-                        style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'transparent', color: 'inherit' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>Comm. Rate (%) [Legacy]</label>
-                      <input 
-                        type="number" 
-                        value={commissionRate} 
-                        onChange={(e) => setCommissionRate(e.target.value)} 
-                        placeholder="10" 
-                        required 
-                        min="1"
-                        max="50"
-                        style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'transparent', color: 'inherit' }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '16px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>Pay per Progressed Enquiry (₹)</label>
-                      <input 
-                        type="number" 
-                        value={payPerProgressed} 
-                        onChange={(e) => setPayPerProgressed(e.target.value)} 
-                        placeholder="2500" 
-                        required 
-                        min="0"
-                        style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'transparent', color: 'inherit' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>Pay per Cancelled Enquiry (₹)</label>
-                      <input 
-                        type="number" 
-                        value={payPerCancelled} 
-                        onChange={(e) => setPayPerCancelled(e.target.value)} 
-                        placeholder="500" 
-                        required 
-                        min="0"
-                        style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'transparent', color: 'inherit' }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px', marginBottom: '20px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>Total Enquiries Allocated</label>
-                      <input 
-                        type="number" 
-                        value={leadsBought} 
-                        onChange={(e) => setLeadsBought(e.target.value)} 
-                        placeholder="30" 
-                        required 
-                        min="0"
-                        style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'transparent', color: 'inherit' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>Enquiries Progressed</label>
-                      <input 
-                        type="number" 
-                        value={leadsProgressed} 
-                        onChange={(e) => setLeadsProgressed(e.target.value)} 
-                        placeholder="14" 
-                        required 
-                        min="0"
-                        style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'transparent', color: 'inherit' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '6px' }}>Enquiries Cancelled</label>
-                      <input 
-                        type="number" 
-                        value={leadsCancelled} 
-                        onChange={(e) => setLeadsCancelled(e.target.value)} 
-                        placeholder="10" 
-                        required 
-                        min="0"
-                        style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'transparent', color: 'inherit' }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="form-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                    <button type="button" className="btn btn-secondary" onClick={() => setShowAddForm(false)}>Cancel</button>
-                    <button type="submit" className="btn btn-primary">Add Agent</button>
-                  </div>
-                </form>
-              )}
-
-              <div className="table-responsive">
-                <table className="data-table">
-                  <thead>
+            {/* Table */}
+            <div className="table-responsive">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>BD Member</th>
+                    <th>Deals Pipeline</th>
+                    <th>Primary Industries</th>
+                    <th className="text-right">Gross Billing</th>
+                    <th className="text-right">Received</th>
+                    <th className="text-right">Outstanding</th>
+                    <th className="text-right">Cancelled (Wasted)</th>
+                    <th className="text-right">Cost to Company</th>
+                    <th className="text-right">Net ROI</th>
+                    <th>Money Waste / Risk Audit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {displayedMembers.length === 0 ? (
                     <tr>
-                      <th>Agent Name</th>
-                      <th>Enquiries Realization</th>
-                      <th>Base & Rates</th>
-                      <th>Gross Revenue (Service Amt)</th>
-                      <th>Net Revenue (R Share)</th>
-                      <th style={{ textAlign: 'center' }}>Portfolio Audit</th>
+                      <td colSpan={10} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                        No BD member records matched your selected filters.
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {(() => {
-                      const safeAgentPage = Math.min(Math.max(1, agentPage), Math.max(1, Math.ceil(agentSummaries.length / AGENTS_PER_PAGE)));
-                      const paginatedAgents = agentSummaries.slice((safeAgentPage - 1) * AGENTS_PER_PAGE, safeAgentPage * AGENTS_PER_PAGE);
-                      
-                      return paginatedAgents.map(agent => (
-                        <tr 
-                          key={agent.id}
+                  ) : (
+                    displayedMembers.slice((memberPage - 1) * MEMBERS_PER_PAGE, memberPage * MEMBERS_PER_PAGE).map((member) => {
+                      const isLoss = member.netROI < 0;
+                      return (
+                        <tr
+                          key={member.name}
+                          onClick={() => setSelectedMemberForAudit(member)}
+                          className="clickable-row-item"
+                          style={{ cursor: 'pointer' }}
                         >
+                          {/* Member Name & Role */}
                           <td className="font-bold">
-                            <div>{agent.name}</div>
-                          </td>
-                          <td>
-                            <div style={{ fontWeight: 'bold', fontSize: '0.8rem' }}>
-                              <span style={{ color: '#10b981' }}>{agent.leadsProgressed}P</span> / <span style={{ color: '#ef4444' }}>{agent.leadsCancelled}C</span> / <span style={{ color: '#ea580c' }}>{agent.leadsInternallyClosed}I</span> / <span style={{ color: '#64748b' }}>{(agent.leadsBought || 0) - (agent.leadsProgressed || 0) - (agent.leadsCancelled || 0) - (agent.leadsInternallyClosed || 0)}Pnd</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span>{member.name}</span>
+                              {member.isDormant && (
+                                <span style={{ padding: '1px 6px', borderRadius: '4px', fontSize: '0.66rem', fontWeight: '700', background: 'rgba(239,68,68,0.12)', color: '#dc2626' }}>
+                                  Dormant
+                                </span>
+                              )}
+                              {!member.isDormant && member.grossBilling > 1000000 && (
+                                <span style={{ padding: '1px 6px', borderRadius: '4px', fontSize: '0.66rem', fontWeight: '700', background: 'rgba(16,185,129,0.12)', color: '#10b981' }}>
+                                  Top Tier
+                                </span>
+                              )}
                             </div>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Total: {agent.leadsBought}</div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                              {member.role} • Click for invoice audit →
+                            </div>
                           </td>
+
+                          {/* Pipeline */}
                           <td>
-                            <div style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Base: {formatCurrency(agent.baseSalary)}</div>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>+{formatCurrency(agent.payPerProgressed)}/P | +{formatCurrency(agent.payPerCancelled)}/C</div>
+                            <div style={{ fontWeight: '700', fontSize: '0.8rem' }}>
+                              <span style={{ color: '#10b981' }}>{member.invoicesClosed}P</span> / <span style={{ color: '#ef4444' }}>{member.invoicesCancelled}C</span> / <span style={{ color: '#f59e0b' }}>{member.invoicesOutstanding}O</span>
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                              Total: {member.totalDeals}
+                            </div>
                           </td>
-                          <td className="font-bold text-teal text-right">{formatCurrency(agent.grossRevenue)}</td>
-                          <td className="font-bold text-right text-blue" style={{ color: 'var(--color-link)' }}>{formatCurrency(agent.netRevenue)}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveAgentDetails(agent);
-                                setModalPage(1);
-                              }}
-                              style={{
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                border: '1px solid var(--border-color)',
-                                background: 'var(--bg-main)',
-                                color: 'var(--text-main)',
-                                fontSize: '0.72rem',
-                                fontWeight: '600',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              Contract Audit
-                            </button>
+
+                          {/* Top Industries */}
+                          <td>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxWidth: '180px' }}>
+                              {member.industriesList.slice(0, 2).map((ind, i) => (
+                                <span key={i} style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-main)', border: '1px solid var(--border-color)', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                                  {ind.split(' ')[0]}
+                                </span>
+                              ))}
+                              {member.industriesList.length > 2 && (
+                                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>+{member.industriesList.length - 2}</span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Gross Billing */}
+                          <td className="font-bold text-right">
+                            {formatCurrency(member.grossBilling)}
+                          </td>
+
+                          {/* Received */}
+                          <td className="text-right">
+                            <div style={{ color: '#10b981', fontWeight: '700' }}>
+                              {formatCurrency(member.receivedRevenue)}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                              {member.grossBilling > 0 ? Math.round((member.receivedRevenue / member.grossBilling) * 100) : 0}%
+                            </div>
+                          </td>
+
+                          {/* Outstanding */}
+                          <td className="text-right">
+                            <div style={{ color: member.outstandingRevenue > 0 ? '#f59e0b' : 'var(--text-muted)', fontWeight: '700' }}>
+                              {formatCurrency(member.outstandingRevenue)}
+                            </div>
+                          </td>
+
+                          {/* Cancelled Billing */}
+                          <td className="text-right">
+                            <div style={{ color: member.cancelledRevenue > 0 ? '#ef4444' : 'var(--text-muted)', fontWeight: '700' }}>
+                              {formatCurrency(member.cancelledRevenue)}
+                            </div>
+                          </td>
+
+                          {/* Cost to Company */}
+                          <td className="text-right">
+                            <div style={{ color: '#8b5cf6', fontWeight: '700' }}>
+                              {formatCurrency(member.totalCost)}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                              Base: {formatCurrency(member.baseSalary)}/mo
+                            </div>
+                          </td>
+
+                          {/* Net ROI */}
+                          <td className="text-right">
+                            <div style={{ padding: '3px 8px', borderRadius: '6px', display: 'inline-block', fontWeight: '700', fontSize: '0.8rem', background: isLoss ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)', color: isLoss ? '#dc2626' : '#0F6E56' }}>
+                              {member.netROI >= 0 ? '+' : ''}{formatCurrency(member.netROI)}
+                            </div>
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                              {member.roiMultiple.toFixed(1)}x multiple
+                            </div>
+                          </td>
+
+                          {/* Waste / Risk Audit */}
+                          <td>
+                            <div style={{ fontSize: '0.74rem', fontWeight: '600', color: isLoss ? '#dc2626' : '#10b981' }}>
+                              {member.wasteReason}
+                            </div>
                           </td>
                         </tr>
-                      ));
-                    })()}
-                  </tbody>
-                </table>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <Pagination
+              currentPage={memberPage}
+              totalItems={displayedMembers.length}
+              pageSize={MEMBERS_PER_PAGE}
+              onPageChange={setMemberPage}
+              itemName="BD members"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* BD Member Financial & Waste Audit Modal */}
+      {selectedMemberForAudit && (
+        <div className="modal-backdrop" onClick={() => setSelectedMemberForAudit(null)}>
+          <div className="modal-content animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '880px', width: '92%' }}>
+            <div className="modal-header">
+              <div className="modal-header-title">
+                <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-main)', fontWeight: '800' }}>
+                  BD Financial & Leakage Audit • {selectedMemberForAudit.name}
+                </h3>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginTop: '3px', display: 'block' }}>
+                  {selectedMemberForAudit.role} • Base Salary: <strong>{formatCurrency(selectedMemberForAudit.baseSalary)}/mo</strong> • Annual CTC: <strong>{formatCurrency(selectedMemberForAudit.annualSalary)}</strong>
+                </span>
+              </div>
+              <button className="close-btn" onClick={() => setSelectedMemberForAudit(null)} aria-label="Close modal">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ maxHeight: '72vh', overflowY: 'auto', padding: '22px' }}>
+              {/* Cost & ROI Highlights */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+                <div style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Total Cost to Company</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#8b5cf6', marginTop: '4px' }}>{formatCurrency(selectedMemberForAudit.totalCost)}</div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Salary + {bdExpenditurePct || 0}% Exp</div>
+                </div>
+
+                <div style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Gross Commercial Billing</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#3b82f6', marginTop: '4px' }}>{formatCurrency(selectedMemberForAudit.grossBilling)}</div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Across {selectedMemberForAudit.totalDeals} deals</div>
+                </div>
+
+                <div style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Our Share Net Revenue</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#10b981', marginTop: '4px' }}>{formatCurrency(selectedMemberForAudit.ourShare)}</div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Company commission pool</div>
+                </div>
+
+                <div style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Net Profit / Loss</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: selectedMemberForAudit.netROI >= 0 ? '#0F6E56' : '#dc2626', marginTop: '4px' }}>
+                    {selectedMemberForAudit.netROI >= 0 ? '+' : ''}{formatCurrency(selectedMemberForAudit.netROI)}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', fontWeight: '600', color: selectedMemberForAudit.netROI >= 0 ? '#0F6E56' : '#dc2626' }}>
+                    {selectedMemberForAudit.roiMultiple.toFixed(1)}x ROI Multiple
+                  </div>
+                </div>
               </div>
 
-              <Pagination
-                currentPage={agentPage}
-                totalItems={agentSummaries.length}
-                pageSize={AGENTS_PER_PAGE}
-                onPageChange={setAgentPage}
-                itemName="agents"
-              />
+              {/* Where Money is Wasted / Leakage Banner */}
+              <div style={{
+                padding: '14px 16px',
+                borderRadius: '8px',
+                background: selectedMemberForAudit.netROI < 0 || selectedMemberForAudit.cancelledRevenue > 0 ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
+                border: `1px solid ${selectedMemberForAudit.netROI < 0 || selectedMemberForAudit.cancelledRevenue > 0 ? 'rgba(239,68,68,0.25)' : 'rgba(16,185,129,0.25)'}`,
+                marginBottom: '20px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', fontSize: '0.88rem', color: selectedMemberForAudit.netROI < 0 || selectedMemberForAudit.cancelledRevenue > 0 ? '#dc2626' : '#0F6E56' }}>
+                  <AlertCircle size={16} />
+                  <span>Cost & Money Leakage Analysis:</span>
+                </div>
+                <p style={{ margin: '6px 0 0 0', fontSize: '0.82rem', color: 'var(--text-main)', lineHeight: '1.4' }}>
+                  {selectedMemberForAudit.wasteReason}
+                  {selectedMemberForAudit.cancelledRevenue > 0 && ` • Cancelled deals represent ${formatCurrency(selectedMemberForAudit.cancelledRevenue)} in uncollected or lost client billings.`}
+                  {selectedMemberForAudit.outstandingRevenue > 0 && ` • Pending balances of ${formatCurrency(selectedMemberForAudit.outstandingRevenue)} are currently outstanding in collections.`}
+                </p>
+              </div>
 
+              {/* Invoices List */}
+              <h4 style={{ margin: '0 0 12px 0', fontSize: '0.96rem', fontWeight: '700', color: 'var(--text-main)' }}>
+                Itemized Client Deals & Invoices ({selectedMemberForAudit.matchingTxs?.length || 0} Records)
+              </h4>
+
+              {(!selectedMemberForAudit.matchingTxs || selectedMemberForAudit.matchingTxs.length === 0) ? (
+                <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)', background: 'var(--bg-main)', borderRadius: '8px' }}>
+                  No itemized transaction records logged for this BD specialist in the selected filter period.
+                </div>
+              ) : (
+                <div className="table-responsive">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Client / Title</th>
+                        <th>Industry</th>
+                        <th style={{ textAlign: 'center' }}>Info Status</th>
+                        <th className="text-right">Bill Amount</th>
+                        <th className="text-right">Company Share</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedMemberForAudit.matchingTxs.slice(0, 20).map((tx, idx) => {
+                        const status = (tx.info || 'R').toUpperCase();
+                        let statusColor = '#10b981';
+                        if (status === 'O') statusColor = '#f59e0b';
+                        if (status === 'C') statusColor = '#ef4444';
+                        if (status === 'PR') statusColor = '#3b82f6';
+
+                        return (
+                          <tr key={tx.id || idx}>
+                            <td style={{ fontSize: '0.8rem' }}>{formatDate(tx.date)}</td>
+                            <td className="font-bold" style={{ fontSize: '0.82rem' }}>
+                              <div>{tx.companyName || tx.title || 'Client Deal'}</div>
+                            </td>
+                            <td style={{ fontSize: '0.78rem' }}>{classifyIndustry(tx)}</td>
+                            <td style={{ textAlign: 'center' }}>
+                              <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '700', background: `${statusColor}18`, color: statusColor }}>
+                                {status}
+                              </span>
+                            </td>
+                            <td className="font-bold text-right" style={{ fontSize: '0.82rem' }}>
+                              {formatCurrency(tx.amount || 0)}
+                            </td>
+                            <td className="text-right" style={{ fontSize: '0.82rem', color: '#0F6E56', fontWeight: '600' }}>
+                              {formatCurrency(tx.ourShare || (tx.amount || 0) * 0.25)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {selectedMemberForAudit.matchingTxs.length > 20 && (
+                    <div style={{ textAlign: 'center', padding: '10px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      Showing top 20 of {selectedMemberForAudit.matchingTxs.length} client deals
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
