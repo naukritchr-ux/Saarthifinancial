@@ -77,8 +77,12 @@ const Dashboard = ({ setActivePage }) => {
   const { revenue, expenses, profit, margin } = useMemo(() => {
     const rev = displayTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
     const exp = displayTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
+    const ourShare = displayTxs.filter(t => t.type === 'income').reduce((sum, t) => {
+      const shares = getTransactionShares(t);
+      return sum + (shares.rShare || 0);
+    }, 0);
     const prof = rev - exp;
-    const marg = rev > 0 ? (prof / rev) * 100 : 0;
+    const marg = ourShare > 0 ? (prof / ourShare) * 100 : (rev > 0 ? (prof / rev) * 100 : 0);
     return { revenue: rev, expenses: exp, profit: prof, margin: marg };
   }, [displayTxs]);
 

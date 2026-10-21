@@ -42,8 +42,27 @@ export function getTransactionShares(tx = {}) {
     };
   }
 
-  // 2. Unverified fallback using standard 25/75 agreement ratio
-  const rShare = Math.round(gross * DEFAULT_COMPANY_SHARE_RATE);
+  // 2. Unverified fallback using tenure if available, otherwise standard agreement ratio (70-30 for >=3 yrs, 75-25 for <3 yrs)
+  let companyRate = DEFAULT_COMPANY_SHARE_RATE;
+  let franchiseeRate = DEFAULT_FRANCHISEE_SHARE_RATE;
+  if (tx.tenureYears !== undefined && tx.tenureYears !== null) {
+    if (Number(tx.tenureYears) >= 3) {
+      companyRate = SENIOR_COMPANY_SHARE_RATE;
+      franchiseeRate = SENIOR_FRANCHISEE_SHARE_RATE;
+    }
+  } else if (tx.onboardingDate) {
+    const bill = tx.billDate ? new Date(tx.billDate) : new Date();
+    const onboard = new Date(tx.onboardingDate);
+    if (!isNaN(bill.getTime()) && !isNaN(onboard.getTime())) {
+      const diffYears = (bill - onboard) / (365.25 * 24 * 60 * 60 * 1000);
+      if (diffYears >= 3) {
+        companyRate = SENIOR_COMPANY_SHARE_RATE;
+        franchiseeRate = SENIOR_FRANCHISEE_SHARE_RATE;
+      }
+    }
+  }
+
+  const rShare = Math.round(gross * companyRate);
   const franchiseeShare = gross - rShare;
 
   return {
@@ -51,6 +70,6 @@ export function getTransactionShares(tx = {}) {
     rShare,
     franchiseeShare,
     isVerified: false,
-    source: 'standard_agreement_config (25/75)'
+    source: `standard_agreement_config (${Math.round(franchiseeRate * 100)}-${Math.round(companyRate * 100)})`
   };
 }

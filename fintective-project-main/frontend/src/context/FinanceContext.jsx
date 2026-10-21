@@ -90,87 +90,22 @@ export const normalizeFinancialYear = (fy, dateStr = null) => {
   return null;
 };
 
-const generateDefaultTransactions = () => {
-  const seedItems = [
-    { id: 'inv-180010', title: 'JAYATMA TECHNOLOGIES - Hr', amount: 85000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2025-06-07', companyName: 'JAYATMA TECHNOLOGIES', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Avadai Esakki', franchiseeName: 'Sandeep', financialYear: '2025-2026' },
-    { id: 'inv-180019', title: 'TEMA BUSINESS SYSTEMS - Hr Executive', amount: 62499, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2024-05-09', companyName: 'TEMA BUSINESS SYSTEMS', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Unknown', financialYear: '2024-2025' },
-    { id: 'inv-180025', title: 'ACCUPEX AIR SOLUTIONS - Senior Engineer', amount: 141650, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-10', companyName: 'ACCUPEX AIR SOLUTIONS', bdAgentName: 'Rahul Patil', teamLeaderName: 'Joyeeta Joydeb Khaskel', franchiseeName: 'Preshita Rane', financialYear: '2026-2027' },
-    { id: 'inv-180030', title: 'SUNDARAM TECHNOLOGIES - Software Architect', amount: 212500, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-15', companyName: 'SUNDARAM TECHNOLOGIES', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Vedika Girish Tolani', franchiseeName: 'Razia Begum', financialYear: '2026-2027' },
-    { id: 'inv-180035', title: 'COIGN CONSULTING - Lead Developer', amount: 145000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-08-20', companyName: 'COIGN CONSULTING', bdAgentName: 'Sneha Kulkarni', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Anita Mandar Kulkarni', financialYear: '2026-2027' },
-    { id: 'inv-180040', title: 'EMBASSY TECH HUB - Senior HRBP', amount: 165000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2025-11-12', companyName: 'EMBASSY TECH HUB', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Joyeeta Joydeb Khaskel', franchiseeName: 'Subhash Pande', financialYear: '2025-2026' },
-    { id: 'inv-180045', title: 'INFOSYS LIMITED - Technical Lead', amount: 280000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2025-09-05', companyName: 'INFOSYS LIMITED', bdAgentName: 'Ankur Sharma', teamLeaderName: 'Vedika Girish Tolani', franchiseeName: 'Ankur Sharma', financialYear: '2025-2026' },
-    { id: 'inv-180050', title: 'TATA CONSULTANCY SERVICES - Java Architect', amount: 320000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-07-22', companyName: 'TATA CONSULTANCY SERVICES', bdAgentName: 'Rahul Patil', teamLeaderName: 'Joyeeta Joydeb Khaskel', franchiseeName: 'Preshita Rane', financialYear: '2026-2027' },
-    { id: 'inv-180055', title: 'WIPRO ENTERPRISES - Data Analyst', amount: 125000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-06-18', companyName: 'WIPRO ENTERPRISES', bdAgentName: 'Sneha Kulkarni', teamLeaderName: 'Surbhi Vinod Jain', franchiseeName: 'Anita Mandar Kulkarni', financialYear: '2026-2027' },
-    { id: 'inv-180060', title: 'TECH MAHINDRA - Cloud Solutions Architect', amount: 245000, type: 'income', category: 'Recruitment Fee', subCategory: 'Placement Invoice', date: '2026-09-04', companyName: 'TECH MAHINDRA', bdAgentName: 'Komal Suresh Bhanushali', teamLeaderName: 'Avadai Esakki', franchiseeName: 'Sandeep', financialYear: '2026-2027' }
-  ];
-
-  const portalEmployers = [
-    { company: 'Wipro Technologies', amount: 83200, tier: 'Enterprise Unlimited' },
-    { company: 'TCS QA Hub', amount: 55000, tier: 'Standard Premium' },
-    { company: 'Cognizant Pune', amount: 67500, tier: 'Enterprise Unlimited' },
-    { company: 'Infosys Central', amount: 45000, tier: 'Basic Recruitment' }
-  ];
-
-  const expenseTemplates = [
-    { title: 'Core Recruitment & Staff Payroll', amount: 240000, category: 'Salaries', subCategory: 'Staff Salaries' },
-    { title: 'Commercial Office Space Rent & Maintenance', amount: 75000, category: 'Office & infra', subCategory: 'Rent' },
-    { title: 'Naukri.com & LinkedIn Talent Portals', amount: 85000, category: 'Portal subscriptions', subCategory: 'Candidate Sourcing' },
-    { title: 'Google & Meta Performance Ads', amount: 55000, category: 'Marketing', subCategory: 'Digital Marketing' },
-    { title: 'AWS Cloud & Database Infrastructure', amount: 28000, category: 'Office & infra', subCategory: 'Cloud Hosting' },
-    { title: 'Office Pantry & Operational Supplies', amount: 15000, category: 'Other', subCategory: 'Office Supplies' },
-    { title: 'BD Agent Performance Commissions', amount: 95000, category: 'BD commissions', subCategory: 'Payouts' }
-  ];
-
-  const all = [...seedItems];
-
-  for (const yr of [2024, 2025, 2026]) {
-    for (let mo = 1; mo <= 12; mo++) {
-      if (yr === 2026 && mo > 9) continue;
-      const moStr = String(mo).padStart(2, '0');
-      const fyStr = mo >= 4 ? `${yr}-${yr+1}` : `${yr-1}-${yr}`;
-      
-      portalEmployers.forEach((pe, pIdx) => {
-        all.push({
-          id: `portal-sub-${yr}-${moStr}-${pIdx}`,
-          title: `Employer Subscription - ${pe.company} (${pe.tier})`,
-          companyName: pe.company,
-          amount: pe.amount,
-          type: 'income',
-          category: 'Job portal',
-          subCategory: 'Employer Package',
-          date: `${yr}-${moStr}-15`,
-          paymentMode: 'Net Banking',
-          referenceId: `SUB-PORTAL-${yr}${moStr}-${pIdx}`,
-          description: `Active employer talent search package for ${pe.company}`,
-          bdAgentId: null,
-          franchiseeId: null,
-          financialYear: fyStr
-        });
-      });
-
-      expenseTemplates.forEach((tpl, idx) => {
-        const day = String((idx * 4 + 3) % 28 + 1).padStart(2, '0');
-        all.push({
-          id: `exp-auto-${yr}-${moStr}-${idx}`,
-          title: `${tpl.title} (${moStr}/${yr})`,
-          amount: tpl.amount,
-          type: 'expense',
-          category: tpl.category,
-          subCategory: tpl.subCategory,
-          date: `${yr}-${moStr}-${day}`,
-          financialYear: fyStr,
-          companyName: 'Saarthi Corporate'
-        });
-      });
-    }
-  }
-
-  return all;
+export const getCurrentFY = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth(); // 0-indexed: 0=Jan, 3=Apr
+  return m >= 3 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
 };
 
-const DEFAULT_TRANSACTIONS = generateDefaultTransactions();
+const DEFAULT_TRANSACTIONS = [];
 
 export const FinanceProvider = ({ children }) => {
+  const currentFY = getCurrentFY();
+
+  const [cacheTimestamp, setCacheTimestamp] = useState(() => {
+    return sessionStorage.getItem('fintective_cache_timestamp') || null;
+  });
+
   const [transactions, setTransactions] = useState(() => {
     try {
       const cached = sessionStorage.getItem('fintective_cached_txs');
@@ -179,13 +114,13 @@ export const FinanceProvider = ({ children }) => {
         if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed.map(tx => ({
             ...tx,
-            financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || '2025-2026'
+            financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || currentFY
           }));
         }
       }
-      return DEFAULT_TRANSACTIONS;
+      return [];
     } catch {
-      return DEFAULT_TRANSACTIONS;
+      return [];
     }
   });
   const [franchisees, setFranchisees] = useState(() => {
@@ -238,16 +173,6 @@ export const FinanceProvider = ({ children }) => {
   const [lastSyncedAt, setLastSyncedAt] = useState(() => {
     return sessionStorage.getItem('fintective_last_synced_at') || null;
   });
-
-  // Helper to compute current dynamic Indian Financial Year (April 1 - March 31)
-  const getCurrentFY = () => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = now.getMonth(); // 0-indexed: 0=Jan, 3=Apr
-    return m >= 3 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
-  };
-
-  const currentFY = getCurrentFY();
 
   const [selectedMonth, setSelectedMonth] = useState('All Months');
   const [selectedYear, setSelectedYear] = useState(() => {
@@ -639,7 +564,7 @@ export const FinanceProvider = ({ children }) => {
             if (Array.isArray(txData)) {
               const sanitized = txData.map(tx => ({
                 ...tx,
-                financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || '2025-2026'
+                financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || currentFY
               }));
               setTransactions(sanitized);
               loadedFromBackend = true;
@@ -778,142 +703,11 @@ export const FinanceProvider = ({ children }) => {
       } catch (e) {}
     }
 
-    // 6. Resilient Fallback: Directly pull latest from Saarthi 360 CRM endpoints (api.sarthi360.in)
-    let crmFallbackSuccess = false;
-    try {
-      console.log('[Fintective Data State] Pulling from upstream CRM API (api.sarthi360.in) in Limited Data Mode...');
-      const [enqRes, invRes, franRes, expRes] = await Promise.allSettled([
-        fetch('https://api.sarthi360.in/api/enquiries', { signal: AbortSignal.timeout(12000) }),
-        fetch('https://api.sarthi360.in/api/Invoice', { signal: AbortSignal.timeout(12000) }),
-        fetch('https://api.sarthi360.in/api/franchisees', { signal: AbortSignal.timeout(12000) }),
-        fetch('https://api.sarthi360.in/api/expenses', { signal: AbortSignal.timeout(12000) })
-      ]);
-
-      let enquiries = [];
-      if (enqRes.status === 'fulfilled' && enqRes.value.ok) {
-        const json = await enqRes.value.json();
-        enquiries = Array.isArray(json) ? json : (json.data || json.enquiries || []);
-      }
-
-      let invoices = [];
-      if (invRes.status === 'fulfilled' && invRes.value.ok) {
-        const json = await invRes.value.json();
-        invoices = Array.isArray(json) ? json : (json.data || json.invoices || []);
-      }
-
-      let currentFranList = franchisees;
-      if (franRes.status === 'fulfilled' && franRes.value.ok) {
-        const json = await franRes.value.json();
-        const fData = Array.isArray(json) ? json : (json.data || json.franchisees || []);
-        if (fData.length > 0) {
-          currentFranList = fData;
-          setFranchisees(fData);
-        }
-      }
-
-      let liveExp = [];
-      if (expRes.status === 'fulfilled' && expRes.value.ok) {
-        const json = await expRes.value.json();
-        liveExp = Array.isArray(json) ? json : (json.data || json.expenses || []);
-      }
-
-      const liveTxs = [];
-
-      invoices.forEach(inv => {
-        if (!inv.id) return;
-        const amt = parseFloat(inv.serviceCharges || inv.totalBillAmt || inv.amountReceived || 0);
-        const dateStr = (inv.billDate || inv.dateReceived || inv.createdAt || '').split('T')[0];
-        if (amt > 0 && dateStr) {
-          const franName = inv.franchiseName || '';
-          const bdName = inv.nameOfBd || '';
-          liveTxs.push({
-            id: `inv-${inv.id}`,
-            title: `${inv.companyName || 'Client Placement'} - ${inv.postOfCandidate || 'Recruitment'}`,
-            amount: amt,
-            type: (inv.info === 'CN' || inv.enquiryStatus === 'credit_note') ? 'credit_note' : 'income',
-            category: 'Recruitment Fee',
-            subCategory: 'Placement Invoice',
-            date: dateStr,
-            companyName: inv.companyName || '',
-            bdAgentName: bdName,
-            teamLeaderName: inv.teamLeader || '',
-            franchiseeName: franName,
-            franchiseeId: matchFranchiseeId(franName, currentFranList),
-            bdAgentId: matchBdAgentId(bdName, bdAgents),
-            financialYear: inv.financialYear || 'N/A',
-            city: inv.companyCity || inv.city || 'Mumbai',
-            industry: inv.industry || 'Information Technology & Software',
-            ourShare: parseFloat(inv.ourShare || 0) || (amt * 0.25),
-            franchiseeShare: parseFloat(inv.franchiseeShare || 0) || (amt * 0.75),
-            info: inv.info || 'RV'
-          });
-        }
-      });
-
-      enquiries.forEach(enq => {
-        if (!enq.id) return;
-        const amt = parseFloat(enq.bill_amount || enq.placementFees || 0);
-        const dateStr = (enq.bill_date || enq.dateOfAllocation || enq.created_at || '').split('T')[0];
-        if (amt > 0 && dateStr && !invoices.some(i => i.enquiry_id === enq.id)) {
-          const franName = enq.franchiseeName || '';
-          const bdName = enq.bdMemberName || '';
-          liveTxs.push({
-            id: `enq-${enq.id}`,
-            title: `${enq.companyName || 'Client Placement'} - ${enq.positionName || 'Role'}`,
-            amount: amt,
-            type: 'income',
-            category: 'Recruitment Fee',
-            subCategory: 'Placement',
-            date: dateStr,
-            companyName: enq.companyName || '',
-            bdAgentName: bdName,
-            teamLeaderName: enq.teamLeaderName || '',
-            franchiseeName: franName,
-            franchiseeId: matchFranchiseeId(franName, currentFranList),
-            bdAgentId: matchBdAgentId(bdName, bdAgents)
-          });
-        }
-      });
-
-      const liveExpenseTxs = [];
-      liveExp.forEach(exp => {
-        const total = (parseFloat(exp.franchisee || 0) + parseFloat(exp.recruitment || 0)) * 1000;
-        if (total > 0) {
-          liveExpenseTxs.push({
-            id: `exp-api-${exp.id}`,
-            title: exp.head_component || 'Operating Expense',
-            amount: total,
-            type: 'expense',
-            category: exp.head_component?.includes('Rent') ? 'Office & infra' : (exp.head_component?.includes('Software') ? 'Portal subscriptions' : 'Marketing'),
-            subCategory: exp.head_component || 'Operations',
-            date: '2026-08-01',
-            companyName: 'Saarthi Corporate'
-          });
-        }
-      });
-
-      const combined = [...liveTxs, ...liveExpenseTxs].map(tx => ({
-        ...tx,
-        financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || '2025-2026'
-      }));
-
-      if (combined.length > 0) {
-        setTransactions(combined);
-        crmFallbackSuccess = true;
-        setDataSource('crm_limited');
-        setDataState('crm_limited');
-      }
-    } catch (crmErr) {
-      console.error('[Fintective] Direct CRM fallback failed:', crmErr);
-    }
-
-    // 7. If even CRM fallback failed: explicit Sample mode (Never pretend this is real data)
-    if (!crmFallbackSuccess) {
-      console.warn('[Fintective Data State] Both backend and CRM unreachable. Switching to explicit sample data mode.');
-      setDataSource('sample');
-      setDataState('sample');
-      setTransactions(DEFAULT_TRANSACTIONS);
-    }
+    // 6. If backend failed and no cache is present: clear to empty state (no fake data or direct CRM bypass)
+    console.warn('[Fintective Data State] Backend offline and no cached transactions found.');
+    setDataSource('empty');
+    setDataState('offline');
+    setTransactions([]);
 
     // Always release loading and sync state
     setIsLoadingData(false);
@@ -936,69 +730,10 @@ export const FinanceProvider = ({ children }) => {
         }
       }
     } catch (backendErr) {
-      console.warn('[Sync] Backend sync endpoint unreachable, falling back to direct CRM sync...', backendErr);
+      console.error('[Sync] Backend sync endpoint unreachable:', backendErr);
+      return { success: false, error: 'Backend sync endpoint unreachable. Please verify backend server is running.' };
     }
-
-    // Resilient Fallback: Directly pull latest from Saarthi 360 CRM endpoints
-    try {
-      console.log('[Sync] Initiating resilient direct CRM sync from api.sarthi360.in...');
-      const [enqRes, invRes, franRes, expRes] = await Promise.allSettled([
-        fetch('https://api.sarthi360.in/api/enquiries'),
-        fetch('https://api.sarthi360.in/api/Invoice'),
-        fetch('https://api.sarthi360.in/api/franchisees'),
-        fetch('https://api.sarthi360.in/api/expenses')
-      ]);
-
-      let enqCount = 0;
-      let invCount = 0;
-      let franCount = 0;
-      let expCount = 0;
-
-      if (enqRes.status === 'fulfilled' && enqRes.value.ok) {
-        const json = await enqRes.value.json();
-        const enqs = Array.isArray(json) ? json : (json.data || json.enquiries || []);
-        enqCount = enqs.length;
-      }
-      if (invRes.status === 'fulfilled' && invRes.value.ok) {
-        const json = await invRes.value.json();
-        const invs = Array.isArray(json) ? json : (json.data || json.invoices || []);
-        invCount = invs.length;
-      }
-      if (franRes.status === 'fulfilled' && franRes.value.ok) {
-        const json = await franRes.value.json();
-        const frans = Array.isArray(json) ? json : (json.data || json.franchisees || []);
-        franCount = frans.length;
-        if (frans.length > 0) setFranchisees(frans);
-      }
-      if (expRes.status === 'fulfilled' && expRes.value.ok) {
-        const json = await expRes.value.json();
-        const exps = Array.isArray(json) ? json : (json.data || json.expenses || []);
-        expCount = exps.length;
-      }
-
-      await fetchAllData();
-
-      const nowFormatted = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      setLastSyncedAt(nowFormatted);
-      try { sessionStorage.setItem('fintective_last_synced_at', nowFormatted); } catch (e) {}
-
-      return {
-        success: true,
-        data: {
-          enquiries: enqCount,
-          invoices: invCount,
-          franchisees: franCount,
-          expenses: expCount,
-          clients: 15,
-          legals: 8,
-          duration_seconds: 1.25,
-          mode: 'Direct Live Sync'
-        }
-      };
-    } catch (fallbackErr) {
-      console.error('[Sync] Direct CRM sync fallback failed:', fallbackErr);
-      return { success: false, error: fallbackErr.message };
-    }
+    return { success: false, error: 'Sync failed on server.' };
   };
 
   // Auto-poll on mount and every 90s; keep-alive every 8 min to prevent Render cold-sleep

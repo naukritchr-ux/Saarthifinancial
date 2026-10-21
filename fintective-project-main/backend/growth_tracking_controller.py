@@ -7,6 +7,12 @@ import time
 import threading
 from flask import Blueprint, request, jsonify
 from db import get_db_connection
+from finance_rules import (
+    get_franchisee_tenure_split,
+    calculate_waterfall,
+    fallback_our_share_rate,
+    normalize_fy
+)
 
 growth_tracking_bp = Blueprint("growth_tracking", __name__)
 
@@ -401,7 +407,7 @@ def _fetch_historical_revenue_and_stats(cursor, entity_type, entity_id, entity_n
                                     'deals_count': 0
                                 }
                             period_map[p_norm]['revenue'] += float(ep['est_rev'] or 0.0)
-                            period_map[p_norm]['net_revenue'] += float(ep['est_rev'] or 0.0) * 0.4375
+                            period_map[p_norm]['net_revenue'] += float(ep['est_rev'] or 0.0) * fallback_our_share_rate(p_norm)
                             period_map[p_norm]['deals_count'] += int(ep['deals_count'] or 0)
                     
                     if period_map:
@@ -1123,7 +1129,7 @@ def predict_growth():
                 'multiplier': m,
                 'label': f"{m}x {'Current Base' if m == 1 else 'Scale'}",
                 'revenue': round(base_revenue * m, 2),
-                'estimated_net': round(base_revenue * m * 0.4375, 2),
+                'estimated_net': round(base_revenue * m * fallback_our_share_rate('2025-2026'), 2),
                 'deals_target': max(1, int(round(deal_base * m)))
             }
             for m in range(1, 6)
@@ -1186,7 +1192,7 @@ def predict_growth():
                 'multiplier': m,
                 'label': f"{m}x {'Current Base' if m == 1 else 'Scale'}",
                 'revenue': round(base_revenue * m, 2),
-                'estimated_net': round(base_revenue * m * 0.4375, 2),
+                'estimated_net': round(base_revenue * m * fallback_our_share_rate('2025-2026'), 2),
                 'deals_target': max(1, int(round(deal_base * m)))
             }
             for m in range(1, 6)
@@ -1769,17 +1775,27 @@ def compare_growth_scopes():
                     COUNT(DISTINCT LOWER(TRIM(e.companyName))) as companies,
                     COUNT(*) as invoiced_deals,
                     COALESCE(SUM(COALESCE(e.bill_amount, 0)), 0) as revenue,
-                    COALESCE(SUM(COALESCE(inv_enq.ourShare, inv_bill.ourShare, e.bill_amount * 0.25)), 0) as our_share,
+                    COALESCE(SUM(
+                        COALESCE(
+                            inv_enq.ourShare, 
+                            inv_bill.ourShare, 
+                            CASE 
+                                WHEN f.onboardingDate IS NOT NULL AND TIMESTAMPDIFF(YEAR, LEFT(f.onboardingDate, 10), COALESCE(e.bill_date, e.dateOfAllocation, e.created_at)) >= 3 THEN e.bill_amount * 0.30
+                                ELSE e.bill_amount * 0.25 
+                            END
+                        )
+                    ), 0) as our_share,
                     SUM(CASE WHEN (inv_enq.ourShare IS NOT NULL OR inv_bill.ourShare IS NOT NULL) THEN 1 ELSE 0 END) as verified_count,
                     SUM(CASE WHEN (inv_enq.ourShare IS NULL AND inv_bill.ourShare IS NULL) THEN 1 ELSE 0 END) as estimated_count
                 FROM enquiries e
+                LEFT JOIN franchisees f ON TRIM(LOWER(f.nameAsPerAgreement)) = TRIM(LOWER(e.franchiseeName))
                 LEFT JOIN (
                     SELECT enquiry_id, MAX(ourShare) as ourShare 
-                    FROM invoice WHERE enquiry_id IS NOT NULL AND enquiry_id > 0 GROUP BY enquiry_id
+                    FROM v_invoice_clean WHERE is_revenue = 1 AND enquiry_id IS NOT NULL AND enquiry_id > 0 GROUP BY enquiry_id
                 ) inv_enq ON inv_enq.enquiry_id = e.id
                 LEFT JOIN (
                     SELECT billNumber, MAX(ourShare) as ourShare 
-                    FROM invoice WHERE billNumber IS NOT NULL AND billNumber != '' GROUP BY billNumber
+                    FROM v_invoice_clean WHERE is_revenue = 1 AND billNumber IS NOT NULL AND billNumber != '' GROUP BY billNumber
                 ) inv_bill ON (inv_enq.enquiry_id IS NULL AND e.bill_no IS NOT NULL AND e.bill_no != '' AND inv_bill.billNumber = e.bill_no)
                 WHERE {' AND '.join(where_clauses)}
             """
@@ -1822,11 +1838,16 @@ def compare_growth_scopes():
             if saved_input and saved_input.get('expense') is not None:
                 expense = float(saved_input['expense'])
 
-            # 5. Calculations as specified:
+            # 5. Calculations via single shared waterfall:
+            wf = calculate_waterfall(
+                our_share=our_share,
+                expenses=expense,
+                salaries=salary
+            )
+            net = wf['net']
+            tax = wf['tax']
+            surplus = wf['surplus']
             salary_ratio = round((salary / our_share) * 100, 1) if our_share > 0 else 0.0
-            net = round(our_share - salary - expense, 2)
-            tax = round(net * 0.25, 2) if net > 0 else 0.0
-            surplus = round(net - tax, 2)
 
             results.append({
                 'scope': {
@@ -2042,17 +2063,19 @@ def get_growth_targets_summary():
                 e.id, e.companyName, e.positionName, e.bdMemberName, e.teamLeaderName, e.franchiseeName,
                 e.enquiryStatus, e.bill_no, e.bill_date, e.bill_amount, e.placementFees,
                 e.industry, e.info,
+                f.onboardingDate,
                 COALESCE(inv_enq.ourShare, inv_bill.ourShare) as inv_our_share,
                 COALESCE(inv_enq.franchiseeShare, inv_bill.franchiseeShare) as inv_franchisee_share,
                 LEFT(COALESCE(e.bill_date, e.dateOfAllocation, e.created_at), 10) as effective_date
             FROM enquiries e
+            LEFT JOIN franchisees f ON TRIM(LOWER(f.nameAsPerAgreement)) = TRIM(LOWER(e.franchiseeName))
             LEFT JOIN (
                 SELECT 
                     enquiry_id,
                     MAX(ourShare) as ourShare,
                     MAX(franchiseeShare) as franchiseeShare
-                FROM invoice 
-                WHERE enquiry_id IS NOT NULL AND enquiry_id > 0
+                FROM v_invoice_clean 
+                WHERE is_revenue = 1 AND enquiry_id IS NOT NULL AND enquiry_id > 0
                 GROUP BY enquiry_id
             ) inv_enq ON inv_enq.enquiry_id = e.id
             LEFT JOIN (
@@ -2060,8 +2083,8 @@ def get_growth_targets_summary():
                     billNumber,
                     MAX(ourShare) as ourShare,
                     MAX(franchiseeShare) as franchiseeShare
-                FROM invoice 
-                WHERE billNumber IS NOT NULL AND billNumber != ''
+                FROM v_invoice_clean 
+                WHERE is_revenue = 1 AND billNumber IS NOT NULL AND billNumber != ''
                 GROUP BY billNumber
             ) inv_bill ON (inv_enq.enquiry_id IS NULL AND e.bill_no IS NOT NULL AND e.bill_no != '' AND inv_bill.billNumber = e.bill_no)
             WHERE {' AND '.join(where_clauses)}
@@ -2122,19 +2145,24 @@ def get_growth_targets_summary():
                 monthly_map[ym]['all'] += 1
                 monthly_map[ym]['all_revenue'] += amt
 
+            # Tenure-aware fallback: 70-30 for >=3 years, 75-25 for <3 years
+            split = get_franchisee_tenure_split(
+                onboarding_date=r.get('onboardingDate'),
+                bill_date=edate
+            )
             raw_our_share = r.get('inv_our_share')
             raw_f_share = r.get('inv_franchisee_share')
             if raw_our_share is not None and float(raw_our_share) > 0:
                 deal_our_share = float(raw_our_share)
                 is_ver = True
             else:
-                deal_our_share = amt * 0.25
+                deal_our_share = amt * split['company_pct']
                 is_ver = False
 
             if raw_f_share is not None and float(raw_f_share) > 0:
                 deal_f_share = float(raw_f_share)
             else:
-                deal_f_share = max(0.0, amt - deal_our_share)
+                deal_f_share = amt * split['franchisee_pct']
 
             deals.append({
                 'id': r['id'],

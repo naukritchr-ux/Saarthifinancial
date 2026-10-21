@@ -665,6 +665,30 @@ def ensure_tables_exist():
 
             migrate_expenditure_schema()
 
+            # Create or replace clean financial views (Single Source of Truth)
+            try:
+                cur.execute("""
+                    CREATE OR REPLACE VIEW v_colliding_bills AS
+                    SELECT bill_no FROM enquiries
+                    WHERE bill_no IS NOT NULL AND TRIM(bill_no) <> ''
+                    GROUP BY bill_no HAVING COUNT(DISTINCT LOWER(TRIM(companyName))) > 1;
+                """)
+                cur.execute("""
+                    CREATE OR REPLACE VIEW v_invoice_clean AS
+                    SELECT i.*,
+                      (i.info IS NULL OR i.info NOT IN ('CN','LEGAL-CN','LEGAL','RV')) AS is_revenue,
+                      COALESCE(NULLIF(i.serviceCharges,0), ROUND(i.totalBillAmt/1.18,2), 0) AS rev_ex_gst,
+                      CASE WHEN i.billDate IS NULL THEN 'N/A'
+                           WHEN MONTH(i.billDate) >= 4 THEN CONCAT(YEAR(i.billDate),'-',YEAR(i.billDate)+1)
+                           ELSE CONCAT(YEAR(i.billDate)-1,'-',YEAR(i.billDate)) END AS fy
+                    FROM invoice i
+                    WHERE i.billNumber IS NOT NULL AND i.billNumber <> ''
+                      AND i.billNumber NOT IN (SELECT bill_no FROM v_colliding_bills);
+                """)
+                print("[DB] Verified v_colliding_bills and v_invoice_clean views.")
+            except Exception as view_err:
+                print(f"[DB WARN] Note creating views: {str(view_err)}")
+
         conn.close()
         print("[DB] MySQL schema verified and ready.")
         return True

@@ -477,7 +477,7 @@ export default function FinancialPerformanceCard({
             }}
           >
             <Plus size={14} color="#0F6E56" />
-            + Add to compare
+            Add to compare
           </button>
 
           {isComparisonMode && (

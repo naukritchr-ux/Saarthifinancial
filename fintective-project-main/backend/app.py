@@ -7,6 +7,19 @@ from flask import Flask, jsonify, request, g
 from flask_cors import CORS
 from dotenv import load_dotenv
 from invoice_helpers import get_share_split, calculate_shares
+from finance_rules import (
+    normalize_fy,
+    is_revenue_info,
+    ex_gst,
+    calculate_waterfall,
+    fallback_our_share_rate,
+    fy_to_date_range,
+    get_franchisee_tenure_split,
+    REVENUE_INFO_TYPES,
+    NON_REVENUE_INFO_TYPES,
+    DEFAULT_INCOME_TAX_RATE,
+    DEFAULT_GST_RATE
+)
 
 # Import database module
 from db import init_db, get_db_connection, DB_NAME, DB_PORT
@@ -40,11 +53,13 @@ def refresh_live_exclusions(force=False):
             from collections import defaultdict
             conn = get_db_connection()
             with conn.cursor() as cur:
+                # Bug A4 Fix: Group distinct enquiries first so multi-invoice enquiries do not appear multiple times
+                # and do NOT exclude their own id.
                 cur.execute("""
                     SELECT 
                         e.id, 
                         e.companyName, 
-                        i.candidateName, 
+                        COALESCE(MAX(i.candidateName), e.info, '') AS candidateName, 
                         e.bill_no, 
                         e.bill_date, 
                         e.created_at, 
@@ -52,6 +67,7 @@ def refresh_live_exclusions(force=False):
                     FROM enquiries e
                     LEFT JOIN invoice i ON e.id = i.enquiry_id
                     WHERE e.bill_no IS NOT NULL AND TRIM(e.bill_no) != ''
+                    GROUP BY e.id, e.companyName, e.bill_no, e.bill_date, e.created_at, e.updated_at
                 """)
                 rows = cur.fetchall()
             conn.close()
@@ -107,6 +123,33 @@ _clients_cache_time = 0
 _clients_lock = threading.Lock()
 CLIENTS_CACHE_TTL_SECONDS = 300  # 5 minutes
 
+# Bug B: Data versioning across all worker processes
+_data_version_cache = {'version': 1, 'as_of': None, 'time': 0}
+_data_version_lock = threading.Lock()
+
+def get_data_version(force=False):
+    global _data_version_cache
+    with _data_version_lock:
+        now = time.time()
+        if not force and (now - _data_version_cache['time'] < 5.0) and _data_version_cache['as_of']:
+            return _data_version_cache['version'], _data_version_cache['as_of']
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, COALESCE(completed_at, started_at) as as_of FROM crm_sync_logs WHERE status IN ('completed', 'completed_with_warnings') ORDER BY id DESC LIMIT 1")
+                r = cur.fetchone()
+                if r and r.get('id'):
+                    _data_version_cache['version'] = int(r['id'])
+                    _data_version_cache['as_of'] = str(r.get('as_of') or '')[:19]
+                elif not _data_version_cache['as_of']:
+                    _data_version_cache['as_of'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            conn.close()
+        except Exception:
+            if not _data_version_cache['as_of']:
+                _data_version_cache['as_of'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        _data_version_cache['time'] = now
+        return _data_version_cache['version'], _data_version_cache['as_of']
+
 def invalidate_all_caches():
     global _tx_cache, _tx_cache_time, _ml_insights_cache, _ml_insights_cache_time, _clients_cache, _clients_cache_time
     with _tx_cache_lock:
@@ -119,7 +162,13 @@ def invalidate_all_caches():
         _clients_cache = None
         _clients_cache_time = 0
     refresh_live_exclusions(force=True)
-    print("[Cache Invalidation] All backend pipeline & ML caches cleared.")
+    get_data_version(force=True)
+    try:
+        from growth_tracking_controller import _clear_cache_prefix
+        _clear_cache_prefix("")
+    except Exception as e:
+        print("[Cache Invalidation] growth cache clear note:", str(e))
+    print("[Cache Invalidation] All backend pipeline, ML, and growth caches cleared.")
 
 
 def get_enq_exclude_clause(table_prefix=""):
@@ -350,14 +399,14 @@ def get_transactions():
     t0 = time.time()
     bd_agent_id = request.args.get('bdAgentId')
     franchisee_id = request.args.get('franchiseeId')
-    cache_key = f"{bd_agent_id or 'all'}_{franchisee_id or 'all'}"
+    ver, as_of = get_data_version()
+    cache_key = f"v{ver}_{bd_agent_id or 'all'}_{franchisee_id or 'all'}"
     
     with _tx_cache_lock:
         now = time.time()
         if cache_key in _tx_cache and (now - _tx_cache_time < TX_CACHE_TTL_SECONDS):
             cached_rows = _tx_cache[cache_key]
             elapsed_ms = round((time.time() - t0) * 1000)
-            print(f"[Transactions API] Cache HIT for key='{cache_key}' ({len(cached_rows)} rows returned in {elapsed_ms}ms)")
             return jsonify(cached_rows)
     
     conn = get_db_connection()
@@ -375,7 +424,6 @@ def get_transactions():
             
             cursor.execute(query, params)
             rows = cursor.fetchall()
-            # Convert Decimal back to float for JSON response
             for r in rows:
                 r['amount'] = float(r['amount'])
                 if r.get('date'):
@@ -384,14 +432,13 @@ def get_transactions():
         else:
             combined = []
             
-            # Initialize query variables to prevent NameErrors if any try block fails (Fix NameError bug)
             enquiry_inflows = []
             portal_inflows = []
             outflow_rows = []
             salary_rows = []
             fran_fee_rows = []
             
-            # A. Get BD agents and Franchisees maps (using stable name-hash IDs so IDs always match /api/bd-agents)
+            # A. Get BD agents and Franchisees maps
             bd_map = {}
             try:
                 cursor.execute("SELECT DISTINCT bdMemberName FROM enquiries WHERE bdMemberName IS NOT NULL AND bdMemberName != ''")
@@ -444,7 +491,7 @@ def get_transactions():
             except Exception as err:
                 print('franchisePayments table query bypassed:', str(err))
 
-            # 2. Fetch Recruitment Inflows directly from ALL Invoices
+            # 2. Fetch Recruitment Inflows directly from Clean Invoices view (Single Source of Truth)
             try:
                 cursor.execute("""
                     SELECT 
@@ -466,11 +513,13 @@ def get_transactions():
                         franchiseName,
                         teamLeader,
                         financialYear,
+                        fy,
                         postOfCandidate,
                         info,
-                        status
-                    FROM invoice
-                    WHERE (serviceCharges > 0 OR totalBillAmt > 0 OR amountReceived > 0)
+                        status,
+                        is_revenue,
+                        rev_ex_gst
+                    FROM v_invoice_clean
                     ORDER BY COALESCE(billDate, dateReceived, paidOnDate) DESC
                 """)
                 all_invoices = cursor.fetchall()
@@ -485,16 +534,15 @@ def get_transactions():
                         seen_enq_ids.add(enq_id)
                     
                     comp_name = (inv.get('companyName') or 'Client Placement').strip()
-                    amt = float(inv.get('serviceCharges') or inv.get('totalBillAmt') or inv.get('amountReceived') or 0.0)
-                    if amt <= 0:
-                        continue
-                        
+                    amt = float(inv.get('rev_ex_gst') or 0.0)
+                    is_rev = bool(inv.get('is_revenue'))
+                    tx_type = 'income' if is_rev else 'credit_note'
+                    
                     raw_bd_name = (inv.get('nameOfBd') or '').strip()
                     raw_fran_name = (inv.get('franchiseName') or '').strip()
                     tl_name = (inv.get('teamLeader') or '').strip()
                     date_val = inv.get('date') or '2026-08-01'
                     
-                    # Fast O(1) hash map lookups with deterministic fallback
                     bd_id = bd_map.get(raw_bd_name.lower()) if raw_bd_name else None
                     if not bd_id and raw_bd_name:
                         bd_id = make_stable_id('bd', raw_bd_name)
@@ -502,29 +550,21 @@ def get_transactions():
                     if not fran_id and raw_fran_name:
                         fran_id = make_stable_id('f', raw_fran_name)
                     
-                    # Financial year evaluation
-                    fy = inv.get('financialYear')
-                    if not fy or fy == 'N/A':
-                        try:
-                            y = int(date_val[:4])
-                            m = int(date_val[5:7])
-                            fy = f"{y}-{y+1}" if m >= 4 else f"{y-1}-{y}"
-                        except:
-                            fy = '2026-2027'
+                    fy = inv.get('fy') or normalize_fy(inv.get('financialYear'), date_val)
 
-                    # Franchisee / Company share split
-                    split_info = get_share_split(date_val, franchise_name=raw_fran_name)
-                    r_share = float(inv.get('ourShare') or (amt * split_info['company_pct']))
-                    f_share = float(inv.get('franchiseeShare') or (amt - r_share))
+                    # Preserve NULL-safe values directly from DB view
+                    r_share = float(inv['ourShare']) if inv.get('ourShare') is not None else None
+                    f_share = float(inv['franchiseeShare']) if inv.get('franchiseeShare') is not None else None
+                    amt_received = float(inv.get('amountReceived') or 0.0)
 
                     tx_item = {
                         'id': f"inv-pay-{inv_id}",
-                        'title': f"Recruitment Fee - {comp_name}",
+                        'title': f"{'Recruitment Fee' if is_rev else 'Credit Note / Reversal'} - {comp_name}",
                         'companyName': comp_name,
                         'amount': amt,
-                        'type': 'income',
+                        'type': tx_type,
                         'category': 'Recruitment',
-                        'subCategory': inv.get('postOfCandidate') or 'Placement Invoice',
+                        'subCategory': inv.get('postOfCandidate') or ('Placement Invoice' if is_rev else 'Fee Adjustment'),
                         'date': date_val,
                         'paymentMode': inv.get('payment_mode') or 'Net Banking',
                         'referenceId': inv.get('billNumber') or f"INV-{inv_id}",
@@ -537,41 +577,28 @@ def get_transactions():
                         'serviceAmt': amt,
                         'rShare': r_share,
                         'franchiseeShare': f_share,
+                        'amountReceived': amt_received,
+                        'totalBillAmt': float(inv.get('totalBillAmt') or 0.0),
                         'financialYear': fy,
-                        'enquiryStatus': 'completed',
-                        'info': inv.get('info') or 'N/A'
+                        'enquiryStatus': 'completed' if is_rev else 'credit_note',
+                        'info': inv.get('info') or 'N/A',
+                        'is_revenue': is_rev
                     }
                     combined.append(tx_item)
                     enquiry_inflows.append(tx_item)
+                    # Note: Franchisee royalty is a pass-through: NEVER added as an operating expense!
 
-                    # Add Franchisee Royalty Outflow expense
-                    if f_share > 0:
-                        combined.append({
-                            'id': f"fran-royalty-payout-inv-{inv_id}",
-                            'title': f"Franchisee Royalty Payout - {comp_name}",
-                            'companyName': comp_name,
-                            'amount': f_share,
-                            'type': 'expense',
-                            'category': 'Other',
-                            'subCategory': 'Royalty Share Payout',
-                            'date': date_val,
-                            'paymentMode': 'Net Banking',
-                            'referenceId': f"FP-{inv.get('billNumber') or inv_id}",
-                            'description': f"Franchisee royalty share payout for invoice {inv.get('billNumber') or inv_id}",
-                            'bdAgentId': bd_id,
-                            'franchiseeId': fran_id,
-                            'financialYear': fy
-                        })
-
-                # Also capture all closed enquiries and fee-bearing deals not already linked to an invoice
+                # 2A. Also capture closed enquiries not linked to an invoice (using data-driven fallback ourShare)
                 try:
-                    cursor.execute("""
+                    enq_exclude_clause = get_enq_exclude_clause("e")
+                    cursor.execute(f"""
                         SELECT 
-                            id, companyName, bdMemberName, teamLeaderName, franchiseeName,
-                            placementFees, positionName, industry, bill_no, bill_date, bill_amount,
-                            dateOfAllocation, created_at, enquiryStatus, info
-                        FROM enquiries
-                        WHERE (bill_amount > 0 OR placementFees > 0 OR enquiryStatus IN ('closed', 'offered_and_accepted', 'internally_closed'))
+                            e.id, e.companyName, e.bdMemberName, e.teamLeaderName, e.franchiseeName,
+                            e.placementFees, e.positionName, e.industry, e.bill_no, e.bill_date, e.bill_amount,
+                            e.dateOfAllocation, e.created_at, e.enquiryStatus, e.info
+                        FROM enquiries e
+                        WHERE (e.bill_amount > 0 OR e.placementFees > 0 OR e.enquiryStatus IN ('closed', 'offered_and_accepted', 'internally_closed'))
+                          AND {enq_exclude_clause}
                     """)
                     extra_enqs = cursor.fetchall()
                     for enq in extra_enqs:
@@ -581,12 +608,7 @@ def get_transactions():
                         if e_amt <= 0:
                             continue
                         e_date = str(enq.get('bill_date') or enq.get('dateOfAllocation') or enq.get('created_at') or '2026-08-01')[:10]
-                        try:
-                            y = int(e_date[:4])
-                            m = int(e_date[5:7])
-                            e_fy = f"{y}-{y+1}" if m >= 4 else f"{y-1}-{y}"
-                        except:
-                            e_fy = '2026-2027'
+                        e_fy = normalize_fy(None, e_date)
                             
                         raw_bd = (enq.get('bdMemberName') or '').strip()
                         raw_fran = (enq.get('franchiseeName') or '').strip()
@@ -597,9 +619,10 @@ def get_transactions():
                         if not fran_id and raw_fran:
                             fran_id = make_stable_id('f', raw_fran)
                         
-                        split_info = get_share_split(e_date, franchise_name=raw_fran)
-                        e_r_share = e_amt * split_info['company_pct']
-                        e_f_share = e_amt - e_r_share
+                        # Data-driven fallback rate (never hardcoded 25% or 0.4375)
+                        fb_rate = fallback_our_share_rate(e_fy)
+                        e_r_share = round(e_amt * fb_rate, 2)
+                        e_f_share = round(e_amt - e_r_share, 2)
                         
                         e_item = {
                             'id': f"enq-pay-{enq['id']}",
@@ -621,9 +644,11 @@ def get_transactions():
                             'serviceAmt': e_amt,
                             'rShare': e_r_share,
                             'franchiseeShare': e_f_share,
+                            'amountReceived': 0.0,
                             'financialYear': e_fy,
                             'enquiryStatus': enq.get('enquiryStatus') or 'completed',
-                            'info': enq.get('info') or 'N/A'
+                            'info': enq.get('info') or 'N/A',
+                            'is_revenue': True
                         }
                         combined.append(e_item)
                         enquiry_inflows.append(e_item)
@@ -633,7 +658,7 @@ def get_transactions():
             except Exception as err:
                 print('Recruitment inflows fetch error:', str(err))
 
-            # 2B. Fetch Job Portal Inflows from clients_info & employer subscriptions
+            # 2B. Fetch Job Portal Inflows from clients_info (Cleaned: no arbitrary 65,000 default, no fake demo clients)
             try:
                 cursor.execute("""
                     SELECT 
@@ -645,18 +670,16 @@ def get_transactions():
                         created_at
                     FROM clients_info
                     WHERE companyName IS NOT NULL AND TRIM(companyName) != ''
+                      AND amount > 0
                 """)
                 client_subs = cursor.fetchall()
                 for c_row in client_subs:
                     cid = c_row['id']
-                    c_amt = float(c_row['amount']) if c_row.get('amount') and float(c_row['amount']) > 0 else 65000.0
+                    c_amt = float(c_row['amount'] or 0.0)
+                    if c_amt <= 0:
+                        continue
                     c_date = str(c_row['created_at'])[:10] if c_row.get('created_at') else '2026-08-15'
-                    try:
-                        y = int(c_date[:4])
-                        m = int(c_date[5:7])
-                        fy = f"{y}-{y+1}" if m >= 4 else f"{y-1}-{y}"
-                    except:
-                        fy = '2026-2027'
+                    fy = normalize_fy(None, c_date)
                     combined.append({
                         'id': f"portal-sub-{cid}",
                         'title': f"Employer Portal Subscription - {c_row['companyName']}",
@@ -671,42 +694,11 @@ def get_transactions():
                         'description': f"Active employer talent search package for {c_row['companyName']}",
                         'bdAgentId': None,
                         'franchiseeId': None,
-                        'financialYear': fy
+                        'financialYear': fy,
+                        'is_revenue': True
                     })
             except Exception as err:
                 print('clients_info portal revenue query note:', str(err))
-
-            # Also include recurring employer subscription batches across 2024-2026 if clients_info is empty
-            if not any(t.get('category') == 'Job portal' and t.get('type') == 'income' for t in combined):
-                portal_clients = [
-                    ('Wipro Technologies', 83200.0, 'Enterprise Unlimited'),
-                    ('TCS QA Hub', 55000.0, 'Standard Premium'),
-                    ('Cognizant Pune', 67500.0, 'Enterprise Unlimited'),
-                    ('Infosys Central', 45000.0, 'Basic Recruitment')
-                ]
-                for yr in [2024, 2025, 2026]:
-                    for mo in range(1, 13):
-                        if yr == 2026 and mo > 9:
-                            continue
-                        mo_str = f"{mo:02d}"
-                        fy_str = f"{yr}-{yr+1}" if mo >= 4 else f"{yr-1}-{yr}"
-                        for p_idx, (p_comp, p_amt, p_tier) in enumerate(portal_clients):
-                            combined.append({
-                                'id': f"portal-sub-{yr}-{mo_str}-{p_idx}",
-                                'title': f"Employer Subscription - {p_comp} ({p_tier})",
-                                'companyName': p_comp,
-                                'amount': p_amt,
-                                'type': 'income',
-                                'category': 'Job portal',
-                                'subCategory': 'Portal Package',
-                                'date': f"{yr}-{mo_str}-15",
-                                'paymentMode': 'Net Banking',
-                                'referenceId': f"P-SUB-{yr}{mo_str}-{p_idx}",
-                                'description': f"Monthly corporate portal access credits for {p_comp}",
-                                'bdAgentId': None,
-                                'franchiseeId': None,
-                                'financialYear': fy_str
-                            })
 
             # 3. Fetch Outflows (Expenditures)
             try:
@@ -983,21 +975,16 @@ def get_cash_balance():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        col_filter, col_params = get_collision_filter_and_params()
-        query = f"""
+        # Cash in: amountReceived (cash in) - expenditure (is_deleted = 0) - actual franchise payouts (franchisePayments)
+        cursor.execute("""
             SELECT
-              (SELECT COALESCE(SUM(ia.gross_revenue), 0) FROM (
-                 SELECT enquiry_id, SUM(serviceCharges) AS gross_revenue, MAX(billDate) AS billDate
-                 FROM invoice
-                 WHERE billNumber IS NOT NULL AND billNumber != '' AND billDate IS NOT NULL
-                   {col_filter}
-                 GROUP BY enquiry_id
-               ) ia WHERE ia.billDate <= %s)
-              - (SELECT COALESCE(SUM(amount), 0) FROM expenditure WHERE billDate <= %s AND is_deleted = 0)
+              (SELECT COALESCE(SUM(amountReceived), 0) FROM v_invoice_clean WHERE (billDate <= %s OR billDate IS NULL))
+              - (SELECT COALESCE(SUM(amount), 0) FROM expenditure WHERE (billDate <= %s OR billDate IS NULL) AND is_deleted = 0)
+              - (SELECT COALESCE(SUM(payment_amount), 0) FROM franchisePayments WHERE payment_done = 'Yes' AND (payment_date <= %s OR payment_date IS NULL))
             AS cash_balance
-        """
-        cursor.execute(query, col_params + [as_of, as_of])
-        cash_balance = float(cursor.fetchone()['cash_balance'] or 0.0)
+        """, [as_of, as_of, as_of])
+        row = cursor.fetchone() or {}
+        cash_balance = float(row.get('cash_balance') or 0.0)
         return jsonify({ 'cash_balance': cash_balance })
     except Exception as e:
         print("get_cash_balance failed:", str(e))
@@ -1010,14 +997,17 @@ def get_moving_avg_burn():
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        col_filter, col_params = get_collision_filter_and_params()
-        cursor.execute(f"""
+        # Uses v_invoice_clean where is_revenue = 1 and ourShare-based burn
+        cursor.execute("""
             SELECT AVG(net_burn) AS burn FROM (
               SELECT months.month,
-                     (COALESCE(exp.expense,0) + COALESCE(roy.royalty,0)) - COALESCE(inc.income,0) AS net_burn
+                     COALESCE(exp.expense, 0) - COALESCE(inc.our_income, 0) AS net_burn
               FROM (
                 SELECT DISTINCT DATE_FORMAT(billDate, '%%Y-%%m') AS month
                 FROM expenditure WHERE billDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
+                UNION
+                SELECT DISTINCT DATE_FORMAT(billDate, '%%Y-%%m') AS month
+                FROM v_invoice_clean WHERE billDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
               ) months
               LEFT JOIN (
                 SELECT DATE_FORMAT(billDate, '%%Y-%%m') AS month, SUM(amount) AS expense
@@ -1026,32 +1016,155 @@ def get_moving_avg_burn():
                 GROUP BY month
               ) exp ON exp.month = months.month
               LEFT JOIN (
-                SELECT DATE_FORMAT(billDate, '%%Y-%%m') AS month, SUM(serviceCharges) AS income
-                FROM invoice
-                WHERE billNumber IS NOT NULL AND billNumber != '' AND billDate IS NOT NULL
-                  {col_filter}
-                  AND billDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
+                SELECT DATE_FORMAT(billDate, '%%Y-%%m') AS month, SUM(COALESCE(ourShare, rev_ex_gst * 0.25)) AS our_income
+                FROM v_invoice_clean
+                WHERE billDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH) AND is_revenue = 1
                 GROUP BY month
               ) inc ON inc.month = months.month
-              LEFT JOIN (
-                SELECT DATE_FORMAT(billDate, '%%Y-%%m') AS month, SUM(COALESCE(franchiseeShare,0)) AS royalty
-                FROM invoice
-                WHERE billNumber IS NOT NULL AND billNumber != '' AND billDate IS NOT NULL
-                  {col_filter}
-                  AND billDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
-                GROUP BY month
-              ) roy ON roy.month = months.month
             ) x
-        """, col_params + col_params)
-        row = cursor.fetchone()
-        net_burn = float(row['burn'] or 0.0) if row else 0.0
-        burn = max(net_burn, 0.0)  # only positive when expenses genuinely exceed income
+        """)
+        row = cursor.fetchone() or {}
+        net_burn = float(row.get('burn') or 0.0)
+        burn = max(net_burn, 0.0)
         return jsonify({ 'burn': burn })
     except Exception as e:
         print("get_moving_avg_burn failed:", str(e))
         return jsonify({ 'burn': 0.0 }), 500
     finally:
         conn.close()
+
+# --------------------------------------------------------------------------
+# Unified Financial Summary Endpoint: GET /api/finance/summary
+# Single clean source of truth for Dashboard KPI cards, Growth tab, and Compare card
+# --------------------------------------------------------------------------
+@app.route('/api/finance/summary', methods=['GET'])
+def get_finance_summary():
+    raw_fy = request.args.get('fy') or request.args.get('financialYear') or '2026-2027'
+    fy_norm = normalize_fy(raw_fy)
+    if fy_norm == 'N/A':
+        today = datetime.date.today()
+        y = today.year if today.month >= 4 else today.year - 1
+        fy_norm = f"{y}-{y + 1}"
+
+    start_date, end_date = fy_to_date_range(fy_norm)
+    data_ver, as_of_ts = get_data_version()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # 1. Metrics from v_invoice_clean (matches acceptance numbers table)
+        cursor.execute("""
+            SELECT 
+                COUNT(*) AS total_invoices,
+                SUM(CASE WHEN is_revenue = 1 THEN 1 ELSE 0 END) AS revenue_invoices,
+                COALESCE(SUM(CASE WHEN is_revenue = 1 THEN rev_ex_gst ELSE 0.0 END), 0.0) AS revenue_ex_gst,
+                COALESCE(SUM(CASE WHEN is_revenue = 1 THEN totalBillAmt ELSE 0.0 END), 0.0) AS billed_incl_gst,
+                COALESCE(SUM(ourShare), 0.0) AS total_our_share,
+                COALESCE(SUM(CASE WHEN is_revenue = 1 THEN ourShare ELSE 0.0 END), 0.0) AS our_share_rev,
+                COALESCE(SUM(CASE WHEN is_revenue = 0 THEN ourShare ELSE 0.0 END), 0.0) AS our_share_residual,
+                COALESCE(SUM(CASE WHEN is_revenue = 1 THEN franchiseeShare ELSE 0.0 END), 0.0) AS franchisee_share_rev,
+                COALESCE(SUM(franchiseeShare), 0.0) AS total_franchisee_share,
+                COALESCE(SUM(amountReceived), 0.0) AS cash_received
+            FROM v_invoice_clean
+            WHERE fy = %s
+        """, [fy_norm])
+        inv_stats = cursor.fetchone() or {}
+
+        # 2. Operating expenditures from expenditure table
+        cursor.execute("""
+            SELECT 
+                COALESCE(SUM(amount), 0.0) AS total_expenditure,
+                COALESCE(SUM(CASE WHEN LOWER(expenses) LIKE '%%salaries%%' OR LOWER(expenses) LIKE '%%salary%%' OR LOWER(particulars) LIKE '%%salary%%' THEN amount ELSE 0.0 END), 0.0) AS salary_in_exp,
+                COALESCE(SUM(CASE WHEN NOT (LOWER(expenses) LIKE '%%salaries%%' OR LOWER(expenses) LIKE '%%salary%%' OR LOWER(particulars) LIKE '%%salary%%') THEN amount ELSE 0.0 END), 0.0) AS non_salary_exp
+            FROM expenditure
+            WHERE is_deleted = 0
+              AND billDate BETWEEN %s AND %s
+        """, [start_date, end_date])
+        exp_stats = cursor.fetchone() or {}
+
+        # 3. Base salaries from bd_agents
+        cursor.execute("SELECT COALESCE(SUM(baseSalary), 0.0) * 12 AS annual_bd_salary FROM bd_agents WHERE status = 'Active'")
+        sal_row = cursor.fetchone() or {}
+        annual_payroll_base = float(sal_row.get('annual_bd_salary') or 0.0)
+
+        # Separate reporting per User Decision A3
+        opex = float(exp_stats.get('non_salary_exp') or 0.0)
+        sal = float(exp_stats.get('salary_in_exp') or 0.0)
+        if sal <= 0 and annual_payroll_base > 0:
+            sal = annual_payroll_base
+
+        w = calculate_waterfall(
+            revenue=inv_stats.get('revenue_ex_gst', 0.0),
+            our_share=inv_stats.get('total_our_share', 0.0),
+            franchisee_share=inv_stats.get('total_franchisee_share', 0.0),
+            operating_expenses=opex,
+            salary=sal,
+            our_share_revenue_rows=inv_stats.get('our_share_rev', 0.0),
+            franchisee_share_revenue_rows=inv_stats.get('franchisee_share_rev', 0.0),
+            cash_received=inv_stats.get('cash_received', 0.0),
+            total_bill_amt=inv_stats.get('billed_incl_gst', 0.0)
+        )
+
+        res = {
+            'success': True,
+            'fy': fy_norm,
+            'period': {'start_date': start_date, 'end_date': end_date},
+            'revenue': w['revenue'],
+            'billed_incl_gst': w['billed_incl_gst'],
+            'gst': w['gst'],
+            'our_share': w['our_share'],
+            'our_share_revenue_rows': w['our_share_revenue_rows'],
+            'our_share_residual_rows': w['our_share_residual_rows'],
+            'franchisee_share': w['franchisee_share'],
+            'unallocated': w['unallocated'],
+            'cash_received': w['cash_received'],
+            'expenses': {
+                'expenditure': opex,
+                'salaries': sal,
+                'total': round(opex + sal, 2),
+                'note': 'Reported separately per decision A3. Verify potential overlap with payroll ledger.'
+            },
+            'net': w['net'],
+            'tax': w['tax'],
+            'surplus': w['surplus'],
+            'margin_pct': w['margin_pct'],
+            'invoices_count': int(inv_stats.get('total_invoices') or 0),
+            'revenue_invoices_count': int(inv_stats.get('revenue_invoices') or 0),
+            'data_version': data_ver,
+            'as_of': as_of_ts
+        }
+        return jsonify(res)
+    except Exception as e:
+        print("[get_finance_summary Error]", str(e))
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/sync/ghost-report', methods=['GET'])
+def get_sync_ghost_report():
+    user_role = (request.headers.get('X-User-Role') or request.args.get('role') or 'admin').lower()
+    if user_role not in ('admin', 'manager', 'head_office'):
+        return jsonify({'error': 'Unauthorized: Admin role required'}), 403
+
+    from sync_service import get_ghost_row_report
+    report = get_ghost_row_report(prune=False)
+    return jsonify(report)
+
+@app.route('/api/sync/prune', methods=['POST'])
+def post_sync_prune():
+    user_role = (request.headers.get('X-User-Role') or request.args.get('role') or 'admin').lower()
+    if user_role not in ('admin', 'head_office'):
+        return jsonify({'error': 'Unauthorized: Admin role required'}), 403
+
+    data = request.json or {}
+    prune_enabled = data.get('confirm_prune') is True
+    tables = data.get('tables') or ['enquiries', 'invoice']
+
+    from sync_service import get_ghost_row_report
+    report = get_ghost_row_report(prune=prune_enabled, tables=tables)
+    if prune_enabled:
+        invalidate_all_caches()
+    return jsonify(report)
 
 
 @app.route('/api/transactions', methods=['POST'])
@@ -1265,12 +1378,11 @@ def get_franchisee_summary():
             LEFT JOIN (
                 SELECT
                     enquiry_id,
-                    SUM(serviceCharges) AS gross_revenue,
+                    SUM(rev_ex_gst) AS gross_revenue,
                     MAX(billDate) AS billDate
-                FROM invoice
-                WHERE billNumber IS NOT NULL AND billNumber != ''
+                FROM v_invoice_clean
+                WHERE is_revenue = 1
                   AND billDate IS NOT NULL
-                  {col_filter}
                 GROUP BY enquiry_id
             ) ia ON e.id = ia.enquiry_id
             WHERE e.franchiseeName IS NOT NULL AND e.franchiseeName != '' AND e.franchiseeName != 'Unknown'
@@ -1278,7 +1390,7 @@ def get_franchisee_summary():
               AND {enq_clause}
               AND (ia.enquiry_id IS NOT NULL OR e.bill_amount > 0)
         """
-        params_inflow = col_params + [start_date, end_date, start_date, end_date]
+        params_inflow = [start_date, end_date, start_date, end_date]
         cursor.execute(inflow_query, params_inflow)
         franchise_inflow = float(cursor.fetchone()['franchise_inflow'] or 0.0)
         
@@ -1305,7 +1417,8 @@ def get_franchisee_summary():
                 COALESCE(f.teamLeaderName, 'Franchise Lead') AS owner,
                 'India' AS city,
                 LOWER(TRIM(COALESCE(f.status, 'active'))) AS status,
-                75.0 AS profitSharingPercentage,
+                f.onboardingDate,
+                f.created_at,
                 COALESCE(rev.candidates_placed, 0) AS candidates_placed,
                 COALESCE(rev.inflow_revenue, 0.0) AS inflow_revenue
             FROM franchisees f
@@ -1318,12 +1431,11 @@ def get_franchisee_summary():
                 LEFT JOIN (
                     SELECT
                         enquiry_id,
-                        SUM(serviceCharges) AS gross_revenue,
+                        SUM(rev_ex_gst) AS gross_revenue,
                         MAX(billDate) AS billDate
-                    FROM invoice
-                    WHERE billNumber IS NOT NULL AND billNumber != ''
+                    FROM v_invoice_clean
+                    WHERE is_revenue = 1
                       AND billDate IS NOT NULL
-                      {col_filter}
                     GROUP BY enquiry_id
                 ) ia ON e.id = ia.enquiry_id
                 WHERE (ia.billDate BETWEEN %s AND %s OR (ia.billDate IS NULL AND e.bill_date BETWEEN %s AND %s))
@@ -1335,20 +1447,27 @@ def get_franchisee_summary():
             ORDER BY inflow_revenue DESC
             LIMIT 500
         """
-        params_ledger = col_params + [start_date, end_date, start_date, end_date]
+        params_ledger = [start_date, end_date, start_date, end_date]
         cursor.execute(ledger_query, params_ledger)
         rows = cursor.fetchall()
         
         ledger = []
         for r in rows:
             clean_name = (r['name'] or '').strip()
+            # Dynamic tenure split: 70-30 for >= 3 years, 75-25 for < 3 years
+            tenure_split = get_franchisee_tenure_split(
+                onboarding_date=r.get('onboardingDate') or r.get('created_at'),
+                bill_date=end_date
+            )
+            sharing_pct = round(tenure_split['franchisee_pct'] * 100.0, 1)
+
             ledger.append({
                 'id': make_stable_id('f', clean_name) if clean_name else str(r['id']),
                 'name': r['name'] or 'N/A',
                 'owner': r['owner'] or 'N/A',
                 'city': r['city'] or 'India',
                 'status': r['status'] or 'active',
-                'profitSharingPercentage': float(r['profitSharingPercentage'] or 75.0),
+                'profitSharingPercentage': sharing_pct,
                 'candidatesPlaced': int(r['candidates_placed']),
                 'revenuePaid': float(r['inflow_revenue']),
                 # TODO: Once expenditure table gets a franchisee_id column, sum real expense transactions per franchisee here
@@ -1452,9 +1571,8 @@ def get_bd_agents():
                         SUM(CASE WHEN e.enquiryStatus = 'position_hold' THEN 1 ELSE 0 END) AS on_hold,
                         SUM(CASE WHEN e.enquiryStatus = 'revised' THEN 1 ELSE 0 END) AS revised,
                         SUM(CASE WHEN e.enquiryStatus = 'credit_note' THEN 1 ELSE 0 END) AS credit_notes,
-                        SUM(CASE WHEN e.enquiryStatus IN ('cancelled', 'offered_and_rejected', 'internally_closed') THEN COALESCE(e.placementFees, 0) ELSE 0 END) AS loss_amount,
                         SUM(CASE WHEN e.enquiryStatus IN ('closed', 'offered_and_accepted') THEN COALESCE(i.serviceCharges, e.bill_amount, 0) ELSE 0 END) AS gross_revenue,
-                        SUM(CASE WHEN e.enquiryStatus = 'credit_note' THEN COALESCE(i.serviceCharges, e.bill_amount, 0) ELSE 0 END) AS credit_note_reversals,
+                        SUM(CASE WHEN e.enquiryStatus = 'credit_note' THEN COALESCE(i.credit_reversals, i.serviceCharges, e.bill_amount, 0) ELSE 0 END) AS credit_note_reversals,
                         b.id AS stored_id,
                         b.role AS stored_role,
                         b.baseSalary,
@@ -1463,7 +1581,15 @@ def get_bd_agents():
                         b.commissionRate,
                         b.status AS stored_status
                     FROM enquiries e
-                    LEFT JOIN invoice i ON e.id = i.enquiry_id
+                    LEFT JOIN (
+                        SELECT 
+                            enquiry_id,
+                            SUM(CASE WHEN is_revenue = 1 THEN rev_ex_gst ELSE 0 END) AS serviceCharges,
+                            SUM(CASE WHEN is_revenue = 0 THEN rev_ex_gst ELSE 0 END) AS credit_reversals
+                        FROM v_invoice_clean
+                        WHERE enquiry_id IS NOT NULL AND enquiry_id > 0
+                        GROUP BY enquiry_id
+                    ) i ON e.id = i.enquiry_id
                     LEFT JOIN bd_agents b ON TRIM(LOWER(b.name)) = TRIM(LOWER(e.bdMemberName))
                     WHERE e.bdMemberName IS NOT NULL AND e.bdMemberName != ''
                     GROUP BY e.bdMemberName, b.id, b.role, b.baseSalary, b.payPerProgressed, b.payPerCancelled, b.commissionRate, b.status

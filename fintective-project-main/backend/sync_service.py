@@ -271,6 +271,55 @@ def reconcile_missing_ids(cur, table, api_ids, prune=False):
     return len(ghosts)
 
 
+def get_ghost_row_report(prune=False, tables=None):
+    """
+    Admin audit report listing ghost rows (rows present in local DB that no longer exist in upstream CRM).
+    prune=False by default (dry-run).
+    If prune=True, only prunes specified tables if safety thresholds pass.
+    """
+    tables_to_check = tables or ["enquiries", "invoice"]
+    report = {
+        "timestamp": datetime.datetime.now().isoformat(),
+        "dry_run": not prune,
+        "tables": {}
+    }
+    
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            for tbl in tables_to_check:
+                endpoint = "enquiries" if tbl == "enquiries" else "Invoice"
+                api_res = fetch_saarthi_endpoint(endpoint)
+                if api_res["ok"] and api_res["data"]:
+                    api_ids = {str(item.get("id")) for item in api_res["data"] if item.get("id")}
+                    cur.execute(f"SELECT id FROM `{tbl}`")
+                    local_ids = [str(r["id"]) for r in (cur.fetchall() or [])]
+                    ghost_ids = [i for i in local_ids if i not in api_ids]
+                    
+                    pruned_count = 0
+                    if prune and ghost_ids:
+                        if len(api_ids) >= 0.9 * len(local_ids):
+                            for batch in _chunked(ghost_ids, 500):
+                                placeholders = ", ".join(["%s"] * len(batch))
+                                cur.execute(f"DELETE FROM `{tbl}` WHERE id IN ({placeholders})", batch)
+                            pruned_count = len(ghost_ids)
+                    
+                    report["tables"][tbl] = {
+                        "local_count": len(local_ids),
+                        "upstream_crm_count": len(api_ids),
+                        "ghost_count": len(ghost_ids),
+                        "ghost_ids_sample": ghost_ids[:20],
+                        "pruned": pruned_count
+                    }
+                else:
+                    report["tables"][tbl] = {
+                        "error": api_res.get("error", "Failed to fetch upstream API")
+                    }
+        return report
+    finally:
+        conn.close()
+
+
 def sync_saarthi_all():
     """
     Main sync engine: Fetches all Saarthi APIs and upserts into MySQL.
@@ -474,13 +523,23 @@ def sync_saarthi_all():
                     enq_id = inv.get("enquiry_id") or None
                     b_num = str(inv.get("billNumber") or inv.get("bill_no") or "").strip() or None
                     b_date = normalize_date(inv.get("billDate") or inv.get("bill_date"))
-                    svc_chg = parse_float(inv.get("serviceCharges") or inv.get("serviceCharge"))
-                    svc_rate = parse_float(inv.get("serviceCharge"))
-                    gst = parse_float(inv.get("totalGST") or inv.get("gst"))
-                    tot_bill = parse_float(inv.get("totalBillAmt") or inv.get("bill_amount"))
-                    f_share = parse_float(inv.get("franchiseeShare") or inv.get("franchiseShare"))
-                    f_gst = parse_float(inv.get("franchiseeGST"))
-                    our_sh = parse_float(inv.get("ourShare"))
+                    # Fix A2: serviceCharges only mapped from serviceCharges (never fallback to rate serviceCharge)
+                    raw_sc = inv.get("serviceCharges")
+                    svc_chg = parse_float(raw_sc, default=0.0) if (raw_sc is not None and str(raw_sc).strip() != '') else 0.0
+                    svc_rate = parse_float(inv.get("serviceCharge"), default=0.0)
+                    gst = parse_float(inv.get("totalGST") or inv.get("gst"), default=0.0)
+                    tot_bill = parse_float(inv.get("totalBillAmt") or inv.get("bill_amount"), default=0.0)
+
+                    # Fix A1: Keep None when missing/blank in CRM. Never 'x or fallback' on shares.
+                    raw_f_share = inv.get("franchiseeShare")
+                    if raw_f_share is None or str(raw_f_share).strip() == '':
+                        raw_f_share = inv.get("franchiseShare")
+                    f_share = parse_float(raw_f_share, default=None) if (raw_f_share is not None and str(raw_f_share).strip() != '') else None
+
+                    f_gst = parse_float(inv.get("franchiseeGST"), default=0.0)
+
+                    raw_our_share = inv.get("ourShare")
+                    our_sh = parse_float(raw_our_share, default=None) if (raw_our_share is not None and str(raw_our_share).strip() != '') else None
                     amt_rec = parse_float(inv.get("amountReceived"))
                     amt_due = parse_float(inv.get("amountDue"))
                     tds_val = parse_float(inv.get("tds") or inv.get("tdsAmount"))
@@ -755,6 +814,17 @@ def sync_saarthi_all():
                     conn.close()
                 except Exception:
                     pass
+
+        # Fix A5: Invalidate all worker caches after sync completes
+        try:
+            from app import invalidate_all_caches
+            invalidate_all_caches()
+        except Exception as inv_err:
+            try:
+                from growth_tracking_controller import _clear_cache_prefix
+                _clear_cache_prefix("")
+            except Exception:
+                pass
 
         stats["duration_seconds"] = (datetime.datetime.now() - start_time).total_seconds()
         stats["timestamp"] = datetime.datetime.now().isoformat()
