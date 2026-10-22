@@ -202,10 +202,6 @@ const BDMonthlyTrendChart = ({ trendData = [] }) => {
 const BDPerformance = () => {
   const { bdAgents, transactions, franchisees, addBdAgent, updateBdAgent, selectedMonth, selectedYear } = useContext(FinanceContext);
   
-  // Navigation Sub-Tabs within BD tab: 'leaderboard' | 'industry_potential'
-  const [activeTab, setActiveTab] = useState('leaderboard');
-  const [selectedBdForIndustry, setSelectedBdForIndustry] = useState('all');
-
   // Selected BD Agent for Franchisee Portfolio breakdown view
   const [selectedBdId, setSelectedBdId] = useState('');
   const [lookbackMonths, setLookbackMonths] = useState(12);
@@ -1073,90 +1069,10 @@ const BDPerformance = () => {
   return (
     <div className="bd-performance-page animate-fade-in">
       
-      {/* Top Navigation Sub-Tabs: Leaderboard vs Industry Potential */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-card)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-          <button
-            onClick={() => setActiveTab('leaderboard')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              border: 'none',
-              background: activeTab === 'leaderboard' ? 'var(--accent-teal)' : 'transparent',
-              color: activeTab === 'leaderboard' ? '#ffffff' : 'var(--text-muted)',
-              fontWeight: activeTab === 'leaderboard' ? '700' : '500',
-              fontSize: '0.88rem',
-              cursor: 'pointer',
-              boxShadow: activeTab === 'leaderboard' ? '0 2px 4px rgba(15, 110, 86, 0.2)' : 'none',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <Users size={16} />
-            BD Member Performance
-          </button>
-          <button
-            onClick={() => setActiveTab('industry_potential')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              border: 'none',
-              background: activeTab === 'industry_potential' ? 'var(--accent-teal)' : 'transparent',
-              color: activeTab === 'industry_potential' ? '#ffffff' : 'var(--text-muted)',
-              fontWeight: activeTab === 'industry_potential' ? '700' : '500',
-              fontSize: '0.88rem',
-              cursor: 'pointer',
-              boxShadow: activeTab === 'industry_potential' ? '0 2px 4px rgba(15, 110, 86, 0.2)' : 'none',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <Briefcase size={16} />
-            Industry Potential & Predictions
-          </button>
-        </div>
-
-        {/* BD Selector for Industry Tab */}
-        {activeTab === 'industry_potential' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Filter BD Specialist:</span>
-            <select
-              value={selectedBdForIndustry}
-              onChange={(e) => setSelectedBdForIndustry(e.target.value)}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)',
-                background: 'var(--bg-card)',
-                color: 'var(--text-main)',
-                fontSize: '0.88rem',
-                fontWeight: '600',
-                cursor: 'pointer',
-                minWidth: '220px'
-              }}
-            >
-              <option value="all">Company-wide (All BD Specialists)</option>
-              {allAgentsList.map(a => (
-                <option key={a.id || a.name} value={a.name}>
-                  {a.name} ({a.leadsProgressed || 0} closed)
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-
-      </div>
-
       {/* ========================================================================= */}
-      {/* VIEW 1: BD MEMBER PERFORMANCE OVERVIEW, COST, ROI & DIRECTORY            */}
+      {/* BD MEMBER PERFORMANCE OVERVIEW, COST, ROI & DIRECTORY                     */}
       {/* ========================================================================= */}
-      {activeTab === 'leaderboard' && (
-        <div className="animate-fade-in">
+      <div className="animate-fade-in">
           
           {/* Header Card with Member Count & Description */}
           <div style={{
@@ -1659,44 +1575,17 @@ const BDPerformance = () => {
             />
           </div>
         </div>
-      )}
 
       {/* Universal BD Audit Drawer */}
       <AuditDrawer
         isOpen={Boolean(selectedMemberForAudit)}
         onClose={() => setSelectedMemberForAudit(null)}
         entityType="bd"
-        entityId={selectedMemberForAudit?.name || ''}
         entityName={selectedMemberForAudit?.name || ''}
         entityRole={selectedMemberForAudit?.role || 'BD Specialist'}
         month={selectedMonth === 'All Months' ? 'all' : selectedMonth}
         financialYear={selectedYear}
       />
-
-
-      {/* ========================================================================= */}
-      {/* VIEW 3: INDUSTRY PREDICTIVE POTENTIAL & CONVERSION FORECASTING            */}
-      {/* ========================================================================= */}
-      {activeTab === 'industry_potential' && (
-        <div className="dashboard-card animate-fade-in" style={{ padding: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-main)' }}>
-                BD Industry Potential & Realization Forecast
-              </h3>
-              <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                Predictive conversion and commission projections categorized across industries for {selectedBdForIndustry === 'all' ? 'all BD specialists' : selectedBdForIndustry}.
-              </p>
-            </div>
-          </div>
-
-          <IndustryPredictiveTab 
-            transactions={transactions}
-            entityType="bd"
-            entityName={selectedBdForIndustry}
-          />
-        </div>
-      )}
 
       {/* Credit Note Deductions Audit Modal for BD Portfolio */}
       {isCreditNotesModalOpen && (
