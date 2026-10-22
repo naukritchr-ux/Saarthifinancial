@@ -71,7 +71,7 @@ function AppContent() {
   const renderPage = () => {
     switch (activePage) {
       case 'dashboard':
-        return <Dashboard setActivePage={setActivePage} />;
+        return <Dashboard setActivePage={setActivePage} setIsSettingsOpen={setIsSettingsOpen} />;
       case 'cost-performance':
         return <CostOfPerformance setActivePage={setActivePage} />;
       case 'franchisees':
@@ -93,7 +93,7 @@ function AppContent() {
       case 'growth-tracking':
         return <GrowthTracking />;
       default:
-        return <Dashboard setActivePage={setActivePage} />;
+        return <Dashboard setActivePage={setActivePage} setIsSettingsOpen={setIsSettingsOpen} />;
     }
   };
 

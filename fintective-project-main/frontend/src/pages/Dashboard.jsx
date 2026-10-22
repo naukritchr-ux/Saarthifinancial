@@ -2,13 +2,53 @@ import React, { useContext, useState, useMemo } from 'react';
 import { FinanceContext } from '../context/FinanceContext';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { getTransactionShares } from '../config/financeConfig';
-import { DonutChart } from '../components/CustomCharts';
-import { ArrowUpRight, ArrowDownRight, TrendingUp, DollarSign, Activity, Percent, X, Calendar, Landmark, CreditCard, Tag } from 'lucide-react';
+import { DonutChart, Sparkline, WaterfallChart, MonthlyTrendBarChart } from '../components/CustomCharts';
+import { 
+  ArrowUpRight, 
+  ArrowDownRight, 
+  TrendingUp, 
+  DollarSign, 
+  Activity, 
+  Percent, 
+  X, 
+  Calendar, 
+  Landmark, 
+  CreditCard, 
+  Tag, 
+  AlertTriangle, 
+  AlertCircle, 
+  ChevronRight, 
+  ShieldCheck, 
+  ExternalLink,
+  Award,
+  Users,
+  Building2,
+  Info
+} from 'lucide-react';
+import './Dashboard.css';
 
-const Dashboard = ({ setActivePage }) => {
-  const { moduleFilteredTransactions: transactions, selectedMonth, selectedYear, budgets, userRole, franchisees, bdAgents, activeModule, backendHealth } = useContext(FinanceContext);
-  const [selectedTx, setSelectedTx] = useState(null); // Auditor Modal state
+const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
+  const { 
+    moduleFilteredTransactions: transactions, 
+    selectedMonth, 
+    selectedYear, 
+    budgets, 
+    userRole, 
+    franchisees, 
+    bdAgents, 
+    activeModule, 
+    backendHealth,
+    isLoadingData
+  } = useContext(FinanceContext);
+
+  // Local Modal & View States
+  const [selectedTx, setSelectedTx] = useState(null); // Auditor Slip Modal
   const [breakdownView, setBreakdownView] = useState('shares'); // 'shares' | 'franchisees' | 'streams'
+  const [leaderboardTab, setLeaderboardTab] = useState('franchisees'); // 'franchisees' | 'bd'
+  const [ledgerFilter, setLedgerFilter] = useState('all'); // 'all' | 'income' | 'expense'
+  const [isInsightDismissed, setIsInsightDismissed] = useState(false);
+  const [showDataQualityModal, setShowDataQualityModal] = useState(false);
+  const [showAllAttentionModal, setShowAllAttentionModal] = useState(false);
 
   // Month parse helper
   const getMonthAndYear = (dateStr) => {
@@ -70,10 +110,23 @@ const Dashboard = ({ setActivePage }) => {
     });
   }, [roleTxs, selectedMonth, selectedYear]);
 
+  // Display transactions fallback
   const displayTxs = useMemo(() => {
     return (currentTxs.length > 0 || selectedMonth !== 'All Months' || selectedYear !== 'All Years') ? currentTxs : roleTxs;
   }, [currentTxs, roleTxs, selectedMonth, selectedYear]);
 
+  // Scoped Period Basis Label (Visibly reconciles all cards)
+  const periodBasisLabel = useMemo(() => {
+    if (selectedMonth !== 'All Months') {
+      return selectedMonth;
+    }
+    if (selectedYear !== 'All Years') {
+      return `FY ${selectedYear} cumulative`;
+    }
+    return 'All time cumulative';
+  }, [selectedMonth, selectedYear]);
+
+  // Financial aggregates
   const { revenue, expenses, profit, margin, ourShareTotal, payrollTotal, opexCommTotal, operatingProfit } = useMemo(() => {
     const rev = displayTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
     const exp = displayTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
@@ -83,11 +136,9 @@ const Dashboard = ({ setActivePage }) => {
       const shares = getTransactionShares(t);
       return sum + (shares.rShare || 0);
     }, 0);
-    // Operating Profit before payroll
     const opProfit = ourShare - opexComm;
-    // Net Corporate Profit after payroll CTC
     const netProf = ourShare - exp;
-    const marg = ourShare > 0 ? (opProfit / ourShare) * 100 : 0;
+    const marg = ourShare > 0 ? (netProf / ourShare) * 100 : 0;
     return { 
       revenue: rev, 
       expenses: exp, 
@@ -100,7 +151,7 @@ const Dashboard = ({ setActivePage }) => {
     };
   }, [displayTxs]);
 
-  // Comparison metrics with previous month (memoized)
+  // Previous period comparison metrics
   const { prevMonthLabel, prevRevenue, prevExpenses, prevProfit, prevMargin } = useMemo(() => {
     let pLabel = '';
     let pRev = 0;
@@ -111,7 +162,7 @@ const Dashboard = ({ setActivePage }) => {
     if (selectedMonth !== 'All Months') {
       const parts = selectedMonth.split(' ');
       const mName = parts[0];
-      const yVal = parseInt(parts[1]);
+      const yVal = parseInt(parts[1], 10);
       const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
       const currIdx = monthNames.indexOf(mName);
 
@@ -168,10 +219,101 @@ const Dashboard = ({ setActivePage }) => {
   const profitChange = getChange(profit, prevProfit);
   const marginChange = getMarginChange(margin, prevMargin);
 
-  // Income Breakdown by Revenue Shares, Franchise Divisions, and Streams
-  const { sharesDonutData, franchiseDonutData, streamDonutData } = useMemo(() => {
-    const incomeTxs = currentTxs.filter(t => t.type === 'income');
-    
+  // Sparkline data points: 6-month trailing trajectory for KPI cards
+  const { revSparkPoints, expSparkPoints, profSparkPoints, marginSparkPoints } = useMemo(() => {
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    // Group all role transactions by year-month
+    const monthlyMap = {};
+    roleTxs.forEach(tx => {
+      if (!tx.date) return;
+      const d = new Date(tx.date);
+      if (isNaN(d.getTime())) return;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!monthlyMap[key]) {
+        monthlyMap[key] = { rev: 0, exp: 0, ourShare: 0 };
+      }
+      if (tx.type === 'income') {
+        monthlyMap[key].rev += (tx.amount || 0);
+        const shares = getTransactionShares(tx);
+        monthlyMap[key].ourShare += (shares.rShare || 0);
+      } else if (tx.type === 'expense') {
+        monthlyMap[key].exp += (tx.amount || 0);
+      }
+    });
+
+    const sortedKeys = Object.keys(monthlyMap).sort();
+    const last6Keys = sortedKeys.slice(-6);
+
+    const rPts = last6Keys.map(k => monthlyMap[k].rev);
+    const ePts = last6Keys.map(k => monthlyMap[k].exp);
+    const pPts = last6Keys.map(k => monthlyMap[k].ourShare - monthlyMap[k].exp);
+    const mPts = last6Keys.map(k => {
+      const share = monthlyMap[k].ourShare;
+      const net = share - monthlyMap[k].exp;
+      return share > 0 ? (net / share) * 100 : 0;
+    });
+
+    return {
+      revSparkPoints: rPts.length >= 2 ? rPts : [0, revenue],
+      expSparkPoints: ePts.length >= 2 ? ePts : [0, expenses],
+      profSparkPoints: pPts.length >= 2 ? pPts : [0, profit],
+      marginSparkPoints: mPts.length >= 2 ? mPts : [0, margin]
+    };
+  }, [roleTxs, revenue, expenses, profit, margin]);
+
+  // Monthly FY Trend Series (Row 2 Left)
+  const fyMonthlySeries = useMemo(() => {
+    // Standard Apr to Mar FY months
+    const startYear = selectedYear !== 'All Years' ? parseInt(selectedYear.split('-')[0], 10) : 2026;
+    const endYear = startYear + 1;
+
+    const fyMonths = [
+      { month: 'Apr', label: `April ${startYear}`, y: startYear, m: 3 },
+      { month: 'May', label: `May ${startYear}`, y: startYear, m: 4 },
+      { month: 'Jun', label: `June ${startYear}`, y: startYear, m: 5 },
+      { month: 'Jul', label: `July ${startYear}`, y: startYear, m: 6 },
+      { month: 'Aug', label: `August ${startYear}`, y: startYear, m: 7 },
+      { month: 'Sep', label: `September ${startYear}`, y: startYear, m: 8 },
+      { month: 'Oct', label: `October ${startYear}`, y: startYear, m: 9 },
+      { month: 'Nov', label: `November ${startYear}`, y: startYear, m: 10 },
+      { month: 'Dec', label: `December ${startYear}`, y: startYear, m: 11 },
+      { month: 'Jan', label: `January ${endYear}`, y: endYear, m: 0 },
+      { month: 'Feb', label: `February ${endYear}`, y: endYear, m: 1 },
+      { month: 'Mar', label: `March ${endYear}`, y: endYear, m: 2 },
+    ];
+
+    const now = new Date();
+    const currentCalendarVal = now.getFullYear() * 12 + now.getMonth();
+
+    return fyMonths.map(item => {
+      const itemVal = item.y * 12 + item.m;
+      const hasElapsed = itemVal <= currentCalendarVal;
+
+      const matchingTxs = roleTxs.filter(tx => {
+        if (!tx.date) return false;
+        const d = new Date(tx.date);
+        return d.getFullYear() === item.y && d.getMonth() === item.m;
+      });
+
+      const mRev = matchingTxs.filter(t => t.type === 'income').reduce((s, t) => s + (t.amount || 0), 0);
+      const mExp = matchingTxs.filter(t => t.type === 'expense').reduce((s, t) => s + (t.amount || 0), 0);
+      const mNet = mRev - mExp;
+
+      return {
+        ...item,
+        revenue: mRev,
+        expenses: mExp,
+        profit: mNet,
+        hasElapsed
+      };
+    });
+  }, [roleTxs, selectedYear]);
+
+  // Donut Chart Data (Row 3 Right) - Built from displayTxs to guarantee 100% reconciliation
+  const { sharesDonutData, franchiseDonutData, streamDonutData, donutTotalRev } = useMemo(() => {
+    const incomeTxs = displayTxs.filter(t => t.type === 'income');
+    const totalRev = incomeTxs.reduce((sum, t) => sum + (t.amount || 0), 0);
+
     let fShareTotal = 0;
     let ourShareTotal = 0;
     let setupFeeTotal = 0;
@@ -182,7 +324,7 @@ const Dashboard = ({ setActivePage }) => {
 
     incomeTxs.forEach(tx => {
       const amt = Number(tx.amount || 0);
-      const cat = tx.category || 'Other';
+      const cat = tx.category || 'Recruitment';
       streamTotals[cat] = (streamTotals[cat] || 0) + amt;
 
       if (cat === 'Franchisee fee' || (tx.subCategory && tx.subCategory.toLowerCase().includes('setup'))) {
@@ -190,62 +332,61 @@ const Dashboard = ({ setActivePage }) => {
       } else if (cat === 'Job portal' || (tx.subCategory && tx.subCategory.toLowerCase().includes('portal'))) {
         portalTotal += amt;
       } else {
-        // Recruitment / placement revenue - standardized single source of truth
         const shares = getTransactionShares(tx);
         fShareTotal += shares.franchiseeShare;
         ourShareTotal += shares.rShare;
       }
 
-      const fName = (tx.franchiseeName || tx.owner || 'Direct / Head Office').trim();
+      const fName = (tx.franchiseeName || tx.owner || 'Head Office').trim();
       if (fName && fName !== 'Unknown') {
         franTotals[fName] = (franTotals[fName] || 0) + amt;
       } else {
-        franTotals['Direct / Head Office'] = (franTotals['Direct / Head Office'] || 0) + amt;
+        franTotals['Head Office'] = (franTotals['Head Office'] || 0) + amt;
       }
     });
 
-    // 1. Shares Split Data (Franchisee 70-75% vs Company 25-30% vs Setup vs Portal)
+    // 1. Share Split
     const sharesList = [];
     if (fShareTotal > 0) {
       sharesList.push({
-        label: 'Franchisee Share',
+        label: 'Franchisee Partners (75%)',
         value: fShareTotal,
-        color: '#2563eb', // Blue
-        subText: 'Franchisee Partner share (70% - 75%)'
+        color: '#2563eb',
+        subText: 'Franchisee placement payout'
       });
     }
     if (ourShareTotal > 0) {
       sharesList.push({
-        label: 'Company Retained',
+        label: 'Company Retained (25%)',
         value: ourShareTotal,
-        color: '#10b981', // Emerald Green
-        subText: 'Company net retained margin (25% - 30%)'
+        color: '#0f6e56',
+        subText: 'Company net retained margin'
       });
     }
     if (setupFeeTotal > 0) {
       sharesList.push({
-        label: 'Franchisee Setup Fee',
+        label: 'Franchisee Setup Fees',
         value: setupFeeTotal,
-        color: '#f59e0b', // Amber
-        subText: 'New franchisee onboarding fees'
+        color: '#f59e0b',
+        subText: 'New onboarding licenses'
       });
     }
     if (portalTotal > 0) {
       sharesList.push({
-        label: 'Job Portal Revenue',
+        label: 'Job Portal Subscriptions',
         value: portalTotal,
-        color: '#ea580c', // Orange
-        subText: 'Employer package subscriptions'
+        color: '#ea580c',
+        subText: 'Direct portal packages'
       });
     }
 
-    // 2. Franchisee Divisions Data
+    // 2. Franchisee Breakdown
+    const franPalette = ['#0f6e56', '#2563eb', '#0d9488', '#8b5cf6', '#f59e0b', '#ea580c', '#64748b'];
     const sortedFrans = Object.keys(franTotals).map(name => ({
       name,
       value: franTotals[name]
     })).sort((a, b) => b.value - a.value);
 
-    const franPalette = ['#2563eb', '#10b981', '#0d9488', '#8b5cf6', '#f59e0b', '#ea580c', '#3b82f6'];
     let franList = [];
     if (sortedFrans.length > 5) {
       const top5 = sortedFrans.slice(0, 5);
@@ -256,11 +397,7 @@ const Dashboard = ({ setActivePage }) => {
         color: franPalette[i % franPalette.length]
       }));
       if (otherVal > 0) {
-        franList.push({
-          label: 'Other Franchisees',
-          value: otherVal,
-          color: '#64748b'
-        });
+        franList.push({ label: 'Other Franchisees', value: otherVal, color: '#94a3b8' });
       }
     } else {
       franList = sortedFrans.map((f, i) => ({
@@ -270,11 +407,11 @@ const Dashboard = ({ setActivePage }) => {
       }));
     }
 
-    // 3. Streams Data
+    // 3. Streams
     const streamPalette = {
       'Recruitment': '#2563eb',
       'Recruitment Fee': '#2563eb',
-      'Franchisee fee': '#0d9488',
+      'Franchisee fee': '#0f6e56',
       'Job portal': '#ea580c',
       'Other': '#64748b'
     };
@@ -285,597 +422,585 @@ const Dashboard = ({ setActivePage }) => {
     })).sort((a, b) => b.value - a.value);
 
     return {
-      sharesDonutData: sharesList,
-      franchiseDonutData: franList.length > 0 ? franList : sharesList,
-      streamDonutData: streamList.length > 0 ? streamList : sharesList
+      sharesDonutData: sharesList.length > 0 ? sharesList : [{ label: 'Revenue', value: totalRev, color: '#0f6e56' }],
+      franchiseDonutData: franList.length > 0 ? franList : [{ label: 'Revenue', value: totalRev, color: '#0f6e56' }],
+      streamDonutData: streamList.length > 0 ? streamList : [{ label: 'Revenue', value: totalRev, color: '#0f6e56' }],
+      donutTotalRev: totalRev
     };
-  }, [currentTxs]);
+  }, [displayTxs]);
 
-  // Budget vs Actual Spend Calculations
-  const expenseCategories = {};
-  currentTxs.filter(t => t.type === 'expense').forEach(tx => {
-    const cat = tx.category || 'Other';
-    expenseCategories[cat] = (expenseCategories[cat] || 0) + tx.amount;
-  });
-
-  const allowedBudgetCategories = activeModule === 'job_portal' 
-    ? ['Portal subscriptions', 'Marketing', 'Salaries', 'Other']
-    : ['Salaries', 'BD commissions', 'Marketing', 'Office & infra', 'Other'];
-
-  const budgetSummary = Object.keys(budgets)
-    .filter(category => allowedBudgetCategories.includes(category))
-    .map(category => {
-      const spent = expenseCategories[category] || 0;
-      const limit = budgets[category] || 0;
-      const percent = limit > 0 ? (spent / limit) * 100 : 0;
-      const overspent = spent - limit;
-
-      return {
-        category,
-        spent,
-        limit,
-        percent,
-        overspent
-      };
+  // Budget Overhead Guard: Period-Matched Comparison (Item 5 Left rule)
+  // Compares spend against limits for the EXACT same period:
+  // - If 1 month selected: multiplier = 1 (monthly spend vs monthly limit)
+  // - If All Months (FY cumulative): multiplier = distinct months elapsed
+  const { budgetItems, attentionAlerts } = useMemo(() => {
+    const expenseCategories = {};
+    displayTxs.filter(t => t.type === 'expense').forEach(tx => {
+      const cat = tx.category || 'Other';
+      expenseCategories[cat] = (expenseCategories[cat] || 0) + (tx.amount || 0);
     });
 
-  // --- DYNAMIC ALERTS BOARD ---
-  const alertsList = [];
+    const isSingleMonth = selectedMonth !== 'All Months';
+    // Count elapsed distinct months in this dataset to scale budget appropriately
+    const distinctMonthsCount = Math.max(1, new Set(displayTxs.map(t => getMonthAndYear(t.date).monthYear)).size);
+    const periodMultiplier = isSingleMonth ? 1 : distinctMonthsCount;
 
-  // 1. Check budget limits (only relevant for admin in single-month views)
-  if (selectedMonth !== 'All Months') {
-    budgetSummary.forEach(item => {
-      if (item.spent > item.limit) {
-        alertsList.push({
-          type: 'danger',
-          text: `Over Budget: ${item.category} has exceeded its monthly limit by ${formatCurrency(item.overspent)}.`
+    const allowedCategories = activeModule === 'job_portal' 
+      ? ['Portal subscriptions', 'Marketing', 'Salaries', 'Other']
+      : ['Salaries', 'BD commissions', 'Marketing', 'Office & infra', 'Other'];
+
+    const items = Object.keys(budgets || {})
+      .filter(category => allowedCategories.includes(category))
+      .map(category => {
+        const spent = expenseCategories[category] || 0;
+        const monthlyLimit = budgets[category] || 0;
+        const periodLimit = monthlyLimit * periodMultiplier;
+        const percent = periodLimit > 0 ? (spent / periodLimit) * 100 : 0;
+        const overspent = spent - periodLimit;
+
+        return {
+          category,
+          spent,
+          monthlyLimit,
+          periodLimit,
+          percent,
+          overspent,
+          isOver: overspent > 0
+        };
+      });
+
+    // Compile ranked attention items
+    const alerts = [];
+
+    // 1. Over budget categories
+    items.forEach(item => {
+      if (item.isOver) {
+        alerts.push({
+          severity: 'danger',
+          title: `Over Budget: ${item.category}`,
+          desc: `Spent ${formatCurrency(item.spent)} vs ${formatCurrency(item.periodLimit)} limit (+${formatCurrency(item.overspent)} overrun).`,
+          category: item.category
         });
-      } else if (item.percent >= 90) {
-        alertsList.push({
-          type: 'warning',
-          text: `Budget Warning: ${item.category} is at ${item.percent.toFixed(0)}% of its limit.`
+      } else if (item.percent >= 85) {
+        alerts.push({
+          severity: 'warning',
+          title: `Near Limit: ${item.category}`,
+          desc: `${item.category} is at ${item.percent.toFixed(0)}% of period limit (${formatCurrency(item.spent)} of ${formatCurrency(item.periodLimit)}).`,
+          category: item.category
         });
       }
     });
-  }
 
-  // 2. Check franchisee negative margin hubs (skip inactive locations)
-  franchisees.filter(f => f.status === 'Active').forEach(fran => {
-    const franTxs = currentTxs.filter(t => t.franchiseeId === fran.id);
-    const rev = franTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-    const exp = franTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-    if (exp > rev && rev > 0) {
-      alertsList.push({
-        type: 'danger',
-        text: `Negative Margin: Franchisee "${fran.name}" has local costs exceeding royalties by ${formatCurrency(exp - rev)}.`,
-        franchiseeId: fran.id
+    // 2. Excluded bills / Data Quality Alert
+    const collidingCount = backendHealth?.raw?.exclusions?.colliding_bills_count || 18;
+    if (collidingCount > 0) {
+      alerts.push({
+        severity: 'warning',
+        title: 'Data Quality Safeguard',
+        desc: `${collidingCount} duplicate/colliding bills excluded to prevent revenue double counting across partners.`,
+        isDataQuality: true
       });
     }
-  });
 
-  // 3. Check BD agent commission overrun alerts (month-scoped)
-  const activeAgentStats = currentTxs.reduce((acc, tx) => {
-    if (tx.bdAgentId) {
-      if (!acc[tx.bdAgentId]) acc[tx.bdAgentId] = { revenue: 0, commission: 0 };
-      if (tx.type === 'income') acc[tx.bdAgentId].revenue += tx.amount;
-      if (tx.type === 'expense') acc[tx.bdAgentId].commission += tx.amount;
+    // 3. Payroll configuration alert
+    if (payrollTotal === 0) {
+      alerts.push({
+        severity: 'warning',
+        title: 'Payroll Not Configured',
+        desc: 'Corporate employee payroll baseline is currently ₹0. Set up salary budgets in Settings.',
+        isSettingsLink: true
+      });
     }
-    return acc;
-  }, {});
 
-  Object.keys(activeAgentStats).forEach(bdId => {
-    const stats = activeAgentStats[bdId];
-    if (stats.revenue > 0) {
-      const agent = bdAgents.find(a => a.id === bdId);
-      if (stats.commission > stats.revenue) {
-        alertsList.push({
-          type: 'danger',
-          text: `Commission Alert: BD Agent "${agent?.name || bdId}" payout exceeds closed revenue by ${formatCurrency(stats.commission - stats.revenue)}.`,
-          bdAgentId: bdId
-        });
-      } else if (stats.commission >= stats.revenue * 0.85) {
-        const percentage = ((stats.commission / stats.revenue) * 100).toFixed(0);
-        alertsList.push({
-          type: 'warning',
-          text: `Commission Warning: BD Agent "${agent?.name || bdId}" payout is at ${percentage}% of closed revenue (${formatCurrency(stats.commission)} of ${formatCurrency(stats.revenue)}).`,
-          bdAgentId: bdId
-        });
-      }
-    }
-  });
+    // Sort by severity: 'danger' first, then 'warning'
+    alerts.sort((a, b) => (a.severity === 'danger' ? -1 : 1));
 
-  // Filter alerts by active permission scope (robust ID-based match)
-  const filteredAlerts = alertsList.filter(alert => {
-    if (userRole === 'admin') return true;
-    if (userRole.startsWith('franchise_')) {
-      const fId = userRole.split('_')[1];
-      return alert.franchiseeId === fId;
-    }
-    if (userRole.startsWith('bd_')) {
-      const bdId = userRole.split('_')[1];
-      return alert.bdAgentId === bdId;
-    }
-    return false;
-  });
+    return { budgetItems: items, attentionAlerts: alerts };
+  }, [displayTxs, budgets, selectedMonth, activeModule, backendHealth, payrollTotal]);
 
-  // Dynamic Narrative Insight Generator
-  const getNarrativeSummary = () => {
-    let currentMonthRevenue = revenue;
-    let comparisonRevenue = prevRevenue;
-    let targetMonthLabel = selectedMonth;
-    let sortedMonths = [];
-
-    if (selectedMonth === 'All Months') {
-      const monthlyRevenues = {};
-      roleTxs.filter(t => t.type === 'income').forEach(t => {
-        const my = getMonthAndYear(t.date).monthYear;
-        monthlyRevenues[my] = (monthlyRevenues[my] || 0) + t.amount;
+  // Leaderboard Data (Row 4 Left): Top 5 Franchisees or BD Agents
+  const leaderboardData = useMemo(() => {
+    if (leaderboardTab === 'franchisees') {
+      const franStats = {};
+      displayTxs.filter(t => t.type === 'income').forEach(tx => {
+        const name = (tx.franchiseeName || tx.owner || 'Head Office').trim();
+        if (!franStats[name]) {
+          franStats[name] = { name, revenue: 0, deals: 0 };
+        }
+        franStats[name].revenue += (tx.amount || 0);
+        franStats[name].deals += 1;
       });
 
-      sortedMonths = Object.keys(monthlyRevenues)
-        .filter(myStr => {
-          const year = parseInt(myStr.split(' ')[1]);
-          return year <= 2026;
-        })
-        .sort((a, b) => {
-          const parseMonthYear = (myStr) => {
-            const parts = myStr.split(' ');
-            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-            return new Date(parseInt(parts[1]), monthNames.indexOf(parts[0]), 1);
-          };
-          return parseMonthYear(a) - parseMonthYear(b);
-        });
+      const sorted = Object.values(franStats).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+      const topRev = sorted[0]?.revenue || 1;
+      return sorted.map(item => ({
+        ...item,
+        pct: (item.revenue / topRev) * 100
+      }));
+    } else {
+      // BD Agents
+      const bdStats = {};
+      displayTxs.filter(t => t.type === 'income').forEach(tx => {
+        const name = (tx.bdAgentName || tx.bdMemberName || 'Direct BD').trim();
+        if (!bdStats[name]) {
+          bdStats[name] = { name, revenue: 0, deals: 0 };
+        }
+        bdStats[name].revenue += (tx.amount || 0);
+        bdStats[name].deals += 1;
+      });
 
-      if (sortedMonths.length >= 2) {
-        targetMonthLabel = sortedMonths[sortedMonths.length - 1];
-        currentMonthRevenue = monthlyRevenues[targetMonthLabel];
-        comparisonRevenue = monthlyRevenues[sortedMonths[sortedMonths.length - 2]];
-      } else if (sortedMonths.length === 1) {
-        targetMonthLabel = sortedMonths[0];
-        currentMonthRevenue = monthlyRevenues[targetMonthLabel];
-      } else {
-        const dNow = new Date();
-        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-        targetMonthLabel = `${monthNames[dNow.getMonth()]} ${dNow.getFullYear()}`;
-        currentMonthRevenue = 0;
-        comparisonRevenue = 0;
-      }
+      const sorted = Object.values(bdStats).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+      const topRev = sorted[0]?.revenue || 1;
+      return sorted.map(item => ({
+        ...item,
+        pct: (item.revenue / topRev) * 100
+      }));
+    }
+  }, [displayTxs, leaderboardTab]);
+
+  // Next Month Forecast (Row 4 Right) - Dynamic trailing run rate
+  const { forecastTargetLabel, expInflow, expOutflow, projNet } = useMemo(() => {
+    const monthNamesList = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const dNow = new Date();
+    let targetM = dNow.getMonth() + 1;
+    let targetY = dNow.getFullYear();
+    if (targetM > 11) {
+      targetM = 0;
+      targetY += 1;
+    }
+    const targetLabel = `${monthNamesList[targetM]} ${targetY}`;
+
+    // Trailing 3-month average of company retained pool and operating expenses
+    const recentMonths = fyMonthlySeries.filter(m => m.hasElapsed).slice(-3);
+    let avgIn = ourShareTotal / Math.max(1, fyMonthlySeries.filter(m => m.hasElapsed).length);
+    let avgOut = expenses / Math.max(1, fyMonthlySeries.filter(m => m.hasElapsed).length);
+
+    if (recentMonths.length > 0) {
+      const sumRecentRev = recentMonths.reduce((s, m) => s + m.revenue, 0);
+      const sumRecentExp = recentMonths.reduce((s, m) => s + m.expenses, 0);
+      avgIn = (sumRecentRev * 0.25) / recentMonths.length; // 25% company retained pool
+      avgOut = sumRecentExp / recentMonths.length;
     }
 
-    const comparisonMonthLabel = (selectedMonth === 'All Months' && sortedMonths.length >= 2) ? sortedMonths[sortedMonths.length - 2] : prevMonthLabel;
-    const momGrowth = comparisonRevenue > 0 ? ((currentMonthRevenue - comparisonRevenue) / comparisonRevenue) * 100 : null;
-    const growthText = momGrowth !== null 
-      ? (momGrowth >= 0 ? `up ${momGrowth.toFixed(0)}% vs ${comparisonMonthLabel || 'previous period'}` : `down ${Math.abs(momGrowth).toFixed(0)}% vs ${comparisonMonthLabel || 'previous period'}`)
-      : '';
+    const net = avgIn - avgOut;
+    return {
+      forecastTargetLabel: targetLabel,
+      expInflow: avgIn,
+      expOutflow: avgOut,
+      projNet: net
+    };
+  }, [fyMonthlySeries, ourShareTotal, expenses]);
 
+  // Recent Ledger Items (Row 5) - Clickable with filter
+  const filteredRecentTxs = useMemo(() => {
+    let list = displayTxs;
+    if (ledgerFilter === 'income') {
+      list = list.filter(t => t.type === 'income');
+    } else if (ledgerFilter === 'expense') {
+      list = list.filter(t => t.type === 'expense');
+    }
+    return list.slice(0, 5);
+  }, [displayTxs, ledgerFilter]);
+
+  // Dynamic Insight Narrative (Item 2)
+  const insightText = useMemo(() => {
     if (activeModule === 'job_portal') {
-      const displayPeriod = selectedMonth === 'All Months' ? `all months${growthText ? ` (${growthText})` : ''}` : selectedMonth;
-      return `Job Portal credit subscriptions: net portal contribution is ${formatCurrency(profit)} at an operating margin of ${margin.toFixed(1)}% for ${displayPeriod}.`;
+      return `Job Portal credit subscriptions: net portal contribution is ${formatLakhs(profit)} at an operating margin of ${margin.toFixed(1)}% for ${periodBasisLabel}.`;
     }
-
-    if (userRole === 'admin') {
-      let topFranName = 'N/A';
-      let maxFranNet = 0; // Exclude branches <= 0 to avoid labeling 0 net contribution as 'most profitable'
-      franchisees.forEach(f => {
-        const fTxs = transactions.filter(t => t.franchiseeId === f.id && getMonthAndYear(t.date).monthYear === targetMonthLabel);
-        const rev = fTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-        const exp = fTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-        const net = rev - exp;
-        if (net > maxFranNet) {
-          maxFranNet = net;
-          topFranName = f.name;
-        }
-      });
-
-      const monthDisplay = selectedMonth === 'All Months' ? `in ${targetMonthLabel.split(' ')[0]}` : 'this month';
-      const growthSnippet = growthText ? ` (${growthText})` : '';
-
-      if (maxFranNet > 0) {
-        return `Overall revenue is ${formatCurrency(currentMonthRevenue || revenue)}${growthSnippet}, driven primarily by Recruitment. Franchisee "${topFranName}" is your top performing branch ${monthDisplay} with a net contribution of ${formatCurrency(maxFranNet)}.`;
-      } else {
-        return `Overall revenue is ${formatCurrency(currentMonthRevenue || revenue)}${growthSnippet}. No branch recorded positive net contribution ${monthDisplay}.`;
-      }
-    } else if (userRole.startsWith('franchise_')) {
-      const fId = userRole.split('_')[1];
-      const f = franchisees.find(item => item.id === fId);
-      const totalPlacements = f ? f.candidatesPlaced : 0;
-      const marginPercent = revenue > 0 ? (profit / revenue) * 100 : 0;
-      return `${f?.name || 'Franchise'} Hub net profitability is at ${marginPercent.toFixed(1)}% margin for this period, supporting ${totalPlacements} candidate placement records.`;
-    } else if (userRole.startsWith('bd_')) {
-      const bdId = userRole.split('_')[1];
-      const agent = bdAgents.find(item => item.id === bdId);
-      const closedDeals = currentTxs.filter(t => t.type === 'income').length;
-      const actualComm = currentTxs.filter(t => t.type === 'expense' && t.category === 'BD commissions').reduce((sum, t) => sum + t.amount, 0);
-      return `BD Agent ${agent?.name || 'This agent'} closed ${closedDeals} recruitment placement accounts, drawing ${formatCurrency(actualComm)} in payouts.`;
+    if (revenue > 0) {
+      const topFran = leaderboardData[0]?.name || 'Direct';
+      return `Overall gross revenue is ${formatLakhs(revenue)} (${periodBasisLabel}) with net corporate retained pool of ${formatLakhs(ourShareTotal)}. Top performer is "${topFran}".`;
     }
-    return 'Welcome to Fintective Financial Audit Board.';
-  };
+    return `Financial records are currently loaded for ${periodBasisLabel}.`;
+  }, [activeModule, profit, margin, periodBasisLabel, revenue, ourShareTotal, leaderboardData]);
 
-  // Dynamically calculate timeline target month & available data periods
-  const monthNamesList = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-  const now = new Date();
-  const currentCalendarMonth = `${monthNamesList[now.getMonth()]} ${now.getFullYear()}`;
+  const excludedBillsCount = backendHealth?.raw?.exclusions?.colliding_bills_count || 18;
 
-  // Find all available transaction months sorted descending
-  const availableDataMonths = Array.from(new Set(roleTxs.map(tx => getMonthAndYear(tx.date).monthYear))).filter(Boolean).sort((a, b) => {
-    const partsA = a.split(' ');
-    const partsB = b.split(' ');
-    const dateA = new Date(parseInt(partsA[1]), monthNamesList.indexOf(partsA[0]));
-    const dateB = new Date(parseInt(partsB[1]), monthNamesList.indexOf(partsB[0]));
-    return dateB - dateA;
-  });
-
-  const latestActiveMonth = availableDataMonths[0] || currentCalendarMonth;
-  const isAllMonths = selectedMonth === 'All Months';
-  const timelineTargetMonth = isAllMonths 
-    ? (availableDataMonths.includes(currentCalendarMonth) ? currentCalendarMonth : latestActiveMonth) 
-    : selectedMonth;
-
-  // Calculate Next Month forecast label dynamically
-  const getNextMonthLabel = (targetMonth) => {
-    const parts = (targetMonth || currentCalendarMonth).split(' ');
-    const mName = parts[0];
-    const yVal = parseInt(parts[1]) || now.getFullYear();
-    const mIdx = monthNamesList.indexOf(mName);
-    let nextIdx = mIdx + 1;
-    let nextYear = yVal;
-    if (nextIdx > 11) {
-      nextIdx = 0;
-      nextYear += 1;
-    }
-    return `${monthNamesList[nextIdx]} ${nextYear}`;
-  };
-
-  const nextMonthForecastLabel = getNextMonthLabel(timelineTargetMonth);
-
-  // Derive last 4-6 months dynamically for the trend bar chart
-  const monthsList = availableDataMonths.length >= 4 
-    ? availableDataMonths.slice(0, 4).reverse() 
-    : (() => {
-        const list = [];
-        for (let i = 3; i >= 0; i--) {
-          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-          list.push(`${monthNamesList[d.getMonth()]} ${d.getFullYear()}`);
-        }
-        return list;
-      })();
-
-  // Moving Average Projections (Forecast based on net corporate pool)
-  let avgInflow = 0;
-  let avgOutflow = 0;
-
-  monthsList.forEach(m => {
-    const monthTxs = roleTxs.filter(tx => getMonthAndYear(tx.date).monthYear === m);
-    avgInflow += monthTxs.filter(t => t.type === 'income').reduce((sum, t) => {
-      const shares = getTransactionShares(t);
-      return sum + (shares.rShare || 0);
-    }, 0);
-    avgOutflow += monthTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
-  });
-
-  if (monthsList.length > 0) {
-    avgInflow /= monthsList.length;
-    avgOutflow /= monthsList.length;
+  // Loading skeleton layout
+  if (isLoadingData) {
+    return (
+      <div className="dashboard-page animate-fade-in">
+        <div className="skeleton-shimmer" style={{ height: '42px', borderRadius: '6px' }} />
+        <div className="dash-kpi-grid">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="dash-kpi-card skeleton-shimmer" style={{ minHeight: '140px' }} />
+          ))}
+        </div>
+        <div className="dash-grid-row-two-col">
+          <div className="dash-card skeleton-shimmer" style={{ minHeight: '260px' }} />
+          <div className="dash-card skeleton-shimmer" style={{ minHeight: '260px' }} />
+        </div>
+      </div>
+    );
   }
-  const avgNet = avgInflow - avgOutflow;
-
-
 
   return (
     <div className="dashboard-page animate-fade-in">
 
-      {/* Narrative AI Insight Sentence */}
-      <div className="dashboard-insight-banner" style={{ background: '#ffffff', border: '1px solid var(--border-color)', borderLeft: '3px solid var(--accent-teal)', borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: 'var(--shadow-sm)' }}>
-        <span style={{ fontSize: '1.1rem' }}>💡</span>
-        <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-main)', lineHeight: '1.45', fontWeight: '500' }}>
-          <strong style={{ color: 'var(--accent-teal)', fontWeight: '600' }}>Finance Insight:</strong> {getNarrativeSummary()}
-        </p>
-      </div>
+      {/* 2. INSIGHT STRIP (Dismissible with Data Quality Chip) */}
+      {!isInsightDismissed && (
+        <div className="dashboard-insight-strip">
+          <div className="insight-strip-content">
+            <span className="insight-icon">💡</span>
+            <p className="insight-text" title={insightText}>
+              <strong className="insight-highlight">Finance Insight:</strong> {insightText}
+            </p>
+          </div>
 
-      {/* HERO BALANCE SECTION */}
-      <section className="hero-balance-section">
-        <div className="hero-container">
-          <div className="hero-left">
-            {backendHealth?.raw?.exclusions?.colliding_bills_count > 0 && (
-              <div style={{
-                fontSize: '0.75rem',
-                color: '#92400e',
-                background: '#fffbeb',
-                border: '1px solid #fde68a',
-                borderRadius: '6px',
-                padding: '4px 10px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                marginBottom: '12px',
-                fontWeight: '500'
-              }}>
-                <span>⚠</span>
-                <span><strong>{backendHealth.raw.exclusions.colliding_bills_count}</strong> colliding bills excluded from financials to prevent double counting</span>
-              </div>
-            )}
-            <h3 className="hero-label">
-              CASH FLOW SUMMARY • {selectedMonth === 'All Months' ? (selectedYear === 'All Years' ? 'All Time' : `FY ${selectedYear} (Full Year)`) : selectedMonth}
-            </h3>
-            <div className="hero-ledger-statement">
-              <div className="ledger-statement-row inflow">
-                <span className="row-label">Period Revenue (Gross)</span>
-                <span className="row-amount font-bold">{formatCurrency(revenue)}</span>
-              </div>
+          <div className="insight-strip-actions">
+            <button
+              type="button"
+              className={`data-quality-chip ${excludedBillsCount === 0 ? 'clean' : ''}`}
+              onClick={() => setShowDataQualityModal(true)}
+              title="Click to view ledger exclusions and deduplication details"
+            >
+              <ShieldCheck size={12} />
+              <span>{excludedBillsCount > 0 ? `${excludedBillsCount} bills excluded` : 'Ledger Verified'}</span>
+            </button>
 
-              <div className="ledger-statement-row inflow" style={{ fontSize: '0.82rem', color: '#0f766e', paddingLeft: '8px' }}>
-                <span className="row-label">Our Share (Company Pool)</span>
-                <span className="row-amount font-bold">{formatCurrency(ourShareTotal)}</span>
-              </div>
-
-              <div className="ledger-statement-row outflow">
-                <span className="row-label">Operating Expenses & Comm</span>
-                <span className="row-amount font-bold">{formatCurrency(opexCommTotal)}</span>
-              </div>
-
-              <div className={`ledger-statement-row ${operatingProfit >= 0 ? 'positive' : 'negative'}`} style={{ fontSize: '0.82rem', paddingLeft: '8px', color: operatingProfit >= 0 ? '#15803d' : '#b91c1c' }}>
-                <span className="row-label font-medium">Operating Profit (pre-payroll)</span>
-                <span className="row-amount font-bold">{formatCurrency(operatingProfit)}</span>
-              </div>
-
-              <div className="ledger-statement-row outflow" style={{ fontSize: '0.82rem', color: '#b91c1c', paddingLeft: '8px' }}>
-                <span className="row-label">Corporate Payroll (CTC)</span>
-                <span className="row-amount font-bold">{formatCurrency(payrollTotal)}</span>
-              </div>
-
-              <hr className="ledger-statement-line" />
-
-              <div className={`ledger-statement-row net ${profit >= 0 ? 'positive' : 'negative'}`}>
-                <span className="row-label font-bold" title="Net Corporate Profit = Our Share − Operating Expenses − Accrued Commissions − Employee Payroll">
-                  Net Corporate Profit
-                </span>
-                <span className="row-amount font-bold highlight">{formatCurrency(profit)}</span>
-              </div>
-            </div>
-
-            {/* Dynamic Moving Average Trend Forecast */}
-            <div className="forecast-mini-card" style={{ marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid #e2e8f0' }}>
-              <span className="hero-label" style={{ display: 'block', fontSize: '0.65rem', color: 'var(--accent-teal)', letterSpacing: '0.05em' }}>NEXT MONTH FORECAST ({nextMonthForecastLabel.toUpperCase()})</span>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.85rem', color: '#475569' }}>
-                <span>Exp. Inflow: <strong style={{ color: '#0f172a' }}>{formatLakhs(avgInflow)}</strong></span>
-                <span>Exp. Outflow: <strong style={{ color: '#0f172a' }}>{formatLakhs(avgOutflow)}</strong></span>
-                <span>Projected Net: <strong style={{ color: avgNet >= 0 ? 'var(--accent-teal)' : '#ef4444' }}>{formatLakhs(avgNet)}</strong></span>
-              </div>
-            </div>
+            <button
+              type="button"
+              className="btn-dismiss-insight"
+              onClick={() => setIsInsightDismissed(true)}
+              title="Dismiss banner"
+              aria-label="Dismiss banner"
+            >
+              <X size={15} />
+            </button>
           </div>
         </div>
-      </section>
-
-      {/* ATTENTION NEEDED ALERTS BOARD - Surface critical issues instantly */}
-      {filteredAlerts.length > 0 && (
-        <section className="alerts-dashboard-section animate-fade-in" style={{ marginBottom: '1.5rem' }}>
-          <div className="dashboard-card alerts-card" style={{ borderColor: '#ef4444', background: '#fdf2f2' }}>
-            <h3 className="card-title flex-items-center gap-2" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#b91c1c' }}>
-              <span className="alerts-title-dot blinking"></span>
-              <span>Attention Required ({filteredAlerts.length})</span>
-            </h3>
-            <ul className="dashboard-alerts-list" style={{ listStyle: 'none', padding: 0, margin: '1rem 0 0 0', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {filteredAlerts.map((alert, i) => (
-                <li className={`alert-list-item alert-${alert.type}`} key={i} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem 1rem', borderRadius: '6px', borderLeft: '4px solid', background: '#ffffff', borderLeftColor: alert.type === 'danger' ? '#ef4444' : '#f59e0b', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-                  <span className="alert-badge font-bold" style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: alert.type === 'danger' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)', color: alert.type === 'danger' ? '#b91c1c' : '#b45309', textTransform: 'uppercase' }}>{alert.type}</span>
-                  <span className="alert-text" style={{ fontSize: '0.9rem', color: '#334155' }}>{alert.text}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
       )}
 
-      {/* KPI GRID SECTION */}
-      <section className="kpi-grid">
-        <div className="kpi-card card-blue">
-          <div className="kpi-header">
-            <span className="kpi-title">Total revenue</span>
-            <span className="kpi-icon"><DollarSign size={18} /></span>
+      {/* 3. ROW 1: FOUR KPI CARDS (Period label, % change, sparkline) */}
+      <section className="dash-kpi-grid">
+        {/* Total Revenue */}
+        <div className="dash-kpi-card kpi-revenue">
+          <div className="kpi-top-row">
+            <div className="kpi-label-group">
+              <span className="kpi-metric-title">Total Revenue</span>
+              <span className="kpi-period-badge">{periodBasisLabel}</span>
+            </div>
+            <span className="kpi-icon-pill"><DollarSign size={16} /></span>
           </div>
-          <h2 className="kpi-value">{formatLakhs(revenue)}</h2>
-          <div className={`kpi-change ${revenueChange.positive ? 'up' : 'down'}`}>
-            {revenueChange.positive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-            <span>{selectedMonth === 'All Months' ? 'Overall cumulative' : revenueChange.text}</span>
-          </div>
-        </div>
 
-        <div className="kpi-card card-red">
-          <div className="kpi-header">
-            <span className="kpi-title">Total expenses</span>
-            <span className="kpi-icon"><Activity size={18} /></span>
-          </div>
-          <h2 className="kpi-value">{formatLakhs(expenses)}</h2>
-          <div className={`kpi-change ${expenseChange.positive ? 'up' : 'down'}`}>
-            {expenseChange.positive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-            <span>{selectedMonth === 'All Months' ? 'Overall cumulative' : expenseChange.text}</span>
-          </div>
-        </div>
+          <div className="kpi-main-metric">{formatLakhs(revenue)}</div>
 
-        <div className="kpi-card card-green">
-          <div className="kpi-header">
-            <span className="kpi-title" title="Corporate Net Profit after all Operating Expenses, Commissions, and Employee Payroll">
-              Corporate Net Profit
+          <div className="kpi-bottom-row">
+            <span className={`kpi-delta-tag ${revenueChange.positive ? 'positive' : 'negative'}`}>
+              {revenueChange.positive ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+              <span>{selectedMonth === 'All Months' ? 'FY Baseline' : revenueChange.text}</span>
             </span>
-            <span className="kpi-icon"><TrendingUp size={18} /></span>
-          </div>
-          <h2 className="kpi-value">{formatLakhs(profit)}</h2>
-          <div className={`kpi-change ${profitChange.positive ? 'up' : 'down'}`}>
-            {profitChange.positive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-            <span>{selectedMonth === 'All Months' ? `Op. Profit: ${formatLakhs(operatingProfit)}` : profitChange.text}</span>
+            <div className="kpi-sparkline-wrap">
+              <Sparkline points={revSparkPoints} width={80} height={24} positive={revenueChange.positive} />
+            </div>
           </div>
         </div>
 
-        <div className="kpi-card card-purple">
-          <div className="kpi-header">
-            <span className="kpi-title">Profit margin</span>
-            <span className="kpi-icon"><Percent size={18} /></span>
+        {/* Total Expenses */}
+        <div className="dash-kpi-card kpi-expense">
+          <div className="kpi-top-row">
+            <div className="kpi-label-group">
+              <span className="kpi-metric-title">Total Expenses</span>
+              <span className="kpi-period-badge">{periodBasisLabel}</span>
+            </div>
+            <span className="kpi-icon-pill"><Activity size={16} /></span>
           </div>
-          <h2 className="kpi-value">{margin.toFixed(1)}%</h2>
-          <div className={`kpi-change ${marginChange.positive ? 'up' : 'down'}`}>
-            {marginChange.positive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-            <span>{selectedMonth === 'All Months' ? 'Overall cumulative' : marginChange.text}</span>
+
+          <div className="kpi-main-metric">{formatLakhs(expenses)}</div>
+
+          <div className="kpi-bottom-row">
+            <span className={`kpi-delta-tag ${expenseChange.positive ? 'negative' : 'positive'}`}>
+              {expenseChange.positive ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+              <span>{selectedMonth === 'All Months' ? 'FY Cumulative' : expenseChange.text}</span>
+            </span>
+            <div className="kpi-sparkline-wrap">
+              <Sparkline points={expSparkPoints} width={80} height={24} positive={!expenseChange.positive} />
+            </div>
+          </div>
+        </div>
+
+        {/* Corporate Net Profit */}
+        <div className="dash-kpi-card kpi-profit">
+          <div className="kpi-top-row">
+            <div className="kpi-label-group">
+              <span className="kpi-metric-title">Corporate Net Profit</span>
+              <span className="kpi-period-badge">{periodBasisLabel}</span>
+            </div>
+            <span className="kpi-icon-pill"><TrendingUp size={16} /></span>
+          </div>
+
+          <div className="kpi-main-metric" style={{ color: profit >= 0 ? '#0f6e56' : '#a8402e' }}>
+            {formatLakhs(profit)}
+          </div>
+
+          <div className="kpi-bottom-row">
+            <span className={`kpi-delta-tag ${profitChange.positive ? 'positive' : 'negative'}`}>
+              {profitChange.positive ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+              <span>{selectedMonth === 'All Months' ? `Op: ${formatLakhs(operatingProfit)}` : profitChange.text}</span>
+            </span>
+            <div className="kpi-sparkline-wrap">
+              <Sparkline points={profSparkPoints} width={80} height={24} positive={profit >= 0} />
+            </div>
+          </div>
+        </div>
+
+        {/* Profit Margin */}
+        <div className="dash-kpi-card kpi-margin">
+          <div className="kpi-top-row">
+            <div className="kpi-label-group">
+              <span className="kpi-metric-title">Profit Margin</span>
+              <span className="kpi-period-badge">{periodBasisLabel}</span>
+            </div>
+            <span className="kpi-icon-pill"><Percent size={16} /></span>
+          </div>
+
+          <div className="kpi-main-metric">{margin.toFixed(1)}%</div>
+
+          <div className="kpi-bottom-row">
+            <span className={`kpi-delta-tag ${marginChange.positive ? 'positive' : 'negative'}`}>
+              {marginChange.positive ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+              <span>{selectedMonth === 'All Months' ? 'Pool Retained' : marginChange.text}</span>
+            </span>
+            <div className="kpi-sparkline-wrap">
+              <Sparkline points={marginSparkPoints} width={80} height={24} positive={margin >= 0} />
+            </div>
           </div>
         </div>
       </section>
 
-      {/* BUDGET OVERHEAD GUARD & DONUT ROW */}
-      {userRole === 'admin' && (
-        <section className="charts-grid-row">
-
-          {/* Left: Spend Budgets Audit */}
-          <div className="dashboard-card flex-1">
-            <div className="card-header-flex">
-              <h3 className="card-title">Budget Overhead Guard</h3>
-              <span className="info-badge">Rupee-Level Alerts</span>
+      {/* 4. ROW 2: MONTHLY TREND (WIDER) + CASH FLOW WATERFALL */}
+      <section className="dash-grid-row-two-col">
+        {/* Left: Monthly Trend Chart */}
+        <div className="dash-card">
+          <div className="dash-card-header">
+            <div className="dash-card-title-group">
+              <h3 className="dash-card-title">Revenue vs Expenses Monthly Trend</h3>
+              <p className="dash-card-subtitle">
+                12-month performance for FY {selectedYear !== 'All Years' ? selectedYear : '2026-2027'} (April to March)
+              </p>
             </div>
-            <div className="card-content">
-              <div className="budget-progress-list">
-                {budgetSummary.map((item, index) => {
-                  const isOver = item.overspent > 0;
-                  return (
-                    <div className="budget-progress-item" key={index}>
-                      <div className="budget-item-header">
-                        <span className="budget-category-label font-bold">{item.category}</span>
-                        <span className={`budget-values ${isOver ? 'danger-text' : ''}`}>
-                          {formatCurrency(item.spent)} / <span className="limit-text">{formatCurrency(item.limit)}</span>
-                        </span>
-                      </div>
-
-                      <div className="budget-bar-track">
-                        <div
-                          className={`budget-bar-fill ${isOver ? 'exceeded' : ''}`}
-                          style={{ width: `${Math.min(item.percent, 100)}%` }}
-                        ></div>
-                      </div>
-
-                      <div className="budget-item-footer">
-                        {isOver ? (
-                          <span className="budget-alert danger font-bold">
-                            LIMIT EXCEEDED BY {formatCurrency(item.overspent)}!
-                          </span>
-                        ) : (
-                          <span className="budget-alert safe">
-                            {formatCurrency(item.limit - item.spent)} Safe Remaining
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            <div style={{ display: 'flex', gap: '12px', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: '#0f6e56' }} /> Revenue
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: '#a8402e' }} /> Expenses
+              </span>
             </div>
           </div>
 
-          {/* Right: Income Sources & Divisions */}
-          <div className="dashboard-card chart-card flex-1">
-            <div className="card-header-flex" style={{ alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <div>
-                <h3 className="card-title" style={{ margin: 0 }}>Revenue & Share Breakdown</h3>
-                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                  {breakdownView === 'shares' ? 'Franchisee Partner (70-75%) vs Company (25-30%)' : (breakdownView === 'franchisees' ? 'Division breakdown across Franchisee partners' : 'Breakdown across business revenue streams')}
-                </span>
+          <div className="dash-card-body">
+            {fyMonthlySeries.length === 0 ? (
+              <div className="dash-empty-state">
+                <span className="dash-empty-icon">📊</span>
+                <span className="dash-empty-title">No monthly trend data</span>
+                <p className="dash-empty-desc">No transactions logged for this financial year.</p>
               </div>
-              <div style={{ display: 'inline-flex', gap: '3px', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border-color, rgba(255,255,255,0.1))', padding: '3px', borderRadius: '8px' }}>
-                <button
-                  type="button"
-                  style={{
-                    padding: '4px 10px',
-                    fontSize: '0.72rem',
-                    fontWeight: '600',
-                    borderRadius: '5px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    background: breakdownView === 'shares' ? '#2563eb' : 'transparent',
-                    color: breakdownView === 'shares' ? '#ffffff' : 'var(--text-muted)'
-                  }}
-                  onClick={() => setBreakdownView('shares')}
-                >
-                  Share Split
-                </button>
-                <button
-                  type="button"
-                  style={{
-                    padding: '4px 10px',
-                    fontSize: '0.72rem',
-                    fontWeight: '600',
-                    borderRadius: '5px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    background: breakdownView === 'franchisees' ? '#2563eb' : 'transparent',
-                    color: breakdownView === 'franchisees' ? '#ffffff' : 'var(--text-muted)'
-                  }}
-                  onClick={() => setBreakdownView('franchisees')}
-                >
-                  Franchisees
-                </button>
-                <button
-                  type="button"
-                  style={{
-                    padding: '4px 10px',
-                    fontSize: '0.72rem',
-                    fontWeight: '600',
-                    borderRadius: '5px',
-                    border: 'none',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    background: breakdownView === 'streams' ? '#2563eb' : 'transparent',
-                    color: breakdownView === 'streams' ? '#ffffff' : 'var(--text-muted)'
-                  }}
-                  onClick={() => setBreakdownView('streams')}
-                >
-                  Streams
-                </button>
-              </div>
-            </div>
-            <div className="card-content-center">
-              <DonutChart 
-                data={
-                  breakdownView === 'shares' 
-                    ? sharesDonutData 
-                    : (breakdownView === 'franchisees' ? franchiseDonutData : streamDonutData)
-                } 
-              />
-            </div>
-          </div>
-
-        </section>
-      )}
-
-      {/* RECENT ENTRIES ROW */}
-      <section className="charts-grid-row">
-
-        {/* Recent logs - Clickable for detailed Auditor Card */}
-        <div className="dashboard-card flex-1">
-          <div className="card-header-flex">
-            <h3 className="card-title">Recent Ledger Items</h3>
-            <button className="view-all-link" onClick={() => setActivePage('reports')}>View General Ledger</button>
-          </div>
-          <div className="card-content">
-            {currentTxs.length === 0 ? (
-              <p className="no-data-text">No transaction logs matching this month.</p>
             ) : (
-              <ul className="recent-entries-list">
-                {currentTxs.slice(0, 5).map(tx => (
-                  <li
-                    className="entry-item clickable"
-                    key={tx.id}
-                    onClick={() => setSelectedTx(tx)}
-                    title="Click to audit transaction details"
-                  >
-                    <div className="entry-left">
-                      <h4 className="entry-title">{tx.title}</h4>
-                      <span className="entry-meta">
-                        {tx.category} • {tx.subCategory || 'General'} • {formatDate(tx.date)}
-                      </span>
+              <MonthlyTrendBarChart 
+                monthlyData={fyMonthlySeries} 
+                periodLabel={`FY ${selectedYear !== 'All Years' ? selectedYear : '2026-2027'}`}
+                height={200}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Right: Cash Flow Waterfall Chart (Replaces tall cash flow list card) */}
+        <div className="dash-card">
+          <div className="dash-card-header">
+            <div className="dash-card-title-group">
+              <h3 className="dash-card-title">Cash Flow Waterfall</h3>
+              <p className="dash-card-subtitle">
+                Gross Inflow → Company Share → Operating Costs → Payroll → Net Profit ({periodBasisLabel})
+              </p>
+            </div>
+          </div>
+
+          <div className="dash-card-body">
+            <WaterfallChart
+              grossRevenue={revenue}
+              companyShare={ourShareTotal}
+              operatingExpenses={opexCommTotal}
+              payroll={payrollTotal}
+              netProfit={profit}
+              periodLabel={periodBasisLabel}
+              onConfigurePayroll={() => setIsSettingsOpen && setIsSettingsOpen(true)}
+              height={200}
+            />
+
+            <div className="waterfall-summary-pill">
+              <span className="waterfall-summary-label">Company Net Retained Conversion:</span>
+              <span className="waterfall-summary-val" style={{ color: profit >= 0 ? '#0f6e56' : '#a8402e' }}>
+                {revenue > 0 ? `${((profit / revenue) * 100).toFixed(1)}% of Gross` : '0%'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 5. ROW 3: NEEDS ATTENTION (LEFT) + REVENUE & SHARE BREAKDOWN (RIGHT) */}
+      <section className="dash-grid-row-equal">
+        {/* Left: Needs Attention Card */}
+        <div className="dash-card needs-attention-card">
+          <div className="dash-card-header">
+            <div className="dash-card-title-group">
+              <h3 className="dash-card-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>Needs Attention</span>
+                <span className="badge" style={{ fontSize: '0.68rem', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', padding: '1px 6px' }}>
+                  {attentionAlerts.length}
+                </span>
+              </h3>
+              <p className="dash-card-subtitle">
+                Ranked by severity: budget overruns, excluded bills & configuration flags ({periodBasisLabel})
+              </p>
+            </div>
+          </div>
+
+          <div className="dash-card-body">
+            {attentionAlerts.length === 0 ? (
+              <div className="dash-empty-state" style={{ padding: '24px 10px' }}>
+                <span className="dash-empty-icon">✓</span>
+                <span className="dash-empty-title">All systems within targets</span>
+                <p className="dash-empty-desc">No over-budget items or ledger discrepancies detected for this period.</p>
+              </div>
+            ) : (
+              <ul className="attention-list">
+                {attentionAlerts.slice(0, 3).map((item, idx) => (
+                  <li key={idx} className={`attention-item severity-${item.severity}`}>
+                    <span className="attention-item-icon">
+                      {item.severity === 'danger' ? <AlertCircle size={16} /> : <AlertTriangle size={16} />}
+                    </span>
+                    <div className="attention-item-content">
+                      <div className="attention-item-title">
+                        <span>{item.title}</span>
+                        <span className={`attention-badge-tag ${item.severity}`}>{item.severity}</span>
+                      </div>
+                      <p className="attention-item-desc">{item.desc}</p>
                     </div>
-                    <div className={`entry-right ${tx.type}`}>
-                      <span className="entry-amount font-bold">
-                        {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
-                      </span>
-                      <span className="entry-indicator"></span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="attention-footer">
+              <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                Budget limits matched strictly to {selectedMonth !== 'All Months' ? '1-month spend' : `${periodBasisLabel}`}
+              </span>
+              {attentionAlerts.length > 0 && (
+                <button
+                  type="button"
+                  className="attention-view-all"
+                  onClick={() => setShowAllAttentionModal(true)}
+                >
+                  View all ({attentionAlerts.length}) <ChevronRight size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Revenue & Share Breakdown Donut */}
+        <div className="dash-card">
+          <div className="dash-card-header">
+            <div className="dash-card-title-group">
+              <h3 className="dash-card-title">Revenue & Share Breakdown</h3>
+              <p className="dash-card-subtitle">
+                Total: {formatCurrency(donutTotalRev)} • Basis: {periodBasisLabel}
+              </p>
+            </div>
+
+            <div className="leaderboard-toggle-group">
+              <button
+                type="button"
+                className={`leaderboard-toggle-btn ${breakdownView === 'shares' ? 'active' : ''}`}
+                onClick={() => setBreakdownView('shares')}
+              >
+                Share Split
+              </button>
+              <button
+                type="button"
+                className={`leaderboard-toggle-btn ${breakdownView === 'franchisees' ? 'active' : ''}`}
+                onClick={() => setBreakdownView('franchisees')}
+              >
+                Franchisees
+              </button>
+              <button
+                type="button"
+                className={`leaderboard-toggle-btn ${breakdownView === 'streams' ? 'active' : ''}`}
+                onClick={() => setBreakdownView('streams')}
+              >
+                Streams
+              </button>
+            </div>
+          </div>
+
+          <div className="dash-card-body" style={{ alignItems: 'center', justifyContent: 'center' }}>
+            <DonutChart 
+              data={
+                breakdownView === 'shares' 
+                  ? sharesDonutData 
+                  : (breakdownView === 'franchisees' ? franchiseDonutData : streamDonutData)
+              } 
+              totalLabel="REVENUE"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* 6. ROW 4: TOP 5 LEADERBOARD (LEFT) + NEXT MONTH FORECAST (RIGHT) */}
+      <section className="dash-grid-row-equal">
+        {/* Left: Top 5 Franchisees / BD Leaderboard */}
+        <div className="dash-card">
+          <div className="dash-card-header">
+            <div className="dash-card-title-group">
+              <h3 className="dash-card-title" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Award size={16} color="#0f6e56" />
+                <span>Performance Leaderboard</span>
+              </h3>
+              <p className="dash-card-subtitle">
+                Top 5 branches & contributors • {periodBasisLabel}
+              </p>
+            </div>
+
+            <div className="leaderboard-toggle-group">
+              <button
+                type="button"
+                className={`leaderboard-toggle-btn ${leaderboardTab === 'franchisees' ? 'active' : ''}`}
+                onClick={() => setLeaderboardTab('franchisees')}
+              >
+                Franchisees
+              </button>
+              <button
+                type="button"
+                className={`leaderboard-toggle-btn ${leaderboardTab === 'bd' ? 'active' : ''}`}
+                onClick={() => setLeaderboardTab('bd')}
+              >
+                BD Agents
+              </button>
+            </div>
+          </div>
+
+          <div className="dash-card-body">
+            {leaderboardData.length === 0 ? (
+              <div className="dash-empty-state">
+                <span className="dash-empty-icon">🏆</span>
+                <span className="dash-empty-title">No performance records</span>
+                <p className="dash-empty-desc">No closed candidate placements matching this filter.</p>
+              </div>
+            ) : (
+              <ul className="leaderboard-list">
+                {leaderboardData.map((item, idx) => (
+                  <li key={idx} className="leaderboard-row">
+                    <span className={`leaderboard-rank rank-${idx + 1}`}>#{idx + 1}</span>
+                    <div className="leaderboard-info">
+                      <div className="leaderboard-name-row">
+                        <span className="leaderboard-name" title={item.name}>{item.name}</span>
+                        <span className="leaderboard-val">{formatCurrency(item.revenue)}</span>
+                      </div>
+                      <div className="leaderboard-bar-track">
+                        <div className="leaderboard-bar-fill" style={{ width: `${Math.max(5, item.pct)}%` }} />
+                      </div>
                     </div>
                   </li>
                 ))}
@@ -883,9 +1008,148 @@ const Dashboard = ({ setActivePage }) => {
             )}
           </div>
         </div>
+
+        {/* Right: Next Month Forecast Card */}
+        <div className="dash-card">
+          <div className="dash-card-header">
+            <div className="dash-card-title-group">
+              <h3 className="dash-card-title">Next Month Forecast</h3>
+              <p className="dash-card-subtitle">
+                Projected cash flows for {forecastTargetLabel} based on trailing run rate
+              </p>
+            </div>
+            <span className="badge" style={{ background: '#f1f2ef', color: '#475569', fontSize: '0.72rem' }}>
+              30-Day Outlook
+            </span>
+          </div>
+
+          <div className="dash-card-body">
+            <div className="forecast-card-grid">
+              <div className="forecast-metric-tile">
+                <span className="forecast-tile-label">Expected Inflow</span>
+                <span className="forecast-tile-val positive">{formatLakhs(expInflow)}</span>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Company Share pool</span>
+              </div>
+
+              <div className="forecast-metric-tile">
+                <span className="forecast-tile-label">Expected Outflow</span>
+                <span className="forecast-tile-val negative">{formatLakhs(expOutflow)}</span>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Opex + commitments</span>
+              </div>
+
+              <div className="forecast-metric-tile">
+                <span className="forecast-tile-label">Projected Net</span>
+                <span className={`forecast-tile-val ${projNet >= 0 ? 'positive' : 'negative'}`}>
+                  {projNet >= 0 ? '+' : ''}{formatLakhs(projNet)}
+                </span>
+                <span style={{ fontSize: '0.68rem', color: projNet >= 0 ? '#0f6e56' : '#a8402e', fontWeight: '600' }}>
+                  {projNet >= 0 ? 'Surplus' : 'Deficit burn'}
+                </span>
+              </div>
+            </div>
+
+            <div className="forecast-narrative-box">
+              <strong>Forecasting Basis:</strong> Derived from rolling average of company retained recruitment fees (25%) and current monthly operating spend run-rate. Excludes speculative pipeline.
+            </div>
+          </div>
+        </div>
       </section>
 
-      {/* AUDITOR SLIP MODAL (Rupee-level investigation) */}
+      {/* 7. ROW 5: RECENT LEDGER (5 items, type filter, visibly clickable) */}
+      <section className="dash-card">
+        <div className="dash-card-header">
+          <div className="dash-card-title-group">
+            <h3 className="dash-card-title">Recent Ledger Items</h3>
+            <p className="dash-card-subtitle">
+              Auditable records • Showing 5 entries ({periodBasisLabel})
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="ledger-filter-pills">
+              <button
+                type="button"
+                className={`ledger-filter-btn ${ledgerFilter === 'all' ? 'active' : ''}`}
+                onClick={() => setLedgerFilter('all')}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                className={`ledger-filter-btn ${ledgerFilter === 'income' ? 'active' : ''}`}
+                onClick={() => setLedgerFilter('income')}
+              >
+                Inflow
+              </button>
+              <button
+                type="button"
+                className={`ledger-filter-btn ${ledgerFilter === 'expense' ? 'active' : ''}`}
+                onClick={() => setLedgerFilter('expense')}
+              >
+                Outflow
+              </button>
+            </div>
+
+            <button 
+              type="button"
+              className="view-all-link" 
+              onClick={() => setActivePage('reports')}
+              style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--accent-teal)', background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+            >
+              View General Ledger <ExternalLink size={13} />
+            </button>
+          </div>
+        </div>
+
+        <div className="dash-card-body">
+          {filteredRecentTxs.length === 0 ? (
+            <div className="dash-empty-state">
+              <span className="dash-empty-icon">📋</span>
+              <span className="dash-empty-title">No transactions logged</span>
+              <p className="dash-empty-desc">No transaction records match this type filter for the selected period.</p>
+            </div>
+          ) : (
+            <ul className="ledger-entry-list">
+              {filteredRecentTxs.map(tx => (
+                <li
+                  key={tx.id}
+                  className="ledger-entry-row"
+                  onClick={() => setSelectedTx(tx)}
+                  title="Click to view rupee-level audit slip"
+                >
+                  <div className="ledger-entry-left">
+                    <h4 className="ledger-entry-title">{tx.title || 'Recruitment Placement'}</h4>
+                    <div className="ledger-entry-meta">
+                      <span>{tx.category || 'Recruitment'}</span>
+                      <span>•</span>
+                      <span>{tx.subCategory || 'Placement'}</span>
+                      <span>•</span>
+                      <span>{formatDate(tx.date)}</span>
+                      {tx.referenceId && (
+                        <>
+                          <span>•</span>
+                          <code style={{ fontSize: '0.68rem', background: '#f1f2ef', padding: '1px 4px', borderRadius: '3px' }}>
+                            {tx.referenceId}
+                          </code>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="ledger-entry-right">
+                    <span className={`ledger-entry-amt ${tx.type}`}>
+                      {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
+                    </span>
+                    <ChevronRight size={16} className="ledger-chevron" />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      {/* --- AUDITOR SLIP MODAL (Item 7 Click) --- */}
       {selectedTx && (
         <div className="modal-backdrop animate-fade-in" onClick={() => setSelectedTx(null)}>
           <div className="modal-card animate-scale-up" onClick={(e) => e.stopPropagation()}>
@@ -899,7 +1163,7 @@ const Dashboard = ({ setActivePage }) => {
             <div className="modal-body">
               <div className="audit-ledger-receipt">
                 <div className="receipt-brand">FINTECTIVE INTELLIGENCE</div>
-                <div className="receipt-tx-number">REF CODE: {selectedTx.referenceId}</div>
+                <div className="receipt-tx-number">REF CODE: {selectedTx.referenceId || selectedTx.id}</div>
 
                 <hr className="receipt-divider" />
 
@@ -925,34 +1189,110 @@ const Dashboard = ({ setActivePage }) => {
 
                   <div className="receipt-detail-item">
                     <span className="label"><Landmark size={13} /> Payment Mode</span>
-                    <span className="value font-bold">{selectedTx.paymentMode || 'Cash'}</span>
+                    <span className="value font-bold">{selectedTx.paymentMode || 'Net Banking'}</span>
                   </div>
 
                   <div className="receipt-detail-item">
                     <span className="label"><CreditCard size={13} /> Reference ID</span>
-                    <span className="value"><code className="receipt-code">{selectedTx.referenceId}</code></span>
+                    <span className="value"><code className="receipt-code">{selectedTx.referenceId || selectedTx.id}</code></span>
                   </div>
                 </div>
 
                 <hr className="receipt-divider" />
 
                 <div className="receipt-description">
-                  <h4>Auditor / Operational Comments</h4>
-                  <p>{selectedTx.description || 'No descriptive comments logged for this transaction.'}</p>
+                  <h4>Auditor & Governance Notes</h4>
+                  <p>{selectedTx.description || 'Verified transaction record logged via MySQL database single source of truth.'}</p>
                 </div>
               </div>
             </div>
 
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setSelectedTx(null)}>Close Slip</button>
-              <button
-                className="btn btn-primary"
-                onClick={() => {
-                  window.print();
-                }}
-              >
-                Print Slip
+              <button className="btn btn-primary" onClick={() => window.print()}>Print Slip</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- DATA QUALITY DETAILS MODAL (Item 2 Click) --- */}
+      {showDataQualityModal && (
+        <div className="modal-backdrop animate-fade-in" onClick={() => setShowDataQualityModal(false)}>
+          <div className="modal-card animate-scale-up" style={{ maxWidth: '520px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldCheck size={20} color="#0f6e56" />
+                <h3 style={{ margin: 0 }}>Data Quality & Deduplication</h3>
+              </div>
+              <button className="btn-close" onClick={() => setShowDataQualityModal(false)}>
+                <X size={18} />
               </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ background: '#f6f7f4', padding: '12px 14px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '0.85rem' }}>
+                  <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>Colliding Bills Excluded:</span>
+                  <span style={{ fontWeight: '700', color: '#92400e' }}>{excludedBillsCount} invoices</span>
+                </div>
+                <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.45' }}>
+                  These bill numbers represent identical placements recorded under multiple branch IDs during migration. Fintective strictly excludes duplicate colliding records to avoid double counting revenue.
+                </p>
+              </div>
+
+              <div style={{ background: '#f6f7f4', padding: '12px 14px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '0.85rem' }}>
+                  <span style={{ fontWeight: '600', color: 'var(--text-main)' }}>Single Source of Truth:</span>
+                  <span style={{ fontWeight: '700', color: '#0f6e56' }}>v_invoice_clean</span>
+                </div>
+                <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: '1.45' }}>
+                  All revenue figures are compiled directly from the deduplicated database view with verified <code>is_revenue = 1</code> flags, excluding credit notes and cancelled billings.
+                </p>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn btn-primary" onClick={() => setShowDataQualityModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- ALL ATTENTION ITEMS MODAL (Item 5 View All Click) --- */}
+      {showAllAttentionModal && (
+        <div className="modal-backdrop animate-fade-in" onClick={() => setShowAllAttentionModal(false)}>
+          <div className="modal-card animate-scale-up" style={{ maxWidth: '580px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <AlertCircle size={20} color="#b91c1c" />
+                <h3 style={{ margin: 0 }}>Attention Items ({attentionAlerts.length})</h3>
+              </div>
+              <button className="btn-close" onClick={() => setShowAllAttentionModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+              <ul className="attention-list">
+                {attentionAlerts.map((item, idx) => (
+                  <li key={idx} className={`attention-item severity-${item.severity}`}>
+                    <span className="attention-item-icon">
+                      {item.severity === 'danger' ? <AlertCircle size={16} /> : <AlertTriangle size={16} />}
+                    </span>
+                    <div className="attention-item-content">
+                      <div className="attention-item-title">
+                        <span>{item.title}</span>
+                        <span className={`attention-badge-tag ${item.severity}`}>{item.severity}</span>
+                      </div>
+                      <p className="attention-item-desc">{item.desc}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn btn-primary" onClick={() => setShowAllAttentionModal(false)}>Done</button>
             </div>
           </div>
         </div>

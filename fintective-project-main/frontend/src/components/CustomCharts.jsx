@@ -849,6 +849,298 @@ export const PlanAheadTrajectoryChart = ({
       </svg>
     </div>
   );
+
+/**
+ * Cash Flow Waterfall Chart Component
+ * Sequence: Gross Revenue → Company Share → Operating Expenses → Payroll → Net Profit
+ */
+export const WaterfallChart = ({
+  grossRevenue = 0,
+  companyShare = 0,
+  operatingExpenses = 0,
+  payroll = 0,
+  netProfit = 0,
+  periodLabel = '',
+  onConfigurePayroll = null,
+  height = 210
+}) => {
+  const formatVal = (v) => {
+    const num = Math.abs(Number(v) || 0);
+    if (num >= 10000000) return `₹${(num / 10000000).toFixed(2)} Cr`;
+    if (num >= 100000) return `₹${(num / 100000).toFixed(1)} L`;
+    if (num >= 1000) return `₹${(num / 1000).toFixed(0)} K`;
+    return `₹${num.toFixed(0)}`;
+  };
+
+  const isPayrollMissing = !payroll || Number(payroll) <= 0;
+
+  // Scale calculations
+  const maxVal = Math.max(grossRevenue, companyShare, 100000) * 1.15;
+  const width = 560;
+  const padL = 40;
+  const padR = 24;
+  const padT = 24;
+  const padB = 40;
+  const plotW = width - padL - padR;
+  const plotH = height - padT - padB;
+  const baselineY = padT + plotH;
+
+  const barWidth = 48;
+  const colCount = 5;
+  const colSpacing = plotW / colCount;
+
+  // Calculate coordinates for 5 columns
+  // Col 0: Gross Revenue (from 0 up to grossRevenue)
+  const x0 = padL + colSpacing * 0 + (colSpacing - barWidth) / 2;
+  const h0 = Math.max(4, (grossRevenue / maxVal) * plotH);
+  const y0 = baselineY - h0;
+
+  // Col 1: Company Share (starts at 0 up to companyShare)
+  const x1 = padL + colSpacing * 1 + (colSpacing - barWidth) / 2;
+  const h1 = Math.max(4, (companyShare / maxVal) * plotH);
+  const y1 = baselineY - h1;
+
+  // Col 2: Operating Expenses (steps down from companyShare)
+  const x2 = padL + colSpacing * 2 + (colSpacing - barWidth) / 2;
+  const h2 = Math.max(4, (operatingExpenses / maxVal) * plotH);
+  const y2 = y1; // top of operating expenses sits at top of company share
+  const y2_bottom = y2 + h2; // steps down
+
+  // Col 3: Payroll CTC (steps down from operating expenses bottom)
+  const x3 = padL + colSpacing * 3 + (colSpacing - barWidth) / 2;
+  const h3 = isPayrollMissing ? 20 : Math.max(4, (payroll / maxVal) * plotH);
+  const y3 = y2_bottom;
+  const y3_bottom = isPayrollMissing ? y3 : y3 + h3;
+
+  // Col 4: Corporate Net Profit (from baseline to netProfit)
+  const x4 = padL + colSpacing * 4 + (colSpacing - barWidth) / 2;
+  const isNetPos = netProfit >= 0;
+  const h4 = Math.max(4, (Math.abs(netProfit) / maxVal) * plotH);
+  const y4 = isNetPos ? baselineY - h4 : baselineY;
+
+  return (
+    <div className="waterfall-container">
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}>
+        {/* Baseline */}
+        <line x1={padL - 10} y1={baselineY} x2={width - padR + 10} y2={baselineY} stroke="#cbd5e1" strokeWidth="1.5" />
+
+        {/* Step Connectors */}
+        {/* Connector 0 -> 1: Franchisee deduction dashed line */}
+        <line x1={x0 + barWidth} y1={y0} x2={x1} y2={y0} stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" />
+        <line x1={x1} y1={y0} x2={x1} y2={y1} stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" />
+
+        {/* Connector 1 -> 2: Across to Operating Expenses */}
+        <line x1={x1 + barWidth} y1={y1} x2={x2} y2={y1} stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" />
+
+        {/* Connector 2 -> 3: From bottom of Opex to top of Payroll */}
+        <line x1={x2 + barWidth} y1={y2_bottom} x2={x3} y2={y3} stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" />
+
+        {/* Connector 3 -> 4: From bottom of Payroll across to Net Profit */}
+        <line x1={x3 + barWidth} y1={y3_bottom} x2={x4} y2={isNetPos ? y4 : baselineY} stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" />
+
+        {/* Bar 0: Gross Revenue */}
+        <rect x={x0} y={y0} width={barWidth} height={h0} fill="#2563eb" rx={4}>
+          <title>{`Gross Revenue: ${formatVal(grossRevenue)} (Total Placements & Bill Rate)`}</title>
+        </rect>
+        <text x={x0 + barWidth / 2} y={Math.max(12, y0 - 6)} textAnchor="middle" fill="#1e293b" fontSize="9.5" fontWeight="700">
+          {formatVal(grossRevenue)}
+        </text>
+        <text x={x0 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
+          Gross Rev
+        </text>
+        <text x={x0 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill="#64748b" fontSize="7.5">
+          100% Billing
+        </text>
+
+        {/* Bar 1: Company Share */}
+        <rect x={x1} y={y1} width={barWidth} height={h1} fill="#0f6e56" rx={4}>
+          <title>{`Company Retained Share: ${formatVal(companyShare)} (Net 25% pool)`}</title>
+        </rect>
+        <text x={x1 + barWidth / 2} y={Math.max(12, y1 - 6)} textAnchor="middle" fill="#0f6e56" fontSize="9.5" fontWeight="700">
+          {formatVal(companyShare)}
+        </text>
+        <text x={x1 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
+          Co. Share
+        </text>
+        <text x={x1 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill="#0f766e" fontSize="7.5" fontWeight="600">
+          ~25% Pool
+        </text>
+
+        {/* Bar 2: Operating Expenses */}
+        <rect x={x2} y={y2} width={barWidth} height={h2} fill="#a8402e" rx={4}>
+          <title>{`Operating Expenses & Comm: -${formatVal(operatingExpenses)}`}</title>
+        </rect>
+        <text x={x2 + barWidth / 2} y={Math.max(12, y2 - 6)} textAnchor="middle" fill="#a8402e" fontSize="9.5" fontWeight="700">
+          -{formatVal(operatingExpenses)}
+        </text>
+        <text x={x2 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
+          Opex & Comm
+        </text>
+        <text x={x2 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill="#64748b" fontSize="7.5">
+          Office/Tools
+        </text>
+
+        {/* Bar 3: Payroll CTC */}
+        {isPayrollMissing ? (
+          <g style={{ cursor: onConfigurePayroll ? 'pointer' : 'default' }} onClick={() => onConfigurePayroll && onConfigurePayroll()}>
+            <rect x={x3} y={y3} width={barWidth} height={20} fill="#f1f5f9" stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" rx={4} />
+            <text x={x3 + barWidth / 2} y={y3 + 13} textAnchor="middle" fill="#64748b" fontSize="7" fontWeight="600">
+              Not configured
+            </text>
+            <text x={x3 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#64748b" fontSize="8.5" fontWeight="600">
+              Payroll
+            </text>
+            <text x={x3 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill="#2563eb" fontSize="7.5" fontWeight="600">
+              [Set Budget]
+            </text>
+          </g>
+        ) : (
+          <g>
+            <rect x={x3} y={y3} width={barWidth} height={h3} fill="#7c3aed" rx={4}>
+              <title>{`Corporate Payroll CTC: -${formatVal(payroll)}`}</title>
+            </rect>
+            <text x={x3 + barWidth / 2} y={Math.max(12, y3 - 6)} textAnchor="middle" fill="#7c3aed" fontSize="9.5" fontWeight="700">
+              -{formatVal(payroll)}
+            </text>
+            <text x={x3 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
+              Payroll
+            </text>
+            <text x={x3 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill="#64748b" fontSize="7.5">
+              CTC Salaries
+            </text>
+          </g>
+        )}
+
+        {/* Bar 4: Net Corporate Profit */}
+        <rect x={x4} y={y4} width={barWidth} height={h4} fill={isNetPos ? '#10b981' : '#ef4444'} rx={4}>
+          <title>{`Corporate Net Profit: ${isNetPos ? '' : '-'}${formatVal(netProfit)}`}</title>
+        </rect>
+        <text x={x4 + barWidth / 2} y={isNetPos ? Math.max(12, y4 - 6) : y4 + h4 + 12} textAnchor="middle" fill={isNetPos ? '#059669' : '#dc2626'} fontSize="9.5" fontWeight="800">
+          {isNetPos ? '+' : '-'}{formatVal(netProfit)}
+        </text>
+        <text x={x4 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#0f172a" fontSize="8.5" fontWeight="700">
+          Net Profit
+        </text>
+        <text x={x4 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill={isNetPos ? '#059669' : '#dc2626'} fontSize="7.5" fontWeight="700">
+          Bottom Line
+        </text>
+      </svg>
+    </div>
+  );
+};
+
+/**
+ * Monthly Trend Bar Chart Component
+ * Revenue vs Expenses across the 12 months of the Financial Year
+ */
+export const MonthlyTrendBarChart = ({
+  monthlyData = [],
+  periodLabel = 'FY 2026-2027',
+  height = 200
+}) => {
+  if (!monthlyData || monthlyData.length === 0) return null;
+
+  const maxVal = Math.max(
+    ...monthlyData.flatMap(m => [Number(m.revenue || 0), Number(m.expenses || 0)]),
+    50000
+  ) * 1.15;
+
+  const width = 640;
+  const padL = 48;
+  const padR = 20;
+  const padT = 24;
+  const padB = 32;
+  const plotW = width - padL - padR;
+  const plotH = height - padT - padB;
+  const baselineY = padT + plotH;
+
+  const colWidth = plotW / monthlyData.length;
+  const barW = Math.max(6, Math.min(14, colWidth * 0.35));
+
+  const formatTick = (val) => {
+    if (val >= 10000000) return `₹${(val / 10000000).toFixed(1)}Cr`;
+    if (val >= 100000) return `₹${(val / 100000).toFixed(0)}L`;
+    if (val >= 1000) return `₹${(val / 1000).toFixed(0)}K`;
+    return `₹${val}`;
+  };
+
+  const ticks = [0, maxVal * 0.33, maxVal * 0.66, maxVal];
+
+  return (
+    <div style={{ width: '100%', position: 'relative' }}>
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        {/* Horizontal grid lines */}
+        {ticks.map((t, idx) => {
+          const y = baselineY - (t / maxVal) * plotH;
+          return (
+            <g key={idx}>
+              <line x1={padL} y1={y} x2={width - padR} y2={y} stroke="#e2e8f0" strokeWidth="1" strokeDasharray={idx === 0 ? 'none' : '3 3'} />
+              <text x={padL - 8} y={y + 3.5} textAnchor="end" fill="#94a3b8" fontSize="8" fontWeight="600">
+                {formatTick(t)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Monthly Bar Groups */}
+        {monthlyData.map((m, i) => {
+          const groupX = padL + i * colWidth;
+          const rev = Number(m.revenue || 0);
+          const exp = Number(m.expenses || 0);
+          const revH = Math.max(2, (rev / maxVal) * plotH);
+          const expH = Math.max(2, (exp / maxVal) * plotH);
+          const revY = baselineY - revH;
+          const expY = baselineY - expH;
+          const centerX = groupX + colWidth / 2;
+
+          return (
+            <g key={i}>
+              {/* Highlight background for active/hover column */}
+              <rect x={groupX + 2} y={padT} width={colWidth - 4} height={plotH} fill="transparent" opacity={0}>
+                <title>{`${m.label || m.month}: Revenue ₹${rev.toLocaleString()} | Expenses ₹${exp.toLocaleString()} | Net ₹${(rev - exp).toLocaleString()}`}</title>
+              </rect>
+
+              {/* Revenue Bar */}
+              <rect
+                x={centerX - barW - 1}
+                y={revY}
+                width={barW}
+                height={revH}
+                fill={m.hasElapsed ? '#0f6e56' : 'rgba(15, 110, 86, 0.35)'}
+                rx={2}
+              >
+                <title>{`${m.label || m.month} Revenue: ₹${rev.toLocaleString()}`}</title>
+              </rect>
+
+              {/* Expense Bar */}
+              <rect
+                x={centerX + 1}
+                y={expY}
+                width={barW}
+                height={expH}
+                fill={m.hasElapsed ? '#a8402e' : 'rgba(168, 64, 46, 0.35)'}
+                rx={2}
+              >
+                <title>{`${m.label || m.month} Expenses: ₹${exp.toLocaleString()}`}</title>
+              </rect>
+
+              {/* Month label */}
+              <text
+                x={centerX}
+                y={baselineY + 16}
+                textAnchor="middle"
+                fill={m.hasElapsed ? '#334155' : '#94a3b8'}
+                fontSize="8.5"
+                fontWeight={m.hasElapsed ? '600' : '400'}
+              >
+                {m.month}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
 };
 
 
