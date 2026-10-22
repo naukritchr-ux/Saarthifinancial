@@ -496,6 +496,9 @@ export default function CostOfPerformance() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
             <span>Cost of Performance</span>
+            <span className="text-xs font-semibold text-teal-800 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200">
+              {TABS.find(t => t.id === activeTab)?.label || 'BD-wise'}
+            </span>
           </h1>
           <p className="text-xs text-gray-500 mt-0.5">
             Unit economics, execution costs, churn leakages & net margin audit across all business dimensions
@@ -642,50 +645,33 @@ export default function CostOfPerformance() {
         activeFiltersCount={activeFiltersCount}
       />
 
-      {/* 4. Tab Navigation Bar & Quick Controls */}
+      {/* 4. One-Row Quick Filter Bar: Filters Toggle, Dynamic Verdict Chips & Debounced Search */}
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between border-b border-gray-200 gap-4">
-          {/* Tab Navigation */}
-          <nav className="flex space-x-6">
-            {TABS.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
-                className={`pb-3 text-sm font-semibold border-b-2 transition-colors ${
-                  activeTab === tab.id
-                    ? 'border-teal-700 text-teal-800'
-                    : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-
-          {/* Quick Toggle for Filters Panel */}
-          <button
-            type="button"
-            onClick={toggleFilterPanel}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition-all mb-2 ${
-              isFilterPanelOpen
-                ? 'bg-teal-50 border-teal-500 text-teal-800 font-semibold'
-                : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            <Filter className="w-3.5 h-3.5" />
-            <span>Filters</span>
-            {activeFiltersCount > 0 && (
-              <span className="px-1.5 py-0.2 text-[10px] bg-teal-700 text-white rounded-full font-bold">
-                {activeFiltersCount}
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* 5. One-Row Quick Filter Bar: Dynamic Verdict Chips & Debounced Search */}
         <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm flex flex-wrap items-center justify-between gap-3">
-          {/* Verdict Chips with Counts (Hide count 0 chips) */}
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Quick Toggle for Filters Panel */}
+            <button
+              type="button"
+              onClick={toggleFilterPanel}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition-all ${
+                isFilterPanelOpen
+                  ? 'bg-teal-50 border-teal-500 text-teal-800 font-semibold'
+                  : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <Filter className="w-3.5 h-3.5" />
+              <span>Filters</span>
+              {activeFiltersCount > 0 && (
+                <span className="px-1.5 py-0.2 text-[10px] bg-teal-700 text-white rounded-full font-bold">
+                  {activeFiltersCount}
+                </span>
+              )}
+            </button>
+
+            <span className="text-gray-300">|</span>
+
+            {/* Verdict Chips with Counts (Hide count 0 chips) */}
+            <div className="flex flex-wrap items-center gap-1.5">
             {VERDICTS.map(v => {
               const count = verdictCounts[v.id] || 0;
               if (v.id !== 'all' && count === 0) return null; // Hide 0 count chips
