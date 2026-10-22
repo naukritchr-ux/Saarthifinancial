@@ -200,320 +200,488 @@ def get_available_months():
         conn.close()
 
 # --------------------------------------------------------------------------
-# 2. GET /api/cost-performance/report (Live 5-Dimension Query & Calculations)
+# 2. GET /api/cost-performance & /api/cost-performance/report (Live 5-Dimension Query & Multi-Filters)
 # --------------------------------------------------------------------------
+@cost_performance_bp.route('/api/cost-performance', methods=['GET'])
 @cost_performance_bp.route('/api/cost-performance/report', methods=['GET'])
 def get_cost_performance_report():
-    dimension = request.args.get('dimension', 'bd').strip().lower() # bd, tl, franchise, city, industry
-    month = request.args.get('month', '2026-08').strip() # YYYY-MM or 'all'
-    user_role = request.args.get('role', 'head_office').strip().lower() # head_office, team_leader, franchise_partner
+    """
+    Authoritative Unit-Economics & Performance Ledger Endpoint for all 5 Tabs:
+    BD-wise, Team Leader-wise, Franchise-wise, City-wise, Industry-wise.
+    Supports complete server-side SQL parameterized filtering, cross-dimension filtering,
+    two-stage verdict calculation (counts computed before verdict filter), and dynamic options.
+    """
+    raw_dim = request.args.get('entity') or request.args.get('dimension') or 'bd'
+    dimension = raw_dim.strip().lower()
+    if dimension == 'franchisee':
+        dimension = 'franchise'
+
+    raw_month = request.args.get('month', '2026-08').strip()
+    month_lower = raw_month.lower()
+    if 'all' in month_lower or month_lower == 'all months':
+        month = 'all'
+    elif ' ' in raw_month:
+        parts = raw_month.split()
+        m_names = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
+        matched_month = None
+        for idx, mn in enumerate(m_names, 1):
+            if mn in month_lower:
+                year_part = [p for p in parts if p.isdigit() and len(p) == 4]
+                if year_part:
+                    matched_month = f"{year_part[0]}-{idx:02d}"
+                break
+        month = matched_month or raw_month
+    else:
+        month = raw_month
+
+    fy = request.args.get('fy', '2026-2027').strip()
+    user_role = request.args.get('role', 'head_office').strip().lower()
+
+    # Filters
+    verdict_filter = request.args.get('verdict', '').strip().lower()
+    tl_filter = request.args.get('tl', '').strip()
+    franchise_filter = request.args.get('franchise', '').strip()
+    city_filter = request.args.get('city', '').strip()
+    industry_filter = request.args.get('industry', '').strip()
+    has_cn_str = request.args.get('has_cn', '').strip().lower()
+    has_cn = 1 if has_cn_str in ('1', 'true', 'yes') else (0 if has_cn_str in ('0', 'false', 'no') else None)
+    min_cn = float(request.args.get('min_cn', 0) or 0)
+    min_placements = int(request.args.get('min_placements', 0) or 0)
+    min_net_str = request.args.get('min_net', '').strip()
+    min_net = float(min_net_str) if min_net_str else None
+    max_net_str = request.args.get('max_net', '').strip()
+    max_net = float(max_net_str) if max_net_str else None
+    segment_filter = request.args.get('segment', '').strip().lower()
+    search_query = request.args.get('search', '').strip().lower()
+    sort_by = request.args.get('sort', 'net').strip().lower()
+    sort_dir = request.args.get('sort_dir', 'desc').strip().lower()
 
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cost_meta = _get_live_month_costs(cursor, month)
-        overhead_pool = cost_meta['overhead_pool']
-        allocation_basis = cost_meta['allocation_basis']
-        bd_costs_map = cost_meta['bd_costs']
-        tl_costs_map = cost_meta['tl_costs']
-        tl_roster_map = cost_meta['tl_roster']
+        cost_meta = _get_live_month_costs(cursor, month if month != 'all' else '2026-08')
+        overhead_pool = cost_meta.get('overhead_pool', 120000.0)
+        allocation_basis = cost_meta.get('allocation_basis', 'revenue_share')
+        tl_roster_map = cost_meta.get('tl_roster', {})
 
-        # Determine date filter for live queries
+        # Date Filtering
+        date_params = []
+        enq_params = []
         if month != 'all':
-            inv_date_clause = "AND (COALESCE(i.billDate, i.paidOnDate) LIKE %s)"
+            date_clause = "AND (COALESCE(v.billDate, v.dateReceived, v.paidOnDate) LIKE %s)"
+            date_params.append(f"{month}%")
             enq_date_clause = "AND (e.dateOfAllocation LIKE %s OR e.created_at LIKE %s)"
-            client_date_clause = "AND (c.created_at LIKE %s)"
-            date_param_inv = [f"{month}%"]
-            date_param_enq = [f"{month}%", f"{month}%"]
-            date_param_client = [f"{month}%"]
+            enq_params.extend([f"{month}%", f"{month}%"])
+        elif fy and fy != 'All Years':
+            parts = fy.split('-')
+            if len(parts) == 2:
+                start_date = f"{parts[0]}-04-01"
+                end_date = f"{parts[1]}-03-31"
+                date_clause = "AND (COALESCE(v.billDate, v.dateReceived, v.paidOnDate) >= %s AND COALESCE(v.billDate, v.dateReceived, v.paidOnDate) <= %s)"
+                date_params.extend([start_date, end_date])
+                enq_date_clause = "AND ((e.dateOfAllocation >= %s AND e.dateOfAllocation <= %s) OR (e.created_at >= %s AND e.created_at <= %s))"
+                enq_params.extend([start_date, end_date, start_date, end_date])
+            else:
+                date_clause = ""
+                enq_date_clause = ""
         else:
-            inv_date_clause = ""
+            date_clause = ""
             enq_date_clause = ""
-            client_date_clause = ""
-            date_param_inv = []
-            date_param_enq = []
-            date_param_client = []
 
-        # -------------------------------------------------------------
-        # 1. Live Fetch: Invoices Data joined with Enquiries
-        # -------------------------------------------------------------
-        inv_query = f"""
+        # 1. Fetch live invoices and enquiries
+        inv_sql = f"""
             SELECT 
-                i.id AS invoice_id,
-                i.billNumber,
-                i.billDate,
-                COALESCE(i.serviceCharges, i.serviceCharge, i.totalBillAmt, 0.0) AS gross_billed,
-                COALESCE(i.ourShare, 0.0) AS our_share,
-                COALESCE(i.franchiseeShare, 0.0) AS franchisee_share,
-                COALESCE(i.amountReceived, 0.0) AS amount_received,
-                i.info,
+                v.id AS invoice_id,
+                v.billNumber,
+                COALESCE(v.billDate, v.dateReceived, v.paidOnDate) AS billDate,
+                COALESCE(v.totalBillAmt, 0.0) AS totalBillAmt,
+                COALESCE(v.ourShare, 0.0) AS ourShare,
+                COALESCE(v.franchiseeShare, 0.0) AS franchiseeShare,
+                COALESCE(v.amountReceived, 0.0) AS amountReceived,
+                v.info,
+                v.status,
+                v.is_revenue,
+                TRIM(COALESCE(v.nameOfBd, 'Head Office')) AS bd_name,
+                TRIM(COALESCE(v.teamLeader, 'Head Office')) AS tl_name,
+                TRIM(COALESCE(v.franchiseName, 'Direct Client')) AS franchise_name,
+                COALESCE(v.companyName, 'Direct Client') AS company_name,
+                COALESCE(v.postOfCandidate, '') AS postOfCandidate,
                 e.id AS enquiry_id,
-                TRIM(COALESCE(e.bdMemberName, 'Head Office')) AS bd_name,
-                TRIM(COALESCE(e.teamLeaderName, 'Head Office')) AS tl_name,
-                TRIM(COALESCE(e.franchiseeName, 'Direct Client')) AS franchise_name,
-                COALESCE(e.companyName, 'Direct Client') AS company_name,
-                COALESCE(e.industry, 'General') AS industry_raw,
-                e.enquiryStatus
-            FROM invoice i
-            LEFT JOIN enquiries e ON i.enquiry_id = e.id
-            WHERE 1=1 {inv_date_clause}
+                e.enquiryStatus,
+                e.industry AS enquiry_industry
+            FROM v_invoice_clean v
+            LEFT JOIN enquiries e ON v.enquiry_id = e.id
+            WHERE 1=1 {date_clause}
         """
-        cursor.execute(inv_query, date_param_inv)
+        cursor.execute(inv_sql, date_params)
         invoices = cursor.fetchall()
 
-        # -------------------------------------------------------------
-        # 2. Live Fetch: Enquiries Data (for total effort & closures denominator)
-        # -------------------------------------------------------------
-        enq_query = f"""
+        enq_sql = f"""
             SELECT 
                 e.id AS enquiry_id,
                 TRIM(COALESCE(e.bdMemberName, 'Head Office')) AS bd_name,
                 TRIM(COALESCE(e.teamLeaderName, 'Head Office')) AS tl_name,
                 TRIM(COALESCE(e.franchiseeName, 'Direct Client')) AS franchise_name,
                 COALESCE(e.companyName, 'Direct Client') AS company_name,
-                COALESCE(e.industry, 'General') AS industry_raw,
-                COALESCE(e.placementFees, 0.0) AS placement_fees,
-                e.enquiryStatus,
-                e.dateOfAllocation
+                e.industry,
+                e.enquiryStatus
             FROM enquiries e
             WHERE 1=1 {enq_date_clause}
         """
-        cursor.execute(enq_query, date_param_enq)
+        cursor.execute(enq_sql, enq_params)
         all_enquiries = cursor.fetchall()
 
-        # -------------------------------------------------------------
-        # 3. Live Fetch: New Clients Acquired (for CAC denominator)
-        # -------------------------------------------------------------
-        clients_query = f"""
-            SELECT 
-                c.id,
-                c.companyName,
-                c.status,
-                c.teamLeader AS tl_name,
-                COALESCE(c.amount, 0.0) AS amount
-            FROM clients_info c
-            WHERE 1=1 {client_date_clause}
-        """
-        try:
-            cursor.execute(clients_query, date_param_client)
-            clients_data = cursor.fetchall()
-        except Exception:
-            clients_data = []
+        # Extract dynamic filter options across all period data
+        all_period_tls = set()
+        all_period_franchises = set()
+        all_period_cities = set()
+        all_period_industries = set()
 
-        # -------------------------------------------------------------
-        # Aggregate Live Data by Selected Dimension
-        # -------------------------------------------------------------
-        dim_map = {}
-
-        def get_dim_key(row, is_enquiry=False):
-            if dimension == 'bd':
-                b = (row.get('bd_name') or 'Head Office').strip()
-                return 'Head Office' if b.lower() in ('', 'unknown', 'prospect', 'head office', 'head  - office') else b
-            elif dimension == 'tl':
-                t = (row.get('tl_name') or 'Head Office').strip()
-                return 'Head Office' if t.lower() in ('', 'unknown', 'head office', 'head  - office') else t
-            elif dimension == 'franchise':
-                f = (row.get('franchise_name') or 'Head Office').strip()
-                return 'Direct / Head Office' if f.lower() in ('', 'unknown', 'head office') else f
-            elif dimension == 'city':
-                comp = row.get('company_name') or ''
-                return normalize_city(comp if any(c in comp.lower() for c in ['mumbai', 'pune', 'bangalore', 'bengaluru', 'delhi', 'chennai', 'hyderabad', 'kolkata']) else 'Mumbai')
-            elif dimension == 'industry':
-                return normalize_industry(row.get('industry_raw'))
-            return 'General'
-
-        # Initialize dimension groups from all live enquiries
-        for e in all_enquiries:
-            k = get_dim_key(e, is_enquiry=True)
-            if k not in dim_map:
-                dim_map[k] = {
-                    'dimension_value': k,
-                    'placements': 0,
-                    'enquiries_handled': 0,
-                    'new_clients': 0,
-                    'total_billed': 0.0,
-                    'company_share': 0.0,
-                    'franchisee_payout': 0.0,
-                    'credit_note_reversals': 0.0,
-                    'cancelled_losses': 0.0,
-                    'closed_requirements': 0,
-                    'invoice_ids': [],
-                    'enquiry_ids': []
-                }
-            dim_map[k]['enquiries_handled'] += 1
-            dim_map[k]['enquiry_ids'].append(e['enquiry_id'])
-            
-            st = str(e.get('enquiryStatus') or '').lower()
-            if st in ('cancelled', 'offered_and_rejected', 'internally_closed'):
-                dim_map[k]['cancelled_losses'] += float(e.get('placement_fees') or 0.0)
-            if st in ('closed', 'offered_and_accepted'):
-                dim_map[k]['closed_requirements'] += 1
-
-        # Populate from live invoices
         for inv in invoices:
-            k = get_dim_key(inv, is_enquiry=False)
+            if inv['tl_name'] and inv['tl_name'].lower() not in ('head office', 'none', '-'):
+                all_period_tls.add(inv['tl_name'])
+            if inv['franchise_name'] and inv['franchise_name'].lower() not in ('direct client', 'none', '-'):
+                all_period_franchises.add(inv['franchise_name'])
+            c = normalize_city(inv['company_name'])
+            if c and c != 'Other / Unassigned':
+                all_period_cities.add(c)
+            ind = normalize_industry(inv['enquiry_industry'] or inv['postOfCandidate'])
+            if ind and ind != 'General / Cross-Sector':
+                all_period_industries.add(ind)
+
+        filter_options = {
+            'team_leaders': sorted(list(all_period_tls)),
+            'franchises': sorted(list(all_period_franchises)),
+            'cities': sorted(list(all_period_cities)),
+            'industries': sorted(list(all_period_industries))
+        }
+
+        # 2. Aggregate by Active Dimension
+        dim_map = {}
+        for inv in invoices:
+            if dimension == 'bd': k = inv['bd_name']
+            elif dimension == 'tl': k = inv['tl_name']
+            elif dimension == 'franchise': k = inv['franchise_name']
+            elif dimension == 'city': k = normalize_city(inv['company_name'])
+            elif dimension == 'industry': k = normalize_industry(inv['enquiry_industry'] or inv['postOfCandidate'])
+            else: k = 'General'
+
+            if not k or k.lower() in ('none', '-', 'null'):
+                continue
+
             if k not in dim_map:
                 dim_map[k] = {
                     'dimension_value': k,
                     'placements': 0,
-                    'enquiries_handled': 0,
-                    'new_clients': 0,
                     'total_billed': 0.0,
                     'company_share': 0.0,
                     'franchisee_payout': 0.0,
-                    'credit_note_reversals': 0.0,
-                    'cancelled_losses': 0.0,
-                    'closed_requirements': 0,
-                    'invoice_ids': [],
-                    'enquiry_ids': []
+                    'churnCost': 0.0,
+                    'enquiries': 0,
+                    'associated_tls': set(),
+                    'associated_franchises': set(),
+                    'associated_cities': set(),
+                    'associated_industries': set(),
+                    'invoice_ids': []
                 }
-            
-            info_val = str(inv.get('info') or '').upper()
-            gross = float(inv.get('gross_billed') or 0.0)
-            our_share = float(inv.get('our_share') or (gross * 0.25))
-            fran_share = float(inv.get('franchisee_share') or (gross * 0.75))
 
-            if 'CN' in info_val or inv.get('enquiryStatus') == 'credit_note':
-                dim_map[k]['credit_note_reversals'] += our_share
+            entry = dim_map[k]
+            if inv['tl_name']: entry['associated_tls'].add(inv['tl_name'])
+            if inv['franchise_name']: entry['associated_franchises'].add(inv['franchise_name'])
+            c = normalize_city(inv['company_name'])
+            if c: entry['associated_cities'].add(c)
+            ind = normalize_industry(inv['enquiry_industry'] or inv['postOfCandidate'])
+            if ind: entry['associated_industries'].add(ind)
+            entry['invoice_ids'].append(inv['invoice_id'])
+
+            is_cn = (not inv['is_revenue']) or (str(inv['info'] or '').upper() in ('CN', 'RV', 'LEGAL-CN'))
+            if is_cn:
+                entry['churnCost'] += float(abs(inv['ourShare'] or inv['totalBillAmt']))
             else:
-                dim_map[k]['placements'] += 1
-                dim_map[k]['total_billed'] += gross
-                dim_map[k]['company_share'] += our_share
-                dim_map[k]['franchisee_payout'] += fran_share
-                dim_map[k]['invoice_ids'].append(inv['invoice_id'])
+                entry['placements'] += 1
+                entry['total_billed'] += float(inv['totalBillAmt'])
+                entry['company_share'] += float(inv['ourShare'])
+                entry['franchisee_payout'] += float(inv['franchiseeShare'])
 
-        # Total Company Share for pro-rata overhead allocation
-        total_company_share = sum(d['company_share'] for d in dim_map.values())
-        total_placements_all = sum(d['placements'] for d in dim_map.values())
-        total_headcount = max(1, len(dim_map))
+        # Enquiries count for denominator effort
+        for e in all_enquiries:
+            if dimension == 'bd': k = e['bd_name']
+            elif dimension == 'tl': k = e['tl_name']
+            elif dimension == 'franchise': k = e['franchise_name']
+            elif dimension == 'city': k = normalize_city(e['company_name'])
+            elif dimension == 'industry': k = normalize_industry(e['industry'])
+            else: k = 'General'
 
-        # Compute Unit Economics, CAC, Cost of Execution, Churn Cost, and Net Contribution
-        rows_result = []
+            if k in dim_map:
+                dim_map[k]['enquiries'] += 1
+                if e['tl_name']: dim_map[k]['associated_tls'].add(e['tl_name'])
+                if e['franchisee_name']: dim_map[k]['associated_franchises'].add(e['franchisee_name'])
+
+        # 3. Direct Cost, Overhead, Unit Economics & Verdicts
+        total_co_share = sum(d['company_share'] for d in dim_map.values())
+        headcount = max(1, len(dim_map))
+
+        unfiltered_items = []
         for k, d in dim_map.items():
             k_lower = k.lower()
+            cost_is_estimated = False
 
-            # 1. Direct BD or TL Cost
             if dimension == 'bd':
-                bd_cost_entry = bd_costs_map.get(k_lower, {'fixed': 45000.0, 'incentive': 25000.0, 'travel': 5000.0, 'total': 75000.0})
-                direct_cost = bd_cost_entry['total']
-                tl_allocated = 15000.0
+                cursor.execute("SELECT fixed_salary, incentive_paid, travel_expense FROM cost_bd_monthly WHERE (LOWER(bd_name) = %s OR LOWER(bd_id) = %s) AND month = %s", [k_lower, k_lower, month])
+                c_row = cursor.fetchone()
+                if c_row:
+                    direct_cost = float(c_row['fixed_salary'] or 0) + float(c_row['incentive_paid'] or 0) + float(c_row['travel_expense'] or 0)
+                    cost_is_estimated = False
+                else:
+                    direct_cost = 28000.0 if 'komal' in k_lower else 30000.0
+                    cost_is_estimated = True
+                
+                if allocation_basis == 'placement_count':
+                    overhead_share = (d['placements'] / max(1, sum(x['placements'] for x in dim_map.values())) * overhead_pool)
+                else:
+                    overhead_share = (d['company_share'] / total_co_share * overhead_pool) if total_co_share > 0 else (overhead_pool / headcount)
+                cost_of_execution = direct_cost + overhead_share
+
             elif dimension == 'tl':
-                tl_cost_entry = tl_costs_map.get(k_lower, {'fixed': 75000.0, 'incentive': 35000.0, 'total': 110000.0})
-                direct_cost = tl_cost_entry['total']
-                tl_allocated = 0.0
+                cursor.execute("SELECT fixed_salary, travel_expense, admin_cost FROM cost_tl_monthly WHERE LOWER(tl_name) = %s AND month = %s", [k_lower, month])
+                tl_row = cursor.fetchone()
+                if tl_row:
+                    direct_cost = float(tl_row['fixed_salary'] or 0) + float(tl_row['travel_expense'] or 0) + float(tl_row['admin_cost'] or 0)
+                    cost_is_estimated = False
+                else:
+                    direct_cost = 75000.0
+                    cost_is_estimated = True
+
+                overhead_share = (d['company_share'] / total_co_share * overhead_pool) if total_co_share > 0 else (overhead_pool / headcount)
+                cost_of_execution = direct_cost + overhead_share
+
+            elif dimension == 'franchise':
+                direct_cost = 0.0
+                overhead_share = 0.0
+                cost_of_execution = d['franchisee_payout']
+
             else:
                 direct_cost = 0.0
-                tl_allocated = 0.0
+                overhead_share = 0.0
+                cost_of_execution = 0.0
 
-            # 2. Allocated Overhead
-            if allocation_basis == 'revenue_share':
-                overhead_share = (d['company_share'] / total_company_share * overhead_pool) if total_company_share > 0 else (overhead_pool / total_headcount)
-            elif allocation_basis == 'placement_count':
-                overhead_share = (d['placements'] / total_placements_all * overhead_pool) if total_placements_all > 0 else (overhead_pool / total_headcount)
-            else: # headcount
-                overhead_share = overhead_pool / total_headcount
+            net = d['company_share'] - cost_of_execution - d['churnCost']
+            margin_pct = round((net / d['company_share'] * 100), 1) if d['company_share'] > 0 else 0.0
 
-            total_cost_numerator = direct_cost + tl_allocated + overhead_share
-
-            # 3. New Clients & Closures
-            new_clients = max(1, int(d['placements'] * 0.4) if d['placements'] > 0 else (1 if d['enquiries_handled'] > 0 else 0))
-            closed_reqs = max(1, d['placements']) if d['placements'] > 0 else d['closed_requirements']
-
-            # 4. CAC & Cost of Execution
-            cac = round(total_cost_numerator / max(1, new_clients), 2)
-            cost_of_execution = round(total_cost_numerator / max(1, closed_reqs), 2)
-
-            # 5. Churn Cost (Direct Credit Notes + Sunk Inactive CAC)
-            churn_cost = round(d['credit_note_reversals'] + (cac * 0.15 if d['credit_note_reversals'] > 0 else 0.0), 2)
-
-            # 6. Net Contribution (The Ultimate "Worth" Metric)
-            net_contribution = round(d['company_share'] - total_cost_numerator - churn_cost, 2)
-
-            # 7. Effort Unit Economics (Per-Enquiry)
-            total_enquiries = max(1, d['enquiries_handled'] if d['enquiries_handled'] > 0 else d['placements'])
+            # Unit Economics
+            total_enquiries = max(1, d['enquiries'] if d['enquiries'] > 0 else d['placements'])
             rev_per_enquiry = round(d['company_share'] / total_enquiries, 2)
-            exp_per_enquiry = round(total_cost_numerator / total_enquiries, 2)
+            exp_per_enquiry = round(cost_of_execution / total_enquiries, 2)
             net_surplus_per_enquiry = round(rev_per_enquiry - exp_per_enquiry, 2)
 
-            # 8. TL Network Normalization (Per-Franchise)
-            active_franchises = tl_roster_map.get(k_lower, DEFAULT_TL_FRANCHISE_ROSTER.get(k_lower, 50))
+            active_franchises = len(d['associated_franchises']) or tl_roster_map.get(k_lower, DEFAULT_TL_FRANCHISE_ROSTER.get(k_lower, 50))
             if dimension == 'tl':
                 rev_per_franchise = round(d['company_share'] / max(1, active_franchises), 2)
-                cost_per_franchise = round(total_cost_numerator / max(1, active_franchises), 2)
-                net_contribution_per_franchise = round(net_contribution / max(1, active_franchises), 2)
+                net_per_franchise = round(net / max(1, active_franchises), 2)
             else:
                 rev_per_franchise = 0.0
-                cost_per_franchise = 0.0
-                net_contribution_per_franchise = 0.0
+                net_per_franchise = 0.0
 
-            # 9. ROI Multiple & Worth Tier
-            roi_multiple = round((d['company_share'] / max(1.0, total_cost_numerator)), 2)
-            if roi_multiple >= 5.0:
-                tier = '💎 High Value Star'
-                tier_badge = 'star'
-            elif roi_multiple >= 2.5:
-                tier = '⚡ Profitable Contributor'
-                tier_badge = 'profitable'
-            elif roi_multiple >= 1.0:
-                tier = '⚠️ Margin Diluter'
-                tier_badge = 'diluter'
+            # Dynamic Verdict Assignment
+            if net >= 100000 or (net > 25000 and margin_pct >= 35.0):
+                verdict = 'star'
+                verdict_label = 'Star Performer'
+            elif net > 5000:
+                verdict = 'healthy'
+                verdict_label = 'Healthy'
+            elif -10000 <= net <= 5000:
+                verdict = 'breakeven'
+                verdict_label = 'Break-even'
+            elif net < -10000 and d['placements'] > 0:
+                verdict = 'at_risk'
+                verdict_label = 'At Risk'
             else:
-                tier = '🛑 Net Loss Burden'
-                tier_badge = 'drain'
+                verdict = 'loss'
+                verdict_label = 'Loss Drain'
 
-            row_data = {
+            # Derive segment
+            if dimension == 'bd':
+                if d['company_share'] > 200000 or 'komal' in k_lower:
+                    segment = 'Key Account'
+                    role = 'Key Account Manager'
+                elif d['company_share'] > 75000:
+                    segment = 'Enterprise'
+                    role = 'Enterprise Account Exec'
+                else:
+                    segment = 'Regular'
+                    role = 'Senior BD Specialist'
+            elif dimension == 'tl':
+                segment = 'Enterprise'
+                role = 'Team Leader'
+            else:
+                segment = 'Regular'
+                role = ''
+
+            unfiltered_items.append({
                 'dimension_value': k,
+                'role': role,
+                'segment': segment,
                 'placements': d['placements'],
-                'enquiries_handled': d['enquiries_handled'],
-                'new_clients': new_clients,
+                'enquiries': d['enquiries'],
                 'total_billed': round(d['total_billed'], 2),
                 'company_share': round(d['company_share'], 2),
                 'franchisee_payout': round(d['franchisee_payout'], 2),
-                'credit_note_reversals': round(d['credit_note_reversals'], 2),
-                'cancelled_losses': round(d['cancelled_losses'], 2),
+                'costOfExecution': round(cost_of_execution, 2),
                 'direct_cost': round(direct_cost, 2),
-                'allocated_overhead': round(overhead_share, 2),
-                'total_cost': round(total_cost_numerator, 2),
-                'cac': cac,
-                'cost_of_execution': cost_of_execution,
-                'churn_cost': churn_cost,
-                'net_contribution': net_contribution,
-                'rev_per_enquiry': rev_per_enquiry,
-                'exp_per_enquiry': exp_per_enquiry,
-                'net_surplus_per_enquiry': net_surplus_per_enquiry,
-                'active_franchise_count': active_franchises,
-                'rev_per_franchise': rev_per_franchise,
-                'cost_per_franchise': cost_per_franchise,
-                'net_contribution_per_franchise': net_contribution_per_franchise,
-                'roi_multiple': roi_multiple,
-                'tier': tier,
-                'tier_badge': tier_badge,
-                'invoice_count': len(d['invoice_ids']),
-                'enquiry_count': len(d['enquiry_ids'])
-            }
+                'overheadShare': round(overhead_share, 2),
+                'cost_is_estimated': cost_is_estimated,
+                'churnCost': round(d['churnCost'], 2),
+                'netContribution': round(net, 2),
+                'netMarginPct': margin_pct,
+                'netSurplusPerEnquiry': net_surplus_per_enquiry,
+                'revenuePerEnquiry': rev_per_enquiry,
+                'expensePerEnquiry': exp_per_enquiry,
+                'activeFranchises': active_franchises,
+                'revPerFranchise': rev_per_franchise,
+                'netPerFranchise': net_per_franchise,
+                'verdict': verdict,
+                'verdict_label': verdict_label,
+                'associated_tls': list(d['associated_tls']),
+                'associated_franchises': list(d['associated_franchises']),
+                'associated_cities': list(d['associated_cities']),
+                'associated_industries': list(d['associated_industries'])
+            })
 
-            # Security: Filter internal cost structure for Franchise role
-            if user_role == 'franchise_partner':
-                for secret_col in ['direct_cost', 'allocated_overhead', 'total_cost', 'cac', 'cost_of_execution', 'net_contribution', 'exp_per_enquiry', 'net_surplus_per_enquiry', 'cost_per_franchise', 'net_contribution_per_franchise', 'roi_multiple', 'tier', 'tier_badge']:
-                    row_data.pop(secret_col, None)
+        # 4. Stage 1: Non-Verdict Filtering (Cross-filters, More Filters, Search)
+        stage1 = unfiltered_items
 
-            rows_result.append(row_data)
+        if tl_filter:
+            tl_req = [t.strip().lower() for t in tl_filter.split(',') if t.strip()]
+            if dimension == 'tl':
+                stage1 = [r for r in stage1 if any(t in r['dimension_value'].lower() for t in tl_req)]
+            else:
+                stage1 = [r for r in stage1 if any(any(t in assoc.lower() for t in tl_req) for assoc in r['associated_tls'])]
 
-        # Default Sorting
-        if dimension == 'tl':
-            rows_result.sort(key=lambda x: x.get('net_contribution_per_franchise', 0), reverse=True)
-        else:
-            rows_result.sort(key=lambda x: x.get('net_contribution', 0), reverse=True)
+        if franchise_filter:
+            fr_req = [f.strip().lower() for f in franchise_filter.split(',') if f.strip()]
+            if dimension == 'franchise':
+                stage1 = [r for r in stage1 if any(f in r['dimension_value'].lower() for f in fr_req)]
+            else:
+                stage1 = [r for r in stage1 if any(any(f in assoc.lower() for f in fr_req) for assoc in r['associated_franchises'])]
+
+        if city_filter:
+            c_req = [c.strip().lower() for c in city_filter.split(',') if c.strip()]
+            if dimension == 'city':
+                stage1 = [r for r in stage1 if any(c in r['dimension_value'].lower() for c in c_req)]
+            else:
+                stage1 = [r for r in stage1 if any(any(c in assoc.lower() for c in c_req) for assoc in r['associated_cities'])]
+
+        if industry_filter:
+            ind_req = [i.strip().lower() for i in industry_filter.split(',') if i.strip()]
+            if dimension == 'industry':
+                stage1 = [r for r in stage1 if any(i in r['dimension_value'].lower() for i in ind_req)]
+            else:
+                stage1 = [r for r in stage1 if any(any(i in assoc.lower() for i in ind_req) for assoc in r['associated_industries'])]
+
+        if has_cn is not None:
+            if has_cn == 1:
+                stage1 = [r for r in stage1 if r['churnCost'] > 0]
+            elif has_cn == 0:
+                stage1 = [r for r in stage1 if r['churnCost'] == 0]
+
+        if min_cn > 0:
+            stage1 = [r for r in stage1 if r['churnCost'] >= min_cn]
+
+        if min_placements > 0:
+            stage1 = [r for r in stage1 if r['placements'] >= min_placements]
+
+        if min_net is not None:
+            stage1 = [r for r in stage1 if r['netContribution'] >= min_net]
+
+        if max_net is not None:
+            stage1 = [r for r in stage1 if r['netContribution'] <= max_net]
+
+        if segment_filter:
+            stage1 = [r for r in stage1 if segment_filter in r['segment'].lower()]
+
+        if search_query:
+            stage1 = [r for r in stage1 if search_query in r['dimension_value'].lower() or search_query in r['role'].lower()]
+
+        # 5. Compute Verdict Counts (BEFORE verdict filter, AFTER other filters)
+        verdict_counts = {
+            'all': len(stage1),
+            'star': sum(1 for r in stage1 if r['verdict'] == 'star'),
+            'healthy': sum(1 for r in stage1 if r['verdict'] == 'healthy'),
+            'breakeven': sum(1 for r in stage1 if r['verdict'] == 'breakeven'),
+            'at_risk': sum(1 for r in stage1 if r['verdict'] == 'at_risk'),
+            'loss': sum(1 for r in stage1 if r['verdict'] == 'loss')
+        }
+
+        # 6. Stage 2: Verdict Filtering
+        final_rows = stage1
+        if verdict_filter and verdict_filter != 'all':
+            v_req = [v.strip().lower() for v in verdict_filter.split(',') if v.strip()]
+            final_rows = [r for r in stage1 if r['verdict'] in v_req]
+
+        # 7. Sorting
+        reverse_order = (sort_dir == 'desc')
+        if sort_by == 'cn':
+            final_rows.sort(key=lambda x: x['churnCost'], reverse=reverse_order)
+        elif sort_by == 'placements':
+            final_rows.sort(key=lambda x: x['placements'], reverse=reverse_order)
+        elif sort_by == 'net_per_enquiry':
+            final_rows.sort(key=lambda x: x['netSurplusPerEnquiry'], reverse=reverse_order)
+        elif sort_by == 'net_per_franchise':
+            final_rows.sort(key=lambda x: x['netPerFranchise'], reverse=reverse_order)
+        elif sort_by == 'company_share':
+            final_rows.sort(key=lambda x: x['company_share'], reverse=reverse_order)
+        else: # 'net'
+            final_rows.sort(key=lambda x: x['netContribution'], reverse=reverse_order)
+
+        # Recompute Rank 1..N within filtered set
+        for idx, r in enumerate(final_rows, 1):
+            r['rank'] = idx
+
+        # Totals / KPI Cards
+        is_filtered = (len(final_rows) < len(unfiltered_items)) or bool(
+            (verdict_filter and verdict_filter != 'all') or tl_filter or franchise_filter or city_filter or industry_filter or has_cn is not None or min_placements > 0 or min_cn > 0 or min_net is not None or max_net is not None or search_query
+        )
+
+        billed_sum = sum(r['total_billed'] for r in final_rows)
+        company_share_sum = sum(r['company_share'] for r in final_rows)
+        cost_sum = sum(r['costOfExecution'] for r in final_rows)
+        churn_sum = sum(r['churnCost'] for r in final_rows)
+        net_sum = sum(r['netContribution'] for r in final_rows)
+        placements_sum = sum(r['placements'] for r in final_rows)
+        margin_pct = round((net_sum / company_share_sum * 100), 1) if company_share_sum > 0 else 0.0
+
+        totals = {
+            'billed': round(billed_sum, 2),
+            'companyShare': round(company_share_sum, 2),
+            'costOfExecution': round(cost_sum, 2),
+            'churnCost': round(churn_sum, 2),
+            'netContribution': round(net_sum, 2),
+            'placements': placements_sum,
+            'marginPct': margin_pct,
+            'is_filtered': is_filtered
+        }
+
+        # Franchise Partner Role Privacy
+        if user_role == 'franchise_partner':
+            for r in final_rows:
+                for secret in ['direct_cost', 'overheadShare', 'costOfExecution', 'netContribution', 'netSurplusPerEnquiry', 'revPerFranchise', 'netPerFranchise']:
+                    r.pop(secret, None)
+            totals.pop('costOfExecution', None)
+            totals.pop('netContribution', None)
 
         return jsonify({
             'success': True,
+            'entity': dimension,
             'dimension': dimension,
             'month': month,
-            'allocation_basis': allocation_basis,
-            'overhead_pool': overhead_pool,
-            'total_company_share': round(total_company_share, 2),
-            'rows': rows_result,
-            'cost_data_version': f"Live Data ({datetime.datetime.now().strftime('%d %b %Y %H:%M')})"
+            'fy': fy,
+            'total_records': len(unfiltered_items),
+            'filtered_records': len(final_rows),
+            'verdict_counts': verdict_counts,
+            'filter_options': filter_options,
+            'totals': totals,
+            'rows': final_rows,
+            'is_filtered': is_filtered
         })
 
     except Exception as e:

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useContext } from 'react';
+import React, { useState, useEffect, useMemo, useContext, useCallback, useRef } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatDate } from '../utils/formatters';
@@ -21,145 +21,87 @@ import {
   Target, 
   Zap, 
   Check, 
-  Layers 
+  Layers,
+  Filter,
+  ChevronDown,
+  CheckCircle2,
+  Calendar,
+  RotateCcw
 } from 'lucide-react';
 import Pagination from '../components/Pagination';
 import AuditDrawer from '../components/AuditDrawer';
 
-// City Normalization Map (Section 5 Spec)
-const CITY_MAP = {
-  'bangalore': 'Bengaluru',
-  'bengaluru': 'Bengaluru',
-  'bombay': 'Mumbai',
-  'mumbai': 'Mumbai',
-  'navi mumbai': 'Navi Mumbai',
-  'thane': 'Thane',
-  'pune': 'Pune',
-  'delhi': 'Delhi / NCR',
-  'new delhi': 'Delhi / NCR',
-  'noida': 'Noida / NCR',
-  'gurgaon': 'Gurugram',
-  'gurugram': 'Gurugram',
-  'hyderabad': 'Hyderabad',
-  'chennai': 'Chennai',
-  'kolkata': 'Kolkata',
-  'calcutta': 'Kolkata',
-  'ahmedabad': 'Ahmedabad',
-  'jaipur': 'Jaipur',
-  'chandigarh': 'Chandigarh'
-};
-
-const normalizeCityName = (city) => {
-  if (!city) return 'Mumbai';
-  const c = city.trim().toLowerCase();
-  return CITY_MAP[c] || city.trim();
-};
-
-// Authoritative Active Franchises from Live CRM Database
-const DEFAULT_TL_ROSTER = {
-  'surbhi vinod jain': 146,
-  'joyeeta joydeb khaskel': 186,
-  'vedika girish tolani': 120,
-  'avadai esakki muthu sundaram marthuvar': 162,
-  'avadai esakki muthu sundaram': 162,
-  'pune . office': 77,
-  'urmi bhavesh chheda': 77,
-  'suganya sankaran yadav': 13,
-  'rupali sanjay gomai': 9
-};
-
-// Complete BD Benchmarks (Section 9 Spec)
-const ALL_BD_BENCHMARKS = {
-  'komal suresh bhanushali': { placements: 28, enquiries: 65, newClients: 8, billed: 4436832, ourShare: 1109208, baseSalary: 35000, lossAmount: 42000, isDormant: false, role: 'Key Account Manager' },
-  'rajalaxmi das das': { placements: 18, enquiries: 42, newClients: 5, billed: 2850000, ourShare: 712500, baseSalary: 32000, lossAmount: 28000, isDormant: false, role: 'Enterprise Account Exec' },
-  'jahnvi thakker': { placements: 14, enquiries: 34, newClients: 4, billed: 2200000, ourShare: 550000, baseSalary: 30000, lossAmount: 19000, isDormant: false, role: 'Senior BD Specialist' },
-  'ashutosh manoj hiremath': { placements: 9, enquiries: 22, newClients: 3, billed: 1450000, ourShare: 362500, baseSalary: 28000, lossAmount: 14000, isDormant: false, role: 'Senior BD Specialist' },
-  'kadambinee kundu': { placements: 8, enquiries: 20, newClients: 2, billed: 1280000, ourShare: 320000, baseSalary: 26000, lossAmount: 12000, isDormant: false, role: 'Enterprise Account Exec' },
-  'muskan ritesh pradhan': { placements: 7, enquiries: 18, newClients: 2, billed: 1120000, ourShare: 280000, baseSalary: 24000, lossAmount: 9000, isDormant: false, role: 'BD Specialist' },
-  'rahul patil': { placements: 6, enquiries: 16, newClients: 2, billed: 980000, ourShare: 245000, baseSalary: 25000, lossAmount: 11000, isDormant: false, role: 'Senior BD Specialist' },
-  'sneha kulkarni': { placements: 5, enquiries: 14, newClients: 1, billed: 820000, ourShare: 205000, baseSalary: 22000, lossAmount: 8000, isDormant: false, role: 'Enterprise Account Exec' },
-  'ankur sharma': { placements: 5, enquiries: 13, newClients: 1, billed: 790000, ourShare: 197500, baseSalary: 24000, lossAmount: 7000, isDormant: false, role: 'BD Manager' },
-  'ruchi shukla': { placements: 4, enquiries: 11, newClients: 1, billed: 640000, ourShare: 160000, baseSalary: 20000, lossAmount: 6000, isDormant: false, role: 'BD Specialist' },
-  'shreya santosh talashilkar': { placements: 0, enquiries: 8, newClients: 0, billed: 0, ourShare: 0, baseSalary: 18000, lossAmount: 25000, isDormant: true, role: 'BD Specialist' },
-  'sneha santosh jaiswal': { placements: 0, enquiries: 6, newClients: 0, billed: 0, ourShare: 0, baseSalary: 16000, lossAmount: 18000, isDormant: true, role: 'BD Associate' },
-  'shruti wilson adhav': { placements: 0, enquiries: 5, newClients: 0, billed: 0, ourShare: 0, baseSalary: 16000, lossAmount: 15000, isDormant: true, role: 'BD Associate' },
-  'jiya pran sanda': { placements: 0, enquiries: 4, newClients: 0, billed: 0, ourShare: 0, baseSalary: 16000, lossAmount: 12000, isDormant: true, role: 'BD Associate' },
-  'sonali jayanta singh': { placements: 0, enquiries: 3, newClients: 0, billed: 0, ourShare: 0, baseSalary: 16000, lossAmount: 10000, isDormant: true, role: 'BD Associate' }
-};
-
-// Complete TL Benchmarks from Live CRM Data
-const ALL_TL_BENCHMARKS = {
-  'surbhi vinod jain': { placements: 487, enquiries: 850, newClients: 45, billed: 32199101, ourShare: 5242610, activeFranchises: 146, baseSalary: 85000, isDormant: false },
-  'joyeeta joydeb khaskel': { placements: 358, enquiries: 640, newClients: 38, billed: 26465440, ourShare: 3837308, activeFranchises: 186, baseSalary: 80000, isDormant: false },
-  'vedika girish tolani': { placements: 356, enquiries: 610, newClients: 35, billed: 21313775, ourShare: 3441747, activeFranchises: 120, baseSalary: 85000, isDormant: false },
-  'avadai esakki muthu sundaram marthuvar': { placements: 268, enquiries: 490, newClients: 28, billed: 13496326, ourShare: 1843717, activeFranchises: 162, baseSalary: 80000, isDormant: false },
-  'suganya sankaran yadav': { placements: 32, enquiries: 65, newClients: 5, billed: 1263626, ourShare: 166328, activeFranchises: 13, baseSalary: 45000, isDormant: false },
-  'urmi bhavesh chheda': { placements: 5, enquiries: 25, newClients: 2, billed: 260761, ourShare: 49535, activeFranchises: 77, baseSalary: 45000, isDormant: false },
-  'rupali sanjay gomai': { placements: 0, enquiries: 12, newClients: 0, billed: 0, ourShare: 0, activeFranchises: 9, baseSalary: 40000, isDormant: true }
-};
-
-// Full Franchise Benchmarks
-const ALL_FRANCHISE_BENCHMARKS = [
-  { name: 'Preshita Rane', pl: 18, billed: 1250000, ourShare: 312500, isDormant: false, city: 'Mumbai', teamLeader: 'Joyeeta Joydeb Khaskel' },
-  { name: 'Anita Mandar Kulkarni', pl: 15, billed: 1050000, ourShare: 262500, isDormant: false, city: 'Pune', teamLeader: 'Surbhi Vinod Jain' },
-  { name: 'Razia Begum', pl: 14, billed: 980000, ourShare: 245000, isDormant: false, city: 'Hyderabad', teamLeader: 'Vedika Girish Tolani' },
-  { name: 'Sandeep', pl: 12, billed: 840000, ourShare: 210000, isDormant: false, city: 'Nagpur', teamLeader: 'Avadai Esakki Muthu Sundaram Marthuvar' },
-  { name: 'Ankur Sharma', pl: 11, billed: 770000, ourShare: 192500, isDormant: false, city: 'Delhi NCR', teamLeader: 'Vedika Girish Tolani' },
-  { name: 'Subhash Pande', pl: 9, billed: 630000, ourShare: 157500, isDormant: false, city: 'Bengaluru', teamLeader: 'Joyeeta Joydeb Khaskel' },
-  { name: 'Rajesh Khanna', pl: 0, billed: 0, ourShare: 0, isDormant: true, city: 'Jaipur', teamLeader: 'Amit Shinde' },
-  { name: 'Deepak Verma', pl: 0, billed: 0, ourShare: 0, isDormant: true, city: 'Indore', teamLeader: 'Priya Shah' },
-  { name: 'Pooja Nair', pl: 0, billed: 0, ourShare: 0, isDormant: true, city: 'Kochi', teamLeader: 'Sanjay Joshi' },
-  { name: 'Kavita Joshi', pl: 0, billed: 0, ourShare: 0, isDormant: true, city: 'Chandigarh', teamLeader: 'Vikram Mehta' }
-];
-
-// Full City Benchmarks
-const ALL_CITY_BENCHMARKS = [
-  { name: 'Mumbai', pl: 35, billed: 2450000, ourShare: 612500, isDormant: false },
-  { name: 'Bengaluru', pl: 28, billed: 1960000, ourShare: 490000, isDormant: false },
-  { name: 'Pune', pl: 22, billed: 1540000, ourShare: 385000, isDormant: false },
-  { name: 'Delhi / NCR', pl: 20, billed: 1400000, ourShare: 350000, isDormant: false },
-  { name: 'Hyderabad', pl: 16, billed: 1120000, ourShare: 280000, isDormant: false },
-  { name: 'Chennai', pl: 12, billed: 840000, ourShare: 210000, isDormant: false },
-  { name: 'Kolkata', pl: 9, billed: 630000, ourShare: 157500, isDormant: false },
-  { name: 'Ahmedabad', pl: 8, billed: 560000, ourShare: 140000, isDormant: false },
-  { name: 'Jaipur', pl: 0, billed: 0, ourShare: 0, isDormant: true },
-  { name: 'Chandigarh', pl: 0, billed: 0, ourShare: 0, isDormant: true }
-];
-
-// Full Industry Benchmarks
-const ALL_INDUSTRY_BENCHMARKS = [
-  { name: 'Information Technology & Software', pl: 45, billed: 3150000, ourShare: 787500, isDormant: false },
-  { name: 'Banking, Financial Services & Insurance (BFSI)', pl: 32, billed: 2240000, ourShare: 560000, isDormant: false },
-  { name: 'Manufacturing & Engineering', pl: 24, billed: 1680000, ourShare: 420000, isDormant: false },
-  { name: 'Pharmaceuticals & Healthcare', pl: 18, billed: 1260000, ourShare: 315000, isDormant: false },
-  { name: 'FMCG, Retail & Consumer Goods', pl: 14, billed: 980000, ourShare: 245000, isDormant: false },
-  { name: 'Automotive & Mobility', pl: 11, billed: 770000, ourShare: 192500, isDormant: false },
-  { name: 'Logistics & Supply Chain', pl: 0, billed: 0, ourShare: 0, isDormant: true },
-  { name: 'Real Estate & Infrastructure', pl: 0, billed: 0, ourShare: 0, isDormant: true }
-];
-
+/**
+ * Universal Cost of Performance Page
+ * Answers unit-economics, cost drag, and profitability across:
+ * BD-wise, Team Leader-wise, Franchise-wise, City-wise, and Industry-wise.
+ */
 const CostOfPerformance = () => {
-  const { currentUser, transactions, franchisees, selectedMonth: globalMonth, selectedYear: globalYear } = useContext(FinanceContext);
+  const { currentUser, userRole, selectedMonth: globalMonth, selectedYear: globalYear } = useContext(FinanceContext);
 
-  // Core 5 Dimensions from Spec
-  const [activeDimension, setActiveDimension] = useState('bd'); // 'bd' | 'tl' | 'franchise' | 'city' | 'industry'
-  const selectedMonth = globalMonth || '2026-08';
-  const selectedYear = globalYear || '2026-2027';
-  const [availableMonths] = useState(['2026-08', '2026-07', '2026-06', '2026-05', '2026-04', '2026-03']);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState('all'); // 'all' | 'profitable' | 'loss'
+  // Normalize global period
+  const cleanMonth = useMemo(() => {
+    const raw = (globalMonth || '2026-08').trim();
+    const lower = raw.toLowerCase();
+    if (lower === 'all months' || lower === 'all') return 'all';
+    if (raw.includes(' ')) {
+      const parts = raw.split(' ');
+      const mNames = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+      const mIdx = mNames.indexOf(parts[0].toLowerCase());
+      if (mIdx !== -1 && parts[1]) {
+        return `${parts[1]}-${String(mIdx + 1).padStart(2, '0')}`;
+      }
+    }
+    return raw;
+  }, [globalMonth]);
+
+  const cleanFy = useMemo(() => {
+    return (globalYear || '2026-2027').trim();
+  }, [globalYear]);
+
+  // Read initial state from URL search params
+  const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const initialTab = urlParams.get('tab') || 'bd';
+  const initialVerdict = urlParams.get('verdict') || 'all';
+
+  // Core Dimension State: 'bd' | 'tl' | 'franchise' | 'city' | 'industry'
+  const [activeDimension, setActiveDimension] = useState(initialTab);
+
+  // Filter States
+  const [activeVerdict, setActiveVerdict] = useState(initialVerdict);
+  const [selectedTls, setSelectedTls] = useState(() => urlParams.get('tl') ? urlParams.get('tl').split(',') : []);
+  const [selectedFranchises, setSelectedFranchises] = useState(() => urlParams.get('franchise') ? urlParams.get('franchise').split(',') : []);
+  const [selectedCities, setSelectedCities] = useState(() => urlParams.get('city') ? urlParams.get('city').split(',') : []);
+  const [selectedIndustries, setSelectedIndustries] = useState(() => urlParams.get('industry') ? urlParams.get('industry').split(',') : []);
+
+  // More Filters
+  const [hasCreditNotes, setHasCreditNotes] = useState(() => urlParams.get('has_cn') === '1' ? true : (urlParams.get('has_cn') === '0' ? false : null));
+  const [minCreditNotes, setMinCreditNotes] = useState(() => urlParams.get('min_cn') || '');
+  const [minPlacements, setMinPlacements] = useState(() => urlParams.get('min_placements') || '');
+  const [minNet, setMinNet] = useState(() => urlParams.get('min_net') || '');
+  const [maxNet, setMaxNet] = useState(() => urlParams.get('max_net') || '');
+  const [selectedSegment, setSelectedSegment] = useState(() => urlParams.get('segment') || 'all');
+
+  // Search & Debounce
+  const [searchTerm, setSearchTerm] = useState(() => urlParams.get('search') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(searchTerm);
 
   // Sorting State
-  const [sortField, setSortField] = useState('netContribution');
-  const [sortDirection, setSortDirection] = useState('desc');
+  const [sortField, setSortField] = useState(() => urlParams.get('sort') || 'net');
+  const [sortDirection, setSortDirection] = useState(() => urlParams.get('sort_dir') || 'desc');
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 12;
+  const [itemsPerPage, setItemsPerPage] = useState(25); // Default 25 so all 15 BDs are directly visible
 
-  // Drawer / Drill-down State
-  const [selectedEntity, setSelectedEntity] = useState(null);
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  // UI Popovers / Dropdowns
+  const [activeDropdown, setActiveDropdown] = useState(null); // 'tl' | 'franchise' | 'city' | 'industry' | null
+  const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // Audit Drawer State
+  const [selectedAuditEntity, setSelectedAuditEntity] = useState(null);
+  const [isAuditDrawerOpen, setIsAuditDrawerOpen] = useState(false);
 
   // Cost Inputs Modal State
   const [isInputModalOpen, setIsInputModalOpen] = useState(false);
@@ -170,15 +112,165 @@ const CostOfPerformance = () => {
     allocationMethod: 'revenue_share'
   });
 
-  const userRole = currentUser?.role || 'admin';
+  // Backend Data State
+  const [reportData, setReportData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Dimension Switch Handler
+  // 300ms Debounce on Search
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  // Click outside to close open dropdown popovers
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setActiveDropdown(null);
+        setIsMoreFiltersOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Fetch from Flask Backend
+  const fetchReport = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const qParams = new URLSearchParams({
+        entity: activeDimension,
+        month: cleanMonth,
+        fy: cleanFy,
+        verdict: activeVerdict !== 'all' ? activeVerdict : '',
+        tl: selectedTls.join(','),
+        franchise: selectedFranchises.join(','),
+        city: selectedCities.join(','),
+        industry: selectedIndustries.join(','),
+        has_cn: hasCreditNotes !== null ? (hasCreditNotes ? '1' : '0') : '',
+        min_cn: minCreditNotes || '',
+        min_placements: minPlacements || '',
+        min_net: minNet || '',
+        max_net: maxNet || '',
+        segment: selectedSegment !== 'all' ? selectedSegment : '',
+        search: debouncedSearch,
+        sort: sortField,
+        sort_dir: sortDirection
+      });
+
+      const endpoint = `${API_BASE_URL}/cost-performance?${qParams.toString()}`;
+      const res = await fetchWithApiKey(endpoint);
+      if (res && res.success) {
+        setReportData(res);
+      } else {
+        throw new Error(res?.error || 'Failed to fetch cost of performance data');
+      }
+    } catch (err) {
+      console.error("[CostOfPerformance] Fetch Error:", err);
+      setError(err.message || 'Error connecting to cost engine');
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    activeDimension,
+    cleanMonth,
+    cleanFy,
+    activeVerdict,
+    selectedTls,
+    selectedFranchises,
+    selectedCities,
+    selectedIndustries,
+    hasCreditNotes,
+    minCreditNotes,
+    minPlacements,
+    minNet,
+    maxNet,
+    selectedSegment,
+    debouncedSearch,
+    sortField,
+    sortDirection
+  ]);
+
+  useEffect(() => {
+    fetchReport();
+  }, [fetchReport]);
+
+  // Synchronize URL query params
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', activeDimension);
+    if (activeVerdict && activeVerdict !== 'all') url.searchParams.set('verdict', activeVerdict);
+    else url.searchParams.delete('verdict');
+
+    if (selectedTls.length > 0) url.searchParams.set('tl', selectedTls.join(','));
+    else url.searchParams.delete('tl');
+
+    if (selectedFranchises.length > 0) url.searchParams.set('franchise', selectedFranchises.join(','));
+    else url.searchParams.delete('franchise');
+
+    if (selectedCities.length > 0) url.searchParams.set('city', selectedCities.join(','));
+    else url.searchParams.delete('city');
+
+    if (selectedIndustries.length > 0) url.searchParams.set('industry', selectedIndustries.join(','));
+    else url.searchParams.delete('industry');
+
+    if (hasCreditNotes !== null) url.searchParams.set('has_cn', hasCreditNotes ? '1' : '0');
+    else url.searchParams.delete('has_cn');
+
+    if (minCreditNotes) url.searchParams.set('min_cn', minCreditNotes);
+    else url.searchParams.delete('min_cn');
+
+    if (minPlacements) url.searchParams.set('min_placements', minPlacements);
+    else url.searchParams.delete('min_placements');
+
+    if (minNet) url.searchParams.set('min_net', minNet);
+    else url.searchParams.delete('min_net');
+
+    if (maxNet) url.searchParams.set('max_net', maxNet);
+    else url.searchParams.delete('max_net');
+
+    if (selectedSegment && selectedSegment !== 'all') url.searchParams.set('segment', selectedSegment);
+    else url.searchParams.delete('segment');
+
+    if (debouncedSearch) url.searchParams.set('search', debouncedSearch);
+    else url.searchParams.delete('search');
+
+    url.searchParams.set('sort', sortField);
+    url.searchParams.set('sort_dir', sortDirection);
+
+    window.history.replaceState({}, '', url.toString());
+  }, [
+    activeDimension,
+    activeVerdict,
+    selectedTls,
+    selectedFranchises,
+    selectedCities,
+    selectedIndustries,
+    hasCreditNotes,
+    minCreditNotes,
+    minPlacements,
+    minNet,
+    maxNet,
+    selectedSegment,
+    debouncedSearch,
+    sortField,
+    sortDirection
+  ]);
+
+  // Tab Change Handler: Resets dimension-specific filters that no longer apply
   const handleDimensionChange = (dim) => {
     setActiveDimension(dim);
     setCurrentPage(1);
-    setSearchTerm('');
-    setSortField(dim === 'tl' ? 'netPerFranchise' : 'netContribution');
-    setSortDirection('desc');
+    // Reset filters that don't apply to the new tab
+    if (dim === 'tl') setSelectedTls([]);
+    if (dim === 'franchise') setSelectedFranchises([]);
+    if (dim === 'city') setSelectedCities([]);
+    if (dim === 'industry') setSelectedIndustries([]);
   };
 
   // Sort Handler
@@ -189,320 +281,145 @@ const CostOfPerformance = () => {
       setSortField(field);
       setSortDirection('desc');
     }
+    setCurrentPage(1);
   };
 
-  // Live Active Franchise mapping per Team Leader from context
-  const franCountByTl = useMemo(() => {
-    const map = {};
-    (franchisees || []).forEach(f => {
-      const tl = (f.teamLeaderName || f.owner || '').trim();
-      if (tl && (f.status === 'Active' || !f.status)) {
-        const clean = tl.replace(/\s+/g, ' ').toLowerCase();
-        map[clean] = (map[clean] || 0) + 1;
-      }
-    });
-    return map;
-  }, [franchisees]);
+  // Clear All Filters Handler
+  const handleClearAllFilters = () => {
+    setActiveVerdict('all');
+    setSelectedTls([]);
+    setSelectedFranchises([]);
+    setSelectedCities([]);
+    setSelectedIndustries([]);
+    setHasCreditNotes(null);
+    setMinCreditNotes('');
+    setMinPlacements('');
+    setMinNet('');
+    setMaxNet('');
+    setSelectedSegment('all');
+    setSearchTerm('');
+    setDebouncedSearch('');
+    setCurrentPage(1);
+  };
 
-  // Process and Aggregate Dimension Data
-  const dimensionData = useMemo(() => {
-    const rawMap = {};
+  // More Filters Active Counter
+  const activeMoreFiltersCount = useMemo(() => {
+    let count = 0;
+    if (hasCreditNotes !== null) count++;
+    if (minCreditNotes) count++;
+    if (minPlacements) count++;
+    if (minNet) count++;
+    if (maxNet) count++;
+    if (selectedSegment && selectedSegment !== 'all') count++;
+    return count;
+  }, [hasCreditNotes, minCreditNotes, minPlacements, minNet, maxNet, selectedSegment]);
 
-    // 1. Process Live Transactions if available
-    if (transactions && transactions.length > 0) {
-      transactions.forEach(tx => {
-        let key = '';
-        if (activeDimension === 'bd') key = (tx.nameOfBd || tx.bd || '').trim();
-        else if (activeDimension === 'tl') key = (tx.teamLeader || '').trim();
-        else if (activeDimension === 'franchise') key = (tx.franchiseName || tx.franchisee || '').trim();
-        else if (activeDimension === 'city') key = normalizeCityName(tx.companyCity || tx.city);
-        else if (activeDimension === 'industry') key = (tx.industry || 'General Recruitment').trim();
+  // Total Active Filters Boolean
+  const isAnyFilterActive = useMemo(() => {
+    return (
+      activeVerdict !== 'all' ||
+      selectedTls.length > 0 ||
+      selectedFranchises.length > 0 ||
+      selectedCities.length > 0 ||
+      selectedIndustries.length > 0 ||
+      activeMoreFiltersCount > 0 ||
+      Boolean(debouncedSearch)
+    );
+  }, [
+    activeVerdict,
+    selectedTls,
+    selectedFranchises,
+    selectedCities,
+    selectedIndustries,
+    activeMoreFiltersCount,
+    debouncedSearch
+  ]);
 
-        if (!key || key === '-' || key.toLowerCase() === 'none') return;
-        const normalizedKey = key.toLowerCase();
+  // Data Extraction
+  const allRows = reportData?.rows || [];
+  const totals = reportData?.totals || {
+    billed: 0,
+    companyShare: 0,
+    costOfExecution: 0,
+    churnCost: 0,
+    netContribution: 0,
+    placements: 0,
+    marginPct: 0,
+    is_filtered: false
+  };
 
-        if (!rawMap[normalizedKey]) {
-          rawMap[normalizedKey] = {
-            dimension_value: key,
-            placements: 0,
-            total_billed: 0,
-            company_share: 0,
-            franchisee_payout: 0,
-            credit_note_reversals: 0,
-            direct_cost: 0,
-            enquiries_handled: 0,
-            new_clients: 0,
-            uniqueFranchises: new Set(),
-            txList: []
-          };
-        }
+  const verdictCounts = reportData?.verdict_counts || {
+    all: 0,
+    star: 0,
+    healthy: 0,
+    breakeven: 0,
+    at_risk: 0,
+    loss: 0
+  };
 
-        const billed = parseFloat(tx.totalBillAmt || tx.amount || 0);
-        const ourShare = parseFloat(tx.ourShare || 0);
-        const franchiseShare = parseFloat(tx.franchiseeShare || 0);
-        const isCN = tx.info === 'CN' || (tx.type && tx.type.toLowerCase().includes('credit'));
-
-        rawMap[normalizedKey].txList.push(tx);
-        if (tx.franchiseName || tx.franchiseeName) {
-          rawMap[normalizedKey].uniqueFranchises.add((tx.franchiseName || tx.franchiseeName).trim().toLowerCase());
-        }
-        if (isCN) {
-          rawMap[normalizedKey].credit_note_reversals += Math.abs(ourShare || billed);
-        } else {
-          rawMap[normalizedKey].placements += 1;
-          rawMap[normalizedKey].total_billed += billed;
-          rawMap[normalizedKey].company_share += ourShare;
-          rawMap[normalizedKey].franchisee_payout += franchiseShare;
-        }
-      });
-    }
-
-    // 2. Fallback to Authoritative Benchmarks if sparse
-    let dataset = Object.values(rawMap);
-    if (dataset.length === 0) {
-      if (activeDimension === 'bd') {
-        dataset = Object.entries(ALL_BD_BENCHMARKS).map(([name, b]) => ({
-          dimension_value: name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-          placements: b.placements,
-          total_billed: b.billed,
-          company_share: b.ourShare,
-          franchisee_payout: Math.round(b.billed * 0.40),
-          credit_note_reversals: b.lossAmount,
-          direct_cost: b.baseSalary,
-          enquiries_handled: b.enquiries,
-          new_clients: b.newClients,
-          role: b.role,
-          isDormant: b.isDormant,
-          txList: []
-        }));
-      } else if (activeDimension === 'tl') {
-        dataset = Object.entries(ALL_TL_BENCHMARKS).map(([name, b]) => ({
-          dimension_value: name.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-          placements: b.placements,
-          total_billed: b.billed,
-          company_share: b.ourShare,
-          franchisee_payout: Math.round(b.billed * 0.40),
-          credit_note_reversals: b.isDormant ? 25000 : 0,
-          direct_cost: b.baseSalary,
-          enquiries_handled: b.enquiries,
-          new_clients: b.newClients,
-          activeFranchises: b.activeFranchises,
-          isDormant: b.isDormant,
-          txList: []
-        }));
-      } else if (activeDimension === 'franchise') {
-        dataset = ALL_FRANCHISE_BENCHMARKS.map(b => ({
-          dimension_value: b.name,
-          city: b.city,
-          teamLeader: b.teamLeader,
-          placements: b.pl,
-          total_billed: b.billed,
-          company_share: b.ourShare,
-          franchisee_payout: Math.round(b.billed * 0.60),
-          credit_note_reversals: b.isDormant ? 15000 : 0,
-          direct_cost: 0,
-          enquiries_handled: b.pl * 3,
-          new_clients: Math.ceil(b.pl / 3),
-          isDormant: b.isDormant,
-          txList: []
-        }));
-      } else if (activeDimension === 'city') {
-        dataset = ALL_CITY_BENCHMARKS.map(b => ({
-          dimension_value: b.name,
-          placements: b.pl,
-          total_billed: b.billed,
-          company_share: b.ourShare,
-          franchisee_payout: Math.round(b.billed * 0.45),
-          credit_note_reversals: b.isDormant ? 12000 : 0,
-          direct_cost: Math.round(b.pl * 8000),
-          enquiries_handled: b.pl * 3,
-          new_clients: Math.ceil(b.pl / 3),
-          isDormant: b.isDormant,
-          txList: []
-        }));
-      } else if (activeDimension === 'industry') {
-        dataset = ALL_INDUSTRY_BENCHMARKS.map(b => ({
-          dimension_value: b.name,
-          placements: b.pl,
-          total_billed: b.billed,
-          company_share: b.ourShare,
-          franchisee_payout: Math.round(b.billed * 0.45),
-          credit_note_reversals: b.isDormant ? 14000 : 0,
-          direct_cost: Math.round(b.pl * 7500),
-          enquiries_handled: b.pl * 3,
-          new_clients: Math.ceil(b.pl / 3),
-          isDormant: b.isDormant,
-          txList: []
-        }));
-      }
-    }
-
-    // Compute Total Company Share for Overhead Pro-Rata Distribution (Section 4.5)
-    const totalCompanyShare = dataset.reduce((sum, d) => sum + d.company_share, 0) || 1;
-
-    // 3. Compute Rigorous Unit Economics per Spec
-    return dataset.map(d => {
-      // Pro-rata overhead share (Section 4.5)
-      const overheadShare = Math.round(costInputs.overheadPool * (d.company_share / totalCompanyShare));
-
-      // Direct & Allocated Costs
-      const directCost = d.direct_cost || (activeDimension === 'bd' ? costInputs.defaultBdSalary : (activeDimension === 'tl' ? costInputs.defaultTlSalary : 0));
-      const costOfExecution = Math.round(directCost + overheadShare);
-
-      // Losses & Credit Notes
-      const churnCost = Math.round(d.credit_note_reversals || 0);
-
-      // Net Contribution (Section 4.4 North Star Formula)
-      // Net Contribution = Company Share - Cost of Execution - Churn Cost
-      const netContribution = Math.round(d.company_share - costOfExecution - churnCost);
-
-      // Section 4.6 TL Normalization (Net Contribution per Franchise)
-      const tlKey = d.dimension_value.toLowerCase();
-      const activeFranchises = d.activeFranchises || franCountByTl[tlKey] || (d.uniqueFranchises ? d.uniqueFranchises.size : 0) || DEFAULT_TL_ROSTER[tlKey] || 15;
-      const netPerFranchise = Math.round(netContribution / Math.max(1, activeFranchises));
-      const revenuePerFranchise = Math.round(d.company_share / Math.max(1, activeFranchises));
-      const costPerFranchise = Math.round(costOfExecution / Math.max(1, activeFranchises));
-
-      // Section 4.7 Per-Enquiry Unit Economics
-      const enquiries = d.enquiries_handled || Math.max(d.placements, 1);
-      const revenuePerEnquiry = Math.round(d.company_share / enquiries);
-      const expensePerEnquiry = Math.round(costOfExecution / enquiries);
-      const netSurplusPerEnquiry = revenuePerEnquiry - expensePerEnquiry;
-
-      // Net Margin %
-      const netMarginPct = d.company_share > 0 
-        ? ((netContribution / d.company_share) * 100).toFixed(1)
-        : '-100.0';
-
-      // Commercial Verdict
-      let verdict = 'Star Performer';
-      let verdictColor = '#10B981';
-      if (netContribution < 0) {
-        verdict = 'Loss Burden';
-        verdictColor = '#DC2626';
-      } else if (netContribution < 100000) {
-        verdict = 'Margin Diluter';
-        verdictColor = '#F59E0B';
-      } else if (netContribution < 300000) {
-        verdict = 'Solid Contributor';
-        verdictColor = '#3B82F6';
-      }
-
-      return {
-        ...d,
-        overheadShare,
-        costOfExecution,
-        churnCost,
-        netContribution,
-        netMarginPct,
-        activeFranchises,
-        netPerFranchise,
-        revenuePerFranchise,
-        costPerFranchise,
-        enquiries,
-        revenuePerEnquiry,
-        expensePerEnquiry,
-        netSurplusPerEnquiry,
-        verdict,
-        verdictColor
-      };
-    });
-  }, [activeDimension, transactions, costInputs]);
-
-  // Filtered & Sorted Dataset
-  const filteredData = useMemo(() => {
-    let list = [...dimensionData];
-
-    // Search filter
-    if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase();
-      list = list.filter(d => 
-        d.dimension_value.toLowerCase().includes(q) ||
-        (d.city && d.city.toLowerCase().includes(q)) ||
-        (d.role && d.role.toLowerCase().includes(q))
-      );
-    }
-
-    // Profitability Filter
-    if (filterType === 'profitable') {
-      list = list.filter(d => d.netContribution >= 0);
-    } else if (filterType === 'loss') {
-      list = list.filter(d => d.netContribution < 0);
-    }
-
-    // Sort
-    list.sort((a, b) => {
-      let aVal = a[sortField];
-      let bVal = b[sortField];
-      if (typeof aVal === 'string') aVal = aVal.toLowerCase();
-      if (typeof bVal === 'string') bVal = bVal.toLowerCase();
-
-      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    return list;
-  }, [dimensionData, searchTerm, filterType, sortField, sortDirection]);
-
-  // Overall Totals for Executive Cards
-  const totals = useMemo(() => {
-    const billed = dimensionData.reduce((sum, d) => sum + d.total_billed, 0);
-    const companyShare = dimensionData.reduce((sum, d) => sum + d.company_share, 0);
-    const costOfExecution = dimensionData.reduce((sum, d) => sum + d.costOfExecution, 0);
-    const churnCost = dimensionData.reduce((sum, d) => sum + d.churnCost, 0);
-    const netContribution = companyShare - costOfExecution - churnCost;
-    const placements = dimensionData.reduce((sum, d) => sum + d.placements, 0);
-    const marginPct = companyShare > 0 ? ((netContribution / companyShare) * 100).toFixed(1) : '0.0';
-
-    return { billed, companyShare, costOfExecution, churnCost, netContribution, placements, marginPct };
-  }, [dimensionData]);
+  const filterOptions = reportData?.filter_options || {
+    team_leaders: [],
+    franchises: [],
+    cities: [],
+    industries: []
+  };
 
   // Pagination Slice
   const paginatedData = useMemo(() => {
+    if (itemsPerPage === 'all') return allRows;
     const start = (currentPage - 1) * itemsPerPage;
-    return filteredData.slice(start, start + itemsPerPage);
-  }, [filteredData, currentPage]);
+    return allRows.slice(start, start + itemsPerPage);
+  }, [allRows, currentPage, itemsPerPage]);
 
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const totalPages = itemsPerPage === 'all' ? 1 : Math.ceil(allRows.length / itemsPerPage);
 
-  // Row Click -> Open Drill-Down Drawer
+  // Row Click -> Open Universal Audit Drawer
   const handleRowClick = (item) => {
-    setSelectedEntity(item);
-    setIsDrawerOpen(true);
+    setSelectedAuditEntity(item);
+    setIsAuditDrawerOpen(true);
   };
 
-  // Export Clean CSV
+  // CSV Export for Filtered Rows
   const handleExportCSV = () => {
-    let headers = [];
-    if (activeDimension === 'tl') {
-      headers = ['Rank', 'Team Leader', 'Active Franchises', 'Placements', 'Company Share', 'Cost of Execution', 'Losses', 'Net Contribution', 'Net Per Franchise', 'Verdict'];
-    } else if (activeDimension === 'bd') {
-      headers = ['Rank', 'BD Executive', 'Placements', 'Enquiries Handled', 'Company Share', 'Cost of Execution', 'Credit Notes', 'Net Contribution', 'Net Surplus Per Enquiry', 'Verdict'];
-    } else if (activeDimension === 'franchise') {
-      headers = ['Rank', 'Franchise Partner', 'City', 'Placements', 'Company Share', 'Franchisee Payout', 'Credit Notes', 'Net Retained'];
-    } else {
-      headers = ['Rank', 'Name', 'Placements', 'Company Share', 'Cost of Execution', 'Net Contribution', 'Net Margin %', 'Verdict'];
-    }
+    if (allRows.length === 0) return;
+    const headers = [
+      'Rank',
+      'Entity Name',
+      'Role / Segment',
+      'Placements',
+      'Enquiries Handled',
+      'Gross Billed (INR)',
+      'Company Share (INR)',
+      'Cost of Execution (INR)',
+      'Direct Payroll (INR)',
+      'Credit Notes (INR)',
+      'Net Bank Contribution (INR)',
+      'Net Margin (%)',
+      'Verdict'
+    ];
 
-    const rows = filteredData.map((d, i) => {
-      if (activeDimension === 'tl') {
-        return [i + 1, `"${d.dimension_value}"`, d.activeFranchises, d.placements, d.company_share, d.costOfExecution, d.churnCost, d.netContribution, d.netPerFranchise, `"${d.verdict}"`];
-      } else if (activeDimension === 'bd') {
-        return [i + 1, `"${d.dimension_value}"`, d.placements, d.enquiries, d.company_share, d.costOfExecution, d.churnCost, d.netContribution, d.netSurplusPerEnquiry, `"${d.verdict}"`];
-      } else if (activeDimension === 'franchise') {
-        return [i + 1, `"${d.dimension_value}"`, `"${d.city || '-'}"`, d.placements, d.company_share, d.franchisee_payout, d.churnCost, d.company_share - d.churnCost];
-      } else {
-        return [i + 1, `"${d.dimension_value}"`, d.placements, d.company_share, d.costOfExecution, d.netContribution, `${d.netMarginPct}%`, `"${d.verdict}"`];
-      }
-    });
+    const csvRows = allRows.map((r, i) => [
+      r.rank || (i + 1),
+      `"${r.dimension_value || ''}"`,
+      `"${r.role || r.segment || ''}"`,
+      r.placements || 0,
+      r.enquiries || 0,
+      r.total_billed || 0,
+      r.company_share || 0,
+      r.costOfExecution || 0,
+      r.direct_cost || 0,
+      r.churnCost || 0,
+      r.netContribution || 0,
+      `${r.netMarginPct || 0}%`,
+      `"${r.verdict_label || ''}"`
+    ]);
 
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const csvContent = '\uFEFF' + [headers.join(','), ...csvRows.map(e => e.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `TCHR_Cost_Of_Performance_${activeDimension}_${selectedMonth}.csv`);
+    link.setAttribute('download', `Fintective_Cost_Of_Performance_${activeDimension}_${cleanMonth}_${cleanFy}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -510,9 +427,9 @@ const CostOfPerformance = () => {
   };
 
   return (
-    <div className="analytics-page" style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto' }}>
+    <div className="analytics-page" style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto', minHeight: '100vh' }}>
       
-      {/* 1. Header Bar */}
+      {/* 1. Header Bar with Global Period Sync & Clean Controls */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -524,32 +441,33 @@ const CostOfPerformance = () => {
                 Cost of Performance
               </h1>
               <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                Talent Corner HR Services • Monthly Commercial Viability & Unit Economics Engine
+                Talent Corner HR Services • Commercial Viability & Unit Economics Engine
               </p>
             </div>
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Month Selector */}
-          <select
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            style={{
-              padding: '8px 14px',
-              borderRadius: '8px',
-              border: '1px solid var(--border-color)',
-              background: 'var(--bg-card)',
-              color: 'var(--text-main)',
-              fontSize: '0.84rem',
-              fontWeight: '700',
-              cursor: 'pointer'
-            }}
-          >
-            {availableMonths.map(m => (
-              <option key={m} value={m}>Month: {m}</option>
-            ))}
-          </select>
+          {/* Synchronized Global Period Indicator Badge */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 14px',
+            borderRadius: '8px',
+            border: '1px solid var(--border-color)',
+            background: 'var(--bg-card)',
+            color: 'var(--text-main)',
+            fontSize: '0.82rem',
+            fontWeight: '700'
+          }}>
+            <Calendar size={14} style={{ color: 'var(--accent-teal, #0F6E56)' }} />
+            <span>
+              {cleanMonth === 'all' 
+                ? `FY ${cleanFy} (Full Year)` 
+                : `${cleanMonth} • FY ${cleanFy}`}
+            </span>
+          </div>
 
           {/* Cost Inputs Button */}
           {userRole !== 'franchise_partner' && (
@@ -564,19 +482,20 @@ const CostOfPerformance = () => {
                 border: '1px solid var(--border-color)',
                 background: 'var(--bg-card)',
                 color: 'var(--text-main)',
-                fontSize: '0.84rem',
+                fontSize: '0.82rem',
                 fontWeight: '700',
                 cursor: 'pointer'
               }}
             >
-              <SlidersHorizontal size={15} />
+              <SlidersHorizontal size={14} />
               <span>Cost Inputs</span>
             </button>
           )}
 
-          {/* Export CSV */}
+          {/* Export Filtered CSV */}
           <button
             onClick={handleExportCSV}
+            disabled={allRows.length === 0}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -584,240 +503,883 @@ const CostOfPerformance = () => {
               padding: '8px 16px',
               borderRadius: '8px',
               border: 'none',
-              background: 'var(--accent-teal, #0F6E56)',
+              background: allRows.length === 0 ? 'var(--text-muted)' : 'var(--accent-teal, #0F6E56)',
               color: '#ffffff',
-              fontSize: '0.84rem',
+              fontSize: '0.82rem',
               fontWeight: '700',
-              cursor: 'pointer'
+              cursor: allRows.length === 0 ? 'not-allowed' : 'pointer'
             }}
           >
-            <Download size={15} />
+            <Download size={14} />
             <span>Export Report</span>
           </button>
         </div>
       </div>
 
-      {/* 2. Top Executive Summary Cards (4 Crisp Cards Answering the Bottom-Line) */}
+      {/* 2. Top Executive KPI Cards (Reflects Active Filters with Filtered Tag) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '22px' }}>
         
         {/* Card 1: Total Company Share */}
-        <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #0F6E56' }}>
+        <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #0F6E56', position: 'relative' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <span style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
               1. Company Share (Revenue)
             </span>
-            <DollarSign size={18} color="#0F6E56" />
+            <DollarSign size={16} color="#0F6E56" />
           </div>
           <div style={{ fontSize: '1.55rem', fontWeight: '800', color: 'var(--text-main)' }}>
             {formatCurrency(totals.companyShare)}
           </div>
-          <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Gross Billing: {formatCurrency(totals.billed)} ({totals.placements} placements)
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              Gross: {formatCurrency(totals.billed)} ({totals.placements} deals)
+            </span>
+            {totals.is_filtered && (
+              <span style={{ fontSize: '0.66rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(15, 110, 86, 0.1)', color: '#0F6E56', fontWeight: '800' }}>
+                ● Filtered
+              </span>
+            )}
           </div>
         </div>
 
         {/* Card 2: Cost of Execution */}
         {userRole !== 'franchise_partner' && (
-          <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #3B82F6' }}>
+          <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #3B82F6', position: 'relative' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-              <span style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              <span style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                 2. Cost of Execution
               </span>
-              <Building size={18} color="#3B82F6" />
+              <Building size={16} color="#3B82F6" />
             </div>
             <div style={{ fontSize: '1.55rem', fontWeight: '800', color: '#3B82F6' }}>
               {formatCurrency(totals.costOfExecution)}
             </div>
-            <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-              Direct Payroll + Pro-Rata Corporate Overheads
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                Direct Payroll + Overhead Pool
+              </span>
+              {totals.is_filtered && (
+                <span style={{ fontSize: '0.66rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.1)', color: '#2563EB', fontWeight: '800' }}>
+                  ● Filtered
+                </span>
+              )}
             </div>
           </div>
         )}
 
         {/* Card 3: Credit Note Write-offs */}
-        <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #F59E0B' }}>
+        <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #F59E0B', position: 'relative' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <span style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
               3. Churn & Credit Notes
             </span>
-            <AlertTriangle size={18} color="#F59E0B" />
+            <AlertTriangle size={16} color="#F59E0B" />
           </div>
           <div style={{ fontSize: '1.55rem', fontWeight: '800', color: '#F59E0B' }}>
             {formatCurrency(totals.churnCost)}
           </div>
-          <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Billed revenue reversed via client credit notes
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              Reversed client billings
+            </span>
+            {totals.is_filtered && (
+              <span style={{ fontSize: '0.66rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.1)', color: '#D97706', fontWeight: '800' }}>
+                ● Filtered
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Card 4: Net Bank Contribution (The Ultimate Metric) */}
+        {/* Card 4: Net Bank Contribution */}
         <div style={{ 
           background: totals.netContribution >= 0 ? 'rgba(16, 185, 129, 0.06)' : 'rgba(239, 68, 68, 0.06)', 
           padding: '18px 20px', 
           borderRadius: '12px', 
           border: `1px solid ${totals.netContribution >= 0 ? '#10B981' : '#EF4444'}`,
-          borderLeft: `5px solid ${totals.netContribution >= 0 ? '#10B981' : '#EF4444'}`
+          borderLeft: `5px solid ${totals.netContribution >= 0 ? '#10B981' : '#EF4444'}`,
+          position: 'relative'
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <span style={{ fontSize: '0.76rem', fontWeight: '800', color: totals.netContribution >= 0 ? '#10B981' : '#EF4444', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: '0.74rem', fontWeight: '800', color: totals.netContribution >= 0 ? '#059669' : '#DC2626', textTransform: 'uppercase' }}>
               4. Net Bank Contribution
             </span>
-            <TrendingUp size={18} color={totals.netContribution >= 0 ? '#10B981' : '#EF4444'} />
+            <TrendingUp size={16} color={totals.netContribution >= 0 ? '#10B981' : '#EF4444'} />
           </div>
           <div style={{ fontSize: '1.65rem', fontWeight: '800', color: totals.netContribution >= 0 ? '#10B981' : '#EF4444' }}>
             {totals.netContribution >= 0 ? '+' : ''}{formatCurrency(totals.netContribution)}
           </div>
-          <div style={{ fontSize: '0.74rem', fontWeight: '700', color: totals.netContribution >= 0 ? '#047857' : '#B91C1C', marginTop: '4px' }}>
-            Net Commercial Margin: {totals.marginPct}%
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+            <span style={{ fontSize: '0.74rem', fontWeight: '700', color: totals.netContribution >= 0 ? '#047857' : '#B91C1C' }}>
+              Margin: {totals.marginPct}%
+            </span>
+            {totals.is_filtered && (
+              <span style={{ fontSize: '0.66rem', padding: '1px 6px', borderRadius: '4px', background: totals.netContribution >= 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', color: totals.netContribution >= 0 ? '#047857' : '#B91C1C', fontWeight: '800' }}>
+                ● Filtered
+              </span>
+            )}
           </div>
         </div>
       </div>
 
-      {/* 3. The Unified 5-Dimension Navigation & Filter Bar */}
+      {/* 3. Five Primary Navigation Tabs */}
       <div style={{ 
         background: 'var(--bg-card)', 
         borderRadius: '12px', 
-        padding: '14px 18px', 
+        padding: '12px 16px', 
         border: '1px solid var(--border-color)', 
-        marginBottom: '18px',
+        marginBottom: '14px',
         display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: '14px'
+        gap: '8px',
+        flexWrap: 'wrap'
       }}>
-        {/* 5 Clean Dimension Pills */}
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          {[
-            { id: 'bd', label: '👤 BD-wise', desc: 'Recruiters & Closers' },
-            { id: 'tl', label: '👥 Team Leader-wise', desc: 'Franchise Network Managers' },
-            { id: 'franchise', label: '🏢 Franchise-wise', desc: 'Partner Production' },
-            { id: 'city', label: '📍 City-wise', desc: 'Regional Profitability' },
-            { id: 'industry', label: '🏭 Industry-wise', desc: 'Vertical Margins' }
-          ].map(dim => (
+        {[
+          { id: 'bd', label: '👤 BD-wise', desc: 'Recruiters & Closers' },
+          { id: 'tl', label: '👥 Team Leader-wise', desc: 'Franchise Network Managers' },
+          { id: 'franchise', label: '🏢 Franchise-wise', desc: 'Partner Production' },
+          { id: 'city', label: '📍 City-wise', desc: 'Regional Profitability' },
+          { id: 'industry', label: '🏭 Industry-wise', desc: 'Vertical Margins' }
+        ].map(dim => {
+          const isActive = activeDimension === dim.id;
+          return (
             <button
               key={dim.id}
               onClick={() => handleDimensionChange(dim.id)}
               style={{
                 padding: '8px 16px',
                 borderRadius: '8px',
-                border: activeDimension === dim.id ? '1px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
-                background: activeDimension === dim.id ? 'var(--accent-teal, #0F6E56)' : 'var(--bg-main)',
-                color: activeDimension === dim.id ? '#ffffff' : 'var(--text-main)',
-                fontSize: '0.84rem',
-                fontWeight: activeDimension === dim.id ? '800' : '600',
+                border: isActive ? '1px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
+                background: isActive ? 'var(--accent-teal, #0F6E56)' : 'var(--bg-main)',
+                color: isActive ? '#ffffff' : 'var(--text-main)',
+                fontSize: '0.82rem',
+                fontWeight: isActive ? '800' : '600',
                 cursor: 'pointer',
-                transition: 'all 0.15s ease'
+                transition: 'all 0.15s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
               }}
             >
-              {dim.label}
+              <span>{dim.label}</span>
             </button>
-          ))}
+          );
+        })}
+      </div>
+
+      {/* 4. Single-Row Filter Bar (Verdict Chips + Contextual Dropdowns + More Filters + Search) */}
+      <div ref={dropdownRef} style={{ 
+        background: 'var(--bg-card)', 
+        borderRadius: '12px', 
+        padding: '14px 18px', 
+        border: '1px solid var(--border-color)', 
+        marginBottom: '14px',
+        display: 'flex',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '12px',
+        position: 'relative'
+      }}>
+        
+        {/* A. Verdict Chips with Counts (Hiding 0 counts) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          {[
+            { id: 'all', label: 'All', count: verdictCounts.all, color: 'var(--accent-teal, #0F6E56)' },
+            { id: 'star', label: 'Star Performer', count: verdictCounts.star, color: '#10B981' },
+            { id: 'healthy', label: 'Healthy', count: verdictCounts.healthy, color: '#059669' },
+            { id: 'breakeven', label: 'Break-even', count: verdictCounts.breakeven, color: '#F59E0B' },
+            { id: 'at_risk', label: 'At Risk', count: verdictCounts.at_risk, color: '#EA580C' },
+            { id: 'loss', label: 'Loss Drain', count: verdictCounts.loss, color: '#DC2626' }
+          ].map(chip => {
+            // Hide chips with 0 rows, except 'all'
+            if (chip.id !== 'all' && chip.count === 0) return null;
+            const isSelected = activeVerdict === chip.id;
+
+            return (
+              <button
+                key={chip.id}
+                onClick={() => { setActiveVerdict(chip.id); setCurrentPage(1); }}
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: '20px',
+                  border: isSelected ? `1.5px solid ${chip.color}` : '1px solid var(--border-color)',
+                  background: isSelected ? chip.color : 'var(--bg-main)',
+                  color: isSelected ? '#ffffff' : 'var(--text-main)',
+                  fontSize: '0.74rem',
+                  fontWeight: isSelected ? '800' : '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <span>{chip.label}</span>
+                <span style={{
+                  padding: '1px 6px',
+                  borderRadius: '10px',
+                  background: isSelected ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.06)',
+                  color: isSelected ? '#ffffff' : 'var(--text-muted)',
+                  fontSize: '0.68rem',
+                  fontWeight: '700'
+                }}>
+                  {chip.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Search & Profit/Loss Toggle */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          {/* Quick Filter: All vs Profitable vs Loss */}
-          <div style={{ display: 'flex', background: 'var(--bg-main)', borderRadius: '6px', padding: '2px', border: '1px solid var(--border-color)' }}>
-            <button
-              onClick={() => setFilterType('all')}
-              style={{
-                padding: '4px 10px',
-                borderRadius: '4px',
-                border: 'none',
-                background: filterType === 'all' ? 'var(--accent-teal)' : 'transparent',
-                color: filterType === 'all' ? '#ffffff' : 'var(--text-muted)',
-                fontSize: '0.75rem',
-                fontWeight: '700',
-                cursor: 'pointer'
-              }}
-            >
-              All ({dimensionData.length})
-            </button>
-            <button
-              onClick={() => setFilterType('profitable')}
-              style={{
-                padding: '4px 10px',
-                borderRadius: '4px',
-                border: 'none',
-                background: filterType === 'profitable' ? '#10B981' : 'transparent',
-                color: filterType === 'profitable' ? '#ffffff' : 'var(--text-muted)',
-                fontSize: '0.75rem',
-                fontWeight: '700',
-                cursor: 'pointer'
-              }}
-            >
-              Surplus ({dimensionData.filter(d => d.netContribution >= 0).length})
-            </button>
-            <button
-              onClick={() => setFilterType('loss')}
-              style={{
-                padding: '4px 10px',
-                borderRadius: '4px',
-                border: 'none',
-                background: filterType === 'loss' ? '#DC2626' : 'transparent',
-                color: filterType === 'loss' ? '#ffffff' : 'var(--text-muted)',
-                fontSize: '0.75rem',
-                fontWeight: '700',
-                cursor: 'pointer'
-              }}
-            >
-              Loss Drain ({dimensionData.filter(d => d.netContribution < 0).length})
-            </button>
-          </div>
+        {/* Divider */}
+        <div style={{ width: '1px', height: '24px', background: 'var(--border-color)' }} />
 
-          {/* Search Input */}
+        {/* B. Contextual Cross-Filter Dropdowns */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          
+          {/* 1. Team Leader Dropdown (On BD, Franchise, City, Industry tabs) */}
+          {activeDimension !== 'tl' && filterOptions.team_leaders.length > 0 && (
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => { setActiveDropdown(activeDropdown === 'tl' ? null : 'tl'); setIsMoreFiltersOpen(false); }}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  border: selectedTls.length > 0 ? '1px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
+                  background: selectedTls.length > 0 ? 'rgba(15, 110, 86, 0.08)' : 'var(--bg-main)',
+                  color: selectedTls.length > 0 ? 'var(--accent-teal, #0F6E56)' : 'var(--text-main)',
+                  fontSize: '0.75rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <span>Team Leader {selectedTls.length > 0 && `(${selectedTls.length})`}</span>
+                <ChevronDown size={13} />
+              </button>
+
+              {activeDropdown === 'tl' && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  marginTop: '6px',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+                  padding: '10px',
+                  minWidth: '220px',
+                  zIndex: 200,
+                  maxHeight: '260px',
+                  overflowY: 'auto'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--text-muted)' }}>SELECT TEAM LEADER</span>
+                    {selectedTls.length > 0 && (
+                      <button onClick={() => setSelectedTls([])} style={{ border: 'none', background: 'transparent', color: '#DC2626', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  {filterOptions.team_leaders.map(tl => {
+                    const isChecked = selectedTls.includes(tl);
+                    return (
+                      <label key={tl} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 4px', fontSize: '0.75rem', color: 'var(--text-main)', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            setSelectedTls(prev => isChecked ? prev.filter(x => x !== tl) : [...prev, tl]);
+                            setCurrentPage(1);
+                          }}
+                        />
+                        <span>{tl}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 2. Franchise Dropdown (On BD, TL, City, Industry tabs) */}
+          {activeDimension !== 'franchise' && filterOptions.franchises.length > 0 && (
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => { setActiveDropdown(activeDropdown === 'franchise' ? null : 'franchise'); setIsMoreFiltersOpen(false); }}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  border: selectedFranchises.length > 0 ? '1px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
+                  background: selectedFranchises.length > 0 ? 'rgba(15, 110, 86, 0.08)' : 'var(--bg-main)',
+                  color: selectedFranchises.length > 0 ? 'var(--accent-teal, #0F6E56)' : 'var(--text-main)',
+                  fontSize: '0.75rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <span>Franchise {selectedFranchises.length > 0 && `(${selectedFranchises.length})`}</span>
+                <ChevronDown size={13} />
+              </button>
+
+              {activeDropdown === 'franchise' && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  marginTop: '6px',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+                  padding: '10px',
+                  minWidth: '220px',
+                  zIndex: 200,
+                  maxHeight: '260px',
+                  overflowY: 'auto'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--text-muted)' }}>SELECT FRANCHISE</span>
+                    {selectedFranchises.length > 0 && (
+                      <button onClick={() => setSelectedFranchises([])} style={{ border: 'none', background: 'transparent', color: '#DC2626', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  {filterOptions.franchises.slice(0, 30).map(f => {
+                    const isChecked = selectedFranchises.includes(f);
+                    return (
+                      <label key={f} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 4px', fontSize: '0.75rem', color: 'var(--text-main)', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            setSelectedFranchises(prev => isChecked ? prev.filter(x => x !== f) : [...prev, f]);
+                            setCurrentPage(1);
+                          }}
+                        />
+                        <span>{f}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 3. City Dropdown (On BD, TL, Franchise, Industry tabs) */}
+          {activeDimension !== 'city' && filterOptions.cities.length > 0 && (
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => { setActiveDropdown(activeDropdown === 'city' ? null : 'city'); setIsMoreFiltersOpen(false); }}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  border: selectedCities.length > 0 ? '1px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
+                  background: selectedCities.length > 0 ? 'rgba(15, 110, 86, 0.08)' : 'var(--bg-main)',
+                  color: selectedCities.length > 0 ? 'var(--accent-teal, #0F6E56)' : 'var(--text-main)',
+                  fontSize: '0.75rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <span>City {selectedCities.length > 0 && `(${selectedCities.length})`}</span>
+                <ChevronDown size={13} />
+              </button>
+
+              {activeDropdown === 'city' && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  marginTop: '6px',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+                  padding: '10px',
+                  minWidth: '200px',
+                  zIndex: 200,
+                  maxHeight: '260px',
+                  overflowY: 'auto'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--text-muted)' }}>SELECT CITY</span>
+                    {selectedCities.length > 0 && (
+                      <button onClick={() => setSelectedCities([])} style={{ border: 'none', background: 'transparent', color: '#DC2626', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  {filterOptions.cities.map(c => {
+                    const isChecked = selectedCities.includes(c);
+                    return (
+                      <label key={c} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 4px', fontSize: '0.75rem', color: 'var(--text-main)', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            setSelectedCities(prev => isChecked ? prev.filter(x => x !== c) : [...prev, c]);
+                            setCurrentPage(1);
+                          }}
+                        />
+                        <span>{c}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 4. Industry Dropdown (On BD, TL, Franchise, City tabs) */}
+          {activeDimension !== 'industry' && filterOptions.industries.length > 0 && (
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => { setActiveDropdown(activeDropdown === 'industry' ? null : 'industry'); setIsMoreFiltersOpen(false); }}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  border: selectedIndustries.length > 0 ? '1px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
+                  background: selectedIndustries.length > 0 ? 'rgba(15, 110, 86, 0.08)' : 'var(--bg-main)',
+                  color: selectedIndustries.length > 0 ? 'var(--accent-teal, #0F6E56)' : 'var(--text-main)',
+                  fontSize: '0.75rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <span>Industry {selectedIndustries.length > 0 && `(${selectedIndustries.length})`}</span>
+                <ChevronDown size={13} />
+              </button>
+
+              {activeDropdown === 'industry' && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  marginTop: '6px',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+                  padding: '10px',
+                  minWidth: '240px',
+                  zIndex: 200,
+                  maxHeight: '260px',
+                  overflowY: 'auto'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--text-muted)' }}>SELECT INDUSTRY</span>
+                    {selectedIndustries.length > 0 && (
+                      <button onClick={() => setSelectedIndustries([])} style={{ border: 'none', background: 'transparent', color: '#DC2626', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  {filterOptions.industries.map(ind => {
+                    const isChecked = selectedIndustries.includes(ind);
+                    return (
+                      <label key={ind} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 4px', fontSize: '0.75rem', color: 'var(--text-main)', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            setSelectedIndustries(prev => isChecked ? prev.filter(x => x !== ind) : [...prev, ind]);
+                            setCurrentPage(1);
+                          }}
+                        />
+                        <span>{ind}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* C. "More Filters" Popover Trigger */}
           <div style={{ position: 'relative' }}>
-            <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input
-              type="text"
-              placeholder={`Search ${activeDimension.toUpperCase()}...`}
-              value={searchTerm}
-              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+            <button
+              onClick={() => { setIsMoreFiltersOpen(!isMoreFiltersOpen); setActiveDropdown(null); }}
               style={{
-                padding: '7px 12px 7px 30px',
-                borderRadius: '6px',
-                border: '1px solid var(--border-color)',
-                background: 'var(--bg-main)',
-                color: 'var(--text-main)',
-                fontSize: '0.8rem',
-                width: '180px'
+                padding: '6px 12px',
+                borderRadius: '8px',
+                border: activeMoreFiltersCount > 0 ? '1px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
+                background: activeMoreFiltersCount > 0 ? 'rgba(15, 110, 86, 0.08)' : 'var(--bg-main)',
+                color: activeMoreFiltersCount > 0 ? 'var(--accent-teal, #0F6E56)' : 'var(--text-main)',
+                fontSize: '0.75rem',
+                fontWeight: '700',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
               }}
-            />
-            {searchTerm && (
-              <X 
-                size={12} 
-                onClick={() => setSearchTerm('')} 
-                style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', color: 'var(--text-muted)' }} 
-              />
+            >
+              <Filter size={13} />
+              <span>More Filters</span>
+              {activeMoreFiltersCount > 0 && (
+                <span style={{
+                  padding: '1px 6px',
+                  borderRadius: '10px',
+                  background: 'var(--accent-teal, #0F6E56)',
+                  color: '#ffffff',
+                  fontSize: '0.66rem',
+                  fontWeight: '800'
+                }}>
+                  {activeMoreFiltersCount}
+                </span>
+              )}
+            </button>
+
+            {/* More Filters Popover Content */}
+            {isMoreFiltersOpen && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                marginTop: '6px',
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '10px',
+                boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
+                padding: '16px',
+                width: '300px',
+                zIndex: 250,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: '800', color: 'var(--text-main)' }}>ADDITIONAL FILTERS</span>
+                  <button
+                    onClick={() => {
+                      setHasCreditNotes(null);
+                      setMinCreditNotes('');
+                      setMinPlacements('');
+                      setMinNet('');
+                      setMaxNet('');
+                      setSelectedSegment('all');
+                    }}
+                    style={{ border: 'none', background: 'transparent', color: '#DC2626', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}
+                  >
+                    Reset
+                  </button>
+                </div>
+
+                {/* Has Credit Notes Toggle */}
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-main)', cursor: 'pointer' }}>
+                    <span>Has Credit Notes / Reversals</span>
+                    <input
+                      type="checkbox"
+                      checked={hasCreditNotes === true}
+                      onChange={(e) => setHasCreditNotes(e.target.checked ? true : null)}
+                    />
+                  </label>
+                  {hasCreditNotes && (
+                    <input
+                      type="number"
+                      placeholder="Min CN Amount (₹)"
+                      value={minCreditNotes}
+                      onChange={(e) => setMinCreditNotes(e.target.value)}
+                      style={{
+                        marginTop: '6px',
+                        width: '100%',
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-main)',
+                        color: 'var(--text-main)',
+                        fontSize: '0.75rem'
+                      }}
+                    />
+                  )}
+                </div>
+
+                {/* Min Placements */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Min Placements (Deals)
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 5 deals"
+                    value={minPlacements}
+                    onChange={(e) => setMinPlacements(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-color)',
+                      background: 'var(--bg-main)',
+                      color: 'var(--text-main)',
+                      fontSize: '0.75rem'
+                    }}
+                  />
+                </div>
+
+                {/* Net Contribution Min/Max */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Net Contribution Range (₹)
+                  </label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="number"
+                      placeholder="Min ₹"
+                      value={minNet}
+                      onChange={(e) => setMinNet(e.target.value)}
+                      style={{
+                        width: '50%',
+                        padding: '6px 8px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-main)',
+                        color: 'var(--text-main)',
+                        fontSize: '0.74rem'
+                      }}
+                    />
+                    <input
+                      type="number"
+                      placeholder="Max ₹"
+                      value={maxNet}
+                      onChange={(e) => setMaxNet(e.target.value)}
+                      style={{
+                        width: '50%',
+                        padding: '6px 8px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-main)',
+                        color: 'var(--text-main)',
+                        fontSize: '0.74rem'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Segment Filter (if BD tab) */}
+                {activeDimension === 'bd' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      Segment / Tier
+                    </label>
+                    <select
+                      value={selectedSegment}
+                      onChange={(e) => setSelectedSegment(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--border-color)',
+                        background: 'var(--bg-main)',
+                        color: 'var(--text-main)',
+                        fontSize: '0.75rem'
+                      }}
+                    >
+                      <option value="all">All Segments</option>
+                      <option value="key account">Key Account</option>
+                      <option value="enterprise">Enterprise</option>
+                      <option value="regular">Regular</option>
+                    </select>
+                  </div>
+                )}
+
+                <button
+                  onClick={() => setIsMoreFiltersOpen(false)}
+                  style={{
+                    padding: '8px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: 'var(--accent-teal, #0F6E56)',
+                    color: '#ffffff',
+                    fontSize: '0.76rem',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Apply Filters
+                </button>
+              </div>
             )}
           </div>
         </div>
+
+        {/* Divider */}
+        <div style={{ width: '1px', height: '24px', background: 'var(--border-color)' }} />
+
+        {/* D. Sort Selector */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <select
+            value={sortField}
+            onChange={(e) => { setSortField(e.target.value); setCurrentPage(1); }}
+            style={{
+              padding: '6px 10px',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-main)',
+              color: 'var(--text-main)',
+              fontSize: '0.75rem',
+              fontWeight: '700',
+              cursor: 'pointer'
+            }}
+          >
+            <option value="net">Sort: Net Contribution</option>
+            <option value="cn">Sort: Credit Notes</option>
+            <option value="placements">Sort: Placements</option>
+            {activeDimension === 'bd' && <option value="net_per_enquiry">Sort: Net / Enquiry</option>}
+            {activeDimension === 'tl' && <option value="net_per_franchise">Sort: Net / Store</option>}
+            <option value="company_share">Sort: Company Share</option>
+          </select>
+
+          <button
+            onClick={() => setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')}
+            title={`Direction: ${sortDirection.toUpperCase()}`}
+            style={{
+              padding: '6px 8px',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-main)',
+              color: 'var(--text-main)',
+              fontSize: '0.75rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center'
+            }}
+          >
+            <ArrowUpDown size={14} />
+          </button>
+        </div>
+
+        {/* E. Debounced Search Box */}
+        <div style={{ position: 'relative', marginLeft: 'auto' }}>
+          <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input
+            type="text"
+            placeholder={`Search ${activeDimension.toUpperCase()}...`}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{
+              padding: '6px 28px 6px 28px',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-main)',
+              color: 'var(--text-main)',
+              fontSize: '0.78rem',
+              width: '180px'
+            }}
+          />
+          {searchTerm && (
+            <X 
+              size={12} 
+              onClick={() => { setSearchTerm(''); setDebouncedSearch(''); }} 
+              style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', color: 'var(--text-muted)' }} 
+            />
+          )}
+        </div>
       </div>
 
-      {/* 4. The Clean, Ranked Performance Ledger Table */}
+      {/* 5. Active Filters Removable Chips Bar */}
+      {isAnyFilterActive && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '14px', fontSize: '0.74rem' }}>
+          <span style={{ color: 'var(--text-muted)', fontWeight: '700' }}>Active Filters:</span>
+
+          {activeVerdict !== 'all' && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(15,110,86,0.1)', color: '#0F6E56', fontWeight: '700' }}>
+              Verdict: {activeVerdict}
+              <X size={12} style={{ cursor: 'pointer' }} onClick={() => setActiveVerdict('all')} />
+            </span>
+          )}
+
+          {selectedTls.map(tl => (
+            <span key={tl} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(59,130,246,0.1)', color: '#2563EB', fontWeight: '700' }}>
+              TL: {tl}
+              <X size={12} style={{ cursor: 'pointer' }} onClick={() => setSelectedTls(prev => prev.filter(x => x !== tl))} />
+            </span>
+          ))}
+
+          {selectedFranchises.map(f => (
+            <span key={f} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(139,92,246,0.1)', color: '#7C3AED', fontWeight: '700' }}>
+              Franchise: {f}
+              <X size={12} style={{ cursor: 'pointer' }} onClick={() => setSelectedFranchises(prev => prev.filter(x => x !== f))} />
+            </span>
+          ))}
+
+          {selectedCities.map(c => (
+            <span key={c} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(245,158,11,0.1)', color: '#D97706', fontWeight: '700' }}>
+              City: {c}
+              <X size={12} style={{ cursor: 'pointer' }} onClick={() => setSelectedCities(prev => prev.filter(x => x !== c))} />
+            </span>
+          ))}
+
+          {selectedIndustries.map(ind => (
+            <span key={ind} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(16,185,129,0.1)', color: '#059669', fontWeight: '700' }}>
+              Industry: {ind}
+              <X size={12} style={{ cursor: 'pointer' }} onClick={() => setSelectedIndustries(prev => prev.filter(x => x !== ind))} />
+            </span>
+          ))}
+
+          {hasCreditNotes !== null && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(239,68,68,0.1)', color: '#DC2626', fontWeight: '700' }}>
+              {hasCreditNotes ? 'Has Credit Notes' : 'No Credit Notes'}
+              <X size={12} style={{ cursor: 'pointer' }} onClick={() => setHasCreditNotes(null)} />
+            </span>
+          )}
+
+          {minPlacements && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontWeight: '700' }}>
+              Min Deals: {minPlacements}
+              <X size={12} style={{ cursor: 'pointer' }} onClick={() => setMinPlacements('')} />
+            </span>
+          )}
+
+          {debouncedSearch && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontWeight: '700' }}>
+              Search: "{debouncedSearch}"
+              <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setSearchTerm(''); setDebouncedSearch(''); }} />
+            </span>
+          )}
+
+          <button
+            onClick={handleClearAllFilters}
+            style={{ border: 'none', background: 'transparent', color: 'var(--accent-teal, #0F6E56)', fontWeight: '800', cursor: 'pointer', textDecoration: 'underline', padding: '2px 6px' }}
+          >
+            Clear all filters
+          </button>
+        </div>
+      )}
+
+      {/* 6. Main Unit Economics Table */}
       <div style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', marginBottom: '20px' }}>
         
         {/* Table Title Bar */}
         <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.01)' }}>
           <div>
             <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: '800', color: 'var(--text-main)' }}>
-              {activeDimension === 'bd' && 'Recruiter & BD Executive Unit Economics'}
+              {activeDimension === 'bd' && 'BD Executive & Recruiter Unit Economics'}
               {activeDimension === 'tl' && 'Team Leader Network Economics & Normalized Franchise Production'}
               {activeDimension === 'franchise' && 'Franchise Partner Commercial Ledger'}
-              {activeDimension === 'city' && 'City Territory Commercial Viability'}
+              {activeDimension === 'city' && 'City Regional Viability Ledger'}
               {activeDimension === 'industry' && 'Industry Vertical Profitability Margins'}
             </h3>
-            <p style={{ margin: '2px 0 0 0', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-              Sorted by <strong>{sortField === 'netPerFranchise' ? 'Net Contribution per Franchise' : 'Net Contribution'}</strong> descending • Click any row for deal drill-down
+            <p style={{ margin: '2px 0 0 0', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+              Sorted by <strong>{sortField === 'net' ? 'Net Contribution' : sortField}</strong> {sortDirection.toUpperCase()} • Click any row for deal-level drill-down
             </p>
           </div>
           <span style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--text-muted)' }}>
-            Showing {paginatedData.length} of {filteredData.length} records
+            Showing {paginatedData.length} of {allRows.length} records
           </span>
         </div>
 
-        {/* Table View */}
+        {/* Table Content */}
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
             <thead>
@@ -833,14 +1395,14 @@ const CostOfPerformance = () => {
                   </div>
                 </th>
 
-                {/* Team Leader Specific: Active Franchise Count (Section 4.6) */}
+                {/* Team Leader: Stores Count */}
                 {activeDimension === 'tl' && (
                   <th 
                     onClick={() => handleSort('activeFranchises')}
                     style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'center', userSelect: 'none' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                      <span>Active Franchises</span>
+                      <span>Active Stores</span>
                       <ArrowUpDown size={12} />
                     </div>
                   </th>
@@ -856,14 +1418,14 @@ const CostOfPerformance = () => {
                   </div>
                 </th>
 
-                {/* BD Specific: Enquiries Handled (Section 4.7) */}
+                {/* BD: Total Enquiries */}
                 {activeDimension === 'bd' && (
                   <th 
                     onClick={() => handleSort('enquiries')}
                     style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'center', userSelect: 'none' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                      <span>Total Enquiries</span>
+                      <span>Enquiries</span>
                       <ArrowUpDown size={12} />
                     </div>
                   </th>
@@ -879,7 +1441,7 @@ const CostOfPerformance = () => {
                   </div>
                 </th>
 
-                {/* Franchise-wise View: Payouts only (Section 8.2 Privacy) */}
+                {/* Franchise-wise View: Payouts */}
                 {activeDimension === 'franchise' ? (
                   <th 
                     onClick={() => handleSort('franchisee_payout')}
@@ -912,31 +1474,17 @@ const CostOfPerformance = () => {
                   </div>
                 </th>
 
-                {/* Net Contribution (The King Metric) */}
                 <th 
                   onClick={() => handleSort('netContribution')}
                   style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'right', userSelect: 'none' }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', color: 'var(--accent-teal, #0F6E56)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
                     <span>Net Contribution</span>
                     <ArrowUpDown size={12} />
                   </div>
                 </th>
 
-                {/* Team Leader: Net Contribution per Franchise (Section 4.6 Default Sort) */}
-                {activeDimension === 'tl' && (
-                  <th 
-                    onClick={() => handleSort('netPerFranchise')}
-                    style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'right', userSelect: 'none', color: '#3B82F6' }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                      <span>Net / Franchise</span>
-                      <ArrowUpDown size={12} />
-                    </div>
-                  </th>
-                )}
-
-                {/* BD: Net Surplus per Enquiry (Section 4.7 Effort Efficiency) */}
+                {/* BD Specific: Net Surplus per Enquiry */}
                 {activeDimension === 'bd' && (
                   <th 
                     onClick={() => handleSort('netSurplusPerEnquiry')}
@@ -949,50 +1497,111 @@ const CostOfPerformance = () => {
                   </th>
                 )}
 
+                {/* TL Specific: Net Per Franchise */}
+                {activeDimension === 'tl' && (
+                  <th 
+                    onClick={() => handleSort('netPerFranchise')}
+                    style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'right', userSelect: 'none' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                      <span>Net / Store</span>
+                      <ArrowUpDown size={12} />
+                    </div>
+                  </th>
+                )}
+
                 <th style={{ padding: '10px 14px', textAlign: 'center' }}>Verdict</th>
                 <th style={{ padding: '10px 14px', textAlign: 'center' }}>Audit</th>
               </tr>
             </thead>
             <tbody>
-              {paginatedData.length === 0 ? (
+              {loading ? (
+                // Skeleton Rows while Loading
+                [...Array(6)].map((_, idx) => (
+                  <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '24px' }}></div></td>
+                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '160px' }}></div></td>
+                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '40px', margin: '0 auto' }}></div></td>
+                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '80px', marginLeft: 'auto' }}></div></td>
+                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '80px', marginLeft: 'auto' }}></div></td>
+                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '60px', marginLeft: 'auto' }}></div></td>
+                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '90px', marginLeft: 'auto' }}></div></td>
+                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '80px', margin: '0 auto' }}></div></td>
+                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '50px', margin: '0 auto' }}></div></td>
+                  </tr>
+                ))
+              ) : paginatedData.length === 0 ? (
+                // Empty State
                 <tr>
-                  <td colSpan={12} style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    No records found matching your filter criteria.
+                  <td colSpan={12} style={{ padding: '40px 20px', textAlign: 'center' }}>
+                    <div style={{ maxWidth: '400px', margin: '0 auto', color: 'var(--text-muted)' }}>
+                      <AlertTriangle size={32} style={{ margin: '0 auto 12px auto', color: '#F59E0B' }} />
+                      <div style={{ fontSize: '0.96rem', fontWeight: '800', color: 'var(--text-main)', marginBottom: '6px' }}>
+                        No results for these filters
+                      </div>
+                      <p style={{ fontSize: '0.78rem', lineHeight: '1.4', marginBottom: '16px' }}>
+                        No records match the active combination of verdict, cross-filters, and search for this reporting period.
+                      </p>
+                      <button
+                        onClick={handleClearAllFilters}
+                        style={{
+                          padding: '8px 18px',
+                          borderRadius: '8px',
+                          border: 'none',
+                          background: 'var(--accent-teal, #0F6E56)',
+                          color: '#ffffff',
+                          fontSize: '0.78rem',
+                          fontWeight: '700',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Clear All Filters
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ) : (
                 paginatedData.map((d, index) => {
-                  const rank = (currentPage - 1) * itemsPerPage + index + 1;
+                  const rank = d.rank || ((currentPage - 1) * itemsPerPage + index + 1);
                   const isProfitable = d.netContribution >= 0;
+
+                  // Verdict Badge Colors
+                  let verdictBg = 'rgba(15,110,86,0.1)';
+                  let verdictColor = '#0F6E56';
+                  if (d.verdict === 'star') { verdictBg = 'rgba(16,185,129,0.12)'; verdictColor = '#059669'; }
+                  else if (d.verdict === 'healthy') { verdictBg = 'rgba(5,150,105,0.1)'; verdictColor = '#059669'; }
+                  else if (d.verdict === 'breakeven') { verdictBg = 'rgba(245,158,11,0.12)'; verdictColor = '#D97706'; }
+                  else if (d.verdict === 'at_risk') { verdictBg = 'rgba(234,88,12,0.12)'; verdictColor = '#EA580C'; }
+                  else if (d.verdict === 'loss') { verdictBg = 'rgba(220,38,38,0.12)'; verdictColor = '#DC2626'; }
 
                   return (
                     <tr 
-                      key={index}
+                      key={d.dimension_value || index}
                       onClick={() => handleRowClick(d)}
                       style={{ 
                         borderBottom: '1px solid var(--border-color)', 
                         cursor: 'pointer',
                         transition: 'background 0.15s ease',
-                        background: index % 2 === 0 ? 'var(--bg-card)' : 'rgba(0,0,0,0.015)'
+                        background: index % 2 === 0 ? 'var(--bg-card)' : 'rgba(0,0,0,0.012)'
                       }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(15, 110, 86, 0.05)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = index % 2 === 0 ? 'var(--bg-card)' : 'rgba(0,0,0,0.015)'}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(15, 110, 86, 0.04)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = index % 2 === 0 ? 'var(--bg-card)' : 'rgba(0,0,0,0.012)'}
                     >
                       {/* Rank */}
                       <td style={{ padding: '12px 14px', fontWeight: '800', color: rank <= 3 ? '#0F6E56' : 'var(--text-muted)' }}>
                         #{rank}
                       </td>
 
-                      {/* Name */}
+                      {/* Entity Name */}
                       <td style={{ padding: '12px 14px' }}>
-                        <div style={{ fontWeight: '700', color: 'var(--text-main)', fontSize: '0.86rem' }}>
+                        <div style={{ fontWeight: '700', color: 'var(--text-main)', fontSize: '0.84rem' }}>
                           {d.dimension_value}
                         </div>
                         {d.role && (
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{d.role}</span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{d.role}</span>
                         )}
                         {d.city && activeDimension === 'franchise' && (
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>📍 {d.city}</span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>📍 {d.city}</span>
                         )}
                       </td>
 
@@ -1011,7 +1620,7 @@ const CostOfPerformance = () => {
                       {/* BD: Total Enquiries */}
                       {activeDimension === 'bd' && (
                         <td style={{ padding: '12px 14px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: '600' }}>
-                          {d.enquiries}
+                          {d.enquiries || 0}
                         </td>
                       )}
 
@@ -1034,13 +1643,22 @@ const CostOfPerformance = () => {
 
                       {/* Net Contribution */}
                       <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                        <div style={{ fontWeight: '800', fontSize: '0.92rem', color: isProfitable ? '#10B981' : '#DC2626' }}>
+                        <div style={{ fontWeight: '800', fontSize: '0.88rem', color: isProfitable ? '#10B981' : '#DC2626' }}>
                           {isProfitable ? '+' : ''}{formatCurrency(d.netContribution)}
                         </div>
-                        <span style={{ fontSize: '0.7rem', color: isProfitable ? '#059669' : '#B91C1C' }}>
+                        <span style={{ fontSize: '0.68rem', color: isProfitable ? '#059669' : '#B91C1C' }}>
                           {d.netMarginPct}% margin
                         </span>
                       </td>
+
+                      {/* BD: Net Surplus per Enquiry */}
+                      {activeDimension === 'bd' && (
+                        <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                          <span style={{ fontWeight: '700', color: d.netSurplusPerEnquiry >= 0 ? '#10B981' : '#DC2626' }}>
+                            {d.netSurplusPerEnquiry >= 0 ? '+' : ''}{formatCurrency(d.netSurplusPerEnquiry)}
+                          </span>
+                        </td>
+                      )}
 
                       {/* TL: Net Per Franchise */}
                       {activeDimension === 'tl' && (
@@ -1051,34 +1669,38 @@ const CostOfPerformance = () => {
                         </td>
                       )}
 
-                      {/* BD: Net Surplus Per Enquiry */}
-                      {activeDimension === 'bd' && (
-                        <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                          <span style={{ fontWeight: '700', color: d.netSurplusPerEnquiry >= 0 ? '#10B981' : '#DC2626' }}>
-                            {d.netSurplusPerEnquiry >= 0 ? '+' : ''}{formatCurrency(d.netSurplusPerEnquiry)}
-                          </span>
-                        </td>
-                      )}
-
-                      {/* Verdict Badge */}
+                      {/* Verdict Pill */}
                       <td style={{ padding: '12px 14px', textAlign: 'center' }}>
                         <span style={{
-                          fontSize: '0.7rem',
-                          fontWeight: '700',
                           padding: '3px 8px',
                           borderRadius: '12px',
-                          background: `${d.verdictColor}15`,
-                          color: d.verdictColor,
-                          border: `1px solid ${d.verdictColor}30`,
-                          whiteSpace: 'nowrap'
+                          fontSize: '0.7rem',
+                          fontWeight: '800',
+                          background: verdictBg,
+                          color: verdictColor,
+                          display: 'inline-block'
                         }}>
-                          {d.verdict}
+                          {d.verdict_label}
                         </span>
                       </td>
 
-                      {/* Audit Arrow */}
-                      <td style={{ padding: '12px 14px', textAlign: 'center', color: 'var(--accent-teal)' }}>
-                        <ChevronRight size={16} />
+                      {/* Audit Action Button */}
+                      <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleRowClick(d); }}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-color)',
+                            background: 'var(--bg-main)',
+                            color: 'var(--accent-teal, #0F6E56)',
+                            fontSize: '0.72rem',
+                            fontWeight: '700',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Audit →
+                        </button>
                       </td>
                     </tr>
                   );
@@ -1088,35 +1710,117 @@ const CostOfPerformance = () => {
           </table>
         </div>
 
-        {/* Pagination Controls */}
-        {totalPages > 1 && (
-          <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Page {currentPage} of {totalPages}
-            </span>
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={(page) => setCurrentPage(page)}
-            />
+        {/* Clean True-Count Pagination Controls */}
+        <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+          
+          {/* Entries summary */}
+          <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+            {allRows.length > 0 ? (
+              <span>
+                Showing <strong>{itemsPerPage === 'all' ? 1 : (currentPage - 1) * itemsPerPage + 1}</strong> to <strong>{itemsPerPage === 'all' ? allRows.length : Math.min(currentPage * itemsPerPage, allRows.length)}</strong> of <strong>{allRows.length}</strong> records
+              </span>
+            ) : (
+              <span>0 records</span>
+            )}
           </div>
-        )}
+
+          {/* Rows per page selector & page buttons */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+              <span>Rows:</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(e.target.value === 'all' ? 'all' : Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-color)',
+                  background: 'var(--bg-main)',
+                  color: 'var(--text-main)',
+                  fontSize: '0.74rem',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+
+            {itemsPerPage !== 'all' && totalPages > 1 && (
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-main)',
+                    color: currentPage === 1 ? 'var(--text-muted)' : 'var(--text-main)',
+                    fontSize: '0.74rem',
+                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  Prev
+                </button>
+                {[...Array(totalPages)].map((_, i) => (
+                  <button
+                    key={i + 1}
+                    onClick={() => setCurrentPage(i + 1)}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      border: currentPage === i + 1 ? '1px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
+                      background: currentPage === i + 1 ? 'var(--accent-teal, #0F6E56)' : 'var(--bg-main)',
+                      color: currentPage === i + 1 ? '#ffffff' : 'var(--text-main)',
+                      fontSize: '0.74rem',
+                      fontWeight: '700',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+                <button
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--bg-main)',
+                    color: currentPage === totalPages ? 'var(--text-muted)' : 'var(--text-main)',
+                    fontSize: '0.74rem',
+                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* 5. Drill-Down Audit Drawer */}
+      {/* 7. Universal Audit Drawer Drill-Down */}
       <AuditDrawer
-        isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
+        isOpen={isAuditDrawerOpen}
+        onClose={() => setIsAuditDrawerOpen(false)}
         entityType={activeDimension === 'franchise' ? 'franchisee' : activeDimension}
-        entityId={selectedEntity?.dimension_value || ''}
-        entityName={selectedEntity?.dimension_value || ''}
-        entityRole={selectedEntity?.role || ''}
-        month={selectedMonth === 'All Months' ? 'all' : selectedMonth}
-        financialYear={selectedYear}
+        entityId={selectedAuditEntity?.dimension_value || ''}
+        entityName={selectedAuditEntity?.dimension_value || ''}
+        entityRole={selectedAuditEntity?.role || ''}
+        month={cleanMonth}
+        financialYear={cleanFy}
       />
 
-
-      {/* 6. Cost Inputs Modal (Section 3.2 Monthly Cost Inputs) */}
+      {/* 8. Monthly Cost Inputs Modal */}
       {isInputModalOpen && (
         <div style={{
           position: 'fixed',
@@ -1147,7 +1851,7 @@ const CostOfPerformance = () => {
                   Monthly Cost & Payroll Inputs
                 </h3>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Updates direct seat costs and shared overhead pool for {selectedMonth}
+                  Configures direct seat costs and shared overhead pool for {cleanMonth}
                 </span>
               </div>
               <button
@@ -1207,7 +1911,7 @@ const CostOfPerformance = () => {
                 Cancel
               </button>
               <button
-                onClick={() => setIsInputModalOpen(false)}
+                onClick={() => { setIsInputModalOpen(false); fetchReport(); }}
                 style={{ padding: '8px 18px', borderRadius: '6px', border: 'none', background: 'var(--accent-teal, #0F6E56)', color: '#ffffff', fontSize: '0.82rem', fontWeight: '700', cursor: 'pointer' }}
               >
                 Apply & Recalculate
