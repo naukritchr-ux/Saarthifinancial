@@ -696,6 +696,7 @@ export default function CostOfPerformance() {
                 </button>
               );
             })}
+            </div>
           </div>
 
           {/* Search Box & Page Size */}
