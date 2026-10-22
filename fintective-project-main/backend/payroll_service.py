@@ -5,6 +5,9 @@ import datetime
 import requests
 from typing import Dict, List, Any, Optional
 
+CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cache')
+os.makedirs(CACHE_DIR, exist_ok=True)
+
 # Matches by first word + last word of the name, ignoring case, extra spaces and symbols
 def name_key(name: str) -> str:
     if not name:

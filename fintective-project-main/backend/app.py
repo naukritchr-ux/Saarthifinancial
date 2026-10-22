@@ -128,7 +128,7 @@ _clients_lock = threading.Lock()
 CLIENTS_CACHE_TTL_SECONDS = 300  # 5 minutes
 
 # Bug B: Data versioning across all worker processes
-_data_version_cache = {'version': 1, 'as_of': None, 'time': 0}
+_data_version_cache = {'version': 2, 'as_of': None, 'time': 0}
 _data_version_lock = threading.Lock()
 
 def get_data_version(force=False):
@@ -839,16 +839,54 @@ def get_transactions():
                         'financialYear': row['financialYear']
                     })
 
-                # B. Fetch Actual Salaries from CRM Payroll System (Fix 6 / live payroll API)
+                # B. Fetch Actual Salaries from CRM Payroll System (payroll_records table)
                 try:
-                    from payroll_service import get_all_payroll_transactions
-                    payroll_txs = get_all_payroll_transactions()
-                    for ptx in payroll_txs:
-                        p_copy = dict(ptx)
-                        emp_n = (p_copy.get('employeeName') or '').strip().lower()
-                        if emp_n and emp_n in bd_map:
-                            p_copy['bdAgentId'] = bd_map[emp_n]
-                        combined.append(p_copy)
+                    cursor.execute("""
+                        SELECT id, employee_id, employee_name, department, financial_year,
+                               DATE_FORMAT(date, '%Y-%m-%d') as date, ctc_amount, net_payable,
+                               fixed_gross, paid_days, category, sub_category, payment_mode,
+                               reference_id, description
+                        FROM payroll_records
+                        ORDER BY date DESC
+                    """)
+                    payroll_db_rows = cursor.fetchall()
+                    if payroll_db_rows:
+                        for pr in payroll_db_rows:
+                            emp_n = (pr.get('employee_name') or '').strip().lower()
+                            bd_id = bd_map.get(emp_n) if emp_n else None
+                            p_date = str(pr['date'])[:10]
+                            fy_val = pr.get('financial_year') or '2026-2027'
+                            combined.append({
+                                'id': pr['id'],
+                                'title': f"Salary: {pr['employee_name']}",
+                                'companyName': f"Payroll ({p_date[:7]})",
+                                'amount': float(pr.get('ctc_amount') or 0),
+                                'type': 'expense',
+                                'category': 'Salaries',
+                                'subCategory': pr.get('sub_category') or 'Salaries & Wages',
+                                'date': p_date,
+                                'paymentMode': pr.get('payment_mode') or 'Direct Bank Transfer',
+                                'referenceId': pr.get('reference_id') or f"PAY-{pr['id']}",
+                                'description': pr.get('description') or f"Payroll CTC for {pr['employee_name']}",
+                                'financialYear': fy_val,
+                                'is_payroll': True,
+                                'bdAgentId': bd_id,
+                                'employeeId': pr.get('employee_id'),
+                                'employeeName': pr.get('employee_name'),
+                                'department': pr.get('department'),
+                                'netPayable': float(pr.get('net_payable') or 0),
+                                'fixedGross': float(pr.get('fixed_gross') or 0),
+                                'paidDays': float(pr.get('paid_days') or 0)
+                            })
+                    else:
+                        from payroll_service import get_all_payroll_transactions
+                        payroll_txs = get_all_payroll_transactions()
+                        for ptx in payroll_txs:
+                            p_copy = dict(ptx)
+                            emp_n = (p_copy.get('employeeName') or '').strip().lower()
+                            if emp_n and emp_n in bd_map:
+                                p_copy['bdAgentId'] = bd_map[emp_n]
+                            combined.append(p_copy)
                 except Exception as sal_err:
                     print('[Payroll] Error loading payroll transactions:', str(sal_err))
 
