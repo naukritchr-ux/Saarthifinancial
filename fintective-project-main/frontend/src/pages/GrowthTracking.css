@@ -1,0 +1,316 @@
+/* GrowthTracking.css - Scoped styles for Growth Targets & Horizon Worklist */
+
+.growth-tracking-page {
+  padding: 24px;
+  max-width: 1440px;
+  margin: 0 auto;
+  color: var(--text-main, #0f172a);
+}
+
+/* 4-Tab Navigation */
+.growth-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  padding: 6px;
+  margin-top: 18px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.growth-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #64748b);
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.growth-tab-btn:hover {
+  color: var(--text-main, #0f172a);
+  background: var(--bg-main, #f8fafc);
+}
+
+.growth-tab-btn.active {
+  background: var(--accent-teal, #0F6E56);
+  color: #ffffff;
+  box-shadow: 0 2px 4px rgba(15, 110, 86, 0.2);
+}
+
+.growth-tab-count {
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.growth-tab-btn.active .growth-tab-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+/* Overview: Pacing Banner */
+.growth-pacing-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(90deg, rgba(15, 110, 86, 0.08) 0%, rgba(37, 99, 235, 0.05) 100%);
+  border: 1px solid rgba(15, 110, 86, 0.22);
+  border-radius: 8px;
+  padding: 12px 18px;
+  margin-bottom: 18px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.growth-pacing-text {
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--text-main, #0f172a);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Overview: FY Progress Bar Card */
+.fy-progress-card {
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.fy-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.fy-progress-track {
+  position: relative;
+  width: 100%;
+  height: 18px;
+  background: #f1f5f9;
+  border-radius: 9px;
+  overflow: visible;
+  margin: 16px 0 24px 0;
+}
+
+.fy-progress-fill-actual {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: #0F6E56;
+  border-radius: 9px 0 0 9px;
+  transition: width 0.3s ease;
+  z-index: 2;
+}
+
+.fy-progress-fill-projected {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(37, 99, 235, 0.25),
+    rgba(37, 99, 235, 0.25) 6px,
+    rgba(37, 99, 235, 0.45) 6px,
+    rgba(37, 99, 235, 0.45) 12px
+  );
+  border-radius: 9px;
+  transition: width 0.3s ease;
+  z-index: 1;
+}
+
+.fy-progress-marker {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 3px;
+  z-index: 3;
+  transform: translateX(-50%);
+}
+
+.fy-progress-marker-tag {
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.fy-progress-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color, #e2e8f0);
+}
+
+.fy-stat-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fy-stat-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.fy-stat-value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-main, #0f172a);
+}
+
+.fy-stat-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted, #64748b);
+}
+
+/* Same-Period Benchmark Table */
+.same-period-card {
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin-top: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.same-period-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.same-period-table th {
+  text-align: left;
+  padding: 10px 14px;
+  background: var(--bg-main, #f8fafc);
+  color: var(--text-muted, #64748b);
+  font-weight: 700;
+  font-size: 0.74rem;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  letter-spacing: 0.02em;
+}
+
+.same-period-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  color: var(--text-main, #0f172a);
+}
+
+.same-period-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Plan Ahead: Growth Controls */
+.growth-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.preset-chip-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-main, #f8fafc);
+  padding: 3px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #e2e8f0);
+}
+
+.preset-chip {
+  padding: 5px 12px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #64748b);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.preset-chip.active {
+  background: var(--accent-teal, #0F6E56);
+  color: #ffffff;
+}
+
+.plan-ahead-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  margin-top: 16px;
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.plan-ahead-table th {
+  padding: 10px 16px;
+  background: var(--bg-main, #f8fafc);
+  color: var(--text-muted, #64748b);
+  font-weight: 700;
+  font-size: 0.74rem;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  text-align: left;
+}
+
+.plan-ahead-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  color: var(--text-main, #0f172a);
+}
+
+.plan-ahead-table tr:last-child td {
+  border-bottom: none;
+}
+
+@media (max-width: 768px) {
+  .growth-tracking-page {
+    padding: 14px;
+  }
+  .growth-tab-bar {
+    overflow-x: auto;
+  }
+  .fy-progress-stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}

@@ -376,36 +376,479 @@ export const TrajectoryLineChart = ({
 };
 
 /**
- * Target vs Actual Mini Bar Comparison Component
+ * Cumulative FY Progression Chart
+ * Features:
+ * - Actual cumulative curve (solid line)
+ * - Projected at current pace (dashed line)
+ * - Target path / Company quota (grey line)
+ * - Monthly bars at the bottom
  */
-export const TargetVsActualBar = ({ targetPct = 0, actualPct = 0, width = 140 }) => {
-  const maxPct = Math.max(targetPct, Math.abs(actualPct), 20) * 1.15;
-  const targetWidth = Math.min(100, Math.max(6, (targetPct / maxPct) * 100));
-  const actualWidth = Math.min(100, Math.max(6, (Math.abs(actualPct) / maxPct) * 100));
-  const isOver = actualPct >= targetPct;
+export const CumulativeTargetChart = ({
+  monthlySeries = [],
+  companyQuota = {},
+  monthsElapsed = 7,
+  projectedTotal = 0,
+  measure = 'deals', // 'deals' or 'revenue'
+  height = 200
+}) => {
+  const isRev = measure === 'revenue';
+  const months = monthlySeries.length > 0 ? monthlySeries : [
+    { month_label: "Apr", invoiced: 0, invoiced_revenue: 0 },
+    { month_label: "May", invoiced: 0, invoiced_revenue: 0 },
+    { month_label: "Jun", invoiced: 0, invoiced_revenue: 0 },
+    { month_label: "Jul", invoiced: 0, invoiced_revenue: 0 },
+    { month_label: "Aug", invoiced: 0, invoiced_revenue: 0 },
+    { month_label: "Sep", invoiced: 0, invoiced_revenue: 0 },
+    { month_label: "Oct", invoiced: 0, invoiced_revenue: 0 },
+    { month_label: "Nov", invoiced: 0, invoiced_revenue: 0 },
+    { month_label: "Dec", invoiced: 0, invoiced_revenue: 0 },
+    { month_label: "Jan", invoiced: 0, invoiced_revenue: 0 },
+    { month_label: "Feb", invoiced: 0, invoiced_revenue: 0 },
+    { month_label: "Mar", invoiced: 0, invoiced_revenue: 0 }
+  ];
+
+  const quotaVal = isRev ? Number(companyQuota?.quota_revenue || 0) : Number(companyQuota?.quota_deals || 0);
+
+  // Calculate monthly values & cumulative actuals
+  let runningActual = 0;
+  const monthData = months.map((m, idx) => {
+    const val = isRev ? Number(m.invoiced_revenue || 0) : Number(m.invoiced || 0);
+    const hasElapsed = idx < monthsElapsed;
+    if (hasElapsed) {
+      runningActual += val;
+    }
+    return {
+      label: m.month_label ? m.month_label.split(' ')[0] : `M${idx + 1}`,
+      monthlyVal: val,
+      hasElapsed,
+      cumActual: hasElapsed ? runningActual : null
+    };
+  });
+
+  const lastActual = runningActual;
+  const pacePerMonth = monthsElapsed > 0 ? lastActual / monthsElapsed : 0;
+  const projectedEnd = projectedTotal > 0 ? projectedTotal : Math.round(lastActual + pacePerMonth * Math.max(0, 12 - monthsElapsed));
+
+  // Build projected points from current elapsed month to month 12
+  const projectedData = monthData.map((m, idx) => {
+    if (idx < monthsElapsed - 1) return null;
+    if (idx === monthsElapsed - 1) return lastActual;
+    const remainingIdx = idx - (monthsElapsed - 1);
+    return Math.round(lastActual + pacePerMonth * remainingIdx);
+  });
+
+  const maxVal = Math.max(quotaVal, projectedEnd, lastActual, 10) * 1.15;
+
+  const width = 680;
+  const paddingL = 50;
+  const paddingR = 30;
+  const paddingT = 20;
+  const paddingB = 30;
+  const plotW = width - paddingL - paddingR;
+  const plotH = height - paddingT - paddingB;
+
+  // Max monthly bar value for bar heights
+  const maxMonthly = Math.max(...monthData.map(m => m.monthlyVal), 1);
+  const barMaxH = plotH * 0.35; // Monthly bars take bottom 35%
+
+  const getX = (idx) => paddingL + (idx / 11) * plotW;
+  const getY = (val) => paddingT + plotH - (val / maxVal) * plotH;
+
+  // Target line path: (0,0) to (11, quotaVal)
+  const targetPath = `M ${getX(0)},${getY(quotaVal / 12)} L ${getX(11)},${getY(quotaVal)}`;
+
+  // Actual line path
+  const actualCoords = monthData
+    .filter(m => m.hasElapsed)
+    .map((m, idx) => `${getX(idx)},${getY(m.cumActual)}`);
+  const actualPath = actualCoords.length > 0 ? `M ${actualCoords.join(' L ')}` : '';
+
+  // Projected line path
+  const projCoords = monthData
+    .map((m, idx) => {
+      const pVal = projectedData[idx];
+      return pVal !== null ? `${getX(idx)},${getY(pVal)}` : null;
+    })
+    .filter(Boolean);
+  const projPath = projCoords.length > 0 ? `M ${projCoords.join(' L ')}` : '';
+
+  // 4 Y-ticks
+  const yTicks = [0, maxVal * 0.33, maxVal * 0.66, maxVal];
+
+  const formatVal = (v) => {
+    if (isRev) {
+      return v >= 10000000 ? `₹${(v / 10000000).toFixed(1)}Cr` : (v >= 100000 ? `₹${(v / 100000).toFixed(0)}L` : `₹${Math.round(v).toLocaleString()}`);
+    }
+    return Math.round(v).toString();
+  };
 
   return (
-    <div style={{ width: `${width}px`, display: 'flex', flexDirection: 'column', gap: '3px' }}>
-      {/* Target Bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem' }}>
-        <span style={{ width: '22px', color: 'var(--text-muted)', fontSize: '0.65rem', fontWeight: '600' }}>Tgt:</span>
-        <div style={{ flex: 1, height: '6px', backgroundColor: 'var(--border-color)', borderRadius: '3px', overflow: 'hidden' }}>
-          <div style={{ width: `${targetWidth}%`, height: '100%', backgroundColor: 'var(--accent-teal)', borderRadius: '3px' }}></div>
+    <div style={{ width: '100%', background: 'var(--bg-main)', borderRadius: '8px', border: '1px solid var(--border-color)', padding: '16px' }}>
+      {/* Legend & Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '0.84rem', fontWeight: '700', color: 'var(--text-main)' }}>
+            Cumulative FY Trajectory vs Quota ({isRev ? 'Revenue' : 'Deals'})
+          </span>
         </div>
-        <span style={{ width: '32px', textAlign: 'right', fontWeight: '600', color: 'var(--text-main)', fontSize: '0.68rem' }}>+{targetPct.toFixed(0)}%</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '0.74rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '14px', height: '3px', backgroundColor: '#0F6E56', display: 'inline-block', borderRadius: '2px' }} />
+            <span style={{ color: 'var(--text-main)', fontWeight: '600' }}>Actual YTD ({formatVal(lastActual)})</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '14px', height: '3px', borderTop: '2px dashed #2563EB', display: 'inline-block' }} />
+            <span style={{ color: 'var(--text-muted)' }}>Projected at pace ({formatVal(projectedEnd)})</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '14px', height: '2px', backgroundColor: '#94a3b8', display: 'inline-block' }} />
+            <span style={{ color: 'var(--text-muted)' }}>Target path ({formatVal(quotaVal)})</span>
+          </div>
+        </div>
       </div>
 
-      {/* Actual Bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.7rem' }}>
-        <span style={{ width: '22px', color: 'var(--text-muted)', fontSize: '0.65rem', fontWeight: '600' }}>Act:</span>
-        <div style={{ flex: 1, height: '6px', backgroundColor: 'var(--border-color)', borderRadius: '3px', overflow: 'hidden' }}>
-          <div style={{ width: `${actualWidth}%`, height: '100%', backgroundColor: isOver ? '#0F6E56' : '#A8402E', borderRadius: '3px' }}></div>
-        </div>
-        <span style={{ width: '32px', textAlign: 'right', fontWeight: '700', color: isOver ? '#0F6E56' : '#A8402E', fontSize: '0.68rem' }}>
-          {actualPct >= 0 ? '+' : ''}{actualPct.toFixed(0)}%
-        </span>
-      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        {/* Horizontal grid lines & Y ticks */}
+        {yTicks.map((tVal, i) => {
+          const y = getY(tVal);
+          return (
+            <g key={i}>
+              <line x1={paddingL} y1={y} x2={width - paddingR} y2={y} stroke="var(--border-color)" strokeWidth="1" strokeDasharray="3 3" opacity={0.6} />
+              <text x={paddingL - 8} y={y + 4} textAnchor="end" fill="var(--text-muted)" fontSize="8.5" fontWeight="600">
+                {formatVal(tVal)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Monthly background bars at bottom */}
+        {monthData.map((m, idx) => {
+          const x = getX(idx) - 8;
+          const barH = (m.monthlyVal / maxMonthly) * barMaxH;
+          const y = paddingT + plotH - barH;
+          return (
+            <g key={idx}>
+              <rect
+                x={x}
+                y={y}
+                width={16}
+                height={barH}
+                fill={m.hasElapsed ? 'rgba(15, 110, 86, 0.16)' : 'rgba(148, 163, 184, 0.08)'}
+                rx={2}
+              >
+                <title>{`${m.label}: ${formatVal(m.monthlyVal)} (${m.hasElapsed ? 'closed' : 'upcoming'})`}</title>
+              </rect>
+              {/* X Axis Label */}
+              <text x={getX(idx)} y={height - 10} textAnchor="middle" fill="var(--text-muted)" fontSize="8" fontWeight="600">
+                {m.label}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Target Path Line */}
+        {quotaVal > 0 && (
+          <path d={targetPath} fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="4 4" />
+        )}
+
+        {/* Projected Pace Path */}
+        {projPath && (
+          <path d={projPath} fill="none" stroke="#2563EB" strokeWidth="2.2" strokeDasharray="4 4" strokeLinecap="round" />
+        )}
+
+        {/* Actual Cumulative Path */}
+        {actualPath && (
+          <path d={actualPath} fill="none" stroke="#0F6E56" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        )}
+
+        {/* Actual Points */}
+        {monthData.filter(m => m.hasElapsed).map((m, idx) => (
+          <circle
+            key={idx}
+            cx={getX(idx)}
+            cy={getY(m.cumActual)}
+            r={idx === monthsElapsed - 1 ? 4.5 : 3}
+            fill="#0F6E56"
+            stroke="#FFFFFF"
+            strokeWidth="1.5"
+          >
+            <title>{`${m.label} YTD: ${formatVal(m.cumActual)}`}</title>
+          </circle>
+        ))}
+
+        {/* Final Projected Node */}
+        {projectedData[11] !== null && (
+          <circle
+            cx={getX(11)}
+            cy={getY(projectedData[11])}
+            r={4}
+            fill="#2563EB"
+            stroke="#FFFFFF"
+            strokeWidth="1.5"
+          >
+            <title>{`March FY Projected Total: ${formatVal(projectedData[11])}`}</title>
+          </circle>
+        )}
+      </svg>
     </div>
   );
 };
+
+
+/**
+ * Plan Ahead Trajectory Chart (2-line comparison: If unchanged vs With +X% goal)
+ * Features:
+ * - Completed FYs as solid points
+ * - Current FY as a hollow point (YTD / Projected)
+ * - Two forward lines (If unchanged vs With +X% goal)
+ * - Y-axis starting strictly at 0 with 4-5 ticks
+ * - Labels ONLY on the last point (Year +5); tooltips on hover for others
+ */
+export const PlanAheadTrajectoryChart = ({
+  historicalSeries = [],
+  projections = [],
+  appliedRate = 0.15,
+  historicalCagr = null,
+  height = 220
+}) => {
+  // If fewer than 2 completed FYs exist, display clean message
+  const completedFys = (historicalSeries || []).filter(h => h.is_complete && Number(h.revenue || 0) > 0);
+  const currentFy = (historicalSeries || []).find(h => !h.is_complete && Number(h.revenue || 0) > 0);
+
+  if (completedFys.length < 2) {
+    return (
+      <div style={{
+        width: '100%',
+        background: 'var(--bg-main)',
+        borderRadius: '8px',
+        border: '1px solid var(--border-color)',
+        padding: '24px 20px',
+        textAlign: 'center',
+        color: 'var(--text-muted)'
+      }}>
+        <div style={{ fontSize: '1.2rem', marginBottom: '8px' }}>—</div>
+        <div style={{ fontSize: '0.86rem', fontWeight: '600', color: 'var(--text-main)' }}>
+          Not enough completed financial years
+        </div>
+        <p style={{ fontSize: '0.78rem', margin: '6px 0 0 0', color: 'var(--text-muted)' }}>
+          At least 2 completed financial years are required to calculate a historical CAGR and reliable multi-year forward trajectory. Projections are never extrapolated from a partial year.
+        </p>
+      </div>
+    );
+  }
+
+  const baseRev = completedFys[completedFys.length - 1].revenue;
+  const passiveRate = (historicalCagr !== null && historicalCagr > 0) ? historicalCagr : 0.0;
+  const goalRate = appliedRate || 0.15;
+
+  // Build unified points list:
+  // 1. Completed FYs
+  // 2. Current FY (hollow point)
+  // 3. 5 forward projected points for both lines
+  const histPoints = completedFys.map(c => ({
+    label: c.period,
+    val: c.revenue,
+    type: 'completed'
+  }));
+
+  const currentPoint = currentFy ? {
+    label: `${currentFy.period} (YTD)`,
+    val: currentFy.revenue,
+    projVal: currentFy.run_rate_projection || currentFy.revenue,
+    type: 'current'
+  } : null;
+
+  // 5 future years (Year +1 to +5)
+  const forwardPoints = [];
+  for (let t = 1; t <= 5; t++) {
+    const passiveVal = Math.round(baseRev * Math.pow(1.0 + passiveRate, t));
+    const goalVal = Math.round(baseRev * Math.pow(1.0 + goalRate, t));
+    forwardPoints.push({
+      label: `Yr +${t}`,
+      yearIdx: t,
+      passiveVal,
+      goalVal
+    });
+  }
+
+  const allVals = [
+    ...completedFys.map(c => c.revenue),
+    currentPoint ? currentPoint.projVal : 0,
+    ...forwardPoints.map(f => f.goalVal),
+    ...forwardPoints.map(f => f.passiveVal)
+  ];
+  const maxVal = Math.max(...allVals, 100000) * 1.15;
+
+  const width = 680;
+  const paddingL = 50;
+  const paddingR = 40;
+  const paddingT = 24;
+  const paddingB = 32;
+  const plotW = width - paddingL - paddingR;
+  const plotH = height - paddingT - paddingB;
+
+  const totalCols = histPoints.length + (currentPoint ? 1 : 0) + forwardPoints.length;
+  const getX = (colIdx) => paddingL + (colIdx / (totalCols - 1)) * plotW;
+  const getY = (val) => paddingT + plotH - (val / maxVal) * plotH;
+
+  // 4 Y-ticks starting strictly at 0
+  const yTicks = [0, maxVal * 0.25, maxVal * 0.50, maxVal * 0.75, maxVal];
+
+  const formatRev = (v) => {
+    return v >= 10000000 ? `₹${(v / 10000000).toFixed(2)}Cr` : (v >= 100000 ? `₹${(v / 100000).toFixed(1)}L` : `₹${Math.round(v).toLocaleString()}`);
+  };
+
+  // Historical path coordinates
+  const histCoords = histPoints.map((p, idx) => ({ x: getX(idx), y: getY(p.val) }));
+  const histPath = `M ${histCoords.map(c => `${c.x},${c.y}`).join(' L ')}`;
+
+  // Starting anchor for forward lines is the last completed point
+  const anchorX = histCoords[histCoords.length - 1].x;
+  const anchorY = histCoords[histCoords.length - 1].y;
+
+  const baseColOffset = histPoints.length + (currentPoint ? 1 : 0);
+
+  const passiveCoords = [
+    { x: anchorX, y: anchorY },
+    ...forwardPoints.map((f, i) => ({ x: getX(baseColOffset + i), y: getY(f.passiveVal) }))
+  ];
+  const passivePath = `M ${passiveCoords.map(c => `${c.x},${c.y}`).join(' L ')}`;
+
+  const goalCoords = [
+    { x: anchorX, y: anchorY },
+    ...forwardPoints.map((f, i) => ({ x: getX(baseColOffset + i), y: getY(f.goalVal) }))
+  ];
+  const goalPath = `M ${goalCoords.map(c => `${c.x},${c.y}`).join(' L ')}`;
+
+  const lastPassive = forwardPoints[4]?.passiveVal || 0;
+  const lastGoal = forwardPoints[4]?.goalVal || 0;
+  const lastGoalX = getX(totalCols - 1);
+
+  return (
+    <div style={{ width: '100%', background: 'var(--bg-main)', borderRadius: '8px', border: '1px solid var(--border-color)', padding: '16px' }}>
+      {/* Header & Legend */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '0.84rem', fontWeight: '700', color: 'var(--text-main)' }}>
+            Forward Horizon: Baseline vs +{Math.round(goalRate * 100)}% Goal Path
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '0.74rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '14px', height: '3px', backgroundColor: '#0F6E56', display: 'inline-block', borderRadius: '2px' }} />
+            <span style={{ color: 'var(--text-main)', fontWeight: '600' }}>Completed FYs</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', border: '2px solid #2563EB', backgroundColor: '#FFFFFF', display: 'inline-block' }} />
+            <span style={{ color: 'var(--text-muted)' }}>Current FY (Hollow)</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '14px', height: '3px', backgroundColor: '#94a3b8', display: 'inline-block', borderRadius: '2px' }} />
+            <span style={{ color: 'var(--text-muted)' }}>If unchanged</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '14px', height: '3px', backgroundColor: '#10B981', display: 'inline-block', borderRadius: '2px' }} />
+            <span style={{ color: '#0F6E56', fontWeight: '700' }}>With +{Math.round(goalRate * 100)}% goal</span>
+          </div>
+        </div>
+      </div>
+
+      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+        {/* Horizontal grid lines & Y ticks from 0 */}
+        {yTicks.map((tVal, i) => {
+          const y = getY(tVal);
+          return (
+            <g key={i}>
+              <line x1={paddingL} y1={y} x2={width - paddingR} y2={y} stroke="var(--border-color)" strokeWidth="1" strokeDasharray="3 3" opacity={0.6} />
+              <text x={paddingL - 8} y={y + 3.5} textAnchor="end" fill="var(--text-muted)" fontSize="8.5" fontWeight="600">
+                {formatRev(tVal)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Lines */}
+        <path d={histPath} fill="none" stroke="#0F6E56" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={passivePath} fill="none" stroke="#94a3b8" strokeWidth="2" strokeDasharray="3 3" strokeLinecap="round" />
+        <path d={goalPath} fill="none" stroke="#10B981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+
+        {/* Completed FY solid points */}
+        {histPoints.map((p, idx) => (
+          <g key={idx}>
+            <circle cx={getX(idx)} cy={getY(p.val)} r={4.5} fill="#0F6E56" stroke="#FFFFFF" strokeWidth="1.5">
+              <title>{`${p.label}: ${formatRev(p.val)}`}</title>
+            </circle>
+            <text x={getX(idx)} y={height - 10} textAnchor="middle" fill="var(--text-muted)" fontSize="8" fontWeight="600">
+              {p.label}
+            </text>
+          </g>
+        ))}
+
+        {/* Current FY hollow point */}
+        {currentPoint && (
+          <g>
+            <circle
+              cx={getX(histPoints.length)}
+              cy={getY(currentPoint.val)}
+              r={5}
+              fill="#FFFFFF"
+              stroke="#2563EB"
+              strokeWidth="2.5"
+            >
+              <title>{`${currentPoint.label}: ${formatRev(currentPoint.val)} (Run-rate: ${formatRev(currentPoint.projVal)})`}</title>
+            </circle>
+            <text x={getX(histPoints.length)} y={height - 10} textAnchor="middle" fill="#2563EB" fontSize="8" fontWeight="700">
+              {currentPoint.label.split(' ')[0]}*
+            </text>
+          </g>
+        )}
+
+        {/* Forward Projected Points (Year +1 to +5) */}
+        {forwardPoints.map((f, i) => {
+          const colIdx = baseColOffset + i;
+          const isLast = i === 4;
+          return (
+            <g key={i}>
+              {/* Passive point */}
+              <circle cx={getX(colIdx)} cy={getY(f.passiveVal)} r={isLast ? 4 : 3} fill="#94a3b8">
+                <title>{`Year +${f.yearIdx} (If unchanged): ${formatRev(f.passiveVal)}`}</title>
+              </circle>
+              {/* Goal point */}
+              <circle cx={getX(colIdx)} cy={getY(f.goalVal)} r={isLast ? 5 : 3.5} fill="#10B981" stroke="#FFFFFF" strokeWidth="1.5">
+                <title>{`Year +${f.yearIdx} (With +${Math.round(goalRate * 100)}%): ${formatRev(f.goalVal)}`}</title>
+              </circle>
+              {/* X label */}
+              <text x={getX(colIdx)} y={height - 10} textAnchor="middle" fill="var(--text-muted)" fontSize="8" fontWeight="600">
+                {f.label}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Labels ONLY on the last point (Year +5) */}
+        <text
+          x={lastGoalX + 8}
+          y={getY(lastGoal) + 3}
+          textAnchor="start"
+          fill="#0F6E56"
+          fontSize="8.5"
+          fontWeight="700"
+        >
+          {formatRev(lastGoal)}
+        </text>
+        <text
+          x={lastGoalX + 8}
+          y={getY(lastPassive) + 3}
+          textAnchor="start"
+          fill="#64748b"
+          fontSize="8"
+          fontWeight="600"
+        >
+          {formatRev(lastPassive)}
+        </text>
+      </svg>
+    </div>
+  );
+};
+
 

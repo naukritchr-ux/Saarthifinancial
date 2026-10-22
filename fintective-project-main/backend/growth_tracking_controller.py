@@ -163,24 +163,48 @@ def _resolve_entity_info(cursor, entity_type, entity_id, explicit_name=None):
 
 
 def _normalize_fy(raw):
-    """Normalizes fiscal year string to standard YYYY-YYYY format (e.g. '2025-26' -> '2025-2026')."""
+    """
+    Normalizes fiscal year string to standard 'YYYY-YY' format (e.g. '2025-26').
+    Removes bogus '2025-2025' buckets and merges split financial year representations.
+    """
     if not raw:
-        return '2025-2026'
+        return '2025-26'
     s = str(raw).strip()
-    if len(s) == 7 and s[4] == '-':
-        p1 = s[:4]
-        p2 = s[5:]
-        if p2.isdigit() and len(p2) == 2:
-            return f"{p1}-20{p2}"
+    if s.upper().startswith('FY'):
+        s = s[2:].strip()
+    import re
+    # Match YYYY-YYYY (e.g. 2025-2026 or bogus 2025-2025)
+    m_full = re.match(r'^(\d{4})-(\d{4})$', s)
+    if m_full:
+        p1 = m_full.group(1)
+        p2 = m_full.group(2)
+        if p1 == p2:
+            # Bogus '2025-2025' -> '2025-26'
+            y = int(p1)
+            return f"{y}-{str(y+1)[2:]}"
+        return f"{p1}-{p2[2:]}"
+    # Match YYYY-YY (e.g. 2025-26)
+    m_short = re.match(r'^(\d{4})-(\d{2})$', s)
+    if m_short:
+        return s
+    # Match 4-digit year (e.g. 2025 -> 2025-26)
     if len(s) == 4 and s.isdigit():
         y = int(s)
-        return f"{y}-{y+1}"
+        return f"{y}-{str(y+1)[2:]}"
     return s
 
 
 def _fetch_historical_revenue_and_stats(cursor, entity_type, entity_id, entity_name):
     """
     Pulls historical yearly and monthly revenue metrics, deal volume, and history duration.
+
+    DATA SPECIFICATION:
+    - Single source of truth: v_invoice_clean with is_revenue = 1 (credit notes, RV, and cancelled items excluded).
+    - Financial Year: Grouped strictly by derived FY from billDate (Apr-Mar), formatted as 'YYYY-YY'.
+    - Unified Revenue Measure: rev_ex_gst across all entities (company, BD, TL, franchise).
+    - Deal Count: COUNT(DISTINCT i.billNumber).
+    - Series Points: Marked with is_complete (False for the current partial FY) and months_elapsed.
+      For the current partial FY, run_rate_projection = (YTD / months_elapsed) * 12 is calculated.
     """
     historical_series = []
     monthly_series = []
@@ -192,229 +216,124 @@ def _fetch_historical_revenue_and_stats(cursor, entity_type, entity_id, entity_n
 
     placeholders = ", ".join(["%s"] * len(aliases))
 
+    today = datetime.date.today()
+    cur_fy_start = today.year if today.month >= 4 else today.year - 1
+    cur_months_elapsed = today.month - 3 if today.month >= 4 else today.month + 9
+
+    where_parts = [
+        "i.is_revenue = 1",
+        "i.billDate IS NOT NULL",
+        "TRIM(i.billDate) != ''"
+    ]
+    params = []
+
+    if entity_type == 'company':
+        pass
+    elif entity_type == 'franchisee':
+        where_parts.append(f"""(
+            LOWER(TRIM(i.franchiseName)) IN ({placeholders}) 
+            OR i.franchiseName IN ({placeholders})
+            OR LOWER(TRIM(e.franchiseeName)) IN ({placeholders})
+            OR e.franchiseeName IN ({placeholders})
+        )""")
+        params.extend([a.lower() for a in aliases] + list(aliases) + [a.lower() for a in aliases] + list(aliases))
+    elif entity_type in ('tl', 'team_leader'):
+        where_parts.append(f"""(
+            LOWER(TRIM(i.teamLeader)) IN ({placeholders})
+            OR i.teamLeader IN ({placeholders})
+            OR LOWER(TRIM(e.teamLeaderName)) IN ({placeholders})
+            OR e.teamLeaderName IN ({placeholders})
+        )""")
+        params.extend([a.lower() for a in aliases] + list(aliases) + [a.lower() for a in aliases] + list(aliases))
+    else:  # bd_agent, employee, bd
+        where_parts.append(f"""(
+            LOWER(TRIM(i.nameOfBd)) IN ({placeholders}) 
+            OR i.nameOfBd IN ({placeholders})
+            OR LOWER(TRIM(e.bdMemberName)) IN ({placeholders})
+            OR e.bdMemberName IN ({placeholders})
+            OR LOWER(TRIM(i.teamLeader)) IN ({placeholders})
+            OR i.teamLeader IN ({placeholders})
+            OR LOWER(TRIM(e.teamLeaderName)) IN ({placeholders})
+            OR e.teamLeaderName IN ({placeholders})
+        )""")
+        params.extend(([a.lower() for a in aliases] + list(aliases)) * 4)
+
     try:
-        if entity_type == 'company':
-            query = """
-                SELECT 
-                    COALESCE(financialYear, SUBSTRING(billDate, 1, 4)) AS period,
-                    SUM(COALESCE(totalBillAmt, serviceCharges, 0.0)) AS gross_revenue,
-                    SUM(COALESCE(franchiseeShare, 0.0)) AS franchisee_share,
-                    SUM(COALESCE(ourShare, totalBillAmt * 0.25, 0.0)) AS net_revenue,
-                    COUNT(*) AS deals_count
-                FROM invoice
-                WHERE billNumber IS NOT NULL AND billNumber != ''
-                GROUP BY period
-                ORDER BY period ASC
-            """
-            cursor.execute(query)
-            rows = cursor.fetchall()
-            
-            period_map = {}
-            for r in rows:
-                if r.get('period'):
-                    p_norm = _normalize_fy(r['period'])
-                    if p_norm not in period_map:
-                        period_map[p_norm] = {
-                            'period': p_norm,
-                            'revenue': 0.0,
-                            'net_revenue': 0.0,
-                            'deals_count': 0
-                        }
-                    period_map[p_norm]['revenue'] += float(r['gross_revenue'] or 0.0)
-                    period_map[p_norm]['net_revenue'] += float(r['net_revenue'] or 0.0)
-                    period_map[p_norm]['deals_count'] += int(r['deals_count'] or 0)
-            
-            historical_series = sorted(list(period_map.values()), key=lambda x: x['period'])
+        where_sql = " AND ".join(where_parts)
+        query = f"""
+            SELECT 
+                CASE 
+                    WHEN MONTH(i.billDate) >= 4 
+                        THEN CONCAT(YEAR(i.billDate), '-', LPAD(RIGHT(YEAR(i.billDate) + 1, 2), 2, '0'))
+                    ELSE 
+                        CONCAT(YEAR(i.billDate) - 1, '-', LPAD(RIGHT(YEAR(i.billDate), 2), 2, '0'))
+                END AS derived_fy,
+                COUNT(DISTINCT i.billNumber) AS deals_count,
+                SUM(COALESCE(i.rev_ex_gst, 0.0)) AS total_rev_ex_gst
+            FROM v_invoice_clean i
+            LEFT JOIN enquiries e ON i.enquiry_id = e.id
+            WHERE {where_sql}
+            GROUP BY derived_fy
+            ORDER BY derived_fy ASC
+        """
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
 
-            # Monthly stats for entire company
-            m_query = """
-                SELECT 
-                    SUBSTRING(billDate, 1, 7) AS month_str,
-                    COUNT(*) AS deals_count,
-                    SUM(COALESCE(totalBillAmt, serviceCharges, 0.0)) AS monthly_revenue
-                FROM invoice
-                WHERE billNumber IS NOT NULL AND billNumber != '' AND billDate IS NOT NULL AND billDate != ''
-                GROUP BY month_str
-                ORDER BY month_str ASC
-            """
-            cursor.execute(m_query)
-            m_rows = cursor.fetchall()
-            for mr in m_rows:
-                if mr.get('month_str'):
-                    monthly_series.append({
-                        'month': str(mr['month_str']),
-                        'deals': int(mr['deals_count'] or 0),
-                        'revenue': float(mr['monthly_revenue'] or 0.0)
-                    })
-            months_of_history = len(monthly_series)
+        for r in rows:
+            fy_label = r.get('derived_fy')
+            if not fy_label or len(fy_label) < 4:
+                continue
+            try:
+                start_year = int(fy_label[:4])
+            except ValueError:
+                continue
 
-        elif entity_type == 'franchisee':
-            query = f"""
-                SELECT 
-                    COALESCE(financialYear, SUBSTRING(billDate, 1, 4)) AS period,
-                    SUM(COALESCE(serviceCharges, 0.0)) AS gross_revenue,
-                    SUM(COALESCE(franchiseeShare, 0.0)) AS franchisee_share,
-                    SUM(COALESCE(ourShare, serviceCharges - COALESCE(franchiseeShare, 0.0))) AS net_revenue,
-                    COUNT(*) AS deals_count
-                FROM invoice
-                WHERE (LOWER(TRIM(franchiseName)) IN ({placeholders}) OR franchiseName IN ({placeholders}))
-                  AND billNumber IS NOT NULL AND billNumber != ''
-                GROUP BY period
-                ORDER BY period ASC
-            """
-            cursor.execute(query, aliases + aliases)
-            rows = cursor.fetchall()
-            
-            period_map = {}
-            for r in rows:
-                if r.get('period'):
-                    p_norm = _normalize_fy(r['period'])
-                    if p_norm not in period_map:
-                        period_map[p_norm] = {
-                            'period': p_norm,
-                            'revenue': 0.0,
-                            'net_revenue': 0.0,
-                            'deals_count': 0
-                        }
-                    period_map[p_norm]['revenue'] += float(r['gross_revenue'] or 0.0)
-                    period_map[p_norm]['net_revenue'] += float(r['net_revenue'] or 0.0)
-                    period_map[p_norm]['deals_count'] += int(r['deals_count'] or 0)
-            
-            historical_series = sorted(list(period_map.values()), key=lambda x: x['period'])
+            rev = round(float(r['total_rev_ex_gst'] or 0.0), 2)
+            deals = int(r['deals_count'] or 0)
+            is_complete = start_year < cur_fy_start
 
-            # Monthly stats for franchisee
-            m_query = f"""
-                SELECT 
-                    SUBSTRING(billDate, 1, 7) AS month_str,
-                    COUNT(*) AS deals_count,
-                    SUM(COALESCE(serviceCharges, 0.0)) AS monthly_revenue
-                FROM invoice
-                WHERE (LOWER(TRIM(franchiseName)) IN ({placeholders}) OR franchiseName IN ({placeholders}))
-                  AND billNumber IS NOT NULL AND billNumber != '' AND billDate IS NOT NULL AND billDate != ''
-                GROUP BY month_str
-                ORDER BY month_str ASC
-            """
-            cursor.execute(m_query, aliases + aliases)
-            m_rows = cursor.fetchall()
-            for mr in m_rows:
-                if mr.get('month_str'):
-                    monthly_series.append({
-                        'month': str(mr['month_str']),
-                        'deals': int(mr['deals_count'] or 0),
-                        'revenue': float(mr['monthly_revenue'] or 0.0)
-                    })
-            months_of_history = len(monthly_series)
+            if is_complete:
+                m_elapsed = 12
+                run_rate_proj = None
+            elif start_year == cur_fy_start:
+                m_elapsed = cur_months_elapsed
+                run_rate_proj = round((rev / m_elapsed) * 12, 2) if m_elapsed > 0 else rev
+            else:
+                m_elapsed = 0
+                run_rate_proj = None
 
-        else: # bd_agent or employee
-            query = f"""
-                SELECT 
-                    COALESCE(i.financialYear, SUBSTRING(i.billDate, 1, 4)) AS period,
-                    SUM(COALESCE(i.serviceCharges, 0.0)) AS gross_revenue,
-                    SUM(COALESCE(i.ourShare, i.serviceCharges - COALESCE(i.franchiseeShare, 0.0))) AS net_revenue,
-                    COUNT(*) AS deals_count
-                FROM invoice i
-                LEFT JOIN enquiries e ON i.enquiry_id = e.id
-                WHERE (
-                    LOWER(TRIM(i.nameOfBd)) IN ({placeholders}) 
-                    OR i.nameOfBd IN ({placeholders})
-                    OR LOWER(TRIM(e.teamLeaderName)) IN ({placeholders})
-                    OR e.teamLeaderName IN ({placeholders})
-                    OR LOWER(TRIM(e.bdMemberName)) IN ({placeholders})
-                    OR e.bdMemberName IN ({placeholders})
-                )
-                  AND i.billNumber IS NOT NULL AND i.billNumber != ''
-                GROUP BY period
-                ORDER BY period ASC
-            """
-            cursor.execute(query, aliases * 6)
-            rows = cursor.fetchall()
-            
-            period_map = {}
-            for r in rows:
-                if r.get('period'):
-                    p_norm = _normalize_fy(r['period'])
-                    if p_norm not in period_map:
-                        period_map[p_norm] = {
-                            'period': p_norm,
-                            'revenue': 0.0,
-                            'net_revenue': 0.0,
-                            'deals_count': 0
-                        }
-                    period_map[p_norm]['revenue'] += float(r['gross_revenue'] or 0.0)
-                    period_map[p_norm]['net_revenue'] += float(r['net_revenue'] or 0.0)
-                    period_map[p_norm]['deals_count'] += int(r['deals_count'] or 0)
-            
-            historical_series = sorted(list(period_map.values()), key=lambda x: x['period'])
+            historical_series.append({
+                'period': fy_label,
+                'revenue': rev,
+                'net_revenue': rev,
+                'deals_count': deals,
+                'is_complete': is_complete,
+                'months_elapsed': m_elapsed,
+                'run_rate_projection': run_rate_proj
+            })
 
-            # Monthly stats for BD/Employee
-            m_query = f"""
-                SELECT 
-                    SUBSTRING(i.billDate, 1, 7) AS month_str,
-                    COUNT(*) AS deals_count,
-                    SUM(COALESCE(i.serviceCharges, 0.0)) AS monthly_revenue
-                FROM invoice i
-                LEFT JOIN enquiries e ON i.enquiry_id = e.id
-                WHERE (
-                    LOWER(TRIM(i.nameOfBd)) IN ({placeholders}) 
-                    OR i.nameOfBd IN ({placeholders})
-                    OR LOWER(TRIM(e.teamLeaderName)) IN ({placeholders})
-                    OR e.teamLeaderName IN ({placeholders})
-                    OR LOWER(TRIM(e.bdMemberName)) IN ({placeholders})
-                    OR e.bdMemberName IN ({placeholders})
-                )
-                  AND i.billNumber IS NOT NULL AND i.billNumber != '' AND i.billDate IS NOT NULL AND i.billDate != ''
-                GROUP BY month_str
-                ORDER BY month_str ASC
-            """
-            cursor.execute(m_query, aliases * 6)
-            m_rows = cursor.fetchall()
-            for mr in m_rows:
-                if mr.get('month_str'):
-                    monthly_series.append({
-                        'month': str(mr['month_str']),
-                        'deals': int(mr['deals_count'] or 0),
-                        'revenue': float(mr['monthly_revenue'] or 0.0)
-                    })
-            months_of_history = len(monthly_series)
-
-            # If no closed invoices, check if there are pipeline enquiries to establish historical activity
-            if not historical_series or months_of_history == 0:
-                try:
-                    cursor.execute(f"""
-                        SELECT 
-                            COALESCE(financialYear, SUBSTRING(created_at, 1, 4)) AS period,
-                            COUNT(*) as deals_count,
-                            SUM(COALESCE(placementFees, 50000.0)) as est_rev
-                        FROM enquiries
-                        WHERE (
-                            LOWER(TRIM(bdMemberName)) IN ({placeholders}) 
-                            OR bdMemberName IN ({placeholders})
-                            OR LOWER(TRIM(teamLeaderName)) IN ({placeholders})
-                            OR teamLeaderName IN ({placeholders})
-                        )
-                        GROUP BY period
-                        ORDER BY period ASC
-                    """, aliases * 4)
-                    enq_p_rows = cursor.fetchall()
-                    for ep in enq_p_rows:
-                        if ep.get('period'):
-                            p_norm = _normalize_fy(ep['period'])
-                            if p_norm not in period_map:
-                                period_map[p_norm] = {
-                                    'period': p_norm,
-                                    'revenue': 0.0,
-                                    'net_revenue': 0.0,
-                                    'deals_count': 0
-                                }
-                            period_map[p_norm]['revenue'] += float(ep['est_rev'] or 0.0)
-                            period_map[p_norm]['net_revenue'] += float(ep['est_rev'] or 0.0) * fallback_our_share_rate(p_norm)
-                            period_map[p_norm]['deals_count'] += int(ep['deals_count'] or 0)
-                    
-                    if period_map:
-                        historical_series = sorted(list(period_map.values()), key=lambda x: x['period'])
-                        months_of_history = max(months_of_history, len(historical_series) * 6)
-                except Exception:
-                    pass
+        # Monthly stats from v_invoice_clean (rev_ex_gst and distinct billNumber)
+        m_query = f"""
+            SELECT 
+                SUBSTRING(i.billDate, 1, 7) AS month_str,
+                COUNT(DISTINCT i.billNumber) AS deals_count,
+                SUM(COALESCE(i.rev_ex_gst, 0.0)) AS monthly_revenue
+            FROM v_invoice_clean i
+            LEFT JOIN enquiries e ON i.enquiry_id = e.id
+            WHERE {where_sql}
+            GROUP BY month_str
+            ORDER BY month_str ASC
+        """
+        cursor.execute(m_query, params)
+        m_rows = cursor.fetchall()
+        for mr in m_rows:
+            if mr.get('month_str'):
+                monthly_series.append({
+                    'month': str(mr['month_str']),
+                    'deals': int(mr['deals_count'] or 0),
+                    'revenue': round(float(mr['monthly_revenue'] or 0.0), 2)
+                })
+        months_of_history = len(monthly_series)
 
     except Exception as e:
         raise RuntimeError(f"Database query failed while fetching historical data for {entity_type} '{entity_name}': {e}")
@@ -423,21 +342,42 @@ def _fetch_historical_revenue_and_stats(cursor, entity_type, entity_id, entity_n
 
 
 def _calculate_cagr(historical_series):
-    """Calculates Compound Annual Growth Rate from series. Returns None if series is insufficient."""
-    if not historical_series or len(historical_series) < 2:
+    """
+    Calculates Compound Annual Growth Rate strictly from COMPLETED financial years.
+    Returns None if fewer than 2 completed financial years exist, or if any year in the
+    calculation window has revenue <= 0. Clamped to [-50%, +50%].
+    """
+    if not historical_series:
         return None
 
-    first_val = historical_series[0].get('revenue', 0.0)
-    last_val = historical_series[-1].get('revenue', 0.0)
-    periods = len(historical_series) - 1
+    # Filter strictly for completed financial years with positive revenue
+    completed_fys = [
+        pt for pt in historical_series
+        if pt.get('is_complete') and float(pt.get('revenue') or 0.0) > 0
+    ]
+
+    if len(completed_fys) < 2:
+        return None
+
+    # Use the last 2-3 completed financial years
+    window = completed_fys[-3:] if len(completed_fys) >= 3 else completed_fys[-2:]
+
+    first_val = float(window[0].get('revenue') or 0.0)
+    last_val = float(window[-1].get('revenue') or 0.0)
+    periods = len(window) - 1
 
     if first_val <= 0 or last_val <= 0 or periods <= 0:
         return None
 
+    # Verify no intermediate completed FY in window has revenue <= 0
+    for pt in window:
+        if float(pt.get('revenue') or 0.0) <= 0:
+            return None
+
     try:
-        cagr = math.pow(last_val / first_val, 1.0 / periods) - 1.0
-        # Realistic CAGR clamping to [-50%, +50%] to prevent early bootstrap distortions
-        return max(-0.50, min(0.50, cagr))
+        raw_cagr = math.pow(last_val / first_val, 1.0 / periods) - 1.0
+        # Realistic CAGR clamping to [-50%, +50%] to prevent bootstrap distortions
+        return max(-0.50, min(0.50, raw_cagr))
     except Exception:
         return None
 
@@ -1051,25 +991,23 @@ def predict_growth():
         # Calculate Productivity Score
         score_data = _compute_productivity_score(monthly_series, months_of_history)
 
-        # Determine Base Revenue and Historical CAGR
+        # Baseline and CAGR must use COMPLETED financial years only
         is_new_hire = (months_of_history < 3) or (not historical_series)
-        
-        has_real_history = False
-        if historical_series:
-            base_revenue = float(historical_series[-1].get('revenue') or 0.0)
-            deal_base = int(historical_series[-1].get('deals_count') or 0)
-            if base_revenue > 0:
-                has_real_history = True
-                historical_cagr = _calculate_cagr(historical_series)
-                confidence = 'high' if months_of_history >= 6 else 'low'
+        completed_fys = [
+            pt for pt in historical_series
+            if pt.get('is_complete') and float(pt.get('revenue') or 0.0) > 0
+        ]
 
-        if not has_real_history:
+        historical_cagr = _calculate_cagr(historical_series)
+
+        if len(completed_fys) == 0:
             return jsonify({
                 'entity_type': entity_type,
                 'entity_id': entity_id,
                 'entity_name': entity_name,
                 'projection_status': 'insufficient_data',
                 'insufficient_data': True,
+                'note': 'Not enough completed financial years (minimum 2 required)',
                 'is_new_hire': is_new_hire,
                 'months_of_history': months_of_history,
                 'confidence': 'insufficient_data',
@@ -1086,6 +1024,13 @@ def predict_growth():
                 'projections': [],
                 'scenarios': {}
             })
+
+        # Authoritative baseline from the most recent completed financial year
+        base_revenue = float(completed_fys[-1].get('revenue') or 0.0)
+        deal_base = int(completed_fys[-1].get('deals_count') or 0)
+        base_period = completed_fys[-1].get('period')
+        confidence = 'high' if len(completed_fys) >= 2 else 'moderate'
+        cagr_note = None if historical_cagr is not None else 'Not enough completed financial years (minimum 2 required)'
 
         # Target growth rate R
         if custom_rate is not None and str(custom_rate).strip() != "":
@@ -1146,11 +1091,13 @@ def predict_growth():
             'confidence': confidence,
             'productivity_score': score_data,
             'base_revenue': round(base_revenue, 2),
+            'base_period': base_period,
             'current_deals_count': deal_base,
             'current_monthly_deals': round(deal_base / 12.0, 1),
             'avg_revenue_per_deal': round(base_revenue / max(1, deal_base), 2),
             'historical_cagr': round(historical_cagr, 4) if historical_cagr is not None else None,
             'historical_cagr_pct': round(historical_cagr * 100, 2) if historical_cagr is not None else None,
+            'cagr_note': cagr_note,
             'applied_rate': round(selected_r, 4),
             'applied_rate_pct': round(selected_r * 100, 2),
             'historical_series': historical_series,
@@ -1158,69 +1105,8 @@ def predict_growth():
             'scenarios': scenarios
         })
     except Exception as e:
-        print(f"[predict_growth] Graceful fallback engaged due to DB notice: {e}")
-        base_revenue = 1200000.0
-        deal_base = 12
-        selected_r = 0.15
-        if custom_rate is not None and str(custom_rate).strip() != "":
-            try:
-                val = float(custom_rate)
-                selected_r = (val / 100.0) if (val > 1.0 and val <= 500.0) else val
-            except ValueError:
-                selected_r = 0.15
-
-        projections = []
-        cumulative_rev = 0.0
-        for t in range(1, periods_count + 1):
-            multiplier = math.pow(1.0 + selected_r, t)
-            proj_val = base_revenue * multiplier
-            incremental = proj_val - base_revenue
-            cumulative_rev += proj_val
-            proj_deals = max(1, int(round(deal_base * multiplier)))
-            projections.append({
-                'year_index': t,
-                'period_label': f"Year +{t}",
-                'projected_revenue': round(proj_val, 2),
-                'growth_pct': round((multiplier - 1.0) * 100, 2),
-                'incremental_gain': round(incremental, 2),
-                'projected_deals': proj_deals,
-                'cumulative_revenue': round(cumulative_rev, 2)
-            })
-
-        scenarios = {
-            f'scale{m}x': {
-                'multiplier': m,
-                'label': f"{m}x {'Current Base' if m == 1 else 'Scale'}",
-                'revenue': round(base_revenue * m, 2),
-                'estimated_net': round(base_revenue * m * fallback_our_share_rate('2025-2026'), 2),
-                'deals_target': max(1, int(round(deal_base * m)))
-            }
-            for m in range(1, 6)
-        }
-
-        return jsonify({
-            'entity_type': entity_type,
-            'entity_id': entity_id,
-            'entity_name': entity_name_param or entity_id,
-            'projection_status': 'insufficient_data',
-            'insufficient_data': True,
-            'is_new_hire': False,
-            'months_of_history': 0,
-            'confidence': 'low',
-            'productivity_score': None,
-            'base_revenue': 0.0,
-            'current_deals_count': 0,
-            'current_monthly_deals': 0.0,
-            'avg_revenue_per_deal': 0.0,
-            'historical_cagr': None,
-            'historical_cagr_pct': None,
-            'applied_rate': round(selected_r, 4),
-            'applied_rate_pct': round(selected_r * 100, 2),
-            'historical_series': [],
-            'projections': [],
-            'scenarios': {},
-            'notice': 'Not enough data'
-        })
+        print(f"[predict_growth] Error: {e}")
+        return jsonify({'error': f'Failed to calculate growth predictions: {str(e)}'}), 500
     finally:
         try:
             if 'conn' in locals() and conn:
@@ -1773,10 +1659,10 @@ def compare_growth_scopes():
             metric_query = f"""
                 SELECT 
                     COUNT(DISTINCT LOWER(TRIM(i.companyName))) as companies,
-                    COUNT(*) as invoiced_deals,
-                    COALESCE(SUM(i.totalBillAmt), 0.0) as revenue,
+                    COUNT(DISTINCT i.billNumber) as invoiced_deals,
+                    COALESCE(SUM(i.rev_ex_gst), 0.0) as revenue,
                     COALESCE(SUM(i.ourShare), 0.0) as our_share,
-                    COUNT(*) as verified_count,
+                    COUNT(DISTINCT i.billNumber) as verified_count,
                     0 as estimated_count
                 FROM v_invoice_clean i
                 LEFT JOIN enquiries e ON i.enquiry_id = e.id
@@ -2173,44 +2059,59 @@ def get_growth_targets_summary():
         }
 
         deals = []
-        # Populate invoiced deals from v_invoice_clean
+        seen_invoices = {}
+
+        # Populate invoiced deals from v_invoice_clean (rev_ex_gst and distinct billNumber)
         for r in inv_rows:
-            amt = float(r['totalBillAmt'] or 0.0)
-            our_share = float(r['ourShare'] or 0.0)
-            f_share = float(r['franchiseeShare'] or 0.0)
+            bnum = r['billNumber'] or f"INV-{r['invoice_id']}"
+            rev_val = float(r.get('rev_ex_gst') or 0.0)
+            our_share = float(r.get('ourShare') or 0.0)
+            f_share = float(r.get('franchiseeShare') or 0.0)
             bdate = str(r['billDate'] or '')[:10]
             ym = bdate[:7]
 
-            totals['invoiced']['count'] += 1
-            totals['invoiced']['revenue'] += amt
-            totals['all']['count'] += 1
-            totals['all']['revenue'] += amt
+            if bnum not in seen_invoices:
+                seen_invoices[bnum] = {
+                    'id': f"INV-{r['invoice_id']}",
+                    'referenceId': bnum,
+                    'companyName': r.get('companyName') or 'Corporate Client',
+                    'positionName': r.get('postOfCandidate') or r.get('enq_position') or 'Mandate',
+                    'candidateName': r.get('candidateName') or r.get('enq_info') or 'Candidate Placement',
+                    'bdMemberName': r.get('bdMemberName') or '',
+                    'teamLeaderName': r.get('teamLeaderName') or '',
+                    'franchiseeName': r.get('franchiseeName') or '',
+                    'date': bdate,
+                    'amount': rev_val,
+                    'our_share': round(our_share, 2),
+                    'is_verified': True,
+                    'franchisee_share': round(f_share, 2),
+                    'raw_status': r.get('inv_status') or 'invoiced',
+                    'status': 'invoiced',
+                    'bill_no': bnum,
+                    'industry': r.get('industry') or ''
+                }
+                totals['invoiced']['count'] += 1
+                totals['invoiced']['revenue'] += rev_val
+                totals['all']['count'] += 1
+                totals['all']['revenue'] += rev_val
 
-            if ym in monthly_map:
-                monthly_map[ym]['invoiced'] += 1
-                monthly_map[ym]['invoiced_revenue'] += amt
-                monthly_map[ym]['all'] += 1
-                monthly_map[ym]['all_revenue'] += amt
+                if ym in monthly_map:
+                    monthly_map[ym]['invoiced'] += 1
+                    monthly_map[ym]['invoiced_revenue'] += rev_val
+                    monthly_map[ym]['all'] += 1
+                    monthly_map[ym]['all_revenue'] += rev_val
+            else:
+                # Merge multiple placements on the same invoice billNumber
+                seen_invoices[bnum]['amount'] += rev_val
+                seen_invoices[bnum]['our_share'] += round(our_share, 2)
+                seen_invoices[bnum]['franchisee_share'] += round(f_share, 2)
+                totals['invoiced']['revenue'] += rev_val
+                totals['all']['revenue'] += rev_val
+                if ym in monthly_map:
+                    monthly_map[ym]['invoiced_revenue'] += rev_val
+                    monthly_map[ym]['all_revenue'] += rev_val
 
-            deals.append({
-                'id': f"INV-{r['invoice_id']}",
-                'referenceId': r['billNumber'] or f"INV-{r['invoice_id']}",
-                'companyName': r.get('companyName') or 'Corporate Client',
-                'positionName': r.get('postOfCandidate') or r.get('enq_position') or 'Mandate',
-                'candidateName': r.get('candidateName') or r.get('enq_info') or 'Candidate Placement',
-                'bdMemberName': r.get('bdMemberName') or '',
-                'teamLeaderName': r.get('teamLeaderName') or '',
-                'franchiseeName': r.get('franchiseeName') or '',
-                'date': bdate,
-                'amount': amt,
-                'our_share': round(our_share, 2),
-                'is_verified': True,
-                'franchisee_share': round(f_share, 2),
-                'raw_status': r.get('inv_status') or 'invoiced',
-                'status': 'invoiced',
-                'bill_no': r.get('billNumber') or '',
-                'industry': r.get('industry') or ''
-            })
+        deals = list(seen_invoices.values())
 
         # Populate open pipeline / cancelled enquiries from enquiries table
         for r in enq_rows:
@@ -2276,115 +2177,71 @@ def get_growth_targets_summary():
             m['other_revenue'] = round(m['other_revenue'], 2)
             m['all_revenue'] = round(m['all_revenue'], 2)
 
-        # 3. Fetch prior FY invoiced and pipeline totals
-        prior_inv_where = [
+        # 3. Same-Period Comparison: Compare Apr-to-current-month of this FY vs same period in prior FY
+        cur_same_end = today.strftime("%Y-%m-%d") if today <= cur_end_date else cur_end
+        prior_same_start = prior_start
+        try:
+            prior_same_end = today.replace(year=start_year - 1).strftime("%Y-%m-%d")
+        except ValueError:
+            prior_same_end = f"{start_year - 1}-10-22"
+        if prior_same_end > prior_end:
+            prior_same_end = prior_end
+
+        prior_inv_base = [
             "i.is_revenue = 1",
-            "i.billDate >= %s",
-            "i.billDate <= %s",
+            "i.billDate IS NOT NULL",
             "LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) NOT IN ('head office', 'head  - office', 'head - office', '')"
         ]
-        prior_inv_params = [prior_start, prior_end]
+        prior_inv_params = []
         if bd_param and bd_param.lower() != 'all':
-            prior_inv_where.append("(LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) = %s OR LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) LIKE %s)")
+            prior_inv_base.append("(LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) = %s OR LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) LIKE %s)")
             prior_inv_params.extend([bd_param.lower(), f"%{bd_param.lower()}%"])
         if tl_param and tl_param.lower() != 'all':
-            prior_inv_where.append("(LOWER(TRIM(COALESCE(NULLIF(TRIM(i.teamLeader), ''), NULLIF(TRIM(e.teamLeaderName), '')))) = %s OR LOWER(TRIM(COALESCE(NULLIF(TRIM(i.teamLeader), ''), NULLIF(TRIM(e.teamLeaderName), '')))) LIKE %s)")
+            prior_inv_base.append("(LOWER(TRIM(COALESCE(NULLIF(TRIM(i.teamLeader), ''), NULLIF(TRIM(e.teamLeaderName), '')))) = %s OR LOWER(TRIM(COALESCE(NULLIF(TRIM(i.teamLeader), ''), NULLIF(TRIM(e.teamLeaderName), '')))) LIKE %s)")
             prior_inv_params.extend([tl_param.lower(), f"%{tl_param.lower()}%"])
         if franchise_param and franchise_param.lower() != 'all':
-            prior_inv_where.append("(LOWER(TRIM(COALESCE(NULLIF(TRIM(i.franchiseName), ''), NULLIF(TRIM(e.franchiseeName), '')))) = %s OR LOWER(TRIM(COALESCE(NULLIF(TRIM(i.franchiseName), ''), NULLIF(TRIM(e.franchiseeName), '')))) LIKE %s)")
+            prior_inv_base.append("(LOWER(TRIM(COALESCE(NULLIF(TRIM(i.franchiseName), ''), NULLIF(TRIM(e.franchiseeName), '')))) = %s OR LOWER(TRIM(COALESCE(NULLIF(TRIM(i.franchiseName), ''), NULLIF(TRIM(e.franchiseeName), '')))) LIKE %s)")
             prior_inv_params.extend([franchise_param.lower(), f"%{franchise_param.lower()}%"])
 
+        # Prior same period (e.g. Apr 1 to Oct 22 in prior year)
         cursor.execute(f"""
-            SELECT COUNT(*) as cnt, COALESCE(SUM(i.totalBillAmt), 0.0) as rev
+            SELECT COUNT(DISTINCT i.billNumber) as cnt, COALESCE(SUM(i.rev_ex_gst), 0.0) as rev
             FROM v_invoice_clean i
             LEFT JOIN enquiries e ON i.enquiry_id = e.id
-            WHERE {' AND '.join(prior_inv_where)}
-        """, prior_inv_params)
-        prior_inv_row = cursor.fetchone() or {}
-        prior_inv_cnt = int(prior_inv_row.get('cnt') or 0)
-        prior_inv_rev = float(prior_inv_row.get('rev') or 0.0)
+            WHERE {' AND '.join(prior_inv_base)} AND i.billDate >= %s AND i.billDate <= %s
+        """, prior_inv_params + [prior_same_start, prior_same_end])
+        prior_same_row = cursor.fetchone() or {}
+        prior_same_deals = int(prior_same_row.get('cnt') or 0)
+        prior_same_rev = round(float(prior_same_row.get('rev') or 0.0), 2)
+        prior_same_avg = round(prior_same_rev / prior_same_deals, 2) if prior_same_deals > 0 else 0.0
 
-        prior_enq_where = [
-            "LOWER(TRIM(COALESCE(e.bdMemberName, ''))) NOT IN ('head office', 'head  - office', 'head - office', '')",
-            "LEFT(COALESCE(e.dateOfAllocation, e.created_at), 10) >= %s",
-            "LEFT(COALESCE(e.dateOfAllocation, e.created_at), 10) <= %s",
-            "LOWER(TRIM(e.enquiryStatus)) NOT IN ('closed', 'offered_and_accepted', 'invoiced', 'r', 'rv', 'billed', 'collected')"
-        ]
-        prior_enq_params = [prior_start, prior_end]
-        if bd_param and bd_param.lower() != 'all':
-            prior_enq_where.append("(LOWER(TRIM(e.bdMemberName)) = %s OR LOWER(TRIM(e.bdMemberName)) LIKE %s)")
-            prior_enq_params.extend([bd_param.lower(), f"%{bd_param.lower()}%"])
-        if tl_param and tl_param.lower() != 'all':
-            prior_enq_where.append("(LOWER(TRIM(e.teamLeaderName)) = %s OR LOWER(TRIM(e.teamLeaderName)) LIKE %s)")
-            prior_enq_params.extend([tl_param.lower(), f"%{tl_param.lower()}%"])
-        if franchise_param and franchise_param.lower() != 'all':
-            prior_enq_where.append("(LOWER(TRIM(e.franchiseeName)) = %s OR LOWER(TRIM(e.franchiseeName)) LIKE %s)")
-            prior_enq_params.extend([franchise_param.lower(), f"%{franchise_param.lower()}%"])
+        # Prior full year (for reference)
+        cursor.execute(f"""
+            SELECT COUNT(DISTINCT i.billNumber) as cnt, COALESCE(SUM(i.rev_ex_gst), 0.0) as rev
+            FROM v_invoice_clean i
+            LEFT JOIN enquiries e ON i.enquiry_id = e.id
+            WHERE {' AND '.join(prior_inv_base)} AND i.billDate >= %s AND i.billDate <= %s
+        """, prior_inv_params + [prior_start, prior_end])
+        prior_full_row = cursor.fetchone() or {}
+        prior_full_deals = int(prior_full_row.get('cnt') or 0)
+        prior_full_rev = round(float(prior_full_row.get('rev') or 0.0), 2)
+        prior_full_avg = round(prior_full_rev / prior_full_deals, 2) if prior_full_deals > 0 else 0.0
 
-        prior_query = f"""
-            SELECT e.enquiryStatus, SUM(COALESCE(e.bill_amount, 0.0)) as rev, COUNT(*) as cnt
-            FROM enquiries e
-            WHERE {' AND '.join(prior_enq_where)}
-            GROUP BY e.enquiryStatus
-        """
-        cursor.execute(prior_query, prior_enq_params)
-        prior_rows = cursor.fetchall()
-
-        prior_totals = {
-            'all': {'count': prior_inv_cnt, 'revenue': prior_inv_rev, 'avg_deal': 0.0},
-            'invoiced': {'count': prior_inv_cnt, 'revenue': prior_inv_rev, 'avg_deal': 0.0},
-            'progressed': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0},
-            'cancelled': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0},
-            'other': {'count': 0, 'revenue': 0.0, 'avg_deal': 0.0}
-        }
-        for pr in prior_rows:
-            pst = _classify_backend_status(pr['enquiryStatus'])
-            p_cnt = int(pr['cnt'] or 0)
-            p_rev = float(pr['rev'] or 0.0)
-            prior_totals[pst]['count'] += p_cnt
-            prior_totals[pst]['revenue'] += p_rev
-            prior_totals['all']['count'] += p_cnt
-            prior_totals['all']['revenue'] += p_rev
-
-        for k in ('all', 'invoiced', 'progressed', 'cancelled', 'other'):
-            cnt = prior_totals[k]['count']
-            rev = prior_totals[k]['revenue']
-            prior_totals[k]['avg_deal'] = round(rev / cnt, 2) if cnt > 0 else 0.0
-            prior_totals[k]['revenue'] = round(rev, 2)
-
-        def calc_pct_delta(cur, prev):
-            if prev and prev > 0:
-                return round(((cur - prev) / prev) * 100.0, 1)
-            return None
-
-        deltas = {
-            'all_revenue_pct': calc_pct_delta(totals['all']['revenue'], prior_totals['all']['revenue']),
-            'all_count_pct': calc_pct_delta(totals['all']['count'], prior_totals['all']['count']),
-            'invoiced_revenue_pct': calc_pct_delta(totals['invoiced']['revenue'], prior_totals['invoiced']['revenue']),
-            'invoiced_count_pct': calc_pct_delta(totals['invoiced']['count'], prior_totals['invoiced']['count']),
-            'progressed_revenue_pct': calc_pct_delta(totals['progressed']['revenue'], prior_totals['progressed']['revenue']),
-            'cancelled_revenue_pct': calc_pct_delta(totals['cancelled']['revenue'], prior_totals['cancelled']['revenue'])
-        }
-
-        # 4. Team Average benchmark
+        # Team Average benchmark for same period
         team_bench_query = f"""
             SELECT 
-                COUNT(DISTINCT {'e.bdMemberName' if entity_type == 'bd' else ('e.teamLeaderName' if entity_type == 'tl' else 'e.franchiseeName')}) as member_count,
-                COUNT(*) as total_deals,
-                SUM(COALESCE(e.bill_amount, 0.0)) as total_rev
+                COUNT(DISTINCT {'e.bdMemberName' if entity_type == 'bd' else ('e.teamLeaderName' if entity_type == 'tl' else 'e.franchiseeName')}) as member_count
             FROM enquiries e
             WHERE LOWER(TRIM(COALESCE(e.bdMemberName, ''))) NOT IN ('head office', 'head  - office', 'head - office', '')
               AND LEFT(COALESCE(e.dateOfAllocation, e.created_at), 10) >= %s
               AND LEFT(COALESCE(e.dateOfAllocation, e.created_at), 10) <= %s
         """
-        cursor.execute(team_bench_query, [cur_start, cur_end])
+        cursor.execute(team_bench_query, [cur_start, cur_same_end])
         t_row = cursor.fetchone() or {}
         active_members = max(1, int(t_row.get('member_count') or 1))
-        team_deals = int(t_row.get('total_deals') or 0)
-        team_rev = float(t_row.get('total_rev') or 0.0)
 
         team_closed_query = f"""
-            SELECT COUNT(*) as closed_deals, COALESCE(SUM(i.totalBillAmt), 0.0) as closed_rev
+            SELECT COUNT(DISTINCT i.billNumber) as closed_deals, COALESCE(SUM(i.rev_ex_gst), 0.0) as closed_rev
             FROM v_invoice_clean i
             LEFT JOIN enquiries e ON i.enquiry_id = e.id
             WHERE i.is_revenue = 1
@@ -2392,7 +2249,7 @@ def get_growth_targets_summary():
               AND i.billDate <= %s
               AND LOWER(TRIM(COALESCE(NULLIF(TRIM(i.nameOfBd), ''), NULLIF(TRIM(e.bdMemberName), '')))) NOT IN ('head office', 'head  - office', 'head - office', '')
         """
-        cursor.execute(team_closed_query, [cur_start, cur_end])
+        cursor.execute(team_closed_query, [cur_start, cur_same_end])
         tc_row = cursor.fetchone() or {}
         team_closed_deals = int(tc_row.get('closed_deals') or 0)
         team_closed_rev = float(tc_row.get('closed_rev') or 0.0)
@@ -2404,12 +2261,7 @@ def get_growth_targets_summary():
             'active_members': active_members
         }
 
-        # 4. Pace and Headline
-        closed_cnt = totals['invoiced']['count']
-        closed_rev = totals['invoiced']['revenue']
-        monthly_pace = round(closed_cnt / max(1, months_elapsed), 1) if months_elapsed > 0 else 0.0
-        projected_by_march = round(closed_cnt + (monthly_pace * months_remaining)) if months_elapsed > 0 else closed_cnt
-
+        # 4. Entity resolution & Pace calculation
         calc_entity_type = 'all'
         calc_entity_name = 'All'
         if bd_param and bd_param.lower() != 'all':
@@ -2433,9 +2285,62 @@ def get_growth_targets_summary():
             calc_entity_name = 'All'
             display_name = "Overall Portfolio" if entity_type == 'all' else f"All {entity_type.upper()}s"
 
+        # Fetch authoritative historical series and baseline
+        hist_series, _, _ = _fetch_historical_revenue_and_stats(cursor, calc_entity_type, entity_id, calc_entity_name)
+        completed_fys = [pt for pt in hist_series if pt.get('is_complete') and float(pt.get('revenue') or 0.0) > 0]
+        baseline_revenue = float(completed_fys[-1]['revenue']) if completed_fys else 0.0
+        baseline_deals = int(completed_fys[-1]['deals_count']) if completed_fys else 0
+        baseline_period = completed_fys[-1]['period'] if completed_fys else None
+        historical_cagr = _calculate_cagr(hist_series)
+        cagr_note = None if historical_cagr is not None else "Not enough completed financial years (minimum 2 required)"
+
+        closed_cnt = totals['invoiced']['count']
+        closed_rev = totals['invoiced']['revenue']
+        monthly_pace = round(closed_cnt / max(1, months_elapsed), 1) if months_elapsed > 0 else 0.0
+        projected_by_march = round(closed_cnt + (monthly_pace * months_remaining)) if months_elapsed > 0 else closed_cnt
+
+        # Target quota & pledge resolution from growth_targets table
+        own_pledge = None
+        try:
+            cursor.execute("""
+                SELECT growth_pct_target, target_revenue, target_placements, target_author, status
+                FROM growth_targets
+                WHERE (entity_id = %s OR LOWER(TRIM(entity_id)) = %s)
+                ORDER BY created_at DESC LIMIT 1
+            """, [calc_entity_name, calc_entity_name.lower()])
+            tgt_row = cursor.fetchone()
+            if tgt_row and tgt_row.get('target_placements'):
+                own_pledge = {
+                    'growth_pct': float(tgt_row.get('growth_pct_target') or 15.0),
+                    'target_deals': int(tgt_row['target_placements']),
+                    'target_revenue': float(tgt_row.get('target_revenue') or (baseline_revenue * 1.15)),
+                    'author': tgt_row.get('target_author') or 'Direct'
+                }
+        except Exception:
+            pass
+
+        quota_deals = own_pledge['target_deals'] if own_pledge else (max(1, int(round(baseline_deals * 1.15))) if baseline_deals > 0 else max(10, int(round(closed_cnt * 1.2))))
+        quota_revenue = own_pledge['target_revenue'] if own_pledge else (round(baseline_revenue * 1.15, 2) if baseline_revenue > 0 else round(closed_rev * 1.2, 2))
+
+        company_quota = {
+            'quota_deals': quota_deals,
+            'quota_revenue': quota_revenue,
+            'growth_pct': 15.0
+        }
+
+        # Plain-language pacing sentence
+        if projected_by_march >= quota_deals and quota_deals > 0:
+            pct_ahead = round(((projected_by_march - quota_deals) / quota_deals) * 100)
+            pacing_sentence = f"On pace to beat quota by {pct_ahead}%"
+        elif quota_deals > 0:
+            pct_behind = round(((quota_deals - projected_by_march) / quota_deals) * 100)
+            pacing_sentence = f"On pace for {projected_by_march} deals ({pct_behind}% behind quota)"
+        else:
+            pacing_sentence = f"On pace for {projected_by_march} deals by FY-end"
+
         if closed_cnt > 0:
             if months_remaining > 0:
-                headline = f"{display_name} has closed {closed_cnt} deals ({_format_inr_short(closed_rev)}) this FY. At this pace: {projected_by_march} by March."
+                headline = f"{display_name} has closed {closed_cnt} deals ({_format_inr_short(closed_rev)}) this FY. {pacing_sentence}."
             else:
                 headline = f"{display_name} closed {closed_cnt} deals ({_format_inr_short(closed_rev)}) in {fy_str}."
         else:
@@ -2453,6 +2358,10 @@ def get_growth_targets_summary():
             'other_pct': round((totals['other']['count'] / tot_all_cnt) * 100, 1)
         }
 
+        # Delta percentages between this period and prior same period
+        yoy_same_rev_pct = round(((closed_rev - prior_same_rev) / prior_same_rev) * 100, 1) if prior_same_rev > 0 else None
+        yoy_same_deals_pct = round(((closed_cnt - prior_same_deals) / prior_same_deals) * 100, 1) if prior_same_deals > 0 else None
+
         response_data = {
             'entity_type': calc_entity_type,
             'entity_name': calc_entity_name,
@@ -2464,16 +2373,24 @@ def get_growth_targets_summary():
             'period': {
                 'start_date': cur_start,
                 'end_date': cur_end,
+                'same_period_end': cur_same_end,
                 'months_elapsed': months_elapsed,
                 'months_remaining': months_remaining
             },
             'headline': headline,
+            'pacing_sentence': pacing_sentence,
             'totals': totals,
-            'prior_fy': {
-                'fy': f"FY {start_year - 1}-{str(start_year)[2:]}",
-                'totals': prior_totals
+            'baseline': {
+                'revenue': baseline_revenue,
+                'deals': baseline_deals,
+                'period': baseline_period,
+                'historical_cagr': historical_cagr,
+                'historical_cagr_pct': round(historical_cagr * 100, 2) if historical_cagr is not None else None,
+                'cagr_note': cagr_note
             },
-            'deltas_vs_prior': deltas,
+            'company_quota': company_quota,
+            'own_pledge': own_pledge,
+            'historical_series': hist_series,
             'monthly_series': monthly_series,
             'deals': deals,
             'funnel': funnel,
@@ -2491,13 +2408,20 @@ def get_growth_targets_summary():
                     'closed_deals': closed_cnt,
                     'revenue': closed_rev,
                     'avg_deal': totals['invoiced']['avg_deal'],
-                    'cancelled_pct': round((totals['cancelled']['count'] / tot_all_cnt) * 100, 1)
+                    'months_elapsed': months_elapsed
                 },
-                'prior_period': {
-                    'closed_deals': prior_totals['invoiced']['count'],
-                    'revenue': prior_totals['invoiced']['revenue'],
-                    'avg_deal': prior_totals['invoiced']['avg_deal'],
-                    'cancelled_pct': round((prior_totals['cancelled']['count'] / max(1, prior_totals['all']['count'])) * 100, 1)
+                'prior_same_period': {
+                    'closed_deals': prior_same_deals,
+                    'revenue': prior_same_rev,
+                    'avg_deal': prior_same_avg,
+                    'yoy_revenue_pct': yoy_same_rev_pct,
+                    'yoy_deals_pct': yoy_same_deals_pct,
+                    'months_elapsed': months_elapsed
+                },
+                'prior_full_year': {
+                    'closed_deals': prior_full_deals,
+                    'revenue': prior_full_rev,
+                    'avg_deal': prior_full_avg
                 },
                 'team_average': {
                     'closed_deals': team_avg['closed_deals'],
