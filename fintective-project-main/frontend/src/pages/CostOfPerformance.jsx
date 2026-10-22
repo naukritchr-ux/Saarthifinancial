@@ -509,6 +509,7 @@ export default function CostOfPerformance({ setActivePage }) {
     });
 
     try {
+      const url = `${API_BASE_URL}/cost-performance/report?${q.toString()}`;
       const res = await fetchWithApiKey(url);
       if (!res.ok) throw new Error(`Export failed with HTTP ${res.status}`);
       const blob = await res.blob();
