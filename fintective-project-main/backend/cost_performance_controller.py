@@ -199,50 +199,259 @@ def get_available_months():
     finally:
         conn.close()
 
+def classify_sub_industry(post_raw, comp_raw, ind_raw):
+    text = f"{comp_raw or ''} {post_raw or ''}".lower()
+    if any(k in text for k in ['rcm', 'medical billing', 'us healthcare billing']):
+        return 'Healthcare Financial Ops (RCM)'
+    if any(k in text for k in ['accountant', 'accounts executive', 'senior accountant', 'finance manager', 'account executive', 'audit', 'taxation', 'tally', 'ca ']):
+        return 'Accounting, Taxation & Audit'
+    if any(k in text for k in ['insurance', 'broker', 'policy', 'underwriting']):
+        return 'Insurance & Underwriting'
+    if any(k in text for k in ['wealth', 'asset management', 'mutual fund', 'investment', 'portfolio', 'relationship manager', 'banking', 'bank ', 'nbfc', 'lending', 'credit officer', 'loan']):
+        return 'Banking, Wealth & Asset Management'
+    if any(k in text for k in ['vmc', 'cnc', 'tool', 'die', 'machin', 'lathe', 'fitter', 'technician', 'extrusion', 'fabricat', 'metal', 'steel']):
+        return 'Precision Machining & Plant Operations'
+    if any(k in text for k in ['design engineer', 'draftsman', 'autocad', 'solidworks', 'mechanical engineer', 'r&d engineer']):
+        return 'Industrial Design & CAD/CAM'
+    if any(k in text for k in ['sales engineer', 'technical sales', 'techno-commercial']):
+        return 'Technical Sales & Engineering'
+    if any(k in text for k in ['electrical engineer', 'site engineer', 'project engineer', 'site supervisor', 'civil engineer', 'service engineer', 'safety officer']):
+        return 'Civil, Site & Plant Engineering'
+    if any(k in text for k in ['purchase executive', 'procurement', 'supply chain', 'logistics', 'warehouse', 'store executive', 'qc chemist', 'polymer', 'chemical', 'quality']):
+        return 'Procurement, QC & Supply Chain'
+    if any(k in text for k in ['graphic designer', 'video editor', 'ui/ux', 'motion', 'multimedia', 'jr content producer']):
+        return 'Digital Design, Creative & Media'
+    if any(k in text for k in ['software', 'developer', 'full stack', 'frontend', 'backend', 'python', 'java', 'react', 'node', 'qa', 'tester', 'devops', 'cloud', 'system engineer', 'data analyst']):
+        return 'Software Development & Engineering'
+    if any(k in text for k in ['digital marketing', 'seo', 'social media', 'content writer']):
+        return 'Digital Marketing & Content Strategy'
+    if any(k in text for k in ['doctor', 'nurse', 'hospital', 'clinical', 'medical officer', 'chemist', 'pharma', 'nutritionist']):
+        return 'Clinical Healthcare, Pharma & Wellness'
+    if any(k in text for k in ['fashion', 'apparel', 'textile', 'store manager', 'merchandiser', 'retail', 'fmcg', 'e-commerce', 'd2c']):
+        return 'Fashion, Apparel & Retail Merchandising'
+    if any(k in text for k in ['interior designer', 'architect', 'real estate', 'realty', 'property', 'builder']):
+        return 'Interior Design, Architecture & Realty'
+    if any(k in text for k in ['sales executive', 'sales manager', 'area sales', 'bdm', 'business development', 'key account', 'inside sales', 'telecaller']):
+        return 'Corporate & B2B Sales'
+    if any(k in text for k in ['marketing manager', 'brand manager', 'campaign manager']):
+        return 'Brand & Strategic Marketing'
+    if any(k in text for k in ['hr executive', 'hr manager', 'talent acquisition', 'recruiter', 'human resource', 'payroll']):
+        return 'Talent Acquisition & HR Operations'
+    if any(k in text for k in ['executive assistant', 'mis executive', 'operations executive', 'back office', 'receptionist', 'admin', 'office assistant', 'customer service']):
+        return 'Office Administration & MIS Operations'
+    return 'General Operations & Placements'
+
+def parse_period_dates(month, fy, view_as, start_date, end_date):
+    import calendar
+    # Rule: If Month is set (and not 'custom'), Month wins and determines the range
+    if month and month.lower() not in ('custom', ''):
+        m_lower = month.lower()
+        if m_lower in ('all', 'all months', 'full year', 'all months (full year)'):
+            if fy and fy != 'All Years':
+                parts = fy.split('-')
+                if len(parts) == 2:
+                    return f"{parts[0]}-04-01", f"{parts[1]}-03-31"
+            return "2026-04-01", "2027-03-31"
+        elif ' ' in month:
+            parts = month.split(' ')
+            m_names = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
+            for idx, mn in enumerate(m_names, 1):
+                if mn in m_lower:
+                    yr = [p for p in parts if p.isdigit() and len(p) == 4]
+                    if yr:
+                        year = int(yr[0])
+                        last_day = calendar.monthrange(year, idx)[1]
+                        return f"{year:04d}-{idx:02d}-01", f"{year:04d}-{idx:02d}-{last_day:02d}"
+        elif '-' in month:
+            parts = month.split('-')
+            if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                y, m = int(parts[0]), int(parts[1])
+                last_day = calendar.monthrange(y, m)[1]
+                return f"{y:04d}-{m:02d}-01", f"{y:04d}-{m:02d}-{last_day:02d}"
+
+    # If Month is not set or custom, evaluate view_as
+    if view_as == 'all_time':
+        return None, None
+    elif view_as == 'this_fy':
+        if fy and fy != 'All Years':
+            parts = fy.split('-')
+            if len(parts) == 2:
+                return f"{parts[0]}-04-01", f"{parts[1]}-03-31"
+        return "2026-04-01", "2027-03-31"
+    elif view_as == 'this_quarter':
+        today = datetime.date.today()
+        m = today.month
+        y = today.year
+        if 4 <= m <= 6:
+            return f"{y}-04-01", f"{y}-06-30"
+        elif 7 <= m <= 9:
+            return f"{y}-07-01", f"{y}-09-30"
+        elif 10 <= m <= 12:
+            return f"{y}-10-01", f"{y}-12-31"
+        else:
+            return f"{y}-01-01", f"{y}-03-31"
+    elif view_as == 'last_3_months':
+        today = datetime.date.today()
+        start = today - datetime.timedelta(days=90)
+        return start.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d")
+    elif view_as == 'custom' and start_date and end_date:
+        return start_date, end_date
+
+    return "2026-04-01", "2027-03-31"
+
 # --------------------------------------------------------------------------
-# 2. GET /api/cost-performance & /api/cost-performance/report (Live 5-Dimension Query & Multi-Filters)
+# 2. GET /api/cost-performance/filter-options (Cascading Option Lists with Counts)
+# --------------------------------------------------------------------------
+@cost_performance_bp.route('/api/cost-performance/filter-options', methods=['GET'])
+def get_cost_performance_filter_options():
+    entity = (request.args.get('entity') or 'bd').strip().lower()
+    raw_month = request.args.get('month', '2026-08').strip()
+    fy = request.args.get('fy', '2026-2027').strip()
+    view_as = request.args.get('view_as', '').strip()
+    start_date = request.args.get('start_date', '').strip()
+    end_date = request.args.get('end_date', '').strip()
+
+    # Cascading Parent Selections
+    tl_selected = [x.strip() for x in request.args.get('tl', '').split(',') if x.strip()]
+    industry_selected = [x.strip() for x in request.args.get('industry', '').split(',') if x.strip()]
+
+    d_start, d_end = parse_period_dates(raw_month, fy, view_as, start_date, end_date)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        date_clause = ""
+        date_params = []
+        if d_start and d_end:
+            date_clause = "AND (COALESCE(v.billDate, v.dateReceived, v.paidOnDate) >= %s AND COALESCE(v.billDate, v.dateReceived, v.paidOnDate) <= %s)"
+            date_params.extend([d_start, d_end])
+
+        sql = f"""
+            SELECT 
+                TRIM(COALESCE(v.teamLeader, 'Head Office')) AS tl_name,
+                TRIM(COALESCE(v.nameOfBd, 'Head Office')) AS bd_name,
+                TRIM(COALESCE(v.franchiseName, 'Direct Client')) AS franchise_name,
+                COALESCE(v.companyName, 'Direct Client') AS company_name,
+                COALESCE(v.postOfCandidate, '') AS postOfCandidate,
+                e.industry AS raw_industry,
+                e.enquiryStatus,
+                c.status AS client_status
+            FROM v_invoice_clean v
+            LEFT JOIN enquiries e ON v.enquiry_id = e.id
+            LEFT JOIN clients_info c ON LOWER(TRIM(v.companyName)) = LOWER(TRIM(c.companyName))
+            WHERE 1=1 {date_clause}
+        """
+        cursor.execute(sql, date_params)
+        rows = cursor.fetchall()
+
+        # Build counts with cascading
+        tls_count = {}
+        bds_count = {}
+        franchises_count = {}
+        industries_count = {}
+        sub_industries_count = {}
+        cities_count = {}
+        client_statuses_count = {}
+        enquiry_statuses_count = {}
+
+        for r in rows:
+            tl = r['tl_name']
+            bd = r['bd_name']
+            fr = r['franchise_name']
+            comp = r['company_name']
+            post = r['postOfCandidate']
+            raw_ind = r['raw_industry']
+            cl_st = r['client_status']
+            enq_st = r['enquiryStatus']
+
+            ct = normalize_city(comp)
+            ind = normalize_industry(raw_ind or post)
+            sub_ind = classify_sub_industry(post, comp, ind)
+
+            if tl and tl.lower() not in ('none', '-', 'null'):
+                tls_count[tl] = tls_count.get(tl, 0) + 1
+
+            if ct and ct != 'Other / Unassigned':
+                cities_count[ct] = cities_count.get(ct, 0) + 1
+
+            if ind and ind != 'General / Cross-Sector':
+                industries_count[ind] = industries_count.get(ind, 0) + 1
+
+            if cl_st and cl_st.strip():
+                cl_st_clean = cl_st.strip().lower()
+                client_statuses_count[cl_st_clean] = client_statuses_count.get(cl_st_clean, 0) + 1
+
+            if enq_st and enq_st.strip():
+                enq_st_clean = enq_st.strip().lower()
+                enquiry_statuses_count[enq_st_clean] = enquiry_statuses_count.get(enq_st_clean, 0) + 1
+
+            # Cascading 1: Choosing a TL narrows BD Member and Franchise
+            tl_matches = (not tl_selected) or (tl in tl_selected)
+            if tl_matches:
+                if bd and bd.lower() not in ('none', '-', 'null'):
+                    bds_count[bd] = bds_count.get(bd, 0) + 1
+                if fr and fr.lower() not in ('direct client', 'none', '-', 'null'):
+                    franchises_count[fr] = franchises_count.get(fr, 0) + 1
+
+            # Cascading 2: Choosing an Industry narrows Sub Industry
+            ind_matches = (not industry_selected) or (ind in industry_selected)
+            if ind_matches:
+                if sub_ind:
+                    sub_industries_count[sub_ind] = sub_industries_count.get(sub_ind, 0) + 1
+
+        def format_options(counts_dict, title_case=False):
+            items = []
+            for k, cnt in counts_dict.items():
+                label = k.title() if title_case else k
+                items.append({'label': label, 'value': k, 'count': cnt})
+            return sorted(items, key=lambda x: x['label'])
+
+        return jsonify({
+            'success': True,
+            'team_leaders': format_options(tls_count),
+            'bd_members': format_options(bds_count),
+            'franchises': format_options(franchises_count),
+            'industries': format_options(industries_count),
+            'sub_industries': format_options(sub_industries_count),
+            'cities': format_options(cities_count),
+            'client_statuses': format_options(client_statuses_count, title_case=True),
+            'enquiry_statuses': format_options(enquiry_statuses_count, title_case=True)
+        })
+    except Exception as e:
+        print(f"[get_cost_performance_filter_options] Error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        conn.close()
+
+# --------------------------------------------------------------------------
+# 3. GET /api/cost-performance & /api/cost-performance/report (Live 5-Dimension Query & Multi-Filters)
 # --------------------------------------------------------------------------
 @cost_performance_bp.route('/api/cost-performance', methods=['GET'])
 @cost_performance_bp.route('/api/cost-performance/report', methods=['GET'])
 def get_cost_performance_report():
-    """
-    Authoritative Unit-Economics & Performance Ledger Endpoint for all 5 Tabs:
-    BD-wise, Team Leader-wise, Franchise-wise, City-wise, Industry-wise.
-    Supports complete server-side SQL parameterized filtering, cross-dimension filtering,
-    two-stage verdict calculation (counts computed before verdict filter), and dynamic options.
-    """
     raw_dim = request.args.get('entity') or request.args.get('dimension') or 'bd'
     dimension = raw_dim.strip().lower()
     if dimension == 'franchisee':
         dimension = 'franchise'
 
     raw_month = request.args.get('month', '2026-08').strip()
-    month_lower = raw_month.lower()
-    if 'all' in month_lower or month_lower == 'all months':
-        month = 'all'
-    elif ' ' in raw_month:
-        parts = raw_month.split()
-        m_names = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
-        matched_month = None
-        for idx, mn in enumerate(m_names, 1):
-            if mn in month_lower:
-                year_part = [p for p in parts if p.isdigit() and len(p) == 4]
-                if year_part:
-                    matched_month = f"{year_part[0]}-{idx:02d}"
-                break
-        month = matched_month or raw_month
-    else:
-        month = raw_month
-
     fy = request.args.get('fy', '2026-2027').strip()
+    view_as = request.args.get('view_as', '').strip()
+    start_date = request.args.get('start_date', '').strip()
+    end_date = request.args.get('end_date', '').strip()
     user_role = request.args.get('role', 'head_office').strip().lower()
 
     # Filters
     verdict_filter = request.args.get('verdict', '').strip().lower()
     tl_filter = request.args.get('tl', '').strip()
+    bd_filter = request.args.get('bd', '').strip()
     franchise_filter = request.args.get('franchise', '').strip()
     city_filter = request.args.get('city', '').strip()
     industry_filter = request.args.get('industry', '').strip()
+    sub_industry_filter = request.args.get('sub_industry', '').strip()
+    client_status_filter = request.args.get('client_status', '').strip()
+    enquiry_status_filter = request.args.get('enquiry_status', '').strip()
+
     has_cn_str = request.args.get('has_cn', '').strip().lower()
     has_cn = 1 if has_cn_str in ('1', 'true', 'yes') else (0 if has_cn_str in ('0', 'false', 'no') else None)
     min_cn = float(request.args.get('min_cn', 0) or 0)
@@ -256,39 +465,34 @@ def get_cost_performance_report():
     sort_by = request.args.get('sort', 'net').strip().lower()
     sort_dir = request.args.get('sort_dir', 'desc').strip().lower()
 
+    # Determine date range
+    d_start, d_end = parse_period_dates(raw_month, fy, view_as, start_date, end_date)
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cost_meta = _get_live_month_costs(cursor, month if month != 'all' else '2026-08')
-        overhead_pool = cost_meta.get('overhead_pool', 120000.0)
+        month_key = raw_month if raw_month not in ('all', 'custom', '') else '2026-08'
+        cost_meta = _get_live_month_costs(cursor, month_key)
+        monthly_overhead = cost_meta.get('overhead_pool', 120000.0)
         allocation_basis = cost_meta.get('allocation_basis', 'revenue_share')
-        tl_roster_map = cost_meta.get('tl_roster', {})
 
-        # Date Filtering
+        # Multiplier for full year / multi-month ranges
+        is_full_year = (raw_month.lower() in ('all', 'all months', 'full year', 'all months (full year)'))
+        month_multiplier = 12.0 if is_full_year else 1.0
+        overhead_pool = monthly_overhead * month_multiplier
+
+        # Date Filtering SQL Clauses
         date_params = []
         enq_params = []
-        if month != 'all':
-            date_clause = "AND (COALESCE(v.billDate, v.dateReceived, v.paidOnDate) LIKE %s)"
-            date_params.append(f"{month}%")
-            enq_date_clause = "AND (e.dateOfAllocation LIKE %s OR e.created_at LIKE %s)"
-            enq_params.extend([f"{month}%", f"{month}%"])
-        elif fy and fy != 'All Years':
-            parts = fy.split('-')
-            if len(parts) == 2:
-                start_date = f"{parts[0]}-04-01"
-                end_date = f"{parts[1]}-03-31"
-                date_clause = "AND (COALESCE(v.billDate, v.dateReceived, v.paidOnDate) >= %s AND COALESCE(v.billDate, v.dateReceived, v.paidOnDate) <= %s)"
-                date_params.extend([start_date, end_date])
-                enq_date_clause = "AND ((e.dateOfAllocation >= %s AND e.dateOfAllocation <= %s) OR (e.created_at >= %s AND e.created_at <= %s))"
-                enq_params.extend([start_date, end_date, start_date, end_date])
-            else:
-                date_clause = ""
-                enq_date_clause = ""
-        else:
-            date_clause = ""
-            enq_date_clause = ""
+        date_clause = ""
+        enq_date_clause = ""
+        if d_start and d_end:
+            date_clause = "AND (COALESCE(v.billDate, v.dateReceived, v.paidOnDate) >= %s AND COALESCE(v.billDate, v.dateReceived, v.paidOnDate) <= %s)"
+            date_params.extend([d_start, d_end])
+            enq_date_clause = "AND ((e.dateOfAllocation >= %s AND e.dateOfAllocation <= %s) OR (e.created_at >= %s AND e.created_at <= %s))"
+            enq_params.extend([d_start, d_end, d_start, d_end])
 
-        # 1. Fetch live invoices and enquiries
+        # 1. Fetch live invoices with client_status & enquiryStatus
         inv_sql = f"""
             SELECT 
                 v.id AS invoice_id,
@@ -308,14 +512,17 @@ def get_cost_performance_report():
                 COALESCE(v.postOfCandidate, '') AS postOfCandidate,
                 e.id AS enquiry_id,
                 e.enquiryStatus,
-                e.industry AS enquiry_industry
+                e.industry AS enquiry_industry,
+                c.status AS client_status
             FROM v_invoice_clean v
             LEFT JOIN enquiries e ON v.enquiry_id = e.id
+            LEFT JOIN clients_info c ON LOWER(TRIM(v.companyName)) = LOWER(TRIM(c.companyName))
             WHERE 1=1 {date_clause}
         """
         cursor.execute(inv_sql, date_params)
         invoices = cursor.fetchall()
 
+        # 2. Fetch enquiries
         enq_sql = f"""
             SELECT 
                 e.id AS enquiry_id,
@@ -324,39 +531,16 @@ def get_cost_performance_report():
                 TRIM(COALESCE(e.franchiseeName, 'Direct Client')) AS franchise_name,
                 COALESCE(e.companyName, 'Direct Client') AS company_name,
                 e.industry,
-                e.enquiryStatus
+                e.enquiryStatus,
+                c.status AS client_status
             FROM enquiries e
+            LEFT JOIN clients_info c ON LOWER(TRIM(e.companyName)) = LOWER(TRIM(c.companyName))
             WHERE 1=1 {enq_date_clause}
         """
         cursor.execute(enq_sql, enq_params)
         all_enquiries = cursor.fetchall()
 
-        # Extract dynamic filter options across all period data
-        all_period_tls = set()
-        all_period_franchises = set()
-        all_period_cities = set()
-        all_period_industries = set()
-
-        for inv in invoices:
-            if inv['tl_name'] and inv['tl_name'].lower() not in ('head office', 'none', '-'):
-                all_period_tls.add(inv['tl_name'])
-            if inv['franchise_name'] and inv['franchise_name'].lower() not in ('direct client', 'none', '-'):
-                all_period_franchises.add(inv['franchise_name'])
-            c = normalize_city(inv['company_name'])
-            if c and c != 'Other / Unassigned':
-                all_period_cities.add(c)
-            ind = normalize_industry(inv['enquiry_industry'] or inv['postOfCandidate'])
-            if ind and ind != 'General / Cross-Sector':
-                all_period_industries.add(ind)
-
-        filter_options = {
-            'team_leaders': sorted(list(all_period_tls)),
-            'franchises': sorted(list(all_period_franchises)),
-            'cities': sorted(list(all_period_cities)),
-            'industries': sorted(list(all_period_industries))
-        }
-
-        # 2. Aggregate by Active Dimension
+        # 3. Aggregate by Active Dimension
         dim_map = {}
         for inv in invoices:
             if dimension == 'bd': k = inv['bd_name']
@@ -379,19 +563,29 @@ def get_cost_performance_report():
                     'churnCost': 0.0,
                     'enquiries': 0,
                     'associated_tls': set(),
+                    'associated_bds': set(),
                     'associated_franchises': set(),
                     'associated_cities': set(),
                     'associated_industries': set(),
+                    'associated_sub_industries': set(),
+                    'associated_client_statuses': set(),
+                    'associated_enquiry_statuses': set(),
                     'invoice_ids': []
                 }
 
             entry = dim_map[k]
             if inv['tl_name']: entry['associated_tls'].add(inv['tl_name'])
+            if inv['bd_name']: entry['associated_bds'].add(inv['bd_name'])
             if inv['franchise_name']: entry['associated_franchises'].add(inv['franchise_name'])
-            c = normalize_city(inv['company_name'])
-            if c: entry['associated_cities'].add(c)
-            ind = normalize_industry(inv['enquiry_industry'] or inv['postOfCandidate'])
-            if ind: entry['associated_industries'].add(ind)
+            c_name = normalize_city(inv['company_name'])
+            if c_name: entry['associated_cities'].add(c_name)
+            ind_name = normalize_industry(inv['enquiry_industry'] or inv['postOfCandidate'])
+            if ind_name: entry['associated_industries'].add(ind_name)
+            sub_ind = classify_sub_industry(inv['postOfCandidate'], inv['company_name'], ind_name)
+            if sub_ind: entry['associated_sub_industries'].add(sub_ind)
+            if inv.get('client_status'): entry['associated_client_statuses'].add(str(inv['client_status']).strip().lower())
+            if inv.get('enquiryStatus'): entry['associated_enquiry_statuses'].add(str(inv['enquiryStatus']).strip().lower())
+
             entry['invoice_ids'].append(inv['invoice_id'])
 
             is_cn = (not inv['is_revenue']) or (str(inv['info'] or '').upper() in ('CN', 'RV', 'LEGAL-CN'))
@@ -414,10 +608,13 @@ def get_cost_performance_report():
 
             if k in dim_map:
                 dim_map[k]['enquiries'] += 1
-                if e['tl_name']: dim_map[k]['associated_tls'].add(e['tl_name'])
-                if e['franchisee_name']: dim_map[k]['associated_franchises'].add(e['franchisee_name'])
+                if e.get('tl_name'): dim_map[k]['associated_tls'].add(e['tl_name'])
+                if e.get('bd_name'): dim_map[k]['associated_bds'].add(e['bd_name'])
+                if e.get('franchise_name'): dim_map[k]['associated_franchises'].add(e['franchise_name'])
+                if e.get('client_status'): dim_map[k]['associated_client_statuses'].add(str(e['client_status']).strip().lower())
+                if e.get('enquiryStatus'): dim_map[k]['associated_enquiry_statuses'].add(str(e['enquiryStatus']).strip().lower())
 
-        # 3. Direct Cost, Overhead, Unit Economics & Verdicts
+        # 4. Direct Cost, Overhead, Unit Economics & Verdicts
         total_co_share = sum(d['company_share'] for d in dim_map.values())
         headcount = max(1, len(dim_map))
 
@@ -427,13 +624,15 @@ def get_cost_performance_report():
             cost_is_estimated = False
 
             if dimension == 'bd':
-                cursor.execute("SELECT fixed_salary, incentive_paid, travel_expense FROM cost_bd_monthly WHERE (LOWER(bd_name) = %s OR LOWER(bd_id) = %s) AND month = %s", [k_lower, k_lower, month])
+                cursor.execute("SELECT fixed_salary, incentive_paid, travel_expense FROM cost_bd_monthly WHERE (LOWER(bd_name) = %s OR LOWER(bd_id) = %s) AND month = %s", [k_lower, k_lower, raw_month])
                 c_row = cursor.fetchone()
                 if c_row:
-                    direct_cost = float(c_row['fixed_salary'] or 0) + float(c_row['incentive_paid'] or 0) + float(c_row['travel_expense'] or 0)
+                    base_direct = float(c_row['fixed_salary'] or 0) + float(c_row['incentive_paid'] or 0) + float(c_row['travel_expense'] or 0)
+                    direct_cost = base_direct * month_multiplier
                     cost_is_estimated = False
                 else:
-                    direct_cost = 28000.0 if 'komal' in k_lower else 30000.0
+                    base_direct = 28000.0 if 'komal' in k_lower else 30000.0
+                    direct_cost = base_direct * month_multiplier
                     cost_is_estimated = True
                 
                 if allocation_basis == 'placement_count':
@@ -443,13 +642,15 @@ def get_cost_performance_report():
                 cost_of_execution = direct_cost + overhead_share
 
             elif dimension == 'tl':
-                cursor.execute("SELECT fixed_salary, travel_expense, admin_cost FROM cost_tl_monthly WHERE LOWER(tl_name) = %s AND month = %s", [k_lower, month])
+                cursor.execute("SELECT fixed_salary, incentive_paid FROM cost_tl_monthly WHERE LOWER(tl_name) = %s AND month = %s", [k_lower, raw_month])
                 tl_row = cursor.fetchone()
                 if tl_row:
-                    direct_cost = float(tl_row['fixed_salary'] or 0) + float(tl_row['travel_expense'] or 0) + float(tl_row['admin_cost'] or 0)
+                    base_direct = float(tl_row.get('fixed_salary', 0) or 0) + float(tl_row.get('incentive_paid', 0) or 0)
+                    direct_cost = base_direct * month_multiplier
                     cost_is_estimated = False
                 else:
-                    direct_cost = 75000.0
+                    base_direct = 75000.0
+                    direct_cost = base_direct * month_multiplier
                     cost_is_estimated = True
 
                 overhead_share = (d['company_share'] / total_co_share * overhead_pool) if total_co_share > 0 else (overhead_pool / headcount)
@@ -468,16 +669,15 @@ def get_cost_performance_report():
             net = d['company_share'] - cost_of_execution - d['churnCost']
             margin_pct = round((net / d['company_share'] * 100), 1) if d['company_share'] > 0 else 0.0
 
-            # Unit Economics
-            total_enquiries = max(1, d['enquiries'] if d['enquiries'] > 0 else d['placements'])
-            rev_per_enquiry = round(d['company_share'] / total_enquiries, 2)
-            exp_per_enquiry = round(cost_of_execution / total_enquiries, 2)
-            net_surplus_per_enquiry = round(rev_per_enquiry - exp_per_enquiry, 2)
+            # Unit Economics per effort & partner
+            net_surplus_per_enquiry = round(net / max(1, d['enquiries']), 2)
+            rev_per_enquiry = round(d['company_share'] / max(1, d['enquiries']), 2)
+            exp_per_enquiry = round((cost_of_execution + d['churnCost']) / max(1, d['enquiries']), 2)
 
-            active_franchises = len(d['associated_franchises']) or tl_roster_map.get(k_lower, DEFAULT_TL_FRANCHISE_ROSTER.get(k_lower, 50))
-            if dimension == 'tl':
-                rev_per_franchise = round(d['company_share'] / max(1, active_franchises), 2)
-                net_per_franchise = round(net / max(1, active_franchises), 2)
+            active_franchises = len(d['associated_franchises'])
+            if active_franchises > 0:
+                rev_per_franchise = round(d['company_share'] / active_franchises, 2)
+                net_per_franchise = round(net / active_franchises, 2)
             else:
                 rev_per_franchise = 0.0
                 net_per_franchise = 0.0
@@ -542,12 +742,16 @@ def get_cost_performance_report():
                 'verdict': verdict,
                 'verdict_label': verdict_label,
                 'associated_tls': list(d['associated_tls']),
+                'associated_bds': list(d['associated_bds']),
                 'associated_franchises': list(d['associated_franchises']),
                 'associated_cities': list(d['associated_cities']),
-                'associated_industries': list(d['associated_industries'])
+                'associated_industries': list(d['associated_industries']),
+                'associated_sub_industries': list(d['associated_sub_industries']),
+                'associated_client_statuses': list(d['associated_client_statuses']),
+                'associated_enquiry_statuses': list(d['associated_enquiry_statuses'])
             })
 
-        # 4. Stage 1: Non-Verdict Filtering (Cross-filters, More Filters, Search)
+        # 5. Stage 1: Non-Verdict Filtering
         stage1 = unfiltered_items
 
         if tl_filter:
@@ -556,6 +760,10 @@ def get_cost_performance_report():
                 stage1 = [r for r in stage1 if any(t in r['dimension_value'].lower() for t in tl_req)]
             else:
                 stage1 = [r for r in stage1 if any(any(t in assoc.lower() for t in tl_req) for assoc in r['associated_tls'])]
+
+        if bd_filter and dimension != 'bd':
+            bd_req = [b.strip().lower() for b in bd_filter.split(',') if b.strip()]
+            stage1 = [r for r in stage1 if any(any(b in assoc.lower() for b in bd_req) for assoc in r['associated_bds'])]
 
         if franchise_filter:
             fr_req = [f.strip().lower() for f in franchise_filter.split(',') if f.strip()]
@@ -577,6 +785,18 @@ def get_cost_performance_report():
                 stage1 = [r for r in stage1 if any(i in r['dimension_value'].lower() for i in ind_req)]
             else:
                 stage1 = [r for r in stage1 if any(any(i in assoc.lower() for i in ind_req) for assoc in r['associated_industries'])]
+
+        if sub_industry_filter:
+            sub_req = [s.strip().lower() for s in sub_industry_filter.split(',') if s.strip()]
+            stage1 = [r for r in stage1 if any(any(s in assoc.lower() for s in sub_req) for assoc in r['associated_sub_industries'])]
+
+        if client_status_filter:
+            cl_req = [cs.strip().lower() for cs in client_status_filter.split(',') if cs.strip()]
+            stage1 = [r for r in stage1 if any(any(cs in assoc.lower() for cs in cl_req) for assoc in r['associated_client_statuses'])]
+
+        if enquiry_status_filter:
+            enq_req = [es.strip().lower() for es in enquiry_status_filter.split(',') if es.strip()]
+            stage1 = [r for r in stage1 if any(any(es in assoc.lower() for es in enq_req) for assoc in r['associated_enquiry_statuses'])]
 
         if has_cn is not None:
             if has_cn == 1:
@@ -602,7 +822,7 @@ def get_cost_performance_report():
         if search_query:
             stage1 = [r for r in stage1 if search_query in r['dimension_value'].lower() or search_query in r['role'].lower()]
 
-        # 5. Compute Verdict Counts (BEFORE verdict filter, AFTER other filters)
+        # 6. Compute Verdict Counts (BEFORE verdict filter, AFTER other filters)
         verdict_counts = {
             'all': len(stage1),
             'star': sum(1 for r in stage1 if r['verdict'] == 'star'),
@@ -612,22 +832,20 @@ def get_cost_performance_report():
             'loss': sum(1 for r in stage1 if r['verdict'] == 'loss')
         }
 
-        # 6. Stage 2: Verdict Filtering
+        # 7. Stage 2: Verdict Filtering
         final_rows = stage1
         if verdict_filter and verdict_filter != 'all':
             v_req = [v.strip().lower() for v in verdict_filter.split(',') if v.strip()]
             final_rows = [r for r in stage1 if r['verdict'] in v_req]
 
-        # 7. Sorting
+        # 8. Sorting
         reverse_order = (sort_dir == 'desc')
-        if sort_by == 'cn':
+        if sort_by == 'cn' or sort_by == 'credit_notes':
             final_rows.sort(key=lambda x: x['churnCost'], reverse=reverse_order)
         elif sort_by == 'placements':
             final_rows.sort(key=lambda x: x['placements'], reverse=reverse_order)
-        elif sort_by == 'net_per_enquiry':
+        elif sort_by in ('net_per_enquiry', 'net_enquiry'):
             final_rows.sort(key=lambda x: x['netSurplusPerEnquiry'], reverse=reverse_order)
-        elif sort_by == 'net_per_franchise':
-            final_rows.sort(key=lambda x: x['netPerFranchise'], reverse=reverse_order)
         elif sort_by == 'company_share':
             final_rows.sort(key=lambda x: x['company_share'], reverse=reverse_order)
         else: # 'net'
@@ -639,7 +857,7 @@ def get_cost_performance_report():
 
         # Totals / KPI Cards
         is_filtered = (len(final_rows) < len(unfiltered_items)) or bool(
-            (verdict_filter and verdict_filter != 'all') or tl_filter or franchise_filter or city_filter or industry_filter or has_cn is not None or min_placements > 0 or min_cn > 0 or min_net is not None or max_net is not None or search_query
+            (verdict_filter and verdict_filter != 'all') or tl_filter or bd_filter or franchise_filter or city_filter or industry_filter or sub_industry_filter or client_status_filter or enquiry_status_filter or has_cn is not None or min_placements > 0 or min_cn > 0 or min_net is not None or max_net is not None or search_query
         )
 
         billed_sum = sum(r['total_billed'] for r in final_rows)
@@ -669,16 +887,41 @@ def get_cost_performance_report():
             totals.pop('costOfExecution', None)
             totals.pop('netContribution', None)
 
+        # CSV Export Response Handler
+        if request.path.endswith('/report'):
+            import io
+            import csv
+            from flask import Response
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(['Rank', 'Entity / Executive', 'Placements', 'Total Enquiries', 'Company Share', 'Cost of Execution', 'Credit Notes', 'Net Contribution', 'Net / Enquiry', 'Verdict', 'Segment'])
+            for r in final_rows:
+                writer.writerow([
+                    r.get('rank', ''),
+                    r.get('dimension_value', ''),
+                    r.get('placements', 0),
+                    r.get('enquiries', 0),
+                    f"{r.get('company_share', 0):.2f}",
+                    f"{r.get('costOfExecution', 0):.2f}",
+                    f"{r.get('churnCost', 0):.2f}",
+                    f"{r.get('netContribution', 0):.2f}",
+                    f"{r.get('netSurplusPerEnquiry', 0):.2f}",
+                    r.get('verdict_label', ''),
+                    r.get('segment', '')
+                ])
+            csv_bytes = output.getvalue().encode('utf-8')
+            filename = f"cost_performance_{dimension}_{raw_month}_{fy}.csv"
+            return Response(csv_bytes, mimetype="text/csv", headers={"Content-Disposition": f"attachment;filename={filename}"})
+
         return jsonify({
             'success': True,
             'entity': dimension,
             'dimension': dimension,
-            'month': month,
+            'month': raw_month,
             'fy': fy,
             'total_records': len(unfiltered_items),
             'filtered_records': len(final_rows),
             'verdict_counts': verdict_counts,
-            'filter_options': filter_options,
             'totals': totals,
             'rows': final_rows,
             'is_filtered': is_filtered

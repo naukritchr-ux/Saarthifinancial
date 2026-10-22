@@ -1,343 +1,118 @@
-import React, { useState, useEffect, useMemo, useContext, useCallback, useRef } from 'react';
-import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
-import { fetchWithApiKey } from '../utils/apiClient';
-import { formatCurrency, formatDate } from '../utils/formatters';
-import { 
-  DollarSign, 
-  TrendingUp, 
-  TrendingDown, 
-  AlertTriangle, 
-  Users, 
-  Building, 
-  MapPin, 
-  Briefcase, 
-  SlidersHorizontal, 
-  Download, 
-  Search, 
-  ArrowUpDown, 
-  ChevronRight, 
-  X, 
-  Sparkles, 
-  Target, 
-  Zap, 
-  Check, 
-  Layers,
-  Filter,
-  ChevronDown,
-  CheckCircle2,
-  Calendar,
-  RotateCcw
-} from 'lucide-react';
-import Pagination from '../components/Pagination';
+import React, { useState, useEffect, useContext, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { FinanceContext } from '../context/FinanceContext';
+import FilterPanel from '../components/FilterPanel';
 import AuditDrawer from '../components/AuditDrawer';
+import { 
+  Filter, Search, X, Check, ChevronDown, ChevronUp, Download, 
+  RotateCcw, Calendar, Sliders, AlertCircle, TrendingUp, TrendingDown, 
+  Shield, Users, DollarSign, Activity, FileText, Settings, Layers, 
+  ArrowUp, ArrowDown, ExternalLink
+} from 'lucide-react';
 
-/**
- * Universal Cost of Performance Page
- * Answers unit-economics, cost drag, and profitability across:
- * BD-wise, Team Leader-wise, Franchise-wise, City-wise, and Industry-wise.
- */
-const CostOfPerformance = () => {
-  const { currentUser, userRole, selectedMonth: globalMonth, selectedYear: globalYear } = useContext(FinanceContext);
+const TABS = [
+  { id: 'bd', label: 'BD-wise', entitySingular: 'BD Member' },
+  { id: 'tl', label: 'Team Leader-wise', entitySingular: 'Team Leader' },
+  { id: 'franchise', label: 'Franchise-wise', entitySingular: 'Franchise Partner' },
+  { id: 'city', label: 'City-wise', entitySingular: 'Operational City' },
+  { id: 'industry', label: 'Industry-wise', entitySingular: 'Industry Domain' }
+];
 
-  // Normalize global period
-  const cleanMonth = useMemo(() => {
-    const raw = (globalMonth || '2026-08').trim();
-    const lower = raw.toLowerCase();
-    if (lower === 'all months' || lower === 'all') return 'all';
-    if (raw.includes(' ')) {
-      const parts = raw.split(' ');
-      const mNames = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
-      const mIdx = mNames.indexOf(parts[0].toLowerCase());
-      if (mIdx !== -1 && parts[1]) {
-        return `${parts[1]}-${String(mIdx + 1).padStart(2, '0')}`;
-      }
-    }
-    return raw;
-  }, [globalMonth]);
+const VERDICTS = [
+  { id: 'all', label: 'All', badgeClass: 'bg-gray-100 text-gray-700 hover:bg-gray-200' },
+  { id: 'star', label: 'Star Performer', badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' },
+  { id: 'healthy', label: 'Healthy', badgeClass: 'bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100' },
+  { id: 'breakeven', label: 'Break-even', badgeClass: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' },
+  { id: 'at_risk', label: 'At Risk', badgeClass: 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100' },
+  { id: 'loss', label: 'Loss Drain', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' }
+];
 
-  const cleanFy = useMemo(() => {
-    return (globalYear || '2026-2027').trim();
-  }, [globalYear]);
+export default function CostOfPerformance() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { 
+    selectedMonth, 
+    setSelectedMonth, 
+    selectedYear, 
+    setSelectedYear, 
+    availableMonths = [], 
+    availableYears = [],
+    userRole 
+  } = useContext(FinanceContext);
 
-  // Read initial state from URL search params
-  const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
-  const initialTab = urlParams.get('tab') || 'bd';
-  const initialVerdict = urlParams.get('verdict') || 'all';
+  // 1. URL State Initialization
+  const initialTab = searchParams.get('tab') || 'bd';
+  const initialVerdict = searchParams.get('verdict') || 'all';
+  const initialSearch = searchParams.get('search') || '';
 
-  // Core Dimension State: 'bd' | 'tl' | 'franchise' | 'city' | 'industry'
-  const [activeDimension, setActiveDimension] = useState(initialTab);
+  const parseArrayParam = (key) => {
+    const val = searchParams.get(key);
+    return val ? val.split(',').filter(Boolean) : [];
+  };
 
-  // Filter States
+  // 2. Active Tab & Instant Controls
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [activeVerdict, setActiveVerdict] = useState(initialVerdict);
-  const [selectedTls, setSelectedTls] = useState(() => urlParams.get('tl') ? urlParams.get('tl').split(',') : []);
-  const [selectedFranchises, setSelectedFranchises] = useState(() => urlParams.get('franchise') ? urlParams.get('franchise').split(',') : []);
-  const [selectedCities, setSelectedCities] = useState(() => urlParams.get('city') ? urlParams.get('city').split(',') : []);
-  const [selectedIndustries, setSelectedIndustries] = useState(() => urlParams.get('industry') ? urlParams.get('industry').split(',') : []);
+  const [searchTerm, setSearchTerm] = useState(initialSearch);
+  const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
 
-  // More Filters
-  const [hasCreditNotes, setHasCreditNotes] = useState(() => urlParams.get('has_cn') === '1' ? true : (urlParams.get('has_cn') === '0' ? false : null));
-  const [minCreditNotes, setMinCreditNotes] = useState(() => urlParams.get('min_cn') || '');
-  const [minPlacements, setMinPlacements] = useState(() => urlParams.get('min_placements') || '');
-  const [minNet, setMinNet] = useState(() => urlParams.get('min_net') || '');
-  const [maxNet, setMaxNet] = useState(() => urlParams.get('max_net') || '');
-  const [selectedSegment, setSelectedSegment] = useState(() => urlParams.get('segment') || 'all');
+  // 3. Staged Filters in FilterPanel (Applied ONLY on "Apply Filters" click)
+  const [stagedSortBy, setStagedSortBy] = useState(() => searchParams.get('sort') || 'net');
+  const [stagedSortDir, setStagedSortDir] = useState(() => searchParams.get('sort_dir') || 'desc');
+  const [stagedViewReportAs, setStagedViewReportAs] = useState(() => searchParams.get('view_as') || 'this_fy');
+  const [stagedCustomStartDate, setStagedCustomStartDate] = useState(() => searchParams.get('start_date') || '');
+  const [stagedCustomEndDate, setStagedCustomEndDate] = useState(() => searchParams.get('end_date') || '');
 
-  // Search & Debounce
-  const [searchTerm, setSearchTerm] = useState(() => urlParams.get('search') || '');
-  const [debouncedSearch, setDebouncedSearch] = useState(searchTerm);
+  const [stagedTLs, setStagedTLs] = useState(() => parseArrayParam('tl'));
+  const [stagedBDs, setStagedBDs] = useState(() => parseArrayParam('bd'));
+  const [stagedFranchises, setStagedFranchises] = useState(() => parseArrayParam('franchise'));
+  const [stagedIndustries, setStagedIndustries] = useState(() => parseArrayParam('industry'));
+  const [stagedSubIndustries, setStagedSubIndustries] = useState(() => parseArrayParam('sub_industry'));
+  const [stagedCities, setStagedCities] = useState(() => parseArrayParam('city'));
+  const [stagedClientStatuses, setStagedClientStatuses] = useState(() => parseArrayParam('client_status'));
+  const [stagedEnquiryStatuses, setStagedEnquiryStatuses] = useState(() => parseArrayParam('enquiry_status'));
 
-  // Sorting State
-  const [sortField, setSortField] = useState(() => urlParams.get('sort') || 'net');
-  const [sortDirection, setSortDirection] = useState(() => urlParams.get('sort_dir') || 'desc');
+  // 4. Committed / Applied Filters (drive server data fetching)
+  const [appliedFilters, setAppliedFilters] = useState(() => ({
+    sortBy: searchParams.get('sort') || 'net',
+    sortDir: searchParams.get('sort_dir') || 'desc',
+    viewReportAs: searchParams.get('view_as') || 'this_fy',
+    customStartDate: searchParams.get('start_date') || '',
+    customEndDate: searchParams.get('end_date') || '',
+    tls: parseArrayParam('tl'),
+    bds: parseArrayParam('bd'),
+    franchises: parseArrayParam('franchise'),
+    industries: parseArrayParam('industry'),
+    subIndustries: parseArrayParam('sub_industry'),
+    cities: parseArrayParam('city'),
+    clientStatuses: parseArrayParam('client_status'),
+    enquiryStatuses: parseArrayParam('enquiry_status')
+  }));
 
-  // Pagination State
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(25); // Default 25 so all 15 BDs are directly visible
-
-  // UI Popovers / Dropdowns
-  const [activeDropdown, setActiveDropdown] = useState(null); // 'tl' | 'franchise' | 'city' | 'industry' | null
-  const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
-  const dropdownRef = useRef(null);
-
-  // Audit Drawer State
-  const [selectedAuditEntity, setSelectedAuditEntity] = useState(null);
-  const [isAuditDrawerOpen, setIsAuditDrawerOpen] = useState(false);
-
-  // Cost Inputs Modal State
-  const [isInputModalOpen, setIsInputModalOpen] = useState(false);
-  const [costInputs, setCostInputs] = useState({
-    defaultBdSalary: 30000,
-    defaultTlSalary: 75000,
-    overheadPool: 120000,
-    allocationMethod: 'revenue_share'
+  // 5. FilterPanel Open/Close State (Persisted in localStorage, default open)
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(() => {
+    const saved = localStorage.getItem('fintective_filter_panel_open');
+    return saved !== null ? saved === 'true' : true;
   });
 
-  // Backend Data State
-  const [reportData, setReportData] = useState(null);
+  const toggleFilterPanel = () => {
+    setIsFilterPanelOpen(prev => {
+      const next = !prev;
+      localStorage.setItem('fintective_filter_panel_open', String(next));
+      return next;
+    });
+  };
+
+  // 6. Pagination & Audit Modal
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(25); // Default 25 records so full datasets are immediately visible
+  const [auditTarget, setAuditTarget] = useState(null);
+  const [isCostModalOpen, setIsCostModalOpen] = useState(false);
+
+  // 7. Server State
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  // 300ms Debounce on Search
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedSearch(searchTerm);
-      setCurrentPage(1);
-    }, 300);
-    return () => clearTimeout(handler);
-  }, [searchTerm]);
-
-  // Click outside to close open dropdown popovers
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setActiveDropdown(null);
-        setIsMoreFiltersOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Fetch from Flask Backend
-  const fetchReport = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const qParams = new URLSearchParams({
-        entity: activeDimension,
-        month: cleanMonth,
-        fy: cleanFy,
-        verdict: activeVerdict !== 'all' ? activeVerdict : '',
-        tl: selectedTls.join(','),
-        franchise: selectedFranchises.join(','),
-        city: selectedCities.join(','),
-        industry: selectedIndustries.join(','),
-        has_cn: hasCreditNotes !== null ? (hasCreditNotes ? '1' : '0') : '',
-        min_cn: minCreditNotes || '',
-        min_placements: minPlacements || '',
-        min_net: minNet || '',
-        max_net: maxNet || '',
-        segment: selectedSegment !== 'all' ? selectedSegment : '',
-        search: debouncedSearch,
-        sort: sortField,
-        sort_dir: sortDirection
-      });
-
-      const endpoint = `${API_BASE_URL}/cost-performance?${qParams.toString()}`;
-      const res = await fetchWithApiKey(endpoint);
-      if (res && res.success) {
-        setReportData(res);
-      } else {
-        throw new Error(res?.error || 'Failed to fetch cost of performance data');
-      }
-    } catch (err) {
-      console.error("[CostOfPerformance] Fetch Error:", err);
-      setError(err.message || 'Error connecting to cost engine');
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    activeDimension,
-    cleanMonth,
-    cleanFy,
-    activeVerdict,
-    selectedTls,
-    selectedFranchises,
-    selectedCities,
-    selectedIndustries,
-    hasCreditNotes,
-    minCreditNotes,
-    minPlacements,
-    minNet,
-    maxNet,
-    selectedSegment,
-    debouncedSearch,
-    sortField,
-    sortDirection
-  ]);
-
-  useEffect(() => {
-    fetchReport();
-  }, [fetchReport]);
-
-  // Synchronize URL query params
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('tab', activeDimension);
-    if (activeVerdict && activeVerdict !== 'all') url.searchParams.set('verdict', activeVerdict);
-    else url.searchParams.delete('verdict');
-
-    if (selectedTls.length > 0) url.searchParams.set('tl', selectedTls.join(','));
-    else url.searchParams.delete('tl');
-
-    if (selectedFranchises.length > 0) url.searchParams.set('franchise', selectedFranchises.join(','));
-    else url.searchParams.delete('franchise');
-
-    if (selectedCities.length > 0) url.searchParams.set('city', selectedCities.join(','));
-    else url.searchParams.delete('city');
-
-    if (selectedIndustries.length > 0) url.searchParams.set('industry', selectedIndustries.join(','));
-    else url.searchParams.delete('industry');
-
-    if (hasCreditNotes !== null) url.searchParams.set('has_cn', hasCreditNotes ? '1' : '0');
-    else url.searchParams.delete('has_cn');
-
-    if (minCreditNotes) url.searchParams.set('min_cn', minCreditNotes);
-    else url.searchParams.delete('min_cn');
-
-    if (minPlacements) url.searchParams.set('min_placements', minPlacements);
-    else url.searchParams.delete('min_placements');
-
-    if (minNet) url.searchParams.set('min_net', minNet);
-    else url.searchParams.delete('min_net');
-
-    if (maxNet) url.searchParams.set('max_net', maxNet);
-    else url.searchParams.delete('max_net');
-
-    if (selectedSegment && selectedSegment !== 'all') url.searchParams.set('segment', selectedSegment);
-    else url.searchParams.delete('segment');
-
-    if (debouncedSearch) url.searchParams.set('search', debouncedSearch);
-    else url.searchParams.delete('search');
-
-    url.searchParams.set('sort', sortField);
-    url.searchParams.set('sort_dir', sortDirection);
-
-    window.history.replaceState({}, '', url.toString());
-  }, [
-    activeDimension,
-    activeVerdict,
-    selectedTls,
-    selectedFranchises,
-    selectedCities,
-    selectedIndustries,
-    hasCreditNotes,
-    minCreditNotes,
-    minPlacements,
-    minNet,
-    maxNet,
-    selectedSegment,
-    debouncedSearch,
-    sortField,
-    sortDirection
-  ]);
-
-  // Tab Change Handler: Resets dimension-specific filters that no longer apply
-  const handleDimensionChange = (dim) => {
-    setActiveDimension(dim);
-    setCurrentPage(1);
-    // Reset filters that don't apply to the new tab
-    if (dim === 'tl') setSelectedTls([]);
-    if (dim === 'franchise') setSelectedFranchises([]);
-    if (dim === 'city') setSelectedCities([]);
-    if (dim === 'industry') setSelectedIndustries([]);
-  };
-
-  // Sort Handler
-  const handleSort = (field) => {
-    if (sortField === field) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('desc');
-    }
-    setCurrentPage(1);
-  };
-
-  // Clear All Filters Handler
-  const handleClearAllFilters = () => {
-    setActiveVerdict('all');
-    setSelectedTls([]);
-    setSelectedFranchises([]);
-    setSelectedCities([]);
-    setSelectedIndustries([]);
-    setHasCreditNotes(null);
-    setMinCreditNotes('');
-    setMinPlacements('');
-    setMinNet('');
-    setMaxNet('');
-    setSelectedSegment('all');
-    setSearchTerm('');
-    setDebouncedSearch('');
-    setCurrentPage(1);
-  };
-
-  // More Filters Active Counter
-  const activeMoreFiltersCount = useMemo(() => {
-    let count = 0;
-    if (hasCreditNotes !== null) count++;
-    if (minCreditNotes) count++;
-    if (minPlacements) count++;
-    if (minNet) count++;
-    if (maxNet) count++;
-    if (selectedSegment && selectedSegment !== 'all') count++;
-    return count;
-  }, [hasCreditNotes, minCreditNotes, minPlacements, minNet, maxNet, selectedSegment]);
-
-  // Total Active Filters Boolean
-  const isAnyFilterActive = useMemo(() => {
-    return (
-      activeVerdict !== 'all' ||
-      selectedTls.length > 0 ||
-      selectedFranchises.length > 0 ||
-      selectedCities.length > 0 ||
-      selectedIndustries.length > 0 ||
-      activeMoreFiltersCount > 0 ||
-      Boolean(debouncedSearch)
-    );
-  }, [
-    activeVerdict,
-    selectedTls,
-    selectedFranchises,
-    selectedCities,
-    selectedIndustries,
-    activeMoreFiltersCount,
-    debouncedSearch
-  ]);
-
-  // Data Extraction
-  const allRows = reportData?.rows || [];
-  const totals = reportData?.totals || {
+  const [rows, setRows] = useState([]);
+  const [totals, setTotals] = useState({
     billed: 0,
     companyShare: 0,
     costOfExecution: 0,
@@ -346,1360 +121,883 @@ const CostOfPerformance = () => {
     placements: 0,
     marginPct: 0,
     is_filtered: false
-  };
-
-  const verdictCounts = reportData?.verdict_counts || {
+  });
+  const [verdictCounts, setVerdictCounts] = useState({
     all: 0,
     star: 0,
     healthy: 0,
     breakeven: 0,
     at_risk: 0,
     loss: 0
-  };
+  });
 
-  const filterOptions = reportData?.filter_options || {
+  // Cascading Dynamic Filter Options
+  const [filterOptions, setFilterOptions] = useState({
     team_leaders: [],
+    bd_members: [],
     franchises: [],
+    industries: [],
+    sub_industries: [],
     cities: [],
-    industries: []
+    client_statuses: [],
+    enquiry_statuses: []
+  });
+
+  // Debounce search input (300ms)
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  // Count active applied filters
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (appliedFilters.tls.length > 0) count += appliedFilters.tls.length;
+    if (appliedFilters.bds.length > 0) count += appliedFilters.bds.length;
+    if (appliedFilters.franchises.length > 0) count += appliedFilters.franchises.length;
+    if (appliedFilters.industries.length > 0) count += appliedFilters.industries.length;
+    if (appliedFilters.subIndustries.length > 0) count += appliedFilters.subIndustries.length;
+    if (appliedFilters.cities.length > 0) count += appliedFilters.cities.length;
+    if (appliedFilters.clientStatuses.length > 0) count += appliedFilters.clientStatuses.length;
+    if (appliedFilters.enquiryStatuses.length > 0) count += appliedFilters.enquiryStatuses.length;
+    if (activeVerdict !== 'all') count++;
+    if (debouncedSearch) count++;
+    return count;
+  }, [appliedFilters, activeVerdict, debouncedSearch]);
+
+  const hasAnyFilterActive = activeFiltersCount > 0 || totals.is_filtered;
+
+  // Format month string for backend query
+  const cleanMonthParam = useMemo(() => {
+    if (!selectedMonth) return '2026-08';
+    const lower = selectedMonth.toLowerCase().trim();
+    if (lower === 'all months' || lower === 'all' || lower === 'full year') return 'all';
+    if (selectedMonth.includes(' ')) {
+      const parts = selectedMonth.split(' ');
+      const mNames = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+      const mIdx = mNames.indexOf(parts[0].toLowerCase());
+      if (mIdx !== -1 && parts[1]) {
+        return `${parts[1]}-${String(mIdx + 1).padStart(2, '0')}`;
+      }
+    }
+    return selectedMonth;
+  }, [selectedMonth]);
+
+  // Synchronize applied filters with URL query parameters
+  useEffect(() => {
+    const params = new URLSearchParams();
+    params.set('tab', activeTab);
+    if (activeVerdict !== 'all') params.set('verdict', activeVerdict);
+    if (debouncedSearch) params.set('search', debouncedSearch);
+
+    if (appliedFilters.sortBy) params.set('sort', appliedFilters.sortBy);
+    if (appliedFilters.sortDir) params.set('sort_dir', appliedFilters.sortDir);
+    if (appliedFilters.viewReportAs) params.set('view_as', appliedFilters.viewReportAs);
+    if (appliedFilters.customStartDate) params.set('start_date', appliedFilters.customStartDate);
+    if (appliedFilters.customEndDate) params.set('end_date', appliedFilters.customEndDate);
+
+    if (appliedFilters.tls.length) params.set('tl', appliedFilters.tls.join(','));
+    if (appliedFilters.bds.length) params.set('bd', appliedFilters.bds.join(','));
+    if (appliedFilters.franchises.length) params.set('franchise', appliedFilters.franchises.join(','));
+    if (appliedFilters.industries.length) params.set('industry', appliedFilters.industries.join(','));
+    if (appliedFilters.subIndustries.length) params.set('sub_industry', appliedFilters.subIndustries.join(','));
+    if (appliedFilters.cities.length) params.set('city', appliedFilters.cities.join(','));
+    if (appliedFilters.clientStatuses.length) params.set('client_status', appliedFilters.clientStatuses.join(','));
+    if (appliedFilters.enquiryStatuses.length) params.set('enquiry_status', appliedFilters.enquiryStatuses.join(','));
+
+    setSearchParams(params, { replace: true });
+  }, [activeTab, activeVerdict, debouncedSearch, appliedFilters, setSearchParams]);
+
+  // Fetch Cascading Dynamic Filter Options from Backend
+  const fetchFilterOptions = useCallback(async () => {
+    try {
+      const q = new URLSearchParams({
+        entity: activeTab,
+        month: cleanMonthParam,
+        fy: selectedYear || '2026-2027',
+        view_as: appliedFilters.viewReportAs || 'this_fy',
+        start_date: appliedFilters.customStartDate || '',
+        end_date: appliedFilters.customEndDate || '',
+        tl: stagedTLs.join(','),
+        industry: stagedIndustries.join(',')
+      });
+
+      const res = await fetch(`/api/cost-performance/filter-options?${q.toString()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success) {
+        setFilterOptions({
+          team_leaders: data.team_leaders || [],
+          bd_members: data.bd_members || [],
+          franchises: data.franchises || [],
+          industries: data.industries || [],
+          sub_industries: data.sub_industries || [],
+          cities: data.cities || [],
+          client_statuses: data.client_statuses || [],
+          enquiry_statuses: data.enquiry_statuses || []
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching filter options:', err);
+    }
+  }, [activeTab, cleanMonthParam, selectedYear, appliedFilters.viewReportAs, appliedFilters.customStartDate, appliedFilters.customEndDate, stagedTLs, stagedIndustries]);
+
+  useEffect(() => {
+    fetchFilterOptions();
+  }, [fetchFilterOptions]);
+
+  // Fetch Authoritative Cost Performance Ledger Records
+  const fetchReportData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const q = new URLSearchParams({
+        entity: activeTab,
+        month: cleanMonthParam,
+        fy: selectedYear || '2026-2027',
+        verdict: activeVerdict !== 'all' ? activeVerdict : '',
+        search: debouncedSearch || '',
+        sort: appliedFilters.sortBy || 'net',
+        sort_dir: appliedFilters.sortDir || 'desc',
+        view_as: appliedFilters.viewReportAs || 'this_fy',
+        start_date: appliedFilters.customStartDate || '',
+        end_date: appliedFilters.customEndDate || '',
+        tl: appliedFilters.tls.join(','),
+        bd: appliedFilters.bds.join(','),
+        franchise: appliedFilters.franchises.join(','),
+        city: appliedFilters.cities.join(','),
+        industry: appliedFilters.industries.join(','),
+        sub_industry: appliedFilters.subIndustries.join(','),
+        client_status: appliedFilters.clientStatuses.join(','),
+        enquiry_status: appliedFilters.enquiryStatuses.join(',')
+      });
+
+      const res = await fetch(`/api/cost-performance?${q.toString()}`);
+      if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+      const data = await res.json();
+
+      if (data.success) {
+        setRows(data.rows || []);
+        setTotals(data.totals || {
+          billed: 0,
+          companyShare: 0,
+          costOfExecution: 0,
+          churnCost: 0,
+          netContribution: 0,
+          placements: 0,
+          marginPct: 0,
+          is_filtered: false
+        });
+        setVerdictCounts(data.verdict_counts || {
+          all: 0, star: 0, healthy: 0, breakeven: 0, at_risk: 0, loss: 0
+        });
+      } else {
+        throw new Error(data.error || 'Failed to fetch cost ledger data');
+      }
+    } catch (err) {
+      console.error(err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeTab, cleanMonthParam, selectedYear, activeVerdict, debouncedSearch, appliedFilters]);
+
+  useEffect(() => {
+    fetchReportData();
+  }, [fetchReportData]);
+
+  // Handle Tab Switch & Reset Tab-Irrelevant Filters
+  const handleTabChange = (newTab) => {
+    if (newTab === activeTab) return;
+    setActiveTab(newTab);
+    setCurrentPage(1);
+
+    // Reset filters that don't apply to the newly selected tab
+    if (newTab === 'bd') {
+      setStagedBDs([]);
+      setAppliedFilters(prev => ({ ...prev, bds: [] }));
+    } else if (newTab === 'tl') {
+      setStagedTLs([]);
+      setAppliedFilters(prev => ({ ...prev, tls: [] }));
+    } else if (newTab === 'franchise') {
+      setStagedFranchises([]);
+      setAppliedFilters(prev => ({ ...prev, franchises: [] }));
+    } else if (newTab === 'city') {
+      setStagedCities([]);
+      setAppliedFilters(prev => ({ ...prev, cities: [] }));
+    } else if (newTab === 'industry') {
+      setStagedIndustries([]);
+      setStagedSubIndustries([]);
+      setAppliedFilters(prev => ({ ...prev, industries: [], subIndustries: [] }));
+    }
   };
 
-  // Pagination Slice
-  const paginatedData = useMemo(() => {
-    if (itemsPerPage === 'all') return allRows;
+  // "Apply Filters" button handler (dark primary button in panel)
+  const handleApplyFilters = () => {
+    setAppliedFilters({
+      sortBy: stagedSortBy,
+      sortDir: stagedSortDir,
+      viewReportAs: stagedViewReportAs,
+      customStartDate: stagedCustomStartDate,
+      customEndDate: stagedCustomEndDate,
+      tls: [...stagedTLs],
+      bds: [...stagedBDs],
+      franchises: [...stagedFranchises],
+      industries: [...stagedIndustries],
+      subIndustries: [...stagedSubIndustries],
+      cities: [...stagedCities],
+      clientStatuses: [...stagedClientStatuses],
+      enquiryStatuses: [...stagedEnquiryStatuses]
+    });
+    setCurrentPage(1);
+  };
+
+  // "Clear Filters" button handler
+  const handleClearFilters = () => {
+    setActiveVerdict('all');
+    setSearchTerm('');
+    setDebouncedSearch('');
+    setStagedSortBy('net');
+    setStagedSortDir('desc');
+    setStagedViewReportAs('this_fy');
+    setStagedCustomStartDate('');
+    setStagedCustomEndDate('');
+    setStagedTLs([]);
+    setStagedBDs([]);
+    setStagedFranchises([]);
+    setStagedIndustries([]);
+    setStagedSubIndustries([]);
+    setStagedCities([]);
+    setStagedClientStatuses([]);
+    setStagedEnquiryStatuses([]);
+
+    setAppliedFilters({
+      sortBy: 'net',
+      sortDir: 'desc',
+      viewReportAs: 'this_fy',
+      customStartDate: '',
+      customEndDate: '',
+      tls: [],
+      bds: [],
+      franchises: [],
+      industries: [],
+      subIndustries: [],
+      cities: [],
+      clientStatuses: [],
+      enquiryStatuses: []
+    });
+    setCurrentPage(1);
+  };
+
+  // Helper to remove an individual applied filter chip
+  const removeAppliedFilter = (type, val) => {
+    if (type === 'verdict') {
+      setActiveVerdict('all');
+    } else if (type === 'search') {
+      setSearchTerm('');
+      setDebouncedSearch('');
+    } else if (type === 'tl') {
+      const next = appliedFilters.tls.filter(x => x !== val);
+      setStagedTLs(next);
+      setAppliedFilters(p => ({ ...p, tls: next }));
+    } else if (type === 'bd') {
+      const next = appliedFilters.bds.filter(x => x !== val);
+      setStagedBDs(next);
+      setAppliedFilters(p => ({ ...p, bds: next }));
+    } else if (type === 'franchise') {
+      const next = appliedFilters.franchises.filter(x => x !== val);
+      setStagedFranchises(next);
+      setAppliedFilters(p => ({ ...p, franchises: next }));
+    } else if (type === 'industry') {
+      const next = appliedFilters.industries.filter(x => x !== val);
+      setStagedIndustries(next);
+      setAppliedFilters(p => ({ ...p, industries: next }));
+    } else if (type === 'sub_industry') {
+      const next = appliedFilters.subIndustries.filter(x => x !== val);
+      setStagedSubIndustries(next);
+      setAppliedFilters(p => ({ ...p, subIndustries: next }));
+    } else if (type === 'city') {
+      const next = appliedFilters.cities.filter(x => x !== val);
+      setStagedCities(next);
+      setAppliedFilters(p => ({ ...p, cities: next }));
+    } else if (type === 'client_status') {
+      const next = appliedFilters.clientStatuses.filter(x => x !== val);
+      setStagedClientStatuses(next);
+      setAppliedFilters(p => ({ ...p, clientStatuses: next }));
+    } else if (type === 'enquiry_status') {
+      const next = appliedFilters.enquiryStatuses.filter(x => x !== val);
+      setStagedEnquiryStatuses(next);
+      setAppliedFilters(p => ({ ...p, enquiryStatuses: next }));
+    }
+    setCurrentPage(1);
+  };
+
+  // CSV Report Export Handler
+  const handleExport = () => {
+    const q = new URLSearchParams({
+      entity: activeTab,
+      month: cleanMonthParam,
+      fy: selectedYear || '2026-2027',
+      verdict: activeVerdict !== 'all' ? activeVerdict : '',
+      search: debouncedSearch || '',
+      sort: appliedFilters.sortBy || 'net',
+      sort_dir: appliedFilters.sortDir || 'desc',
+      view_as: appliedFilters.viewReportAs || 'this_fy',
+      start_date: appliedFilters.customStartDate || '',
+      end_date: appliedFilters.customEndDate || '',
+      tl: appliedFilters.tls.join(','),
+      bd: appliedFilters.bds.join(','),
+      franchise: appliedFilters.franchises.join(','),
+      city: appliedFilters.cities.join(','),
+      industry: appliedFilters.industries.join(','),
+      sub_industry: appliedFilters.subIndustries.join(','),
+      client_status: appliedFilters.clientStatuses.join(','),
+      enquiry_status: appliedFilters.enquiryStatuses.join(',')
+    });
+
+    window.open(`/api/cost-performance/report?${q.toString()}`, '_blank');
+  };
+
+  // Format currency in Indian Lakhs / Rupees
+  const formatINR = (val) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0
+    }).format(val || 0);
+  };
+
+  // Pagination calculation
+  const totalRows = rows.length;
+  const paginatedRows = useMemo(() => {
+    if (itemsPerPage === 'all') return rows;
     const start = (currentPage - 1) * itemsPerPage;
-    return allRows.slice(start, start + itemsPerPage);
-  }, [allRows, currentPage, itemsPerPage]);
+    return rows.slice(start, start + itemsPerPage);
+  }, [rows, currentPage, itemsPerPage]);
 
-  const totalPages = itemsPerPage === 'all' ? 1 : Math.ceil(allRows.length / itemsPerPage);
-
-  // Row Click -> Open Universal Audit Drawer
-  const handleRowClick = (item) => {
-    setSelectedAuditEntity(item);
-    setIsAuditDrawerOpen(true);
-  };
-
-  // CSV Export for Filtered Rows
-  const handleExportCSV = () => {
-    if (allRows.length === 0) return;
-    const headers = [
-      'Rank',
-      'Entity Name',
-      'Role / Segment',
-      'Placements',
-      'Enquiries Handled',
-      'Gross Billed (INR)',
-      'Company Share (INR)',
-      'Cost of Execution (INR)',
-      'Direct Payroll (INR)',
-      'Credit Notes (INR)',
-      'Net Bank Contribution (INR)',
-      'Net Margin (%)',
-      'Verdict'
-    ];
-
-    const csvRows = allRows.map((r, i) => [
-      r.rank || (i + 1),
-      `"${r.dimension_value || ''}"`,
-      `"${r.role || r.segment || ''}"`,
-      r.placements || 0,
-      r.enquiries || 0,
-      r.total_billed || 0,
-      r.company_share || 0,
-      r.costOfExecution || 0,
-      r.direct_cost || 0,
-      r.churnCost || 0,
-      r.netContribution || 0,
-      `${r.netMarginPct || 0}%`,
-      `"${r.verdict_label || ''}"`
-    ]);
-
-    const csvContent = '\uFEFF' + [headers.join(','), ...csvRows.map(e => e.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Fintective_Cost_Of_Performance_${activeDimension}_${cleanMonth}_${cleanFy}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
+  const totalPages = itemsPerPage === 'all' ? 1 : Math.ceil(totalRows / itemsPerPage) || 1;
+  const startRowIndex = totalRows === 0 ? 0 : itemsPerPage === 'all' ? 1 : (currentPage - 1) * itemsPerPage + 1;
+  const endRowIndex = itemsPerPage === 'all' ? totalRows : Math.min(currentPage * itemsPerPage, totalRows);
 
   return (
-    <div className="analytics-page" style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto', minHeight: '100vh' }}>
-      
-      {/* 1. Header Bar with Global Period Sync & Clean Controls */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
+    <div className="space-y-6 pb-20">
+      {/* 1. Header with Title & Export Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ background: 'var(--accent-teal, #0F6E56)', color: '#ffffff', padding: '6px 10px', borderRadius: '8px', display: 'flex', alignItems: 'center' }}>
-              <DollarSign size={20} />
-            </div>
-            <div>
-              <h1 style={{ margin: 0, fontSize: '1.45rem', fontWeight: '800', color: 'var(--text-main)' }}>
-                Cost of Performance
-              </h1>
-              <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                Talent Corner HR Services • Commercial Viability & Unit Economics Engine
-              </p>
-            </div>
-          </div>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
+            <span>Cost of Performance</span>
+          </h1>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Unit economics, execution costs, churn leakages & net margin audit across all business dimensions
+          </p>
         </div>
-
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Synchronized Global Period Indicator Badge */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '8px 14px',
-            borderRadius: '8px',
-            border: '1px solid var(--border-color)',
-            background: 'var(--bg-card)',
-            color: 'var(--text-main)',
-            fontSize: '0.82rem',
-            fontWeight: '700'
-          }}>
-            <Calendar size={14} style={{ color: 'var(--accent-teal, #0F6E56)' }} />
-            <span>
-              {cleanMonth === 'all' 
-                ? `FY ${cleanFy} (Full Year)` 
-                : `${cleanMonth} • FY ${cleanFy}`}
-            </span>
-          </div>
-
-          {/* Cost Inputs Button */}
-          {userRole !== 'franchise_partner' && (
-            <button
-              onClick={() => setIsInputModalOpen(true)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '8px 14px',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)',
-                background: 'var(--bg-card)',
-                color: 'var(--text-main)',
-                fontSize: '0.82rem',
-                fontWeight: '700',
-                cursor: 'pointer'
-              }}
-            >
-              <SlidersHorizontal size={14} />
-              <span>Cost Inputs</span>
-            </button>
-          )}
-
-          {/* Export Filtered CSV */}
+        <div className="flex items-center gap-2.5">
           <button
-            onClick={handleExportCSV}
-            disabled={allRows.length === 0}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              borderRadius: '8px',
-              border: 'none',
-              background: allRows.length === 0 ? 'var(--text-muted)' : 'var(--accent-teal, #0F6E56)',
-              color: '#ffffff',
-              fontSize: '0.82rem',
-              fontWeight: '700',
-              cursor: allRows.length === 0 ? 'not-allowed' : 'pointer'
-            }}
+            type="button"
+            onClick={handleExport}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg shadow-sm transition-colors"
           >
-            <Download size={14} />
+            <Download className="w-3.5 h-3.5" />
             <span>Export Report</span>
           </button>
         </div>
       </div>
 
-      {/* 2. Top Executive KPI Cards (Reflects Active Filters with Filtered Tag) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '22px' }}>
-        
-        {/* Card 1: Total Company Share */}
-        <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #0F6E56', position: 'relative' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <span style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              1. Company Share (Revenue)
-            </span>
-            <DollarSign size={16} color="#0F6E56" />
-          </div>
-          <div style={{ fontSize: '1.55rem', fontWeight: '800', color: 'var(--text-main)' }}>
-            {formatCurrency(totals.companyShare)}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              Gross: {formatCurrency(totals.billed)} ({totals.placements} deals)
-            </span>
-            {totals.is_filtered && (
-              <span style={{ fontSize: '0.66rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(15, 110, 86, 0.1)', color: '#0F6E56', fontWeight: '800' }}>
-                ● Filtered
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Card 2: Cost of Execution */}
-        {userRole !== 'franchise_partner' && (
-          <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #3B82F6', position: 'relative' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-              <span style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                2. Cost of Execution
-              </span>
-              <Building size={16} color="#3B82F6" />
-            </div>
-            <div style={{ fontSize: '1.55rem', fontWeight: '800', color: '#3B82F6' }}>
-              {formatCurrency(totals.costOfExecution)}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                Direct Payroll + Overhead Pool
-              </span>
-              {totals.is_filtered && (
-                <span style={{ fontSize: '0.66rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.1)', color: '#2563EB', fontWeight: '800' }}>
+      {/* 2. Top 4 KPI Cards with "Filtered" indicators */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* KPI 1: Company Share */}
+        <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative overflow-hidden">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Company Share</span>
+            <div className="flex items-center gap-1.5">
+              {hasAnyFilterActive && (
+                <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
                   ● Filtered
                 </span>
               )}
+              <DollarSign className="w-4 h-4 text-teal-600" />
             </div>
           </div>
-        )}
-
-        {/* Card 3: Credit Note Write-offs */}
-        <div style={{ background: 'var(--bg-card)', padding: '18px 20px', borderRadius: '12px', border: '1px solid var(--border-color)', borderLeft: '4px solid #F59E0B', position: 'relative' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <span style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-              3. Churn & Credit Notes
-            </span>
-            <AlertTriangle size={16} color="#F59E0B" />
+          <div className="text-2xl font-extrabold text-gray-900">
+            {formatINR(totals.companyShare)}
           </div>
-          <div style={{ fontSize: '1.55rem', fontWeight: '800', color: '#F59E0B' }}>
-            {formatCurrency(totals.churnCost)}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-              Reversed client billings
-            </span>
-            {totals.is_filtered && (
-              <span style={{ fontSize: '0.66rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.1)', color: '#D97706', fontWeight: '800' }}>
-                ● Filtered
-              </span>
-            )}
-          </div>
+          <p className="text-[11px] text-gray-400 mt-1">
+            Aggregated revenue share ({totals.placements} placements)
+          </p>
         </div>
 
-        {/* Card 4: Net Bank Contribution */}
-        <div style={{ 
-          background: totals.netContribution >= 0 ? 'rgba(16, 185, 129, 0.06)' : 'rgba(239, 68, 68, 0.06)', 
-          padding: '18px 20px', 
-          borderRadius: '12px', 
-          border: `1px solid ${totals.netContribution >= 0 ? '#10B981' : '#EF4444'}`,
-          borderLeft: `5px solid ${totals.netContribution >= 0 ? '#10B981' : '#EF4444'}`,
-          position: 'relative'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <span style={{ fontSize: '0.74rem', fontWeight: '800', color: totals.netContribution >= 0 ? '#059669' : '#DC2626', textTransform: 'uppercase' }}>
-              4. Net Bank Contribution
-            </span>
-            <TrendingUp size={16} color={totals.netContribution >= 0 ? '#10B981' : '#EF4444'} />
+        {/* KPI 2: Cost of Execution */}
+        <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative overflow-hidden">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Cost of Execution</span>
+            <div className="flex items-center gap-1.5">
+              {hasAnyFilterActive && (
+                <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
+                  ● Filtered
+                </span>
+              )}
+              <Users className="w-4 h-4 text-blue-600" />
+            </div>
           </div>
-          <div style={{ fontSize: '1.65rem', fontWeight: '800', color: totals.netContribution >= 0 ? '#10B981' : '#EF4444' }}>
-            {totals.netContribution >= 0 ? '+' : ''}{formatCurrency(totals.netContribution)}
+          <div className="text-2xl font-extrabold text-gray-900">
+            {formatINR(totals.costOfExecution)}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-            <span style={{ fontSize: '0.74rem', fontWeight: '700', color: totals.netContribution >= 0 ? '#047857' : '#B91C1C' }}>
-              Margin: {totals.marginPct}%
-            </span>
-            {totals.is_filtered && (
-              <span style={{ fontSize: '0.66rem', padding: '1px 6px', borderRadius: '4px', background: totals.netContribution >= 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)', color: totals.netContribution >= 0 ? '#047857' : '#B91C1C', fontWeight: '800' }}>
-                ● Filtered
-              </span>
-            )}
+          <p className="text-[11px] text-gray-400 mt-1">
+            Direct payroll & allocated overhead share
+          </p>
+        </div>
+
+        {/* KPI 3: Churn & Credit Notes */}
+        <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative overflow-hidden">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Churn & Credit Notes</span>
+            <div className="flex items-center gap-1.5">
+              {hasAnyFilterActive && (
+                <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
+                  ● Filtered
+                </span>
+              )}
+              <AlertCircle className="w-4 h-4 text-rose-500" />
+            </div>
           </div>
+          <div className="text-2xl font-extrabold text-rose-600">
+            {formatINR(totals.churnCost)}
+          </div>
+          <p className="text-[11px] text-gray-400 mt-1">
+            Credit note reversals & billed write-downs
+          </p>
+        </div>
+
+        {/* KPI 4: Net Bank Contribution */}
+        <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative overflow-hidden">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Net Bank Contribution</span>
+            <div className="flex items-center gap-1.5">
+              {hasAnyFilterActive && (
+                <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
+                  ● Filtered
+                </span>
+              )}
+              <Shield className="w-4 h-4 text-teal-600" />
+            </div>
+          </div>
+          <div className={`text-2xl font-extrabold ${totals.netContribution >= 0 ? 'text-teal-700' : 'text-rose-600'}`}>
+            {formatINR(totals.netContribution)}
+          </div>
+          <p className="text-[11px] text-gray-400 mt-1">
+            Margin: {totals.marginPct}% net margin
+          </p>
         </div>
       </div>
 
-      {/* 3. Five Primary Navigation Tabs */}
-      <div style={{ 
-        background: 'var(--bg-card)', 
-        borderRadius: '12px', 
-        padding: '12px 16px', 
-        border: '1px solid var(--border-color)', 
-        marginBottom: '14px',
-        display: 'flex',
-        gap: '8px',
-        flexWrap: 'wrap'
-      }}>
-        {[
-          { id: 'bd', label: '👤 BD-wise', desc: 'Recruiters & Closers' },
-          { id: 'tl', label: '👥 Team Leader-wise', desc: 'Franchise Network Managers' },
-          { id: 'franchise', label: '🏢 Franchise-wise', desc: 'Partner Production' },
-          { id: 'city', label: '📍 City-wise', desc: 'Regional Profitability' },
-          { id: 'industry', label: '🏭 Industry-wise', desc: 'Vertical Margins' }
-        ].map(dim => {
-          const isActive = activeDimension === dim.id;
-          return (
-            <button
-              key={dim.id}
-              onClick={() => handleDimensionChange(dim.id)}
-              style={{
-                padding: '8px 16px',
-                borderRadius: '8px',
-                border: isActive ? '1px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
-                background: isActive ? 'var(--accent-teal, #0F6E56)' : 'var(--bg-main)',
-                color: isActive ? '#ffffff' : 'var(--text-main)',
-                fontSize: '0.82rem',
-                fontWeight: isActive ? '800' : '600',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-            >
-              <span>{dim.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      {/* 3. PERFORMANCE FILTERS PANEL (Card layout, collapsible) */}
+      <FilterPanel
+        isOpen={isFilterPanelOpen}
+        onToggle={toggleFilterPanel}
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        sortBy={stagedSortBy}
+        onSortChange={setStagedSortBy}
+        financialYear={selectedYear}
+        onFinancialYearChange={setSelectedYear}
+        availableYears={availableYears}
+        month={selectedMonth}
+        onMonthChange={setSelectedMonth}
+        availableMonths={availableMonths}
+        viewReportAs={stagedViewReportAs}
+        onViewReportAsChange={setStagedViewReportAs}
+        customStartDate={stagedCustomStartDate}
+        onCustomStartDateChange={setStagedCustomStartDate}
+        customEndDate={stagedCustomEndDate}
+        onCustomEndDateChange={setStagedCustomEndDate}
+        filterOptions={filterOptions}
+        selectedTLs={stagedTLs}
+        onTLsChange={setStagedTLs}
+        selectedBDs={stagedBDs}
+        onBDsChange={setStagedBDs}
+        selectedFranchises={stagedFranchises}
+        onFranchisesChange={setStagedFranchises}
+        selectedIndustries={stagedIndustries}
+        onIndustriesChange={setStagedIndustries}
+        selectedSubIndustries={stagedSubIndustries}
+        onSubIndustriesChange={setStagedSubIndustries}
+        selectedCities={stagedCities}
+        onCitiesChange={setStagedCities}
+        selectedClientStatuses={stagedClientStatuses}
+        onClientStatusesChange={setStagedClientStatuses}
+        selectedEnquiryStatuses={stagedEnquiryStatuses}
+        onEnquiryStatusesChange={setStagedEnquiryStatuses}
+        onApplyFilters={handleApplyFilters}
+        onClearFilters={handleClearFilters}
+        activeFiltersCount={activeFiltersCount}
+      />
 
-      {/* 4. Single-Row Filter Bar (Verdict Chips + Contextual Dropdowns + More Filters + Search) */}
-      <div ref={dropdownRef} style={{ 
-        background: 'var(--bg-card)', 
-        borderRadius: '12px', 
-        padding: '14px 18px', 
-        border: '1px solid var(--border-color)', 
-        marginBottom: '14px',
-        display: 'flex',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: '12px',
-        position: 'relative'
-      }}>
-        
-        {/* A. Verdict Chips with Counts (Hiding 0 counts) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-          {[
-            { id: 'all', label: 'All', count: verdictCounts.all, color: 'var(--accent-teal, #0F6E56)' },
-            { id: 'star', label: 'Star Performer', count: verdictCounts.star, color: '#10B981' },
-            { id: 'healthy', label: 'Healthy', count: verdictCounts.healthy, color: '#059669' },
-            { id: 'breakeven', label: 'Break-even', count: verdictCounts.breakeven, color: '#F59E0B' },
-            { id: 'at_risk', label: 'At Risk', count: verdictCounts.at_risk, color: '#EA580C' },
-            { id: 'loss', label: 'Loss Drain', count: verdictCounts.loss, color: '#DC2626' }
-          ].map(chip => {
-            // Hide chips with 0 rows, except 'all'
-            if (chip.id !== 'all' && chip.count === 0) return null;
-            const isSelected = activeVerdict === chip.id;
-
-            return (
+      {/* 4. Tab Navigation Bar & Quick Controls */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between border-b border-gray-200 gap-4">
+          {/* Tab Navigation */}
+          <nav className="flex space-x-6">
+            {TABS.map(tab => (
               <button
-                key={chip.id}
-                onClick={() => { setActiveVerdict(chip.id); setCurrentPage(1); }}
-                style={{
-                  padding: '5px 12px',
-                  borderRadius: '20px',
-                  border: isSelected ? `1.5px solid ${chip.color}` : '1px solid var(--border-color)',
-                  background: isSelected ? chip.color : 'var(--bg-main)',
-                  color: isSelected ? '#ffffff' : 'var(--text-main)',
-                  fontSize: '0.74rem',
-                  fontWeight: isSelected ? '800' : '600',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  transition: 'all 0.15s ease'
-                }}
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id)}
+                className={`pb-3 text-sm font-semibold border-b-2 transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-teal-700 text-teal-800'
+                    : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'
+                }`}
               >
-                <span>{chip.label}</span>
-                <span style={{
-                  padding: '1px 6px',
-                  borderRadius: '10px',
-                  background: isSelected ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.06)',
-                  color: isSelected ? '#ffffff' : 'var(--text-muted)',
-                  fontSize: '0.68rem',
-                  fontWeight: '700'
-                }}>
-                  {chip.count}
-                </span>
+                {tab.label}
               </button>
-            );
-          })}
+            ))}
+          </nav>
+
+          {/* Quick Toggle for Filters Panel */}
+          <button
+            type="button"
+            onClick={toggleFilterPanel}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border transition-all mb-2 ${
+              isFilterPanelOpen
+                ? 'bg-teal-50 border-teal-500 text-teal-800 font-semibold'
+                : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <Filter className="w-3.5 h-3.5" />
+            <span>Filters</span>
+            {activeFiltersCount > 0 && (
+              <span className="px-1.5 py-0.2 text-[10px] bg-teal-700 text-white rounded-full font-bold">
+                {activeFiltersCount}
+              </span>
+            )}
+          </button>
         </div>
 
-        {/* Divider */}
-        <div style={{ width: '1px', height: '24px', background: 'var(--border-color)' }} />
+        {/* 5. One-Row Quick Filter Bar: Dynamic Verdict Chips & Debounced Search */}
+        <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm flex flex-wrap items-center justify-between gap-3">
+          {/* Verdict Chips with Counts (Hide count 0 chips) */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {VERDICTS.map(v => {
+              const count = verdictCounts[v.id] || 0;
+              if (v.id !== 'all' && count === 0) return null; // Hide 0 count chips
+              const isActive = activeVerdict === v.id;
 
-        {/* B. Contextual Cross-Filter Dropdowns */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          
-          {/* 1. Team Leader Dropdown (On BD, Franchise, City, Industry tabs) */}
-          {activeDimension !== 'tl' && filterOptions.team_leaders.length > 0 && (
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => { setActiveDropdown(activeDropdown === 'tl' ? null : 'tl'); setIsMoreFiltersOpen(false); }}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  border: selectedTls.length > 0 ? '1px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
-                  background: selectedTls.length > 0 ? 'rgba(15, 110, 86, 0.08)' : 'var(--bg-main)',
-                  color: selectedTls.length > 0 ? 'var(--accent-teal, #0F6E56)' : 'var(--text-main)',
-                  fontSize: '0.75rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                <span>Team Leader {selectedTls.length > 0 && `(${selectedTls.length})`}</span>
-                <ChevronDown size={13} />
-              </button>
+              return (
+                <button
+                  key={v.id}
+                  onClick={() => setActiveVerdict(v.id)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all border ${
+                    isActive
+                      ? 'bg-teal-700 text-white border-teal-700 shadow-xs'
+                      : v.badgeClass
+                  }`}
+                >
+                  <span>{v.label}</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    isActive ? 'bg-teal-800 text-white' : 'bg-white/80 text-gray-700 border border-gray-200'
+                  }`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
-              {activeDropdown === 'tl' && (
-                <div style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  marginTop: '6px',
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '8px',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-                  padding: '10px',
-                  minWidth: '220px',
-                  zIndex: 200,
-                  maxHeight: '260px',
-                  overflowY: 'auto'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
-                    <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--text-muted)' }}>SELECT TEAM LEADER</span>
-                    {selectedTls.length > 0 && (
-                      <button onClick={() => setSelectedTls([])} style={{ border: 'none', background: 'transparent', color: '#DC2626', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                  {filterOptions.team_leaders.map(tl => {
-                    const isChecked = selectedTls.includes(tl);
-                    return (
-                      <label key={tl} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 4px', fontSize: '0.75rem', color: 'var(--text-main)', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {
-                            setSelectedTls(prev => isChecked ? prev.filter(x => x !== tl) : [...prev, tl]);
-                            setCurrentPage(1);
-                          }}
-                        />
-                        <span>{tl}</span>
-                      </label>
-                    );
-                  })}
-                </div>
+          {/* Search Box & Page Size */}
+          <div className="flex items-center gap-3">
+            <div className="relative min-w-[200px] max-w-[260px]">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-gray-400" />
+              <input
+                type="text"
+                placeholder={`Search ${activeTab.toUpperCase()} name or role...`}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-7 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-500 focus:bg-white"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2 top-2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               )}
             </div>
-          )}
 
-          {/* 2. Franchise Dropdown (On BD, TL, City, Industry tabs) */}
-          {activeDimension !== 'franchise' && filterOptions.franchises.length > 0 && (
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => { setActiveDropdown(activeDropdown === 'franchise' ? null : 'franchise'); setIsMoreFiltersOpen(false); }}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  border: selectedFranchises.length > 0 ? '1px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
-                  background: selectedFranchises.length > 0 ? 'rgba(15, 110, 86, 0.08)' : 'var(--bg-main)',
-                  color: selectedFranchises.length > 0 ? 'var(--accent-teal, #0F6E56)' : 'var(--text-main)',
-                  fontSize: '0.75rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
+            {/* Items Per Page Selector */}
+            <div className="flex items-center gap-1 text-xs text-gray-500">
+              <span>Show:</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(e.target.value === 'all' ? 'all' : parseInt(e.target.value, 10));
+                  setCurrentPage(1);
                 }}
+                className="px-2 py-1 text-xs border border-gray-200 rounded-md bg-white text-gray-700 focus:ring-1 focus:ring-teal-500"
               >
-                <span>Franchise {selectedFranchises.length > 0 && `(${selectedFranchises.length})`}</span>
-                <ChevronDown size={13} />
-              </button>
-
-              {activeDropdown === 'franchise' && (
-                <div style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  marginTop: '6px',
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '8px',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-                  padding: '10px',
-                  minWidth: '220px',
-                  zIndex: 200,
-                  maxHeight: '260px',
-                  overflowY: 'auto'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
-                    <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--text-muted)' }}>SELECT FRANCHISE</span>
-                    {selectedFranchises.length > 0 && (
-                      <button onClick={() => setSelectedFranchises([])} style={{ border: 'none', background: 'transparent', color: '#DC2626', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                  {filterOptions.franchises.slice(0, 30).map(f => {
-                    const isChecked = selectedFranchises.includes(f);
-                    return (
-                      <label key={f} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 4px', fontSize: '0.75rem', color: 'var(--text-main)', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {
-                            setSelectedFranchises(prev => isChecked ? prev.filter(x => x !== f) : [...prev, f]);
-                            setCurrentPage(1);
-                          }}
-                        />
-                        <span>{f}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value="all">All</option>
+              </select>
             </div>
-          )}
+          </div>
+        </div>
 
-          {/* 3. City Dropdown (On BD, TL, Franchise, Industry tabs) */}
-          {activeDimension !== 'city' && filterOptions.cities.length > 0 && (
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => { setActiveDropdown(activeDropdown === 'city' ? null : 'city'); setIsMoreFiltersOpen(false); }}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  border: selectedCities.length > 0 ? '1px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
-                  background: selectedCities.length > 0 ? 'rgba(15, 110, 86, 0.08)' : 'var(--bg-main)',
-                  color: selectedCities.length > 0 ? 'var(--accent-teal, #0F6E56)' : 'var(--text-main)',
-                  fontSize: '0.75rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                <span>City {selectedCities.length > 0 && `(${selectedCities.length})`}</span>
-                <ChevronDown size={13} />
-              </button>
+        {/* 6. Active Filter Chips & Record Count Summary */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-gray-500 font-medium text-[11px]">
+              Showing {startRowIndex} to {endRowIndex} of {totalRows} records
+            </span>
 
-              {activeDropdown === 'city' && (
-                <div style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  marginTop: '6px',
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '8px',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-                  padding: '10px',
-                  minWidth: '200px',
-                  zIndex: 200,
-                  maxHeight: '260px',
-                  overflowY: 'auto'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
-                    <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--text-muted)' }}>SELECT CITY</span>
-                    {selectedCities.length > 0 && (
-                      <button onClick={() => setSelectedCities([])} style={{ border: 'none', background: 'transparent', color: '#DC2626', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                  {filterOptions.cities.map(c => {
-                    const isChecked = selectedCities.includes(c);
-                    return (
-                      <label key={c} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 4px', fontSize: '0.75rem', color: 'var(--text-main)', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {
-                            setSelectedCities(prev => isChecked ? prev.filter(x => x !== c) : [...prev, c]);
-                            setCurrentPage(1);
-                          }}
-                        />
-                        <span>{c}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+            {hasAnyFilterActive && (
+              <>
+                <span className="text-gray-300">|</span>
+                <span className="text-gray-400 text-[11px] font-medium">Applied:</span>
 
-          {/* 4. Industry Dropdown (On BD, TL, Franchise, City tabs) */}
-          {activeDimension !== 'industry' && filterOptions.industries.length > 0 && (
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => { setActiveDropdown(activeDropdown === 'industry' ? null : 'industry'); setIsMoreFiltersOpen(false); }}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  border: selectedIndustries.length > 0 ? '1px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
-                  background: selectedIndustries.length > 0 ? 'rgba(15, 110, 86, 0.08)' : 'var(--bg-main)',
-                  color: selectedIndustries.length > 0 ? 'var(--accent-teal, #0F6E56)' : 'var(--text-main)',
-                  fontSize: '0.75rem',
-                  fontWeight: '700',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                <span>Industry {selectedIndustries.length > 0 && `(${selectedIndustries.length})`}</span>
-                <ChevronDown size={13} />
-              </button>
-
-              {activeDropdown === 'industry' && (
-                <div style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  marginTop: '6px',
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '8px',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-                  padding: '10px',
-                  minWidth: '240px',
-                  zIndex: 200,
-                  maxHeight: '260px',
-                  overflowY: 'auto'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
-                    <span style={{ fontSize: '0.72rem', fontWeight: '800', color: 'var(--text-muted)' }}>SELECT INDUSTRY</span>
-                    {selectedIndustries.length > 0 && (
-                      <button onClick={() => setSelectedIndustries([])} style={{ border: 'none', background: 'transparent', color: '#DC2626', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}>
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                  {filterOptions.industries.map(ind => {
-                    const isChecked = selectedIndustries.includes(ind);
-                    return (
-                      <label key={ind} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 4px', fontSize: '0.75rem', color: 'var(--text-main)', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {
-                            setSelectedIndustries(prev => isChecked ? prev.filter(x => x !== ind) : [...prev, ind]);
-                            setCurrentPage(1);
-                          }}
-                        />
-                        <span>{ind}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* C. "More Filters" Popover Trigger */}
-          <div style={{ position: 'relative' }}>
-            <button
-              onClick={() => { setIsMoreFiltersOpen(!isMoreFiltersOpen); setActiveDropdown(null); }}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '8px',
-                border: activeMoreFiltersCount > 0 ? '1px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
-                background: activeMoreFiltersCount > 0 ? 'rgba(15, 110, 86, 0.08)' : 'var(--bg-main)',
-                color: activeMoreFiltersCount > 0 ? 'var(--accent-teal, #0F6E56)' : 'var(--text-main)',
-                fontSize: '0.75rem',
-                fontWeight: '700',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-            >
-              <Filter size={13} />
-              <span>More Filters</span>
-              {activeMoreFiltersCount > 0 && (
-                <span style={{
-                  padding: '1px 6px',
-                  borderRadius: '10px',
-                  background: 'var(--accent-teal, #0F6E56)',
-                  color: '#ffffff',
-                  fontSize: '0.66rem',
-                  fontWeight: '800'
-                }}>
-                  {activeMoreFiltersCount}
-                </span>
-              )}
-            </button>
-
-            {/* More Filters Popover Content */}
-            {isMoreFiltersOpen && (
-              <div style={{
-                position: 'absolute',
-                top: '100%',
-                right: 0,
-                marginTop: '6px',
-                background: 'var(--bg-card)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '10px',
-                boxShadow: '0 8px 28px rgba(0,0,0,0.22)',
-                padding: '16px',
-                width: '300px',
-                zIndex: 250,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
-                  <span style={{ fontSize: '0.78rem', fontWeight: '800', color: 'var(--text-main)' }}>ADDITIONAL FILTERS</span>
-                  <button
-                    onClick={() => {
-                      setHasCreditNotes(null);
-                      setMinCreditNotes('');
-                      setMinPlacements('');
-                      setMinNet('');
-                      setMaxNet('');
-                      setSelectedSegment('all');
-                    }}
-                    style={{ border: 'none', background: 'transparent', color: '#DC2626', fontSize: '0.7rem', fontWeight: '700', cursor: 'pointer' }}
-                  >
-                    Reset
-                  </button>
-                </div>
-
-                {/* Has Credit Notes Toggle */}
-                <div>
-                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.76rem', color: 'var(--text-main)', cursor: 'pointer' }}>
-                    <span>Has Credit Notes / Reversals</span>
-                    <input
-                      type="checkbox"
-                      checked={hasCreditNotes === true}
-                      onChange={(e) => setHasCreditNotes(e.target.checked ? true : null)}
-                    />
-                  </label>
-                  {hasCreditNotes && (
-                    <input
-                      type="number"
-                      placeholder="Min CN Amount (₹)"
-                      value={minCreditNotes}
-                      onChange={(e) => setMinCreditNotes(e.target.value)}
-                      style={{
-                        marginTop: '6px',
-                        width: '100%',
-                        padding: '6px 10px',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-color)',
-                        background: 'var(--bg-main)',
-                        color: 'var(--text-main)',
-                        fontSize: '0.75rem'
-                      }}
-                    />
-                  )}
-                </div>
-
-                {/* Min Placements */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                    Min Placements (Deals)
-                  </label>
-                  <input
-                    type="number"
-                    placeholder="e.g. 5 deals"
-                    value={minPlacements}
-                    onChange={(e) => setMinPlacements(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '6px 10px',
-                      borderRadius: '6px',
-                      border: '1px solid var(--border-color)',
-                      background: 'var(--bg-main)',
-                      color: 'var(--text-main)',
-                      fontSize: '0.75rem'
-                    }}
-                  />
-                </div>
-
-                {/* Net Contribution Min/Max */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                    Net Contribution Range (₹)
-                  </label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <input
-                      type="number"
-                      placeholder="Min ₹"
-                      value={minNet}
-                      onChange={(e) => setMinNet(e.target.value)}
-                      style={{
-                        width: '50%',
-                        padding: '6px 8px',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-color)',
-                        background: 'var(--bg-main)',
-                        color: 'var(--text-main)',
-                        fontSize: '0.74rem'
-                      }}
-                    />
-                    <input
-                      type="number"
-                      placeholder="Max ₹"
-                      value={maxNet}
-                      onChange={(e) => setMaxNet(e.target.value)}
-                      style={{
-                        width: '50%',
-                        padding: '6px 8px',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-color)',
-                        background: 'var(--bg-main)',
-                        color: 'var(--text-main)',
-                        fontSize: '0.74rem'
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Segment Filter (if BD tab) */}
-                {activeDimension === 'bd' && (
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                      Segment / Tier
-                    </label>
-                    <select
-                      value={selectedSegment}
-                      onChange={(e) => setSelectedSegment(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '6px 10px',
-                        borderRadius: '6px',
-                        border: '1px solid var(--border-color)',
-                        background: 'var(--bg-main)',
-                        color: 'var(--text-main)',
-                        fontSize: '0.75rem'
-                      }}
-                    >
-                      <option value="all">All Segments</option>
-                      <option value="key account">Key Account</option>
-                      <option value="enterprise">Enterprise</option>
-                      <option value="regular">Regular</option>
-                    </select>
-                  </div>
+                {activeVerdict !== 'all' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-teal-50 text-teal-800 text-[11px] border border-teal-200">
+                    Verdict: {VERDICTS.find(v => v.id === activeVerdict)?.label || activeVerdict}
+                    <button onClick={() => removeAppliedFilter('verdict')}><X className="w-2.5 h-2.5" /></button>
+                  </span>
                 )}
+
+                {debouncedSearch && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 text-gray-800 text-[11px] border border-gray-200">
+                    Search: "{debouncedSearch}"
+                    <button onClick={() => removeAppliedFilter('search')}><X className="w-2.5 h-2.5" /></button>
+                  </span>
+                )}
+
+                {appliedFilters.tls.map(t => (
+                  <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-800 text-[11px] border border-blue-200">
+                    TL: {t}
+                    <button onClick={() => removeAppliedFilter('tl', t)}><X className="w-2.5 h-2.5" /></button>
+                  </span>
+                ))}
+
+                {appliedFilters.bds.map(b => (
+                  <span key={b} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 text-[11px] border border-indigo-200">
+                    BD: {b}
+                    <button onClick={() => removeAppliedFilter('bd', b)}><X className="w-2.5 h-2.5" /></button>
+                  </span>
+                ))}
+
+                {appliedFilters.franchises.map(f => (
+                  <span key={f} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-50 text-purple-800 text-[11px] border border-purple-200">
+                    Franchise: {f}
+                    <button onClick={() => removeAppliedFilter('franchise', f)}><X className="w-2.5 h-2.5" /></button>
+                  </span>
+                ))}
+
+                {appliedFilters.industries.map(i => (
+                  <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 text-[11px] border border-emerald-200">
+                    Industry: {i}
+                    <button onClick={() => removeAppliedFilter('industry', i)}><X className="w-2.5 h-2.5" /></button>
+                  </span>
+                ))}
+
+                {appliedFilters.subIndustries.map(s => (
+                  <span key={s} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-teal-50 text-teal-800 text-[11px] border border-teal-200">
+                    Sub Industry: {s}
+                    <button onClick={() => removeAppliedFilter('sub_industry', s)}><X className="w-2.5 h-2.5" /></button>
+                  </span>
+                ))}
+
+                {appliedFilters.cities.map(c => (
+                  <span key={c} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 text-amber-800 text-[11px] border border-amber-200">
+                    City: {c}
+                    <button onClick={() => removeAppliedFilter('city', c)}><X className="w-2.5 h-2.5" /></button>
+                  </span>
+                ))}
+
+                {appliedFilters.clientStatuses.map(cs => (
+                  <span key={cs} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-50 text-rose-800 text-[11px] border border-rose-200">
+                    Client: {cs.title || cs}
+                    <button onClick={() => removeAppliedFilter('client_status', cs)}><X className="w-2.5 h-2.5" /></button>
+                  </span>
+                ))}
+
+                {appliedFilters.enquiryStatuses.map(es => (
+                  <span key={es} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-cyan-50 text-cyan-800 text-[11px] border border-cyan-200">
+                    Enquiry: {es.title || es}
+                    <button onClick={() => removeAppliedFilter('enquiry_status', es)}><X className="w-2.5 h-2.5" /></button>
+                  </span>
+                ))}
 
                 <button
-                  onClick={() => setIsMoreFiltersOpen(false)}
-                  style={{
-                    padding: '8px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    background: 'var(--accent-teal, #0F6E56)',
-                    color: '#ffffff',
-                    fontSize: '0.76rem',
-                    fontWeight: '700',
-                    cursor: 'pointer'
-                  }}
+                  type="button"
+                  onClick={handleClearFilters}
+                  className="text-teal-700 hover:text-teal-900 underline font-semibold text-[11px] ml-1"
                 >
-                  Apply Filters
+                  Clear all
                 </button>
-              </div>
+              </>
             )}
           </div>
         </div>
-
-        {/* Divider */}
-        <div style={{ width: '1px', height: '24px', background: 'var(--border-color)' }} />
-
-        {/* D. Sort Selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <select
-            value={sortField}
-            onChange={(e) => { setSortField(e.target.value); setCurrentPage(1); }}
-            style={{
-              padding: '6px 10px',
-              borderRadius: '8px',
-              border: '1px solid var(--border-color)',
-              background: 'var(--bg-main)',
-              color: 'var(--text-main)',
-              fontSize: '0.75rem',
-              fontWeight: '700',
-              cursor: 'pointer'
-            }}
-          >
-            <option value="net">Sort: Net Contribution</option>
-            <option value="cn">Sort: Credit Notes</option>
-            <option value="placements">Sort: Placements</option>
-            {activeDimension === 'bd' && <option value="net_per_enquiry">Sort: Net / Enquiry</option>}
-            {activeDimension === 'tl' && <option value="net_per_franchise">Sort: Net / Store</option>}
-            <option value="company_share">Sort: Company Share</option>
-          </select>
-
-          <button
-            onClick={() => setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')}
-            title={`Direction: ${sortDirection.toUpperCase()}`}
-            style={{
-              padding: '6px 8px',
-              borderRadius: '8px',
-              border: '1px solid var(--border-color)',
-              background: 'var(--bg-main)',
-              color: 'var(--text-main)',
-              fontSize: '0.75rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center'
-            }}
-          >
-            <ArrowUpDown size={14} />
-          </button>
-        </div>
-
-        {/* E. Debounced Search Box */}
-        <div style={{ position: 'relative', marginLeft: 'auto' }}>
-          <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-          <input
-            type="text"
-            placeholder={`Search ${activeDimension.toUpperCase()}...`}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{
-              padding: '6px 28px 6px 28px',
-              borderRadius: '8px',
-              border: '1px solid var(--border-color)',
-              background: 'var(--bg-main)',
-              color: 'var(--text-main)',
-              fontSize: '0.78rem',
-              width: '180px'
-            }}
-          />
-          {searchTerm && (
-            <X 
-              size={12} 
-              onClick={() => { setSearchTerm(''); setDebouncedSearch(''); }} 
-              style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', color: 'var(--text-muted)' }} 
-            />
-          )}
-        </div>
       </div>
 
-      {/* 5. Active Filters Removable Chips Bar */}
-      {isAnyFilterActive && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '14px', fontSize: '0.74rem' }}>
-          <span style={{ color: 'var(--text-muted)', fontWeight: '700' }}>Active Filters:</span>
-
-          {activeVerdict !== 'all' && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(15,110,86,0.1)', color: '#0F6E56', fontWeight: '700' }}>
-              Verdict: {activeVerdict}
-              <X size={12} style={{ cursor: 'pointer' }} onClick={() => setActiveVerdict('all')} />
-            </span>
-          )}
-
-          {selectedTls.map(tl => (
-            <span key={tl} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(59,130,246,0.1)', color: '#2563EB', fontWeight: '700' }}>
-              TL: {tl}
-              <X size={12} style={{ cursor: 'pointer' }} onClick={() => setSelectedTls(prev => prev.filter(x => x !== tl))} />
-            </span>
-          ))}
-
-          {selectedFranchises.map(f => (
-            <span key={f} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(139,92,246,0.1)', color: '#7C3AED', fontWeight: '700' }}>
-              Franchise: {f}
-              <X size={12} style={{ cursor: 'pointer' }} onClick={() => setSelectedFranchises(prev => prev.filter(x => x !== f))} />
-            </span>
-          ))}
-
-          {selectedCities.map(c => (
-            <span key={c} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(245,158,11,0.1)', color: '#D97706', fontWeight: '700' }}>
-              City: {c}
-              <X size={12} style={{ cursor: 'pointer' }} onClick={() => setSelectedCities(prev => prev.filter(x => x !== c))} />
-            </span>
-          ))}
-
-          {selectedIndustries.map(ind => (
-            <span key={ind} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(16,185,129,0.1)', color: '#059669', fontWeight: '700' }}>
-              Industry: {ind}
-              <X size={12} style={{ cursor: 'pointer' }} onClick={() => setSelectedIndustries(prev => prev.filter(x => x !== ind))} />
-            </span>
-          ))}
-
-          {hasCreditNotes !== null && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'rgba(239,68,68,0.1)', color: '#DC2626', fontWeight: '700' }}>
-              {hasCreditNotes ? 'Has Credit Notes' : 'No Credit Notes'}
-              <X size={12} style={{ cursor: 'pointer' }} onClick={() => setHasCreditNotes(null)} />
-            </span>
-          )}
-
-          {minPlacements && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontWeight: '700' }}>
-              Min Deals: {minPlacements}
-              <X size={12} style={{ cursor: 'pointer' }} onClick={() => setMinPlacements('')} />
-            </span>
-          )}
-
-          {debouncedSearch && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '4px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontWeight: '700' }}>
-              Search: "{debouncedSearch}"
-              <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setSearchTerm(''); setDebouncedSearch(''); }} />
-            </span>
-          )}
-
-          <button
-            onClick={handleClearAllFilters}
-            style={{ border: 'none', background: 'transparent', color: 'var(--accent-teal, #0F6E56)', fontWeight: '800', cursor: 'pointer', textDecoration: 'underline', padding: '2px 6px' }}
-          >
-            Clear all filters
-          </button>
-        </div>
-      )}
-
-      {/* 6. Main Unit Economics Table */}
-      <div style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', marginBottom: '20px' }}>
-        
-        {/* Table Title Bar */}
-        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.01)' }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: '0.96rem', fontWeight: '800', color: 'var(--text-main)' }}>
-              {activeDimension === 'bd' && 'BD Executive & Recruiter Unit Economics'}
-              {activeDimension === 'tl' && 'Team Leader Network Economics & Normalized Franchise Production'}
-              {activeDimension === 'franchise' && 'Franchise Partner Commercial Ledger'}
-              {activeDimension === 'city' && 'City Regional Viability Ledger'}
-              {activeDimension === 'industry' && 'Industry Vertical Profitability Margins'}
-            </h3>
-            <p style={{ margin: '2px 0 0 0', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-              Sorted by <strong>{sortField === 'net' ? 'Net Contribution' : sortField}</strong> {sortDirection.toUpperCase()} • Click any row for deal-level drill-down
-            </p>
-          </div>
-          <span style={{ fontSize: '0.76rem', fontWeight: '700', color: 'var(--text-muted)' }}>
-            Showing {paginatedData.length} of {allRows.length} records
-          </span>
-        </div>
-
-        {/* Table Content */}
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ background: 'var(--bg-main)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                <th style={{ padding: '10px 14px', width: '50px' }}>Rank</th>
-                <th 
-                  onClick={() => handleSort('dimension_value')}
-                  style={{ padding: '10px 14px', cursor: 'pointer', userSelect: 'none' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <span>{activeDimension === 'bd' ? 'BD Executive' : (activeDimension === 'tl' ? 'Team Leader' : (activeDimension === 'franchise' ? 'Franchise Partner' : (activeDimension === 'city' ? 'City' : 'Industry')))}</span>
-                    <ArrowUpDown size={12} />
-                  </div>
+      {/* 7. Unit-Economics Data Table */}
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 text-left text-xs">
+            <thead className="bg-gray-50 text-gray-600 font-semibold uppercase tracking-wider">
+              <tr>
+                <th scope="col" className="px-4 py-3 w-12 text-center">Rank</th>
+                <th scope="col" className="px-4 py-3">
+                  {TABS.find(t => t.id === activeTab)?.entitySingular || 'Executive / Entity'}
                 </th>
-
-                {/* Team Leader: Stores Count */}
-                {activeDimension === 'tl' && (
-                  <th 
-                    onClick={() => handleSort('activeFranchises')}
-                    style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'center', userSelect: 'none' }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                      <span>Active Stores</span>
-                      <ArrowUpDown size={12} />
-                    </div>
-                  </th>
-                )}
-
-                <th 
-                  onClick={() => handleSort('placements')}
-                  style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'center', userSelect: 'none' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                    <span>Placements</span>
-                    <ArrowUpDown size={12} />
-                  </div>
-                </th>
-
-                {/* BD: Total Enquiries */}
-                {activeDimension === 'bd' && (
-                  <th 
-                    onClick={() => handleSort('enquiries')}
-                    style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'center', userSelect: 'none' }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                      <span>Enquiries</span>
-                      <ArrowUpDown size={12} />
-                    </div>
-                  </th>
-                )}
-
-                <th 
-                  onClick={() => handleSort('company_share')}
-                  style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'right', userSelect: 'none' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                    <span>Company Share</span>
-                    <ArrowUpDown size={12} />
-                  </div>
-                </th>
-
-                {/* Franchise-wise View: Payouts */}
-                {activeDimension === 'franchise' ? (
-                  <th 
-                    onClick={() => handleSort('franchisee_payout')}
-                    style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'right', userSelect: 'none' }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                      <span>Franchisee Payout</span>
-                      <ArrowUpDown size={12} />
-                    </div>
-                  </th>
-                ) : (
-                  <th 
-                    onClick={() => handleSort('costOfExecution')}
-                    style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'right', userSelect: 'none' }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                      <span>Cost of Execution</span>
-                      <ArrowUpDown size={12} />
-                    </div>
-                  </th>
-                )}
-
-                <th 
-                  onClick={() => handleSort('churnCost')}
-                  style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'right', userSelect: 'none' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                    <span>Credit Notes</span>
-                    <ArrowUpDown size={12} />
-                  </div>
-                </th>
-
-                <th 
-                  onClick={() => handleSort('netContribution')}
-                  style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'right', userSelect: 'none' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                    <span>Net Contribution</span>
-                    <ArrowUpDown size={12} />
-                  </div>
-                </th>
-
-                {/* BD Specific: Net Surplus per Enquiry */}
-                {activeDimension === 'bd' && (
-                  <th 
-                    onClick={() => handleSort('netSurplusPerEnquiry')}
-                    style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'right', userSelect: 'none' }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                      <span>Net / Enquiry</span>
-                      <ArrowUpDown size={12} />
-                    </div>
-                  </th>
-                )}
-
-                {/* TL Specific: Net Per Franchise */}
-                {activeDimension === 'tl' && (
-                  <th 
-                    onClick={() => handleSort('netPerFranchise')}
-                    style={{ padding: '10px 14px', cursor: 'pointer', textAlign: 'right', userSelect: 'none' }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
-                      <span>Net / Store</span>
-                      <ArrowUpDown size={12} />
-                    </div>
-                  </th>
-                )}
-
-                <th style={{ padding: '10px 14px', textAlign: 'center' }}>Verdict</th>
-                <th style={{ padding: '10px 14px', textAlign: 'center' }}>Audit</th>
+                <th scope="col" className="px-4 py-3 text-right">Placements</th>
+                <th scope="col" className="px-4 py-3 text-right">Total Enquiries</th>
+                <th scope="col" className="px-4 py-3 text-right">Company Share</th>
+                <th scope="col" className="px-4 py-3 text-right">Cost of Execution</th>
+                <th scope="col" className="px-4 py-3 text-right">Credit Notes</th>
+                <th scope="col" className="px-4 py-3 text-right">Net Contribution</th>
+                <th scope="col" className="px-4 py-3 text-right">Net / Enquiry</th>
+                <th scope="col" className="px-4 py-3 text-center">Verdict</th>
+                <th scope="col" className="px-4 py-3 text-center w-20">Audit</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-gray-100 bg-white">
               {loading ? (
-                // Skeleton Rows while Loading
-                [...Array(6)].map((_, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '24px' }}></div></td>
-                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '160px' }}></div></td>
-                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '40px', margin: '0 auto' }}></div></td>
-                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '80px', marginLeft: 'auto' }}></div></td>
-                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '80px', marginLeft: 'auto' }}></div></td>
-                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '60px', marginLeft: 'auto' }}></div></td>
-                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '90px', marginLeft: 'auto' }}></div></td>
-                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '80px', margin: '0 auto' }}></div></td>
-                    <td style={{ padding: '16px 14px' }}><div style={{ height: '14px', background: 'var(--bg-main)', borderRadius: '4px', width: '50px', margin: '0 auto' }}></div></td>
+                // Skeleton loading rows
+                [...Array(6)].map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-4 py-3 text-center"><div className="h-4 w-6 bg-gray-200 rounded mx-auto" /></td>
+                    <td className="px-4 py-3"><div className="h-4 w-36 bg-gray-200 rounded" /></td>
+                    <td className="px-4 py-3"><div className="h-4 w-12 bg-gray-200 rounded ml-auto" /></td>
+                    <td className="px-4 py-3"><div className="h-4 w-12 bg-gray-200 rounded ml-auto" /></td>
+                    <td className="px-4 py-3"><div className="h-4 w-20 bg-gray-200 rounded ml-auto" /></td>
+                    <td className="px-4 py-3"><div className="h-4 w-20 bg-gray-200 rounded ml-auto" /></td>
+                    <td className="px-4 py-3"><div className="h-4 w-16 bg-gray-200 rounded ml-auto" /></td>
+                    <td className="px-4 py-3"><div className="h-4 w-20 bg-gray-200 rounded ml-auto" /></td>
+                    <td className="px-4 py-3"><div className="h-4 w-16 bg-gray-200 rounded ml-auto" /></td>
+                    <td className="px-4 py-3 text-center"><div className="h-4 w-20 bg-gray-200 rounded mx-auto" /></td>
+                    <td className="px-4 py-3 text-center"><div className="h-4 w-12 bg-gray-200 rounded mx-auto" /></td>
                   </tr>
                 ))
-              ) : paginatedData.length === 0 ? (
-                // Empty State
+              ) : paginatedRows.length === 0 ? (
+                // Clean empty state
                 <tr>
-                  <td colSpan={12} style={{ padding: '40px 20px', textAlign: 'center' }}>
-                    <div style={{ maxWidth: '400px', margin: '0 auto', color: 'var(--text-muted)' }}>
-                      <AlertTriangle size={32} style={{ margin: '0 auto 12px auto', color: '#F59E0B' }} />
-                      <div style={{ fontSize: '0.96rem', fontWeight: '800', color: 'var(--text-main)', marginBottom: '6px' }}>
-                        No results for these filters
-                      </div>
-                      <p style={{ fontSize: '0.78rem', lineHeight: '1.4', marginBottom: '16px' }}>
-                        No records match the active combination of verdict, cross-filters, and search for this reporting period.
+                  <td colSpan={11} className="py-12 text-center">
+                    <div className="max-w-sm mx-auto space-y-2">
+                      <AlertCircle className="w-8 h-8 text-gray-400 mx-auto" />
+                      <h4 className="text-sm font-bold text-gray-800">No results for these filters</h4>
+                      <p className="text-xs text-gray-500">
+                        Try adjusting your filters, clearing search keywords, or selecting a broader reporting period.
                       </p>
                       <button
-                        onClick={handleClearAllFilters}
-                        style={{
-                          padding: '8px 18px',
-                          borderRadius: '8px',
-                          border: 'none',
-                          background: 'var(--accent-teal, #0F6E56)',
-                          color: '#ffffff',
-                          fontSize: '0.78rem',
-                          fontWeight: '700',
-                          cursor: 'pointer'
-                        }}
+                        type="button"
+                        onClick={handleClearFilters}
+                        className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100"
                       >
-                        Clear All Filters
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Clear All Filters</span>
                       </button>
                     </div>
                   </td>
                 </tr>
               ) : (
-                paginatedData.map((d, index) => {
-                  const rank = d.rank || ((currentPage - 1) * itemsPerPage + index + 1);
-                  const isProfitable = d.netContribution >= 0;
-
-                  // Verdict Badge Colors
-                  let verdictBg = 'rgba(15,110,86,0.1)';
-                  let verdictColor = '#0F6E56';
-                  if (d.verdict === 'star') { verdictBg = 'rgba(16,185,129,0.12)'; verdictColor = '#059669'; }
-                  else if (d.verdict === 'healthy') { verdictBg = 'rgba(5,150,105,0.1)'; verdictColor = '#059669'; }
-                  else if (d.verdict === 'breakeven') { verdictBg = 'rgba(245,158,11,0.12)'; verdictColor = '#D97706'; }
-                  else if (d.verdict === 'at_risk') { verdictBg = 'rgba(234,88,12,0.12)'; verdictColor = '#EA580C'; }
-                  else if (d.verdict === 'loss') { verdictBg = 'rgba(220,38,38,0.12)'; verdictColor = '#DC2626'; }
-
+                paginatedRows.map((r) => {
+                  const isLoss = r.netContribution < 0;
                   return (
-                    <tr 
-                      key={d.dimension_value || index}
-                      onClick={() => handleRowClick(d)}
-                      style={{ 
-                        borderBottom: '1px solid var(--border-color)', 
-                        cursor: 'pointer',
-                        transition: 'background 0.15s ease',
-                        background: index % 2 === 0 ? 'var(--bg-card)' : 'rgba(0,0,0,0.012)'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(15, 110, 86, 0.04)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = index % 2 === 0 ? 'var(--bg-card)' : 'rgba(0,0,0,0.012)'}
+                    <tr
+                      key={r.dimension_value}
+                      onClick={() => setAuditTarget(r)}
+                      className="hover:bg-gray-50/80 cursor-pointer transition-colors"
                     >
                       {/* Rank */}
-                      <td style={{ padding: '12px 14px', fontWeight: '800', color: rank <= 3 ? '#0F6E56' : 'var(--text-muted)' }}>
-                        #{rank}
+                      <td className="px-4 py-3 text-center font-bold text-gray-500">
+                        #{r.rank}
                       </td>
 
-                      {/* Entity Name */}
-                      <td style={{ padding: '12px 14px' }}>
-                        <div style={{ fontWeight: '700', color: 'var(--text-main)', fontSize: '0.84rem' }}>
-                          {d.dimension_value}
+                      {/* Executive / Entity Name & Role */}
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-gray-900 flex items-center gap-2">
+                          <span>{r.dimension_value}</span>
+                          {r.segment && r.segment !== 'Regular' && (
+                            <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                              {r.segment}
+                            </span>
+                          )}
                         </div>
-                        {d.role && (
-                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{d.role}</span>
-                        )}
-                        {d.city && activeDimension === 'franchise' && (
-                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>📍 {d.city}</span>
+                        {r.role && (
+                          <div className="text-[11px] text-gray-400">{r.role}</div>
                         )}
                       </td>
-
-                      {/* TL: Active Franchise Count */}
-                      {activeDimension === 'tl' && (
-                        <td style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#2563EB' }}>
-                          {d.activeFranchises} stores
-                        </td>
-                      )}
 
                       {/* Placements */}
-                      <td style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700' }}>
-                        {d.placements}
+                      <td className="px-4 py-3 text-right font-medium text-gray-700">
+                        {r.placements}
                       </td>
 
-                      {/* BD: Total Enquiries */}
-                      {activeDimension === 'bd' && (
-                        <td style={{ padding: '12px 14px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: '600' }}>
-                          {d.enquiries || 0}
-                        </td>
-                      )}
+                      {/* Enquiries */}
+                      <td className="px-4 py-3 text-right text-gray-600">
+                        {r.enquiries}
+                      </td>
 
                       {/* Company Share */}
-                      <td style={{ padding: '12px 14px', textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
-                        {formatCurrency(d.company_share)}
+                      <td className="px-4 py-3 text-right font-bold text-gray-900">
+                        {formatINR(r.company_share)}
                       </td>
 
-                      {/* Cost of Execution / Payout */}
-                      <td style={{ padding: '12px 14px', textAlign: 'right', color: '#4B5563', fontWeight: '600' }}>
-                        {activeDimension === 'franchise' 
-                          ? formatCurrency(d.franchisee_payout) 
-                          : formatCurrency(d.costOfExecution)}
+                      {/* Cost of Execution with estimated badge if applicable */}
+                      <td className="px-4 py-3 text-right text-gray-700">
+                        <div className="flex items-center justify-end gap-1">
+                          <span>{formatINR(r.costOfExecution)}</span>
+                          {r.cost_is_estimated && (
+                            <span className="text-[9px] text-amber-600 bg-amber-50 px-1 rounded border border-amber-200" title="Cost derived from standard baseline">
+                              est
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Credit Notes */}
-                      <td style={{ padding: '12px 14px', textAlign: 'right', color: d.churnCost > 0 ? '#DC2626' : 'var(--text-muted)', fontWeight: '600' }}>
-                        {d.churnCost > 0 ? `-${formatCurrency(d.churnCost)}` : '₹0'}
+                      <td className="px-4 py-3 text-right font-semibold text-rose-600">
+                        {r.churnCost > 0 ? formatINR(r.churnCost) : '₹0'}
                       </td>
 
                       {/* Net Contribution */}
-                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                        <div style={{ fontWeight: '800', fontSize: '0.88rem', color: isProfitable ? '#10B981' : '#DC2626' }}>
-                          {isProfitable ? '+' : ''}{formatCurrency(d.netContribution)}
-                        </div>
-                        <span style={{ fontSize: '0.68rem', color: isProfitable ? '#059669' : '#B91C1C' }}>
-                          {d.netMarginPct}% margin
+                      <td className={`px-4 py-3 text-right font-extrabold ${isLoss ? 'text-rose-600' : 'text-teal-700'}`}>
+                        {formatINR(r.netContribution)}
+                      </td>
+
+                      {/* Net / Enquiry */}
+                      <td className={`px-4 py-3 text-right font-medium ${r.netSurplusPerEnquiry < 0 ? 'text-rose-600' : 'text-gray-700'}`}>
+                        {formatINR(r.netSurplusPerEnquiry)}
+                      </td>
+
+                      {/* Verdict Badge */}
+                      <td className="px-4 py-3 text-center">
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                          r.verdict === 'star' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                          r.verdict === 'healthy' ? 'bg-teal-50 text-teal-700 border-teal-200' :
+                          r.verdict === 'breakeven' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                          r.verdict === 'at_risk' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                          'bg-rose-50 text-rose-700 border-rose-200'
+                        }`}>
+                          {r.verdict_label || r.verdict}
                         </span>
                       </td>
 
-                      {/* BD: Net Surplus per Enquiry */}
-                      {activeDimension === 'bd' && (
-                        <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                          <span style={{ fontWeight: '700', color: d.netSurplusPerEnquiry >= 0 ? '#10B981' : '#DC2626' }}>
-                            {d.netSurplusPerEnquiry >= 0 ? '+' : ''}{formatCurrency(d.netSurplusPerEnquiry)}
-                          </span>
-                        </td>
-                      )}
-
-                      {/* TL: Net Per Franchise */}
-                      {activeDimension === 'tl' && (
-                        <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                          <span style={{ fontWeight: '800', color: d.netPerFranchise >= 0 ? '#2563EB' : '#DC2626' }}>
-                            {d.netPerFranchise >= 0 ? '+' : ''}{formatCurrency(d.netPerFranchise)}
-                          </span>
-                        </td>
-                      )}
-
-                      {/* Verdict Pill */}
-                      <td style={{ padding: '12px 14px', textAlign: 'center' }}>
-                        <span style={{
-                          padding: '3px 8px',
-                          borderRadius: '12px',
-                          fontSize: '0.7rem',
-                          fontWeight: '800',
-                          background: verdictBg,
-                          color: verdictColor,
-                          display: 'inline-block'
-                        }}>
-                          {d.verdict_label}
-                        </span>
-                      </td>
-
-                      {/* Audit Action Button */}
-                      <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                      {/* Audit Drilldown Action */}
+                      <td className="px-4 py-3 text-center">
                         <button
-                          onClick={(e) => { e.stopPropagation(); handleRowClick(d); }}
-                          style={{
-                            padding: '4px 10px',
-                            borderRadius: '6px',
-                            border: '1px solid var(--border-color)',
-                            background: 'var(--bg-main)',
-                            color: 'var(--accent-teal, #0F6E56)',
-                            fontSize: '0.72rem',
-                            fontWeight: '700',
-                            cursor: 'pointer'
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAuditTarget(r);
                           }}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-900 bg-teal-50/60 hover:bg-teal-100/60 px-2 py-1 rounded border border-teal-200 transition-colors"
                         >
-                          Audit →
+                          <span>Audit</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
                         </button>
                       </td>
                     </tr>
@@ -1710,219 +1008,54 @@ const CostOfPerformance = () => {
           </table>
         </div>
 
-        {/* Clean True-Count Pagination Controls */}
-        <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          
-          {/* Entries summary */}
-          <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-            {allRows.length > 0 ? (
-              <span>
-                Showing <strong>{itemsPerPage === 'all' ? 1 : (currentPage - 1) * itemsPerPage + 1}</strong> to <strong>{itemsPerPage === 'all' ? allRows.length : Math.min(currentPage * itemsPerPage, allRows.length)}</strong> of <strong>{allRows.length}</strong> records
-              </span>
-            ) : (
-              <span>0 records</span>
-            )}
-          </div>
-
-          {/* Rows per page selector & page buttons */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-              <span>Rows:</span>
-              <select
-                value={itemsPerPage}
-                onChange={(e) => {
-                  setItemsPerPage(e.target.value === 'all' ? 'all' : Number(e.target.value));
-                  setCurrentPage(1);
-                }}
-                style={{
-                  padding: '4px 8px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  background: 'var(--bg-main)',
-                  color: 'var(--text-main)',
-                  fontSize: '0.74rem',
-                  fontWeight: '700',
-                  cursor: 'pointer'
-                }}
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value="all">All</option>
-              </select>
+        {/* 8. True-Count Pagination Controls */}
+        {!loading && totalRows > 0 && (
+          <div className="px-4 py-3 bg-gray-50/50 border-t border-gray-200 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-600">
+            <div>
+              Showing <span className="font-semibold text-gray-900">{startRowIndex}</span> to{' '}
+              <span className="font-semibold text-gray-900">{endRowIndex}</span> of{' '}
+              <span className="font-semibold text-gray-900">{totalRows}</span> records
             </div>
 
             {itemsPerPage !== 'all' && totalPages > 1 && (
-              <div style={{ display: 'flex', gap: '4px' }}>
+              <div className="flex items-center gap-1">
                 <button
+                  type="button"
                   disabled={currentPage === 1}
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-main)',
-                    color: currentPage === 1 ? 'var(--text-muted)' : 'var(--text-main)',
-                    fontSize: '0.74rem',
-                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
-                  }}
+                  className="px-2.5 py-1 rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                 >
-                  Prev
+                  Previous
                 </button>
-                {[...Array(totalPages)].map((_, i) => (
-                  <button
-                    key={i + 1}
-                    onClick={() => setCurrentPage(i + 1)}
-                    style={{
-                      padding: '4px 10px',
-                      borderRadius: '6px',
-                      border: currentPage === i + 1 ? '1px solid var(--accent-teal, #0F6E56)' : '1px solid var(--border-color)',
-                      background: currentPage === i + 1 ? 'var(--accent-teal, #0F6E56)' : 'var(--bg-main)',
-                      color: currentPage === i + 1 ? '#ffffff' : 'var(--text-main)',
-                      fontSize: '0.74rem',
-                      fontWeight: '700',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {i + 1}
-                  </button>
-                ))}
+                <span className="px-2 font-medium">
+                  Page {currentPage} of {totalPages}
+                </span>
                 <button
-                  disabled={currentPage === totalPages}
+                  type="button"
+                  disabled={currentPage >= totalPages}
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-main)',
-                    color: currentPage === totalPages ? 'var(--text-muted)' : 'var(--text-main)',
-                    fontSize: '0.74rem',
-                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
-                  }}
+                  className="px-2.5 py-1 rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                 >
                   Next
                 </button>
               </div>
             )}
           </div>
-        </div>
+        )}
       </div>
 
-      {/* 7. Universal Audit Drawer Drill-Down */}
-      <AuditDrawer
-        isOpen={isAuditDrawerOpen}
-        onClose={() => setIsAuditDrawerOpen(false)}
-        entityType={activeDimension === 'franchise' ? 'franchisee' : activeDimension}
-        entityId={selectedAuditEntity?.dimension_value || ''}
-        entityName={selectedAuditEntity?.dimension_value || ''}
-        entityRole={selectedAuditEntity?.role || ''}
-        month={cleanMonth}
-        financialYear={cleanFy}
-      />
-
-      {/* 8. Monthly Cost Inputs Modal */}
-      {isInputModalOpen && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.6)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 1000,
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: '20px'
-        }}>
-          <div style={{
-            background: 'var(--bg-card)',
-            borderRadius: '12px',
-            border: '1px solid var(--border-color)',
-            padding: '24px',
-            maxWidth: '480px',
-            width: '100%',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.25)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: 'var(--text-main)' }}>
-                  Monthly Cost & Payroll Inputs
-                </h3>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Configures direct seat costs and shared overhead pool for {cleanMonth}
-                </span>
-              </div>
-              <button
-                onClick={() => setIsInputModalOpen(false)}
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' }}>
-                  Default BD Executive Monthly Salary (₹)
-                </label>
-                <input
-                  type="number"
-                  value={costInputs.defaultBdSalary}
-                  onChange={(e) => setCostInputs({ ...costInputs, defaultBdSalary: Number(e.target.value) })}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.84rem' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' }}>
-                  Default Team Leader Monthly Salary (₹)
-                </label>
-                <input
-                  type="number"
-                  value={costInputs.defaultTlSalary}
-                  onChange={(e) => setCostInputs({ ...costInputs, defaultTlSalary: Number(e.target.value) })}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.84rem' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '4px' }}>
-                  Shared Overhead Pool (Rent, Admin, Marketing) (₹)
-                </label>
-                <input
-                  type="number"
-                  value={costInputs.overheadPool}
-                  onChange={(e) => setCostInputs({ ...costInputs, overheadPool: Number(e.target.value) })}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-main)', fontSize: '0.84rem' }}
-                />
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px', display: 'block' }}>
-                  Allocated pro-rata across active units based on Company Share revenue
-                </span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button
-                onClick={() => setIsInputModalOpen(false)}
-                style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', color: 'var(--text-muted)', fontSize: '0.82rem', fontWeight: '600', cursor: 'pointer' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => { setIsInputModalOpen(false); fetchReport(); }}
-                style={{ padding: '8px 18px', borderRadius: '6px', border: 'none', background: 'var(--accent-teal, #0F6E56)', color: '#ffffff', fontSize: '0.82rem', fontWeight: '700', cursor: 'pointer' }}
-              >
-                Apply & Recalculate
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* 9. Universal Audit Drawer */}
+      {auditTarget && (
+        <AuditDrawer
+          isOpen={!!auditTarget}
+          onClose={() => setAuditTarget(null)}
+          entityType={activeTab}
+          entityId={auditTarget.dimension_value}
+          entityName={auditTarget.dimension_value}
+          month={cleanMonthParam}
+          fy={selectedYear || '2026-2027'}
+        />
       )}
-
     </div>
   );
-};
-
-export default CostOfPerformance;
+}
