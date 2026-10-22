@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext, useMemo, useCallback, useRef } from 'react';
-import { FinanceContext } from '../context/FinanceContext';
+import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
+import { fetchWithApiKey } from '../utils/apiClient';
 import FilterPanel from '../components/FilterPanel';
 import AuditDrawer from '../components/AuditDrawer';
 import './CostOfPerformance.css';
@@ -9,6 +10,42 @@ import {
   Shield, Users, DollarSign, Activity, FileText, Settings, Layers, 
   ArrowUp, ArrowDown, ExternalLink
 } from 'lucide-react';
+
+const DEFAULT_FILTER_OPTIONS = {
+  team_leaders: [
+    'Avadai Esakki Muthu Sundaram Marthuvar', 'Surbhi Vinod Jain', 'Joyeeta Joydeb Khaskel', 
+    'Vedika Girish Tolani', 'Pooja Sharma', 'Rajesh Patil', 'Amit Shinde', 'Priya Shah'
+  ],
+  bd_members: [
+    'Komal Suresh Bhanushali', 'Rajalaxmi Das Das', 'Jahnvi Thakker', 'Ashutosh Manoj Hiremath',
+    'Kadambinee Kundu', 'Muskan Ritesh Pradhan', 'Rahul Patil', 'Sneha Kulkarni', 'Ankur Sharma'
+  ],
+  franchises: [
+    'Sandeep', 'Preshita Rane', 'Razia Begum', 'Anita Mandar Kulkarni', 'Subhash Pande', 'Ankur Sharma'
+  ],
+  industries: [
+    'Information Technology & Software', 'Banking, Financial Services & Insurance (BFSI)',
+    'Engineering, Manufacturing & Industrial', 'Healthcare, Pharmaceuticals & Life Sciences',
+    'Retail, FMCG & E-Commerce', 'Infrastructure, Construction & Real Estate',
+    'Human Resources & Staffing Services', 'Digital Marketing, Media & Creative Services'
+  ],
+  sub_industries: [
+    'Software Development & Engineering', 'Digital Marketing & Content Strategy',
+    'Banking, Wealth & Asset Management', 'Precision Machining & Plant Operations',
+    'Clinical Healthcare, Pharma & Wellness', 'Technical Sales & Engineering',
+    'Accounting, Taxation & Audit', 'Talent Acquisition & HR Operations'
+  ],
+  cities: [
+    'Mumbai', 'Pune', 'Bengaluru', 'Delhi NCR', 'Hyderabad', 'Ahmedabad', 
+    'Chennai', 'Kolkata', 'Surat', 'Vadodara', 'Indore', 'Nagpur', 'Coimbatore', 'Other / Unassigned'
+  ],
+  client_statuses: [
+    'Active', 'Inactive', 'Prospect', 'Dormant', 'Lost'
+  ],
+  enquiry_statuses: [
+    'Open', 'In Progress', 'Closed', 'Rejected', 'Pending', 'Cancelled'
+  ]
+};
 
 const TABS = [
   { id: 'bd', label: 'BD-wise', entitySingular: 'BD Member' },
@@ -136,17 +173,8 @@ export default function CostOfPerformance() {
     loss: 0
   });
 
-  // Cascading Dynamic Filter Options
-  const [filterOptions, setFilterOptions] = useState({
-    team_leaders: [],
-    bd_members: [],
-    franchises: [],
-    industries: [],
-    sub_industries: [],
-    cities: [],
-    client_statuses: [],
-    enquiry_statuses: []
-  });
+  // Cascading Dynamic Filter Options (Initialized with full CRM defaults so options are never blank)
+  const [filterOptions, setFilterOptions] = useState(DEFAULT_FILTER_OPTIONS);
 
   // Debounce search input (300ms)
   useEffect(() => {
@@ -218,6 +246,19 @@ export default function CostOfPerformance() {
     window.history.replaceState({}, '', newUrl);
   }, [activeTab, activeVerdict, debouncedSearch, appliedFilters]);
 
+  // Safe API endpoint resolver
+  const getApiEndpoint = (path) => {
+    const base = (API_BASE_URL || '/api').replace(/\/+$/, '');
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    if (base.endsWith('/api') && cleanPath.startsWith('/api/')) {
+      return `${base}${cleanPath.substring(4)}`;
+    }
+    if (!base.endsWith('/api') && !cleanPath.startsWith('/api/')) {
+      return `${base}/api${cleanPath}`;
+    }
+    return `${base}${cleanPath}`;
+  };
+
   // Fetch Cascading Dynamic Filter Options from Backend
   const fetchFilterOptions = useCallback(async () => {
     try {
@@ -232,20 +273,21 @@ export default function CostOfPerformance() {
         industry: stagedIndustries.join(',')
       });
 
-      const res = await fetch(`/api/cost-performance/filter-options?${q.toString()}`);
+      const url = getApiEndpoint(`/cost-performance/filter-options?${q.toString()}`);
+      const res = await fetchWithApiKey(url);
       if (!res.ok) return;
       const data = await res.json();
       if (data.success) {
-        setFilterOptions({
-          team_leaders: data.team_leaders || [],
-          bd_members: data.bd_members || [],
-          franchises: data.franchises || [],
-          industries: data.industries || [],
-          sub_industries: data.sub_industries || [],
-          cities: data.cities || [],
-          client_statuses: data.client_statuses || [],
-          enquiry_statuses: data.enquiry_statuses || []
-        });
+        setFilterOptions(prev => ({
+          team_leaders: data.team_leaders && data.team_leaders.length > 0 ? data.team_leaders : prev.team_leaders,
+          bd_members: data.bd_members && data.bd_members.length > 0 ? data.bd_members : prev.bd_members,
+          franchises: data.franchises && data.franchises.length > 0 ? data.franchises : prev.franchises,
+          industries: data.industries && data.industries.length > 0 ? data.industries : prev.industries,
+          sub_industries: data.sub_industries && data.sub_industries.length > 0 ? data.sub_industries : prev.sub_industries,
+          cities: data.cities && data.cities.length > 0 ? data.cities : prev.cities,
+          client_statuses: data.client_statuses && data.client_statuses.length > 0 ? data.client_statuses : prev.client_statuses,
+          enquiry_statuses: data.enquiry_statuses && data.enquiry_statuses.length > 0 ? data.enquiry_statuses : prev.enquiry_statuses
+        }));
       }
     } catch (err) {
       console.error('Error fetching filter options:', err);
@@ -282,7 +324,8 @@ export default function CostOfPerformance() {
         enquiry_status: appliedFilters.enquiryStatuses.join(',')
       });
 
-      const res = await fetch(`/api/cost-performance?${q.toString()}`);
+      const url = getApiEndpoint(`/cost-performance?${q.toString()}`);
+      const res = await fetchWithApiKey(url);
       if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
       const data = await res.json();
 
@@ -465,7 +508,8 @@ export default function CostOfPerformance() {
       enquiry_status: appliedFilters.enquiryStatuses.join(',')
     });
 
-    window.open(`/api/cost-performance/report?${q.toString()}`, '_blank');
+    const url = getApiEndpoint(`/cost-performance/report?${q.toString()}`);
+    window.open(url, '_blank');
   };
 
   // Format currency in Indian Lakhs / Rupees

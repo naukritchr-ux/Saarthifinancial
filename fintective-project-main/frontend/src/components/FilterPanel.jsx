@@ -58,24 +58,40 @@ function MultiSelectDropdown({
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [isOpen]);
 
+  // Normalize options to support both string array and object array with {label, value, count}
+  const normalizedOptions = useMemo(() => {
+    if (!Array.isArray(options) || options.length === 0) return [];
+    return options.map(opt => {
+      if (typeof opt === 'string' || typeof opt === 'number') {
+        return { label: String(opt), value: String(opt), count: undefined };
+      }
+      return {
+        label: opt.label || opt.value || opt.name || opt.title || String(opt),
+        value: opt.value !== undefined ? String(opt.value) : (opt.label || opt.name || String(opt)),
+        count: opt.count
+      };
+    });
+  }, [options]);
+
   const filteredOptions = useMemo(() => {
-    if (!searchTerm.trim()) return options;
+    if (!searchTerm.trim()) return normalizedOptions;
     const term = searchTerm.toLowerCase();
-    return options.filter(opt => 
-      (opt.label || opt.value || '').toLowerCase().includes(term)
+    return normalizedOptions.filter(opt => 
+      opt.label.toLowerCase().includes(term) || opt.value.toLowerCase().includes(term)
     );
-  }, [options, searchTerm]);
+  }, [normalizedOptions, searchTerm]);
 
   const toggleOption = (val) => {
-    if (selected.includes(val)) {
-      onChange(selected.filter(item => item !== val));
+    const sVal = String(val);
+    if (selected.includes(sVal)) {
+      onChange(selected.filter(item => String(item) !== sVal));
     } else {
-      onChange([...selected, val]);
+      onChange([...selected, sVal]);
     }
   };
 
   const handleSelectAll = () => {
-    const allVals = options.map(o => o.value);
+    const allVals = normalizedOptions.map(o => o.value);
     onChange(allVals);
   };
 
@@ -84,7 +100,7 @@ function MultiSelectDropdown({
   };
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div className="relative" ref={containerRef} style={{ zIndex: isOpen ? 60 : 1 }}>
       <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
         <span>{label}</span>
         {selected.length > 0 && !disabled && (
@@ -113,7 +129,7 @@ function MultiSelectDropdown({
             : selected.length === 0
             ? placeholder
             : selected.length === 1
-            ? (options.find(o => o.value === selected[0])?.label || selected[0])
+            ? (normalizedOptions.find(o => o.value === selected[0])?.label || selected[0])
             : `${selected.length} selected`}
         </span>
         <ChevronDown className={`w-3.5 h-3.5 ml-1 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -121,7 +137,10 @@ function MultiSelectDropdown({
 
       {/* Popover */}
       {isOpen && !disabled && (
-        <div className="absolute left-0 mt-1 w-64 max-w-[90vw] bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-2 text-xs">
+        <div 
+          className="absolute left-0 mt-1 w-64 max-w-[90vw] bg-white border border-gray-200 rounded-xl shadow-xl z-50 p-2 text-xs"
+          style={{ minWidth: '240px', backgroundColor: '#ffffff', zIndex: 100 }}
+        >
           {/* Search bar inside */}
           <div className="relative mb-2">
             <Search className="w-3.5 h-3.5 absolute left-2 top-2.5 text-gray-400" />
@@ -254,7 +273,10 @@ export default function FilterPanel({
   const isMonthActive = month && month.toLowerCase() !== 'custom';
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden transition-all">
+    <div 
+      className={`bg-white border border-gray-200 rounded-xl shadow-sm transition-all ${isOpen ? 'overflow-visible' : 'overflow-hidden'}`}
+      style={{ overflow: isOpen ? 'visible' : 'hidden' }}
+    >
       {/* Panel Header */}
       <div className="px-5 py-3.5 bg-gray-50/70 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
