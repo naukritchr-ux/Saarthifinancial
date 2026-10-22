@@ -24,6 +24,7 @@ import {
   Layers 
 } from 'lucide-react';
 import Pagination from '../components/Pagination';
+import AuditDrawer from '../components/AuditDrawer';
 
 // City Normalization Map (Section 5 Spec)
 const CITY_MAP = {
@@ -138,11 +139,12 @@ const ALL_INDUSTRY_BENCHMARKS = [
 ];
 
 const CostOfPerformance = () => {
-  const { currentUser, transactions, franchisees } = useContext(FinanceContext);
+  const { currentUser, transactions, franchisees, selectedMonth: globalMonth, selectedYear: globalYear } = useContext(FinanceContext);
 
   // Core 5 Dimensions from Spec
   const [activeDimension, setActiveDimension] = useState('bd'); // 'bd' | 'tl' | 'franchise' | 'city' | 'industry'
-  const [selectedMonth, setSelectedMonth] = useState('2026-08');
+  const selectedMonth = globalMonth || '2026-08';
+  const selectedYear = globalYear || '2026-2027';
   const [availableMonths] = useState(['2026-08', '2026-07', '2026-06', '2026-05', '2026-04', '2026-03']);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all'); // 'all' | 'profitable' | 'loss'
@@ -1101,188 +1103,18 @@ const CostOfPerformance = () => {
         )}
       </div>
 
-      {/* 5. Drill-Down Audit Drawer (Section 8.1 - 100% Auditability) */}
-      {isDrawerOpen && selectedEntity && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.5)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 1000,
-          display: 'flex',
-          justifyContent: 'flex-end'
-        }}>
-          <div style={{
-            width: '100%',
-            maxWidth: '520px',
-            background: 'var(--bg-card)',
-            height: '100%',
-            overflowY: 'auto',
-            padding: '24px',
-            boxShadow: '-4px 0 24px rgba(0,0,0,0.2)',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between'
-          }}>
-            <div>
-              {/* Drawer Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px' }}>
-                <div>
-                  <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--accent-teal)', fontWeight: '800' }}>
-                    {activeDimension.toUpperCase()} Audit Drill-Down
-                  </div>
-                  <h2 style={{ margin: '4px 0 0 0', fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-main)' }}>
-                    {selectedEntity.dimension_value}
-                  </h2>
-                  {selectedEntity.role && (
-                    <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>{selectedEntity.role}</span>
-                  )}
-                </div>
-                <button
-                  onClick={() => setIsDrawerOpen(false)}
-                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
-                >
-                  <X size={20} />
-                </button>
-              </div>
+      {/* 5. Drill-Down Audit Drawer */}
+      <AuditDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        entityType={activeDimension === 'franchise' ? 'franchisee' : activeDimension}
+        entityId={selectedEntity?.dimension_value || ''}
+        entityName={selectedEntity?.dimension_value || ''}
+        entityRole={selectedEntity?.role || ''}
+        month={selectedMonth === 'All Months' ? 'all' : selectedMonth}
+        financialYear={selectedYear}
+      />
 
-              {/* Commercial Breakdown Card */}
-              <div style={{ background: 'var(--bg-main)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-color)', marginBottom: '20px' }}>
-                <div style={{ fontSize: '0.78rem', fontWeight: '800', color: 'var(--text-main)', marginBottom: '12px' }}>
-                  Commercial Equation Breakdown
-                </div>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.82rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>1. Gross Billed:</span>
-                    <strong style={{ color: 'var(--text-main)' }}>{formatCurrency(selectedEntity.total_billed)}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>2. Company Share (ourShare):</span>
-                    <strong style={{ color: '#0F6E56' }}>+{formatCurrency(selectedEntity.company_share)}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>3. Direct Payroll / Seat Cost:</span>
-                    <strong style={{ color: '#DC2626' }}>-{formatCurrency(selectedEntity.direct_cost || (activeDimension === 'bd' ? costInputs.defaultBdSalary : costInputs.defaultTlSalary))}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>4. Shared Overhead Pool Share:</span>
-                    <strong style={{ color: '#DC2626' }}>-{formatCurrency(selectedEntity.overheadShare)}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>5. Credit Note Loss Reversals:</span>
-                    <strong style={{ color: '#DC2626' }}>-{formatCurrency(selectedEntity.churnCost)}</strong>
-                  </div>
-                  <div style={{ height: '1px', background: 'var(--border-color)', margin: '4px 0' }}></div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.94rem' }}>
-                    <span style={{ fontWeight: '800', color: 'var(--text-main)' }}>Net Bank Contribution:</span>
-                    <strong style={{ color: selectedEntity.netContribution >= 0 ? '#10B981' : '#DC2626' }}>
-                      {selectedEntity.netContribution >= 0 ? '+' : ''}{formatCurrency(selectedEntity.netContribution)}
-                    </strong>
-                  </div>
-                </div>
-              </div>
-
-              {/* Special Normalization Metrics */}
-              {activeDimension === 'tl' && (
-                <div style={{ background: 'rgba(37, 99, 235, 0.06)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(37, 99, 235, 0.2)', marginBottom: '20px' }}>
-                  <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#1D4ED8', marginBottom: '8px' }}>
-                    Bankim Rule: Per-Franchise Normalization (Section 4.6)
-                  </div>
-                  <div style={{ fontSize: '0.76rem', color: '#1E40AF', lineHeight: '1.45', marginBottom: '10px' }}>
-                    Managing {selectedEntity.activeFranchises} active franchise stores under their network.
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.78rem' }}>
-                    <div style={{ background: '#ffffff', padding: '8px', borderRadius: '6px' }}>
-                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>Revenue / Store</span>
-                      <strong style={{ color: '#1D4ED8' }}>{formatCurrency(selectedEntity.revenuePerFranchise)}</strong>
-                    </div>
-                    <div style={{ background: '#ffffff', padding: '8px', borderRadius: '6px' }}>
-                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>Net Profit / Store</span>
-                      <strong style={{ color: selectedEntity.netPerFranchise >= 0 ? '#10B981' : '#DC2626' }}>
-                        {formatCurrency(selectedEntity.netPerFranchise)}
-                      </strong>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeDimension === 'bd' && (
-                <div style={{ background: 'rgba(15, 110, 86, 0.06)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(15, 110, 86, 0.2)', marginBottom: '20px' }}>
-                  <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0F6E56', marginBottom: '8px' }}>
-                    Bankim Rule: Per-Enquiry Effort Efficiency (Section 4.7)
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', fontSize: '0.76rem' }}>
-                    <div style={{ background: 'var(--bg-card)', padding: '8px', borderRadius: '6px' }}>
-                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.68rem' }}>Rev / Enq</span>
-                      <strong>{formatCurrency(selectedEntity.revenuePerEnquiry)}</strong>
-                    </div>
-                    <div style={{ background: 'var(--bg-card)', padding: '8px', borderRadius: '6px' }}>
-                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.68rem' }}>Cost / Enq</span>
-                      <strong style={{ color: '#DC2626' }}>{formatCurrency(selectedEntity.expensePerEnquiry)}</strong>
-                    </div>
-                    <div style={{ background: 'var(--bg-card)', padding: '8px', borderRadius: '6px' }}>
-                      <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.68rem' }}>Net Surplus</span>
-                      <strong style={{ color: selectedEntity.netSurplusPerEnquiry >= 0 ? '#10B981' : '#DC2626' }}>
-                        {formatCurrency(selectedEntity.netSurplusPerEnquiry)}
-                      </strong>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Transactions List */}
-              <div>
-                <div style={{ fontSize: '0.8rem', fontWeight: '800', color: 'var(--text-main)', marginBottom: '8px' }}>
-                  Associated Transactions & Invoices ({selectedEntity.txList?.length || selectedEntity.placements} items)
-                </div>
-                {selectedEntity.txList && selectedEntity.txList.length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '240px', overflowY: 'auto' }}>
-                    {selectedEntity.txList.map((tx, idx) => (
-                      <div key={idx} style={{ padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'var(--bg-main)', fontSize: '0.74rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '700' }}>
-                          <span>{tx.companyName || tx.client || 'Client Placement'}</span>
-                          <span style={{ color: '#0F6E56' }}>{formatCurrency(tx.ourShare || 0)}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.7rem', marginTop: '2px' }}>
-                          <span>Inv #{tx.id || idx + 1} • {formatDate(tx.billDate)}</span>
-                          <span>Billed: {formatCurrency(tx.totalBillAmt || 0)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ padding: '14px', borderRadius: '8px', background: 'var(--bg-main)', border: '1px dashed var(--border-color)', color: 'var(--text-muted)', fontSize: '0.75rem', textAlign: 'center' }}>
-                    Billed via Saarthi360 monthly billing cycle for {selectedMonth}. Underlying rows locked to {selectedEntity.placements} closed placements.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Close Drawer Button */}
-            <div style={{ marginTop: '20px', borderTop: '1px solid var(--border-color)', paddingTop: '16px' }}>
-              <button
-                onClick={() => setIsDrawerOpen(false)}
-                style={{
-                  width: '100%',
-                  padding: '10px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: 'var(--accent-teal, #0F6E56)',
-                  color: '#ffffff',
-                  fontWeight: '700',
-                  cursor: 'pointer'
-                }}
-              >
-                Close Audit Panel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 6. Cost Inputs Modal (Section 3.2 Monthly Cost Inputs) */}
       {isInputModalOpen && (

@@ -10,8 +10,8 @@ import {
 
 /**
  * Industry Analytics & Predictive Potential Engine
- * Classifies transactions into standard industry sectors, computes conversion velocity,
- * and models forward-looking predictions based on present potential.
+ * Classifies transactions into standard industry sectors and granular sub-industries,
+ * computes conversion velocity, tracks BD domain mastery, and models forward-looking predictions.
  */
 
 // Color palette for industries
@@ -20,7 +20,7 @@ export const INDUSTRY_COLORS = {
   'Banking & Financial Services (BFSI)': '#10b981',
   'Engineering & Manufacturing': '#0d9488',
   'Human Resources & Staffing': '#8b5cf6',
-  'Sales, Marketing & Consulting': '#f59e0b',
+  'Sales, Marketing & BD': '#f59e0b',
   'Healthcare & Pharmaceuticals': '#ec4899',
   'Retail, Fashion & E-commerce': '#f97316',
   'Infrastructure & Real Estate': '#6366f1',
@@ -28,68 +28,248 @@ export const INDUSTRY_COLORS = {
 };
 
 /**
- * Robustly classifies an entity/transaction/enquiry into an industry
+ * Robustly classifies an entity/transaction/enquiry into both Industry & Sub-Industry
+ */
+export function classifyIndustryAndSubIndustry(item = {}) {
+  if (!item) {
+    return {
+      industry: 'Corporate Enterprise Services',
+      subIndustry: 'Enterprise Strategic Placements'
+    };
+  }
+
+  const comp = (item.companyName || item.client || '').toLowerCase();
+  const post = (item.postOfCandidate || item.positionName || item.subCategory || item.title || item.description || '').toLowerCase();
+  const text = `${comp} ${post}`.trim();
+
+  // 1. BANKING & FINANCIAL SERVICES (BFSI)
+  if (
+    anyMatch(text, ['rcm', 'medical billing', 'us healthcare billing']) ||
+    (comp.includes('spry') && post.includes('rcm'))
+  ) {
+    return {
+      industry: 'Banking & Financial Services (BFSI)',
+      subIndustry: 'Healthcare Financial Ops (RCM)'
+    };
+  }
+  if (
+    anyMatch(text, [
+      'accountant', 'accounts executive', 'senior accountant', 'finance manager', 
+      'account executive', 'audit', 'taxation', 'tally', 'n.m.raiji', 'nm raiji', 'ca '
+    ])
+  ) {
+    return {
+      industry: 'Banking & Financial Services (BFSI)',
+      subIndustry: 'Accounting, Taxation & Audit'
+    };
+  }
+  if (anyMatch(text, ['quickinsure', 'insurance', 'broker', 'policy', 'underwriting', 'actuarial'])) {
+    return {
+      industry: 'Banking & Financial Services (BFSI)',
+      subIndustry: 'Insurance & Underwriting'
+    };
+  }
+  if (
+    anyMatch(text, [
+      'ppfas', 'mufg', 'wealth', 'asset management', 'mutual fund', 'investment', 
+      'portfolio', 'relationship manager', 'relationship associate', 'kollectcare', 
+      'oro precious', 'banking', 'bank ', 'nbfc', 'lending', 'credit officer', 'loan'
+    ])
+  ) {
+    return {
+      industry: 'Banking & Financial Services (BFSI)',
+      subIndustry: 'Banking, Wealth & Asset Management'
+    };
+  }
+
+  // 2. ENGINEERING & MANUFACTURING
+  if (
+    anyMatch(text, [
+      'jjg aero', 'aero', 'vmc', 'cnc', 'tool', 'die', 'machin', 'lathe', 
+      'fitter', 'technician', 'extrusion', 'fabricat', 'ga steels', 'veerometals', 'metal'
+    ])
+  ) {
+    return {
+      industry: 'Engineering & Manufacturing',
+      subIndustry: 'Precision Machining & Plant Operations'
+    };
+  }
+  if (
+    anyMatch(text, [
+      'design engineer', 'draftsman', 'autocad', 'solidworks', 'mechanical engineer', 
+      'r&d engineer', 'proposal engineer', 'potential engineering'
+    ])
+  ) {
+    return {
+      industry: 'Engineering & Manufacturing',
+      subIndustry: 'Industrial Design & CAD/CAM'
+    };
+  }
+  if (anyMatch(text, ['sales engineer', 'technical sales', 'techno-commercial'])) {
+    return {
+      industry: 'Engineering & Manufacturing',
+      subIndustry: 'Technical Sales & Engineering'
+    };
+  }
+  if (
+    anyMatch(text, [
+      'vefes', 'stulz', 'electrical engineer', 'site engineer', 'project engineer', 
+      'site supervisor', 'civil engineer', 'service engineer', 'safety officer', 'shift supervisor'
+    ])
+  ) {
+    return {
+      industry: 'Engineering & Manufacturing',
+      subIndustry: 'Civil, Site & Plant Engineering'
+    };
+  }
+  if (
+    anyMatch(text, [
+      'purchase executive', 'procurement', 'supply chain', 'logistics', 'warehouse', 
+      'store executive', 'r-pac', 'rand polyproducts', 'qc chemist', 'polymer', 'chemical', 'quality'
+    ])
+  ) {
+    return {
+      industry: 'Engineering & Manufacturing',
+      subIndustry: 'Procurement, QC & Supply Chain'
+    };
+  }
+
+  // 3. IT & SOFTWARE
+  if (
+    anyMatch(text, [
+      'graphic designer', 'video editor', 'ui/ux', 'motion', 'multimedia', 'animat', 
+      'deep dive digital', 'jr content producer', 'span communications', 'pi communications'
+    ])
+  ) {
+    return {
+      industry: 'IT & Software',
+      subIndustry: 'Digital Design, Creative & Media'
+    };
+  }
+  if (
+    anyMatch(text, [
+      'software', 'developer', 'full stack', 'frontend', 'backend', 'python', 'java', 
+      'react', 'node', 'coder', 'programmer', 'qa', 'tester', 'devops', 'cloud', 
+      'herald logic', 'solution analyst', 'tech', 'system engineer', 'data analyst', 'data scientist'
+    ])
+  ) {
+    return {
+      industry: 'IT & Software',
+      subIndustry: 'Software Development & Engineering'
+    };
+  }
+  if (anyMatch(text, ['digital marketing', 'seo', 'social media', 'content writer', 'copywriter'])) {
+    return {
+      industry: 'IT & Software',
+      subIndustry: 'Digital Marketing & Content Strategy'
+    };
+  }
+
+  // 4. HEALTHCARE & PHARMACEUTICALS
+  if (
+    anyMatch(text, [
+      'teleconsulting doctor', 'doctor', 'nurse', 'hospital', 'clinical', 'medical officer', 
+      'chemist', 'pharma', 'upsurge labs', 'yoga sutra', 'nutritionist', 'health coach', 
+      'optometrist', 'biotech', 'pathology'
+    ])
+  ) {
+    return {
+      industry: 'Healthcare & Pharmaceuticals',
+      subIndustry: 'Clinical Healthcare, Pharma & Wellness'
+    };
+  }
+
+  // 5. RETAIL, FASHION & E-COMMERCE
+  if (
+    anyMatch(text, [
+      'eluno', 'fashion', 'apparel', 'textile', 'store manager', 'merchandiser', 
+      'retail', 'conscious food', 'fmcg', 'madshades', 'e-commerce', 'd2c'
+    ])
+  ) {
+    return {
+      industry: 'Retail, Fashion & E-commerce',
+      subIndustry: 'Fashion, Apparel & Retail Merchandising'
+    };
+  }
+
+  // 6. INFRASTRUCTURE & REAL ESTATE
+  if (anyMatch(text, ['interior designer', 'architect', 'real estate', 'realty', 'property', 'builder', 'interior'])) {
+    return {
+      industry: 'Infrastructure & Real Estate',
+      subIndustry: 'Interior Design, Architecture & Realty'
+    };
+  }
+
+  // 7. SALES, MARKETING & BD
+  if (
+    anyMatch(text, [
+      'sales executive', 'sales manager', 'area sales', 'bdm', 'business development manager', 
+      'business development executive', 'key account', 'sales officer', 'senior sales', 
+      'telecaller', 'inside sales', 'sales coordinator', 'relationship officer'
+    ])
+  ) {
+    return {
+      industry: 'Sales, Marketing & BD',
+      subIndustry: 'Corporate & B2B Sales'
+    };
+  }
+  if (anyMatch(text, ['marketing manager', 'brand manager', 'campaign manager', 'lead generator'])) {
+    return {
+      industry: 'Sales, Marketing & BD',
+      subIndustry: 'Brand & Strategic Marketing'
+    };
+  }
+
+  // 8. HUMAN RESOURCES & STAFFING
+  if (
+    anyMatch(text, [
+      'hr executive', 'hr manager', 'talent acquisition', 'recruiter', 'human resource', 
+      'payroll executive', 'hr ', 'onboarding executive'
+    ])
+  ) {
+    return {
+      industry: 'Human Resources & Staffing',
+      subIndustry: 'Talent Acquisition & HR Operations'
+    };
+  }
+
+  // 9. CORPORATE ENTERPRISE SERVICES
+  if (
+    anyMatch(text, [
+      'executive assistant', 'mis executive', 'operations executive', 'back office', 
+      'receptionist', 'admin', 'office assistant', 'coordinator', 'customer service'
+    ])
+  ) {
+    return {
+      industry: 'Corporate Enterprise Services',
+      subIndustry: 'Office Administration & MIS Operations'
+    };
+  }
+
+  return {
+    industry: 'Corporate Enterprise Services',
+    subIndustry: 'Enterprise Strategic Placements'
+  };
+}
+
+function anyMatch(text, keywords) {
+  if (!text) return false;
+  return keywords.some(k => text.includes(k));
+}
+
+/**
+ * Robustly classifies an entity/transaction/enquiry into an industry (Backward compatible)
  */
 export function classifyIndustry(item = {}) {
-  if (!item) return 'Corporate Enterprise Services';
-
-  // Explicit industry if present and valid
-  const explicit = (item.industry || item.category || '').trim();
-  if (explicit && explicit.toLowerCase() !== 'recruitment' && explicit.toLowerCase() !== 'recruitment fee' && explicit.toLowerCase() !== 'other' && explicit.toLowerCase() !== 'general') {
-    if (INDUSTRY_COLORS[explicit]) return explicit;
-    const expLower = explicit.toLowerCase();
-    if (expLower.includes('software') || expLower.includes('it ') || expLower.includes('tech')) return 'IT & Software';
-    if (expLower.includes('bank') || expLower.includes('fin') || expLower.includes('insur')) return 'Banking & Financial Services (BFSI)';
-    if (expLower.includes('manufactur') || expLower.includes('engineer') || expLower.includes('auto')) return 'Engineering & Manufacturing';
-    if (expLower.includes('health') || expLower.includes('pharma')) return 'Healthcare & Pharmaceuticals';
-    if (expLower.includes('retail') || expLower.includes('fashion') || expLower.includes('e-com')) return 'Retail, Fashion & E-commerce';
-    if (expLower.includes('real estate') || expLower.includes('infra')) return 'Infrastructure & Real Estate';
-    if (expLower.includes('consult') || expLower.includes('staff') || expLower.includes('hr')) return 'Human Resources & Staffing';
-  }
-
-  // Text mining on companyName, positionName, title, description
-  const text = [
-    item.companyName,
-    item.positionName,
-    item.title,
-    item.client,
-    item.description,
-    item.postOfCandidate
-  ].filter(Boolean).join(' ').toLowerCase();
-
-  if (/(tech|soft|developer|cloud|python|java|php|web|frontend|backend|data analyst|devops|infosys|tcs|wipro|cognizant|orosoft|jayatma|system|solutions|network|coder|qa|tester|architect)/i.test(text)) {
-    return 'IT & Software';
-  }
-  if (/(bank|finan|capital|asset|insurance|mufg|ppfas|ardent|quickinsure|bajaj|icici|hdfc|wealth|audit|tax|accountant|accounts|investment|mutual|credit)/i.test(text)) {
-    return 'Banking & Financial Services (BFSI)';
-  }
-  if (/(steel|machin|aero|vmc|engineer|vefes|jjg|extrusion|pac|manufacturing|chemical|plant|technician|fitter|quality|draughtsman|civil|tool|die|hardware|decvilla)/i.test(text)) {
-    return 'Engineering & Manufacturing';
-  }
-  if (/(fashion|retail|eluno|apparel|textile|garment|store|merchandiser|ecommerce|consumer goods|fmcg|sales executive)/i.test(text) && /(fashion|eluno|apparel|retail)/i.test(text)) {
-    return 'Retail, Fashion & E-commerce';
-  }
-  if (/(pharma|health|hospital|clinic|doctor|nurse|medical|biotech|chemist|diagnost|lab)/i.test(text)) {
-    return 'Healthcare & Pharmaceuticals';
-  }
-  if (/(real estate|infra|realty|builder|construction|property|embassy|architecture|interior)/i.test(text)) {
-    return 'Infrastructure & Real Estate';
-  }
-  if (/(hr |human resource|recruiter|talent|staffing|talent acquisition|coign|onboarding|manpower)/i.test(text)) {
-    return 'Human Resources & Staffing';
-  }
-  if (/(sales|marketing|business development|bd |account manager|key account|telecaller|counselor|growth)/i.test(text)) {
-    return 'Sales, Marketing & Consulting';
-  }
-
-  return 'Corporate Enterprise Services';
+  const res = classifyIndustryAndSubIndustry(item);
+  return res.industry;
 }
 
 /**
  * Calculates tenure in completed years
  */
 export function calculateTenureYears(onboardingDate, referenceDate = new Date()) {
-  if (!onboardingDate) return 1.5; // Default standard tenure
+  if (!onboardingDate) return 1.5;
   const start = new Date(onboardingDate);
   const ref = new Date(referenceDate);
   if (isNaN(start.getTime()) || isNaN(ref.getTime())) return 1.5;
@@ -103,7 +283,122 @@ export function calculateTenureYears(onboardingDate, referenceDate = new Date())
 }
 
 /**
- * Generates industry analysis and predictive potential forecast
+ * Computes BD Domain Mastery & Specializations
+ * Exactly answers: "In which industry & sub-industry that BD is performing well in?"
+ */
+export function getBdDomainMastery(transactions = []) {
+  const txList = Array.isArray(transactions) ? transactions : [];
+  const bdMap = {};
+
+  txList.forEach(t => {
+    const rawBd = (t.bdAgentName || t.bdMemberName || '').trim();
+    if (!rawBd || rawBd.toLowerCase() === 'unknown' || rawBd.toLowerCase() === 'none') return;
+
+    const { industry, subIndustry } = classifyIndustryAndSubIndustry(t);
+    const amt = Math.abs(Number(t.amount || t.serviceAmt || t.totalBillAmt || 0));
+    const st = (t.status || t.enquiryStatus || t.info || 'R').toUpperCase();
+    const isLoss = isCancelled(st) || st === 'C' || t.info === 'CN' || t.info === 'RV' || t.type === 'credit_note';
+    const isClosed = !isLoss;
+
+    if (!bdMap[rawBd]) {
+      bdMap[rawBd] = {
+        name: rawBd,
+        totalGross: 0,
+        closedDeals: 0,
+        cancelledDeals: 0,
+        industryVolume: {},
+        subIndustryMap: {}
+      };
+    }
+
+    const bdRecord = bdMap[rawBd];
+    if (isClosed) {
+      bdRecord.totalGross += amt;
+      bdRecord.closedDeals += 1;
+      bdRecord.industryVolume[industry] = (bdRecord.industryVolume[industry] || 0) + amt;
+    } else {
+      bdRecord.cancelledDeals += 1;
+    }
+
+    const subKey = `${industry} > ${subIndustry}`;
+    if (!bdRecord.subIndustryMap[subKey]) {
+      bdRecord.subIndustryMap[subKey] = {
+        industry,
+        subIndustry,
+        closedDeals: 0,
+        cancelledDeals: 0,
+        grossBilled: 0
+      };
+    }
+
+    const subRec = bdRecord.subIndustryMap[subKey];
+    if (isClosed) {
+      subRec.closedDeals += 1;
+      subRec.grossBilled += amt;
+    } else {
+      subRec.cancelledDeals += 1;
+    }
+  });
+
+  return Object.values(bdMap).map(b => {
+    const totalResolved = b.closedDeals + b.cancelledDeals;
+    const overallWinRate = totalResolved > 0 ? Number(((b.closedDeals / totalResolved) * 100).toFixed(1)) : 100;
+
+    // Sub-industries ranked by performance (deals and revenue)
+    const subList = Object.values(b.subIndustryMap).map(s => {
+      const sResolved = s.closedDeals + s.cancelledDeals;
+      const sWinRate = sResolved > 0 ? Number(((s.closedDeals / sResolved) * 100).toFixed(1)) : 100;
+      const avgTicket = s.closedDeals > 0 ? Math.round(s.grossBilled / s.closedDeals) : 0;
+      return {
+        ...s,
+        winRate: sWinRate,
+        avgTicket
+      };
+    }).sort((x, y) => (y.closedDeals * 1000000 + y.grossBilled) - (x.closedDeals * 1000000 + x.grossBilled));
+
+    // Primary Industry (Highest revenue)
+    const sortedIndustries = Object.entries(b.industryVolume).sort((x, y) => y[1] - x[1]);
+    const topIndustry = sortedIndustries[0] ? sortedIndustries[0][0] : 'Corporate Enterprise Services';
+
+    // Top Sub-Industry (Most deals & revenue)
+    const topSub = subList[0] || {
+      industry: topIndustry,
+      subIndustry: 'Enterprise Strategic Placements',
+      winRate: overallWinRate,
+      closedDeals: b.closedDeals,
+      grossBilled: b.totalGross,
+      avgTicket: b.closedDeals > 0 ? Math.round(b.totalGross / b.closedDeals) : 0
+    };
+
+    // Performance Badge & Specialization Title
+    let specialtyBadge = 'Core Specialist';
+    if (topSub.industry.includes('BFSI')) specialtyBadge = '🏆 BFSI & Financial Operations Star';
+    else if (topSub.industry.includes('IT')) specialtyBadge = '🚀 Tech & Software Talent Dominant';
+    else if (topSub.industry.includes('Engineering')) specialtyBadge = '🔧 Precision Machining & Engineering Pro';
+    else if (topSub.industry.includes('Sales')) specialtyBadge = '⚡ B2B Enterprise Sales Accelerator';
+    else if (topSub.industry.includes('Healthcare')) specialtyBadge = '🩺 Healthcare & Clinical Recruitment Lead';
+    else specialtyBadge = '💼 Corporate Strategic Placements Lead';
+
+    return {
+      name: b.name,
+      totalGross: b.totalGross,
+      closedDeals: b.closedDeals,
+      cancelledDeals: b.cancelledDeals,
+      overallWinRate,
+      topIndustry,
+      topSubIndustry: topSub.subIndustry,
+      topSubWinRate: topSub.winRate,
+      topSubDeals: topSub.closedDeals,
+      topSubGross: topSub.grossBilled,
+      topSubAvgTicket: topSub.avgTicket,
+      specialtyBadge,
+      subIndustries: subList
+    };
+  }).sort((a, b) => b.totalGross - a.totalGross);
+}
+
+/**
+ * Generates industry analysis, hierarchical sub-industries, and predictive potential forecast
  */
 export function analyzeIndustryPotential({
   transactions = [],
@@ -131,19 +426,17 @@ export function analyzeIndustryPotential({
     return true;
   });
 
-  // Calculate entity tenure and share rate (70-30 for >=3 years, 75-25 for <3 years)
   const tenure = yearsCompleted !== null && yearsCompleted !== undefined 
     ? Number(yearsCompleted) 
     : calculateTenureYears(onboardingDate);
   const is3YearsCompleted = tenure >= 3.0;
   const franchiseShareRate = is3YearsCompleted ? SENIOR_FRANCHISEE_SHARE_RATE : DEFAULT_FRANCHISEE_SHARE_RATE;
   const companyShareRate = is3YearsCompleted ? SENIOR_COMPANY_SHARE_RATE : DEFAULT_COMPANY_SHARE_RATE;
-  const bdCommissionRate = DEFAULT_BD_COMMISSION_OF_COMPANY_POOL; // Standard 20% of company pool (5% gross)
+  const bdCommissionRate = DEFAULT_BD_COMMISSION_OF_COMPANY_POOL;
 
-  // 2. Aggregate metrics by industry
+  // 2. Aggregate metrics by industry and sub-industry
   const industryMap = {};
 
-  // Initialize standard industries
   Object.keys(INDUSTRY_COLORS).forEach(ind => {
     industryMap[ind] = {
       industry: ind,
@@ -157,12 +450,13 @@ export function analyzeIndustryPotential({
       activePipeline: 0,
       dealAmounts: [],
       clients: new Set(),
-      positions: new Set()
+      positions: new Set(),
+      subIndustriesMap: {}
     };
   });
 
   entityTxs.forEach(t => {
-    const ind = classifyIndustry(t);
+    const { industry: ind, subIndustry: sub } = classifyIndustryAndSubIndustry(t);
     if (!industryMap[ind]) {
       industryMap[ind] = {
         industry: ind,
@@ -176,49 +470,98 @@ export function analyzeIndustryPotential({
         activePipeline: 0,
         dealAmounts: [],
         clients: new Set(),
-        positions: new Set()
+        positions: new Set(),
+        subIndustriesMap: {}
       };
     }
 
     const bucket = industryMap[ind];
-    const amt = Math.abs(Number(t.amount || t.serviceAmt || 0));
+    const amt = Math.abs(Number(t.amount || t.serviceAmt || t.totalBillAmt || 0));
+    const bdName = (t.bdAgentName || t.bdMemberName || 'Specialist').trim();
 
     if (t.companyName) bucket.clients.add(t.companyName);
-    if (t.title || t.positionName) bucket.positions.add(t.title || t.positionName);
+    if (t.title || t.positionName || t.postOfCandidate) bucket.positions.add(t.title || t.positionName || t.postOfCandidate);
 
-    const st = t.status || t.enquiryStatus || '';
-    if (isCancelled(st) || t.info === 'CN' || t.info === 'RV' || t.type === 'loss') {
+    // Initialize sub-industry record
+    if (!bucket.subIndustriesMap[sub]) {
+      bucket.subIndustriesMap[sub] = {
+        subIndustry: sub,
+        totalGross: 0,
+        closedDeals: 0,
+        cancelledDeals: 0,
+        dealAmounts: [],
+        bdLeaderboard: {}
+      };
+    }
+    const subBucket = bucket.subIndustriesMap[sub];
+
+    const st = (t.status || t.enquiryStatus || t.info || 'R').toUpperCase();
+    if (isCancelled(st) || st === 'C' || t.info === 'CN' || t.info === 'RV' || t.type === 'credit_note') {
       bucket.cancelledAmount += amt;
       bucket.cancelledDeals++;
-    } else if (isProgressed(st) || st.toLowerCase() === 'pending' || (t.amountDue && Number(t.amountDue) > 0)) {
+      subBucket.cancelledDeals++;
+    } else if (isProgressed(st) || st === 'PR' || st === 'O' || (t.amountDue && Number(t.amountDue) > 0)) {
       bucket.outstandingAmount += amt;
       bucket.totalGross += amt;
       bucket.activePipeline++;
       bucket.dealAmounts.push(amt);
+      subBucket.totalGross += amt;
+      subBucket.dealAmounts.push(amt);
     } else {
-      // Received / Closed
       bucket.receivedAmount += amt;
       bucket.totalGross += amt;
       bucket.closedDeals++;
       bucket.dealAmounts.push(amt);
+      subBucket.totalGross += amt;
+      subBucket.closedDeals++;
+      subBucket.dealAmounts.push(amt);
+    }
+
+    // Track BD in sub-industry
+    if (bdName && !isCancelled(st)) {
+      if (!subBucket.bdLeaderboard[bdName]) {
+        subBucket.bdLeaderboard[bdName] = { name: bdName, deals: 0, gross: 0 };
+      }
+      subBucket.bdLeaderboard[bdName].deals++;
+      subBucket.bdLeaderboard[bdName].gross += amt;
     }
   });
 
-  // 3. Format industry breakdown items
+  // 3. Format industry breakdown items with nested sub-industries
   const industryList = Object.values(industryMap)
     .filter(b => b.totalGross > 0 || b.closedDeals > 0 || b.activePipeline > 0 || b.cancelledDeals > 0)
     .map(b => {
       const avgTicket = b.dealAmounts.length > 0 ? b.totalGross / b.dealAmounts.length : 0;
-      
-      // True Win Rate: closed deals / (closed deals + cancelled deals)
       const totalResolved = b.closedDeals + b.cancelledDeals;
-      const winRate = totalResolved > 0 
-        ? Number(((b.closedDeals / totalResolved) * 100).toFixed(1)) 
-        : null;
+      const winRate = totalResolved > 0 ? Number(((b.closedDeals / totalResolved) * 100).toFixed(1)) : null;
 
       const fShare = Math.round(b.totalGross * franchiseShareRate);
       const cShare = Math.round(b.totalGross * companyShareRate);
       const bdComm = Math.round(b.totalGross * companyShareRate * bdCommissionRate);
+
+      // Format nested sub-industries
+      const subIndustries = Object.values(b.subIndustriesMap)
+        .map(s => {
+          const sResolved = s.closedDeals + s.cancelledDeals;
+          const sWinRate = sResolved > 0 ? Number(((s.closedDeals / sResolved) * 100).toFixed(1)) : 100;
+          const sAvgTicket = s.dealAmounts.length > 0 ? Math.round(s.totalGross / s.dealAmounts.length) : 0;
+          
+          // Determine top BD
+          const bdSorted = Object.values(s.bdLeaderboard).sort((x, y) => y.deals - x.deals || y.gross - x.gross);
+          const topBd = bdSorted[0] || null;
+
+          return {
+            subIndustry: s.subIndustry,
+            totalGross: s.totalGross,
+            closedDeals: s.closedDeals,
+            cancelledDeals: s.cancelledDeals,
+            avgTicketSize: sAvgTicket,
+            winRate: sWinRate,
+            topBd: topBd ? topBd.name : 'N/A',
+            topBdDeals: topBd ? topBd.deals : 0
+          };
+        })
+        .sort((x, y) => y.totalGross - x.totalGross);
 
       return {
         industry: b.industry,
@@ -235,12 +578,12 @@ export function analyzeIndustryPotential({
         clientCount: b.clients.size,
         franchiseeShare: fShare,
         companyShare: cShare,
-        bdCommission: bdComm
+        bdCommission: bdComm,
+        subIndustries
       };
     })
     .sort((a, b) => b.totalGross - a.totalGross);
 
-  // Return empty unverified state if no transactions exist for entity
   if (industryList.length === 0) {
     return {
       industryBreakdown: [],
@@ -280,11 +623,8 @@ export function analyzeIndustryPotential({
   const totalPipelineVal = industryList.reduce((s, i) => s + i.outstandingAmount, 0);
   
   const totalConcluded = totalClosed + totalCancelled;
-  const overallWinRate = totalConcluded > 0 
-    ? Number(((totalClosed / totalConcluded) * 100).toFixed(1)) 
-    : null;
+  const overallWinRate = totalConcluded > 0 ? Number(((totalClosed / totalConcluded) * 100).toFixed(1)) : null;
 
-  // Potential Score formula (Ticket size weight + Win rate + Pipeline momentum)
   const avgTicketAcross = totalClosed > 0 ? totalRevenue / totalClosed : 150000;
   const ticketScore = Math.min(35, (avgTicketAcross / 250000) * 35);
   const winRateScore = overallWinRate !== null ? Math.min(35, (overallWinRate / 100) * 35) : 20;
@@ -297,8 +637,7 @@ export function analyzeIndustryPotential({
   else if (potentialScore >= 60) potentialBand = 'Steady Core Production';
   else potentialBand = 'Emerging Potential Hub';
 
-  // Forward Projections: Next Quarter (Q+1) and Annual Run Rate
-  const growthMultiplier = 1.0 + (potentialScore - 50) / 200; // e.g. 1.05 to 1.25
+  const growthMultiplier = 1.0 + (potentialScore - 50) / 200;
   const baselineMonthly = totalRevenue > 0 ? totalRevenue / 12 : 0;
   const projectedQuarterlyRevenue = Math.round((baselineMonthly * 3 + totalPipelineVal * 0.75) * growthMultiplier);
   const projectedAnnualRunRate = Math.round(projectedQuarterlyRevenue * 4.2);
@@ -307,8 +646,7 @@ export function analyzeIndustryPotential({
   const projectedCompanyMargin = Math.round(projectedQuarterlyRevenue * companyShareRate);
   const projectedBdCommission = Math.round(projectedCompanyMargin * bdCommissionRate);
 
-  // Strategic Insights & Opportunities
-  const topIndustry = industryList[0] || { industry: 'General Recruitment', totalGross: 0, avgTicketSize: 0 };
+  const topIndustry = industryList[0] || { industry: 'Corporate Enterprise Services', totalGross: 0, avgTicketSize: 0 };
   const validWinIndustries = industryList.filter(i => i.winRate !== null);
   const bestWinIndustry = validWinIndustries.length > 0 
     ? [...validWinIndustries].sort((a, b) => (b.winRate || 0) - (a.winRate || 0))[0] 
@@ -347,3 +685,5 @@ export function analyzeIndustryPotential({
     }
   };
 }
+
+export default analyzeIndustryPotential;

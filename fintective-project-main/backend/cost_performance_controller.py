@@ -765,3 +765,467 @@ def get_bd_loss_forensics():
         return jsonify({'success': False, 'error': str(e)}), 500
     finally:
         conn.close()
+
+# --------------------------------------------------------------------------
+# 5. GET /api/audit/<entity_type>/<path:entity_id> (Generic Loss Forensics & Audit)
+# --------------------------------------------------------------------------
+@cost_performance_bp.route('/api/audit/<entity_type>/<path:entity_id>', methods=['GET'])
+def get_entity_audit(entity_type, entity_id):
+    """
+    Unified Audit Endpoint for Cost of Performance (BD, TL, Franchise, City, Industry)
+    and BD Performance Audit Drilldown.
+    Query Params:
+      month: YYYY-MM or 'all'
+      fy: YYYY-YYYY (e.g. '2026-2027')
+      status: 'all' | 'loss' | 'low_margin' | 'credit_note_hit' | 'healthy'
+      cause: 'credit_notes' | 'cost_drag' | 'no_conversion'
+      client: string filter
+      sort: 'worst_first' (default) | 'highest_billed' | 'latest'
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        clean_type = str(entity_type or 'bd').strip().lower()
+        clean_id = str(entity_id or '').strip()
+        clean_id_lower = clean_id.lower()
+
+        raw_month = request.args.get('month', '2026-08').strip()
+        month_lower = raw_month.lower()
+        if 'all' in month_lower or month_lower == 'all months':
+            month = 'all'
+        elif ' ' in raw_month:
+            parts = raw_month.split()
+            m_names = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
+            matched_month = None
+            for idx, mn in enumerate(m_names, 1):
+                if mn in month_lower:
+                    year_part = [p for p in parts if p.isdigit() and len(p) == 4]
+                    if year_part:
+                        matched_month = f"{year_part[0]}-{idx:02d}"
+                    break
+            month = matched_month or raw_month
+        else:
+            month = raw_month
+
+        fy = request.args.get('fy', '2026-2027').strip()
+        status_filter = request.args.get('status', '').strip().lower()
+        cause_filter = request.args.get('cause', '').strip().lower()
+        client_filter = request.args.get('client', '').strip().lower()
+        sort_by = request.args.get('sort', 'worst_first').strip().lower()
+
+        # 1. Date Filtering Clause
+        date_params = []
+        enq_date_params = []
+        if month and month != 'all':
+            date_clause = "AND (COALESCE(v.billDate, v.dateReceived, v.paidOnDate) LIKE %s)"
+            date_params.append(f"{month}%")
+            enq_date_clause = "AND (e.dateOfAllocation LIKE %s OR e.created_at LIKE %s)"
+            enq_date_params = [f"{month}%", f"{month}%"]
+        elif fy and fy != 'All Years':
+            parts = fy.split('-')
+            if len(parts) == 2:
+                start_date = f"{parts[0]}-04-01"
+                end_date = f"{parts[1]}-03-31"
+                date_clause = "AND (COALESCE(v.billDate, v.dateReceived, v.paidOnDate) >= %s AND COALESCE(v.billDate, v.dateReceived, v.paidOnDate) <= %s)"
+                date_params.extend([start_date, end_date])
+                enq_date_clause = "AND ((e.dateOfAllocation >= %s AND e.dateOfAllocation <= %s) OR (e.created_at >= %s AND e.created_at <= %s))"
+                enq_date_params = [start_date, end_date, start_date, end_date]
+            else:
+                date_clause = ""
+                enq_date_clause = ""
+        else:
+            date_clause = ""
+            enq_date_clause = ""
+
+        # 2. Entity Clause Mapping (Single source of truth)
+        entity_params = []
+        enq_entity_params = []
+        if clean_type == 'bd':
+            entity_clause = "AND (LOWER(TRIM(v.nameOfBd)) = %s OR LOWER(TRIM(v.nameOfBd)) LIKE %s)"
+            entity_params.extend([clean_id_lower, f"%{clean_id_lower.split()[0]}%"])
+            enq_entity_clause = "AND (LOWER(TRIM(e.bdMemberName)) = %s OR LOWER(TRIM(e.bdMemberName)) LIKE %s)"
+            enq_entity_params.extend([clean_id_lower, f"%{clean_id_lower.split()[0]}%"])
+        elif clean_type == 'tl':
+            entity_clause = "AND (LOWER(TRIM(v.teamLeader)) = %s OR LOWER(TRIM(v.teamLeader)) LIKE %s)"
+            entity_params.extend([clean_id_lower, f"%{clean_id_lower.split()[0]}%"])
+            enq_entity_clause = "AND (LOWER(TRIM(e.teamLeaderName)) = %s OR LOWER(TRIM(e.teamLeaderName)) LIKE %s)"
+            enq_entity_params.extend([clean_id_lower, f"%{clean_id_lower.split()[0]}%"])
+        elif clean_type in ('franchisee', 'franchise'):
+            entity_clause = "AND (LOWER(TRIM(v.franchiseName)) = %s OR LOWER(TRIM(v.franchiseName)) LIKE %s)"
+            entity_params.extend([clean_id_lower, f"%{clean_id_lower}%"])
+            enq_entity_clause = "AND (LOWER(TRIM(e.franchiseeName)) = %s OR LOWER(TRIM(e.franchiseeName)) LIKE %s)"
+            enq_entity_params.extend([clean_id_lower, f"%{clean_id_lower}%"])
+        else:
+            entity_clause = ""
+            enq_entity_clause = ""
+
+        # 3. Base Query for Deals & Credit Notes
+        base_sql = f"""
+            SELECT 
+                v.id,
+                v.enquiry_id,
+                v.billNumber,
+                COALESCE(v.billDate, v.dateReceived, v.paidOnDate) AS placement_date,
+                COALESCE(v.companyName, 'Direct Client') AS companyName,
+                COALESCE(v.candidateName, 'Candidate') AS candidateName,
+                COALESCE(v.postOfCandidate, '') AS postOfCandidate,
+                ABS(COALESCE(v.totalBillAmt, 0.0)) AS totalBillAmt,
+                COALESCE(v.ourShare, 0.0) AS ourShare,
+                COALESCE(v.franchiseeShare, 0.0) AS franchiseeShare,
+                v.info,
+                v.status,
+                v.is_revenue,
+                COALESCE(v.nameOfBd, 'BD Specialist') AS nameOfBd,
+                COALESCE(v.teamLeader, 'Team Leader') AS teamLeader,
+                COALESCE(v.franchiseName, 'Franchise Partner') AS franchiseName,
+                e.info AS enquiry_remark,
+                e.positionName
+            FROM v_invoice_clean v
+            LEFT JOIN enquiries e ON v.enquiry_id = e.id
+            WHERE 1=1 {date_clause} {entity_clause}
+            ORDER BY COALESCE(v.billDate, v.dateReceived, v.paidOnDate) DESC
+        """
+        cursor.execute(base_sql, date_params + entity_params)
+        all_invoices = cursor.fetchall()
+
+        # Python-side filtering for City and Industry
+        if clean_type == 'city':
+            all_invoices = [r for r in all_invoices if normalize_city(r.get('companyName')).lower() == clean_id_lower or clean_id_lower in normalize_city(r.get('companyName')).lower()]
+        elif clean_type == 'industry':
+            all_invoices = [r for r in all_invoices if normalize_industry(r.get('postOfCandidate') or r.get('companyName')).lower() == clean_id_lower or clean_id_lower in normalize_industry(r.get('postOfCandidate') or r.get('companyName')).lower()]
+
+        # 4. Partition into Deals, Credit Notes, and Cancelled
+        regular_invoices = []
+        credit_note_invoices = []
+        cancelled_invoices = []
+
+        for r in all_invoices:
+            info_val = str(r.get('info') or '').upper().strip()
+            status_val = str(r.get('status') or '').lower().strip()
+            is_rev = bool(r.get('is_revenue'))
+
+            is_cn = (not is_rev) or (info_val in ('CN', 'RV', 'LEGAL-CN'))
+            is_canc = (status_val == 'cancelled') and not is_cn
+
+            if is_cn:
+                credit_note_invoices.append(r)
+            elif is_canc:
+                cancelled_invoices.append(r)
+            else:
+                regular_invoices.append(r)
+
+        # 5. Direct Cost & Overhead Allocation
+        cost_meta = _get_live_month_costs(cursor, month if month != 'all' else '2026-08')
+        overhead_pool = cost_meta.get('overhead_pool', 120000.0)
+        bd_costs_map = cost_meta.get('bd_costs', {})
+        tl_costs_map = cost_meta.get('tl_costs', {})
+
+        cost_is_estimated = False
+        direct_cost = 0.0
+
+        if clean_type == 'bd':
+            cursor.execute("SELECT fixed_salary, incentive_paid, travel_expense FROM cost_bd_monthly WHERE (LOWER(bd_name) = %s OR LOWER(bd_id) = %s) AND month = %s", [clean_id_lower, clean_id_lower, month])
+            c_row = cursor.fetchone()
+            if c_row:
+                direct_cost = float(c_row['fixed_salary'] or 0) + float(c_row['incentive_paid'] or 0) + float(c_row['travel_expense'] or 0)
+                cost_is_estimated = False
+            else:
+                cursor.execute("SELECT baseSalary FROM bd_agents WHERE LOWER(name) = %s", [clean_id_lower])
+                a_row = cursor.fetchone()
+                if a_row and a_row['baseSalary']:
+                    direct_cost = float(a_row['baseSalary'])
+                else:
+                    direct_cost = 30000.0
+                cost_is_estimated = True
+        elif clean_type == 'tl':
+            tl_cost_entry = tl_costs_map.get(clean_id_lower)
+            if tl_cost_entry:
+                direct_cost = tl_cost_entry.get('total', 110000.0)
+                cost_is_estimated = False
+            else:
+                direct_cost = 80000.0
+                cost_is_estimated = True
+        else:
+            direct_cost = 0.0
+            cost_is_estimated = False
+
+        if month == 'all':
+            direct_cost *= 12.0
+
+        gross_billed = sum(float(r['totalBillAmt'] or 0) for r in regular_invoices)
+        company_share = sum(float(r['ourShare'] or 0) for r in regular_invoices)
+        credit_notes = sum(float(r['totalBillAmt'] or 0) for r in credit_note_invoices)
+        cancelled_billed = sum(float(r['totalBillAmt'] or 0) for r in cancelled_invoices)
+
+        # Pro-rata overhead pool allocation
+        cursor.execute(f"SELECT SUM(ourShare) as total_cs FROM v_invoice_clean v WHERE is_revenue = 1 {date_clause}", date_params)
+        tot_cs_row = cursor.fetchone()
+        total_network_cs = float(tot_cs_row['total_cs'] or 1.0) if tot_cs_row else 1.0
+        effective_pool = overhead_pool * (12.0 if month == 'all' else 1.0)
+        overhead_share = round((company_share / max(1.0, total_network_cs)) * effective_pool, 2)
+        net_contribution = round(company_share - direct_cost - overhead_share - credit_notes, 2)
+        net_margin_pct = round((net_contribution / company_share * 100), 1) if company_share > 0 else 0.0
+
+        # 6. Deal Items with Allocated Direct Cost
+        deals_list = []
+        for r in regular_invoices:
+            deal_gross = float(r['totalBillAmt'] or 0)
+            deal_share = float(r['ourShare'] or 0)
+            allocated_cost = round((deal_gross / gross_billed * direct_cost), 2) if gross_billed > 0 else 0.0
+            net_per_deal = round(deal_share - allocated_cost, 2)
+            margin_pct = round((net_per_deal / deal_share * 100), 1) if deal_share > 0 else 0.0
+
+            if net_per_deal < 0:
+                status_pill = 'loss'
+                status_label = 'Loss'
+            elif margin_pct < 20.0:
+                status_pill = 'low_margin'
+                status_label = 'Low margin'
+            else:
+                status_pill = 'healthy'
+                status_label = 'Healthy'
+
+            deals_list.append({
+                'id': r['id'],
+                'enquiry_id': r.get('enquiry_id'),
+                'bill_number': r.get('billNumber') or f"INV-{r['id']}",
+                'placement_date': str(r.get('placement_date') or '')[:10],
+                'client_name': r.get('companyName') or 'Client Placement',
+                'candidate_name': r.get('candidateName') or 'Candidate',
+                'position_name': r.get('postOfCandidate') or r.get('positionName') or 'Role',
+                'gross_billed': deal_gross,
+                'company_share': deal_share,
+                'franchisee_share': float(r.get('franchiseeShare') or 0),
+                'allocated_cost': allocated_cost,
+                'credit_note_amount': 0.0,
+                'credit_note_reason': None,
+                'remark': None,
+                'net_per_deal': net_per_deal,
+                'margin_pct': margin_pct,
+                'status_pill': status_pill,
+                'status_label': status_label,
+                'bd_name': r.get('nameOfBd'),
+                'is_credit_note': False
+            })
+
+        # Credit Note deals as distinct loss rows
+        for cn in credit_note_invoices:
+            cn_amt = float(cn['totalBillAmt'] or 0)
+            info_val = str(cn.get('info') or '').upper().strip()
+            
+            if info_val == 'CN':
+                cn_reason = "Credit note"
+            elif info_val == 'RV':
+                cn_reason = "Reversal"
+            elif info_val == 'LEGAL-CN':
+                cn_reason = "Legal credit note"
+            else:
+                cn_reason = "Credit note"
+
+            remark_text = cn.get('enquiry_remark') or None
+            net_per_deal = -round(cn_amt, 2)
+
+            deals_list.append({
+                'id': cn['id'],
+                'enquiry_id': cn.get('enquiry_id'),
+                'bill_number': cn.get('billNumber') or f"CN-{cn['id']}",
+                'placement_date': str(cn.get('placement_date') or '')[:10],
+                'client_name': cn.get('companyName') or 'Client Placement',
+                'candidate_name': cn.get('candidateName') or 'Candidate',
+                'position_name': cn.get('postOfCandidate') or cn.get('positionName') or 'Reversal Record',
+                'gross_billed': 0.0,
+                'company_share': 0.0,
+                'franchisee_share': 0.0,
+                'allocated_cost': 0.0,
+                'credit_note_amount': cn_amt,
+                'credit_note_reason': cn_reason,
+                'remark': remark_text,
+                'net_per_deal': net_per_deal,
+                'margin_pct': -100.0,
+                'status_pill': 'credit_note_hit',
+                'status_label': 'Credit note hit',
+                'bd_name': cn.get('nameOfBd'),
+                'is_credit_note': True
+            })
+
+        # 7. Non-converted Enquiries
+        enq_sql = f"""
+            SELECT 
+                e.id,
+                e.companyName,
+                e.positionName,
+                e.enquiryStatus,
+                COALESCE(e.dateOfAllocation, e.created_at) AS allocation_date,
+                COALESCE(e.bill_amount, e.placementFees, 0.0) AS bill_amount,
+                e.info AS remark
+            FROM enquiries e
+            WHERE 1=1 {enq_date_clause} {enq_entity_clause}
+            ORDER BY COALESCE(e.dateOfAllocation, e.created_at) DESC
+        """
+        cursor.execute(enq_sql, enq_date_params + enq_entity_params)
+        all_enqs = cursor.fetchall()
+        
+        non_converted_enqs = [
+            e for e in all_enqs 
+            if (str(e.get('enquiryStatus') or '').lower().strip() not in ('closed', 'offered_and_accepted'))
+        ]
+        total_enquiries_count = len(all_enqs)
+        cost_per_enquiry = round(direct_cost / max(1, total_enquiries_count), 2) if total_enquiries_count > 0 else 0.0
+        no_conversion_loss = round(len(non_converted_enqs) * cost_per_enquiry, 2)
+
+        # 8. Unfiltered Counts for Stability
+        count_all = len(deals_list)
+        count_loss = sum(1 for d in deals_list if d['net_per_deal'] < 0)
+        count_low_margin = sum(1 for d in deals_list if d['net_per_deal'] >= 0 and d['margin_pct'] < 20.0)
+        count_cn_hit = sum(1 for d in deals_list if d['credit_note_amount'] > 0)
+        count_healthy = sum(1 for d in deals_list if d['net_per_deal'] >= 0 and d['margin_pct'] >= 20.0 and d['credit_note_amount'] == 0)
+
+        cn_cause_count = count_cn_hit
+        cn_cause_amount = credit_notes
+        cost_drag_deals = [d for d in deals_list if d['allocated_cost'] > d['company_share']]
+        cost_drag_count = len(cost_drag_deals)
+        cost_drag_amount = round(sum(d['allocated_cost'] - d['company_share'] for d in cost_drag_deals), 2)
+
+        unique_clients = sorted(list(set(d['client_name'] for d in deals_list if d.get('client_name'))))
+
+        # 9. Apply Active Filters
+        filtered_deals = list(deals_list)
+
+        # Status filter
+        if status_filter and status_filter != 'all':
+            if status_filter == 'loss':
+                filtered_deals = [d for d in filtered_deals if d['net_per_deal'] < 0]
+            elif status_filter == 'low_margin':
+                filtered_deals = [d for d in filtered_deals if d['net_per_deal'] >= 0 and d['margin_pct'] < 20.0]
+            elif status_filter == 'credit_note_hit':
+                filtered_deals = [d for d in filtered_deals if d['credit_note_amount'] > 0]
+            elif status_filter == 'healthy':
+                filtered_deals = [d for d in filtered_deals if d['net_per_deal'] >= 0 and d['margin_pct'] >= 20.0 and d['credit_note_amount'] == 0]
+
+        # Cause filter
+        if cause_filter:
+            if cause_filter == 'credit_notes':
+                filtered_deals = [d for d in filtered_deals if d['credit_note_amount'] > 0]
+            elif cause_filter == 'cost_drag':
+                filtered_deals = [d for d in filtered_deals if d['allocated_cost'] > d['company_share']]
+
+        # Client filter
+        if client_filter:
+            filtered_deals = [d for d in filtered_deals if client_filter in d['client_name'].lower()]
+
+        # Sort
+        if sort_by == 'highest_billed':
+            filtered_deals.sort(key=lambda x: x['gross_billed'], reverse=True)
+        elif sort_by == 'latest':
+            filtered_deals.sort(key=lambda x: x['placement_date'], reverse=True)
+        else: # worst_first (default)
+            filtered_deals.sort(key=lambda x: x['net_per_deal'])
+
+        # 10. Breakdown by BD for non-BD entities
+        breakdown_by_bd = []
+        if clean_type in ('tl', 'franchisee', 'franchise', 'city', 'industry'):
+            bd_map = {}
+            for d in deals_list:
+                b = d.get('bd_name') or 'Other'
+                if b not in bd_map:
+                    bd_map[b] = {'name': b, 'deals': 0, 'gross': 0.0, 'share': 0.0, 'credit_notes': 0.0, 'net': 0.0}
+                bd_map[b]['deals'] += 1
+                bd_map[b]['gross'] += d['gross_billed']
+                bd_map[b]['share'] += d['company_share']
+                bd_map[b]['credit_notes'] += d['credit_note_amount']
+                bd_map[b]['net'] += d['net_per_deal']
+            breakdown_by_bd = sorted(bd_map.values(), key=lambda x: x['net'])[:5]
+
+        # 11. Rule-based Insight Line
+        insight = None
+        if credit_notes > 0 and len(credit_note_invoices) > 0:
+            client_cns = {}
+            for cn in credit_note_invoices:
+                c_name = cn.get('companyName') or 'Client'
+                client_cns[c_name] = client_cns.get(c_name, 0.0) + float(cn['totalBillAmt'] or 0)
+            top_client_cn = sorted(client_cns.items(), key=lambda x: x[1], reverse=True)[0]
+            if top_client_cn[1] / credit_notes >= 0.5:
+                pct = int(round((top_client_cn[1] / credit_notes) * 100))
+                insight = f"Client {top_client_cn[0]} caused {pct}% of credit notes (₹{top_client_cn[1]:,.0f})"
+
+        if not insight and cost_drag_amount > 0 and company_share > 0 and (cost_drag_amount > company_share * 0.3):
+            insight = f"Cost drag accounts for ₹{cost_drag_amount:,.0f} across {cost_drag_count} deal{'s' if cost_drag_count > 1 else ''}"
+
+        # Team Average
+        cursor.execute(f"SELECT SUM(totalBillAmt) as net_gross, SUM(ourShare) as net_share FROM v_invoice_clean v WHERE is_revenue = 1 {date_clause}", date_params)
+        net_row = cursor.fetchone()
+        tot_net_gross = float(net_row['net_gross'] or 1.0) if net_row else 1.0
+        tot_net_share = float(net_row['net_share'] or 1.0) if net_row else 1.0
+
+        cursor.execute(f"SELECT SUM(ABS(totalBillAmt)) as net_cns FROM v_invoice_clean v WHERE (is_revenue = 0 OR info IN ('CN', 'RV', 'LEGAL-CN')) {date_clause}", date_params)
+        cns_row = cursor.fetchone()
+        tot_net_cns = float(cns_row['net_cns'] or 0.0) if cns_row else 0.0
+        team_cn_rate = round((tot_net_cns / max(1.0, tot_net_gross) * 100), 1)
+
+        return jsonify({
+            'success': True,
+            'entity': {
+                'id': clean_id,
+                'name': clean_id,
+                'type': clean_type,
+                'direct_cost': direct_cost,
+                'cost_is_estimated': cost_is_estimated,
+                'overhead_share': overhead_share,
+                'gross_billed': gross_billed,
+                'company_share': company_share,
+                'credit_notes': credit_notes,
+                'cancelled_billed': cancelled_billed,
+                'net_contribution': net_contribution,
+                'net_margin_pct': net_margin_pct
+            },
+            'summary': {
+                'total_deals': len(regular_invoices),
+                'gross_billed': gross_billed,
+                'company_share': company_share,
+                'direct_cost': direct_cost,
+                'cost_is_estimated': cost_is_estimated,
+                'overhead_share': overhead_share,
+                'credit_notes': credit_notes,
+                'cancelled_billed': cancelled_billed,
+                'net_contribution': net_contribution,
+                'net_margin_pct': net_margin_pct
+            },
+            'counts': {
+                'status': {
+                    'all': count_all,
+                    'loss': count_loss,
+                    'low_margin': count_low_margin,
+                    'credit_note_hit': count_cn_hit,
+                    'healthy': count_healthy
+                },
+                'cause': {
+                    'credit_notes': {'count': cn_cause_count, 'amount': cn_cause_amount},
+                    'cost_drag': {'count': cost_drag_count, 'amount': cost_drag_amount},
+                    'no_conversion': {'count': len(non_converted_enqs), 'amount': no_conversion_loss}
+                }
+            },
+            'unique_clients': unique_clients,
+            'deals': filtered_deals,
+            'non_converted_enquiries': [
+                {
+                    'id': e['id'],
+                    'company_name': e.get('companyName') or 'Client',
+                    'position_name': e.get('positionName') or 'Position',
+                    'enquiry_status': e.get('enquiryStatus') or 'inprogress',
+                    'allocation_date': str(e.get('allocation_date') or '')[:10],
+                    'bill_amount': float(e.get('bill_amount') or 0),
+                    'cost_drag': cost_per_enquiry
+                }
+                for e in non_converted_enqs
+            ],
+            'breakdown_by_bd': breakdown_by_bd,
+            'insight': insight,
+            'team_avg': {
+                'credit_note_rate_pct': team_cn_rate
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+    finally:
+        conn.close()
+

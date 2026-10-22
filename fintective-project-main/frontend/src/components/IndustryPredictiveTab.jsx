@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { formatCurrency, formatLakhs } from '../utils/formatters';
 import { analyzeIndustryPotential, INDUSTRY_COLORS } from '../utils/industryPredictor';
 import { 
@@ -11,7 +11,10 @@ import {
   Award, 
   ArrowUpRight, 
   Layers,
-  Zap
+  Zap,
+  ChevronDown,
+  ChevronRight,
+  UserCheck
 } from 'lucide-react';
 
 export const IndustryPredictiveTab = ({
@@ -21,6 +24,20 @@ export const IndustryPredictiveTab = ({
   onboardingDate = null,
   yearsCompleted = null
 }) => {
+  const [expandedIndustries, setExpandedIndustries] = useState(new Set());
+
+  const toggleIndustry = (indName) => {
+    setExpandedIndustries(prev => {
+      const next = new Set(prev);
+      if (next.has(indName)) {
+        next.delete(indName);
+      } else {
+        next.add(indName);
+      }
+      return next;
+    });
+  };
+
   const analysis = useMemo(() => {
     return analyzeIndustryPotential({
       transactions,
@@ -147,7 +164,7 @@ export const IndustryPredictiveTab = ({
         </div>
       </div>
 
-      {/* 2. INDUSTRY BREAKDOWN TABLE */}
+      {/* 2. INDUSTRY & SUB-INDUSTRY BREAKDOWN TABLE */}
       <div style={{
         background: 'var(--bg-card)',
         border: '1px solid var(--border-color)',
@@ -166,14 +183,14 @@ export const IndustryPredictiveTab = ({
         }}>
           <div>
             <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: '700', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Briefcase size={16} color="var(--accent-teal, #0f766e)" /> Industry Sector Distribution & Production Metrics
+              <Briefcase size={16} color="var(--accent-teal, #0f766e)" /> Industry Sector & Sub-Industry Distribution
             </h4>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Historical volume, average ticket size, and conversion efficiency across sectors
+              Click any sector row to expand its granular sub-industries and view Star BD specialists
             </span>
           </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '600' }}>
-            {industryBreakdown.length} Active Sectors
+            {industryBreakdown.length} Active Sectors • Click row to expand sub-industries
           </div>
         </div>
 
@@ -181,7 +198,7 @@ export const IndustryPredictiveTab = ({
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
             <thead>
               <tr style={{ background: 'rgba(255, 255, 255, 0.02)', borderBottom: '1px solid var(--border-color)' }}>
-                <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: '600', color: 'var(--text-muted)' }}>Industry Sector</th>
+                <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: '600', color: 'var(--text-muted)' }}>Industry / Sub-Industry</th>
                 <th style={{ padding: '10px 16px', textAlign: 'right', fontWeight: '600', color: 'var(--text-muted)' }}>Gross Billed</th>
                 <th style={{ padding: '10px 16px', textAlign: 'right', fontWeight: '600', color: 'var(--text-muted)' }}>
                   {entityType === 'franchisee' ? `Franchise Share (${(franchiseShareRate * 100).toFixed(0)}%)` : 'BD Commission'}
@@ -189,85 +206,174 @@ export const IndustryPredictiveTab = ({
                 <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: '600', color: 'var(--text-muted)' }}>Closed Deals</th>
                 <th style={{ padding: '10px 16px', textAlign: 'right', fontWeight: '600', color: 'var(--text-muted)' }}>Avg Ticket Size</th>
                 <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: '600', color: 'var(--text-muted)' }}>Win Rate</th>
+                <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: '600', color: 'var(--text-muted)' }}>Star BD Specialist</th>
               </tr>
             </thead>
             <tbody>
               {industryBreakdown.map((item, idx) => {
                 const sharePercent = potential.totalGross > 0 ? (item.totalGross / potential.totalGross) * 100 : 0;
+                const isExpanded = expandedIndustries.has(item.industry);
+                const hasSubs = item.subIndustries && item.subIndustries.length > 0;
+
                 return (
-                  <tr 
-                    key={idx} 
-                    style={{ 
-                      borderBottom: '1px solid var(--border-color)',
-                      transition: 'background 0.15s ease'
-                    }}
-                    className="hover-row"
-                  >
-                    {/* Industry */}
-                    <td style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--text-main)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: item.color, display: 'inline-block' }}></span>
-                        <span>{item.industry}</span>
-                      </div>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: '18px', marginTop: '2px' }}>
-                        {sharePercent.toFixed(1)}% of total volume • {item.clientCount} corporate clients
-                      </div>
-                    </td>
-
-                    {/* Gross Billed */}
-                    <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
-                      {formatCurrency(item.totalGross)}
-                    </td>
-
-                    {/* Franchisee / BD Share */}
-                    <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '700', color: '#10b981' }}>
-                      {formatCurrency(entityType === 'franchisee' ? item.franchiseeShare : item.bdCommission)}
-                    </td>
-
-                    {/* Closed Deals */}
-                    <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}>
-                      <span style={{
-                        padding: '2px 8px',
-                        borderRadius: '12px',
-                        background: 'rgba(37,99,235,0.1)',
-                        color: '#2563eb',
-                        fontSize: '0.75rem',
-                        fontWeight: '700'
-                      }}>
-                        {item.closedDeals}
-                      </span>
-                    </td>
-
-                    {/* Avg Ticket Size */}
-                    <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: 'var(--text-muted)' }}>
-                      {formatCurrency(item.avgTicketSize)}
-                    </td>
-
-                    {/* Win Rate */}
-                    <td style={{ padding: '12px 16px', minWidth: '140px' }}>
-                      {item.winRate !== null && item.winRate !== undefined ? (
+                  <React.Fragment key={idx}>
+                    <tr 
+                      onClick={() => hasSubs && toggleIndustry(item.industry)}
+                      style={{ 
+                        borderBottom: '1px solid var(--border-color)',
+                        cursor: hasSubs ? 'pointer' : 'default',
+                        background: isExpanded ? 'rgba(15, 110, 86, 0.04)' : 'transparent',
+                        transition: 'background 0.15s ease'
+                      }}
+                      className="hover-row"
+                    >
+                      {/* Industry Name with Toggle */}
+                      <td style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--text-main)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div style={{ flex: 1, height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
-                            <div 
-                              style={{ 
-                                width: `${Math.min(100, item.winRate)}%`, 
-                                height: '100%', 
-                                background: item.winRate >= 85 ? '#10b981' : (item.winRate >= 70 ? '#f59e0b' : '#ef4444'),
-                                borderRadius: '3px'
-                              }} 
-                            />
-                          </div>
-                          <span style={{ fontSize: '0.75rem', fontWeight: '700', color: item.winRate >= 85 ? '#10b981' : '#f59e0b', width: '38px', textAlign: 'right' }}>
-                            {item.winRate}%
-                          </span>
+                          {hasSubs ? (
+                            <span style={{ color: 'var(--accent-teal, #0f766e)', display: 'inline-flex' }}>
+                              {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                            </span>
+                          ) : (
+                            <span style={{ width: '15px' }} />
+                          )}
+                          <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: item.color, display: 'inline-block' }}></span>
+                          <span style={{ fontSize: '0.86rem' }}>{item.industry}</span>
+                          {hasSubs && (
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: '500', marginLeft: '4px' }}>
+                              ({item.subIndustries.length} sub-sectors)
+                            </span>
+                          )}
                         </div>
-                      ) : (
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                          N/A (No closed/cancelled deals)
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: '39px', marginTop: '2px' }}>
+                          {sharePercent.toFixed(1)}% of total volume • {item.clientCount} corporate clients
+                        </div>
+                      </td>
+
+                      {/* Gross Billed */}
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '700', color: 'var(--text-main)' }}>
+                        {formatCurrency(item.totalGross)}
+                      </td>
+
+                      {/* Franchisee / BD Share */}
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '700', color: '#10b981' }}>
+                        {formatCurrency(entityType === 'franchisee' ? item.franchiseeShare : item.bdCommission)}
+                      </td>
+
+                      {/* Closed Deals */}
+                      <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '600' }}>
+                        <span style={{
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          background: 'rgba(37,99,235,0.1)',
+                          color: '#2563eb',
+                          fontSize: '0.75rem',
+                          fontWeight: '700'
+                        }}>
+                          {item.closedDeals}
                         </span>
-                      )}
-                    </td>
-                  </tr>
+                      </td>
+
+                      {/* Avg Ticket Size */}
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: 'var(--text-muted)' }}>
+                        {formatCurrency(item.avgTicketSize)}
+                      </td>
+
+                      {/* Win Rate */}
+                      <td style={{ padding: '12px 16px', minWidth: '130px' }}>
+                        {item.winRate !== null && item.winRate !== undefined ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ flex: 1, height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                              <div 
+                                style={{ 
+                                  width: `${Math.min(100, item.winRate)}%`, 
+                                  height: '100%', 
+                                  background: item.winRate >= 85 ? '#10b981' : (item.winRate >= 70 ? '#f59e0b' : '#ef4444'),
+                                  borderRadius: '3px'
+                                }} 
+                              />
+                            </div>
+                            <span style={{ fontSize: '0.75rem', fontWeight: '700', color: item.winRate >= 85 ? '#10b981' : '#f59e0b', width: '38px', textAlign: 'right' }}>
+                              {item.winRate}%
+                            </span>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                            N/A
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Top BD in Sector */}
+                      <td style={{ padding: '12px 16px', fontSize: '0.78rem', color: 'var(--text-main)', fontWeight: '600' }}>
+                        {item.subIndustries && item.subIndustries[0]?.topBd && item.subIndustries[0]?.topBd !== 'N/A' ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#0f766e' }}>
+                            <Award size={13} /> {item.subIndustries[0].topBd}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>—</span>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* Granular Sub-Industry Rows when Expanded */}
+                    {isExpanded && item.subIndustries.map((sub, sIdx) => (
+                      <tr 
+                        key={`${idx}-sub-${sIdx}`}
+                        style={{
+                          background: 'rgba(15, 110, 86, 0.02)',
+                          borderBottom: '1px dashed var(--border-color)',
+                          fontSize: '0.79rem'
+                        }}
+                      >
+                        <td style={{ padding: '8px 16px 8px 42px', color: 'var(--text-muted)' }}>
+                          <span style={{ marginRight: '6px', color: 'var(--accent-teal, #0f766e)' }}>↳</span>
+                          <strong style={{ color: 'var(--text-main)', fontWeight: '600' }}>{sub.subIndustry}</strong>
+                        </td>
+                        <td style={{ padding: '8px 16px', textAlign: 'right', fontWeight: '600', color: 'var(--text-main)' }}>
+                          {formatCurrency(sub.totalGross)}
+                        </td>
+                        <td style={{ padding: '8px 16px', textAlign: 'right', color: 'var(--text-muted)' }}>
+                          —
+                        </td>
+                        <td style={{ padding: '8px 16px', textAlign: 'center', fontWeight: '600' }}>
+                          <span style={{
+                            padding: '1px 6px',
+                            borderRadius: '10px',
+                            background: 'rgba(16,185,129,0.1)',
+                            color: '#10b981',
+                            fontSize: '0.72rem'
+                          }}>
+                            {sub.closedDeals} deals
+                          </span>
+                        </td>
+                        <td style={{ padding: '8px 16px', textAlign: 'right', color: 'var(--text-muted)' }}>
+                          {formatCurrency(sub.avgTicketSize)}
+                        </td>
+                        <td style={{ padding: '8px 16px' }}>
+                          <span style={{
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '0.72rem',
+                            fontWeight: '700',
+                            background: sub.winRate >= 85 ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
+                            color: sub.winRate >= 85 ? '#10b981' : '#f59e0b'
+                          }}>
+                            {sub.winRate}%
+                          </span>
+                        </td>
+                        <td style={{ padding: '8px 16px', fontSize: '0.75rem' }}>
+                          {sub.topBd && sub.topBd !== 'N/A' ? (
+                            <span style={{ fontWeight: '600', color: '#2563eb', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                              <UserCheck size={12} /> {sub.topBd} ({sub.topBdDeals} closed)
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)' }}>—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
                 );
               })}
             </tbody>

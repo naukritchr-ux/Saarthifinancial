@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import Pagination from '../components/Pagination';
 import IndustryPredictiveTab from '../components/IndustryPredictiveTab';
+import AuditDrawer from '../components/AuditDrawer';
 import { classifyIndustry, INDUSTRY_COLORS } from '../utils/industryPredictor';
 
 // Comprehensive Industry to Sub-Industry Taxonomy
@@ -1660,139 +1661,18 @@ const BDPerformance = () => {
         </div>
       )}
 
-      {/* BD Member Financial & Waste Audit Modal */}
-      {selectedMemberForAudit && (
-        <div className="modal-backdrop" onClick={() => setSelectedMemberForAudit(null)}>
-          <div className="modal-content animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '880px', width: '92%' }}>
-            <div className="modal-header">
-              <div className="modal-header-title">
-                <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-main)', fontWeight: '800' }}>
-                  BD Financial & Leakage Audit • {selectedMemberForAudit.name}
-                </h3>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginTop: '3px', display: 'block' }}>
-                  {selectedMemberForAudit.role} • Base Salary: <strong>{formatCurrency(selectedMemberForAudit.baseSalary)}/mo</strong> • Annual CTC: <strong>{formatCurrency(selectedMemberForAudit.annualSalary)}</strong>
-                </span>
-              </div>
-              <button className="close-btn" onClick={() => setSelectedMemberForAudit(null)} aria-label="Close modal">
-                <X size={18} />
-              </button>
-            </div>
+      {/* Universal BD Audit Drawer */}
+      <AuditDrawer
+        isOpen={Boolean(selectedMemberForAudit)}
+        onClose={() => setSelectedMemberForAudit(null)}
+        entityType="bd"
+        entityId={selectedMemberForAudit?.name || ''}
+        entityName={selectedMemberForAudit?.name || ''}
+        entityRole={selectedMemberForAudit?.role || 'BD Specialist'}
+        month={selectedMonth === 'All Months' ? 'all' : selectedMonth}
+        financialYear={selectedYear}
+      />
 
-            <div className="modal-body" style={{ maxHeight: '72vh', overflowY: 'auto', padding: '22px' }}>
-              {/* Cost & ROI Highlights */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-                <div style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Total Cost to Company</div>
-                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#8b5cf6', marginTop: '4px' }}>{formatCurrency(selectedMemberForAudit.totalCost)}</div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Salary + {bdExpenditurePct || 0}% Exp</div>
-                </div>
-
-                <div style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Gross Commercial Billing</div>
-                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#3b82f6', marginTop: '4px' }}>{formatCurrency(selectedMemberForAudit.grossBilling)}</div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Across {selectedMemberForAudit.totalDeals} deals</div>
-                </div>
-
-                <div style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Our Share Net Revenue</div>
-                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#10b981', marginTop: '4px' }}>{formatCurrency(selectedMemberForAudit.ourShare)}</div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Company commission pool</div>
-                </div>
-
-                <div style={{ background: 'var(--bg-main)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: '700' }}>Net Profit / Loss</div>
-                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: selectedMemberForAudit.netROI >= 0 ? '#0F6E56' : '#dc2626', marginTop: '4px' }}>
-                    {selectedMemberForAudit.netROI >= 0 ? '+' : ''}{formatCurrency(selectedMemberForAudit.netROI)}
-                  </div>
-                  <div style={{ fontSize: '0.7rem', fontWeight: '600', color: selectedMemberForAudit.netROI >= 0 ? '#0F6E56' : '#dc2626' }}>
-                    {selectedMemberForAudit.roiMultiple.toFixed(1)}x ROI Multiple
-                  </div>
-                </div>
-              </div>
-
-              {/* Where Money is Wasted / Leakage Banner */}
-              <div style={{
-                padding: '14px 16px',
-                borderRadius: '8px',
-                background: selectedMemberForAudit.netROI < 0 || selectedMemberForAudit.cancelledRevenue > 0 ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)',
-                border: `1px solid ${selectedMemberForAudit.netROI < 0 || selectedMemberForAudit.cancelledRevenue > 0 ? 'rgba(239,68,68,0.25)' : 'rgba(16,185,129,0.25)'}`,
-                marginBottom: '20px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', fontSize: '0.88rem', color: selectedMemberForAudit.netROI < 0 || selectedMemberForAudit.cancelledRevenue > 0 ? '#dc2626' : '#0F6E56' }}>
-                  <AlertCircle size={16} />
-                  <span>Cost & Money Leakage Analysis:</span>
-                </div>
-                <p style={{ margin: '6px 0 0 0', fontSize: '0.82rem', color: 'var(--text-main)', lineHeight: '1.4' }}>
-                  {selectedMemberForAudit.wasteReason}
-                  {selectedMemberForAudit.cancelledRevenue > 0 && ` • Cancelled deals represent ${formatCurrency(selectedMemberForAudit.cancelledRevenue)} in uncollected or lost client billings.`}
-                  {selectedMemberForAudit.outstandingRevenue > 0 && ` • Pending balances of ${formatCurrency(selectedMemberForAudit.outstandingRevenue)} are currently outstanding in collections.`}
-                </p>
-              </div>
-
-              {/* Invoices List */}
-              <h4 style={{ margin: '0 0 12px 0', fontSize: '0.96rem', fontWeight: '700', color: 'var(--text-main)' }}>
-                Itemized Client Deals & Invoices ({selectedMemberForAudit.matchingTxs?.length || 0} Records)
-              </h4>
-
-              {(!selectedMemberForAudit.matchingTxs || selectedMemberForAudit.matchingTxs.length === 0) ? (
-                <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)', background: 'var(--bg-main)', borderRadius: '8px' }}>
-                  No itemized transaction records logged for this BD specialist in the selected filter period.
-                </div>
-              ) : (
-                <div className="table-responsive">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Client / Title</th>
-                        <th>Industry</th>
-                        <th style={{ textAlign: 'center' }}>Info Status</th>
-                        <th className="text-right">Bill Amount</th>
-                        <th className="text-right">Company Share</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedMemberForAudit.matchingTxs.slice(0, 20).map((tx, idx) => {
-                        const status = (tx.info || 'R').toUpperCase();
-                        let statusColor = '#10b981';
-                        if (status === 'O') statusColor = '#f59e0b';
-                        if (status === 'C') statusColor = '#ef4444';
-                        if (status === 'PR') statusColor = '#3b82f6';
-
-                        return (
-                          <tr key={tx.id || idx}>
-                            <td style={{ fontSize: '0.8rem' }}>{formatDate(tx.date)}</td>
-                            <td className="font-bold" style={{ fontSize: '0.82rem' }}>
-                              <div>{tx.companyName || tx.title || 'Client Deal'}</div>
-                            </td>
-                            <td style={{ fontSize: '0.78rem' }}>{classifyIndustry(tx)}</td>
-                            <td style={{ textAlign: 'center' }}>
-                              <span style={{ padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '700', background: `${statusColor}18`, color: statusColor }}>
-                                {status}
-                              </span>
-                            </td>
-                            <td className="font-bold text-right" style={{ fontSize: '0.82rem' }}>
-                              {formatCurrency(tx.amount || 0)}
-                            </td>
-                            <td className="text-right" style={{ fontSize: '0.82rem', color: '#0F6E56', fontWeight: '600' }}>
-                              {formatCurrency(tx.ourShare || (tx.amount || 0) * 0.25)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  {selectedMemberForAudit.matchingTxs.length > 20 && (
-                    <div style={{ textAlign: 'center', padding: '10px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      Showing top 20 of {selectedMemberForAudit.matchingTxs.length} client deals
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ========================================================================= */}
       {/* VIEW 3: INDUSTRY PREDICTIVE POTENTIAL & CONVERSION FORECASTING            */}
