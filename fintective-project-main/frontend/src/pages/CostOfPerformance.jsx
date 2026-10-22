@@ -60,11 +60,11 @@ export default function CostOfPerformance() {
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
 
   // 3. Staged Filters in FilterPanel (Applied ONLY on "Apply Filters" click)
-  const [stagedSortBy, setStagedSortBy] = useState(() => searchParams.get('sort') || 'net');
-  const [stagedSortDir, setStagedSortDir] = useState(() => searchParams.get('sort_dir') || 'desc');
-  const [stagedViewReportAs, setStagedViewReportAs] = useState(() => searchParams.get('view_as') || 'this_fy');
-  const [stagedCustomStartDate, setStagedCustomStartDate] = useState(() => searchParams.get('start_date') || '');
-  const [stagedCustomEndDate, setStagedCustomEndDate] = useState(() => searchParams.get('end_date') || '');
+  const [stagedSortBy, setStagedSortBy] = useState(() => getInitialParam('sort', 'net'));
+  const [stagedSortDir, setStagedSortDir] = useState(() => getInitialParam('sort_dir', 'desc'));
+  const [stagedViewReportAs, setStagedViewReportAs] = useState(() => getInitialParam('view_as', 'this_fy'));
+  const [stagedCustomStartDate, setStagedCustomStartDate] = useState(() => getInitialParam('start_date', ''));
+  const [stagedCustomEndDate, setStagedCustomEndDate] = useState(() => getInitialParam('end_date', ''));
 
   const [stagedTLs, setStagedTLs] = useState(() => parseArrayParam('tl'));
   const [stagedBDs, setStagedBDs] = useState(() => parseArrayParam('bd'));
@@ -77,11 +77,11 @@ export default function CostOfPerformance() {
 
   // 4. Committed / Applied Filters (drive server data fetching)
   const [appliedFilters, setAppliedFilters] = useState(() => ({
-    sortBy: searchParams.get('sort') || 'net',
-    sortDir: searchParams.get('sort_dir') || 'desc',
-    viewReportAs: searchParams.get('view_as') || 'this_fy',
-    customStartDate: searchParams.get('start_date') || '',
-    customEndDate: searchParams.get('end_date') || '',
+    sortBy: getInitialParam('sort', 'net'),
+    sortDir: getInitialParam('sort_dir', 'desc'),
+    viewReportAs: getInitialParam('view_as', 'this_fy'),
+    customStartDate: getInitialParam('start_date', ''),
+    customEndDate: getInitialParam('end_date', ''),
     tls: parseArrayParam('tl'),
     bds: parseArrayParam('bd'),
     franchises: parseArrayParam('franchise'),
