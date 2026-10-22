@@ -430,10 +430,11 @@ def sync_saarthi_all():
                 "invoices": "Invoice",
                 "expenses": EXPENSE_ENDPOINT,
                 "clients": "clients_info",
-                "legals": "legals_info"
+                "legals": "legals_info",
+                "franchise_payments": "franchise-payments"
             }
             fetched_results = {}
-            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=7) as executor:
                 future_map = {
                     executor.submit(fetch_saarthi_endpoint, path): key
                     for key, path in endpoints_to_fetch.items()
@@ -806,6 +807,40 @@ def sync_saarthi_all():
                         """, batch)
                 stats["legals"] = len(l_rows)
                 print(f"[SYNC OK] Synced {stats['legals']} Legals.")
+
+            # 6.5 Sync Franchise Payments to MySQL
+            print("[SYNC] Writing Franchise Payments to DB...")
+            fp_res = fetched_results.get("franchise_payments", {"ok": False, "data": []})
+            if fp_res.get("ok") and fp_res.get("data"):
+                fp_rows = []
+                for fp in fp_res["data"]:
+                    fp_id = fp.get("id")
+                    if not fp_id:
+                        continue
+                    p_amt = parse_float(fp.get("AMOUNT PAID") or fp.get("AMOUNT DUE") or fp.get("FRANCHISE SHARE") or fp.get("payment_amount"))
+                    p_done = 'Yes' if p_amt > 0 else 'No'
+                    p_date = normalize_date(fp.get("DATE RECEIVED") or fp.get("BILL DATE") or fp.get("payment_date"))
+                    p_mode = str(fp.get("STATUS") or fp.get("payment_mode") or "").strip() or None
+                    b_no = str(fp.get("BILL NO.") or fp.get("bill_no") or "").strip() or None
+
+                    fp_rows.append((fp_id, None, p_done, p_date, p_mode, b_no, p_amt))
+
+                with conn.cursor() as cur:
+                    for batch in chunked(fp_rows, 500):
+                        cur.executemany("""
+                            INSERT INTO franchisePayments (
+                                franchisePayment_id, invoice_id, payment_done, payment_date,
+                                payment_mode, uid_transaction_id, payment_amount
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ON DUPLICATE KEY UPDATE
+                                payment_done = VALUES(payment_done),
+                                payment_date = VALUES(payment_date),
+                                payment_mode = VALUES(payment_mode),
+                                uid_transaction_id = VALUES(uid_transaction_id),
+                                payment_amount = VALUES(payment_amount)
+                        """, batch)
+                stats["franchise_payments"] = len(fp_rows)
+                print(f"[SYNC OK] Synced {stats['franchise_payments']} Franchise Payments.")
 
             # 7. Sync Corporate Payroll Records to MySQL
             print("[SYNC] Syncing Payroll Records from Saarthi API to MySQL...")

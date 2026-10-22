@@ -75,7 +75,7 @@ function AppContent() {
       case 'cost-performance':
         return <CostOfPerformance setActivePage={setActivePage} />;
       case 'franchisees':
-        return <Franchisees />;
+        return <Franchisees setActivePage={setActivePage} />;
       case 'bd-performance':
         return <BDPerformance />;
       case 'industry-analysis':

@@ -1291,75 +1291,53 @@ def get_franchisees():
             cursor.execute('SELECT * FROM franchisees')
             rows = cursor.fetchall()
             for r in rows:
-                r['onboardingDate'] = str(r['onboardingDate'])
+                r['onboardingDate'] = str(r['onboardingDate']) if r.get('onboardingDate') else None
             return jsonify(rows)
         else:
-            try:
-                cursor.execute("""
-                    SELECT 
-                        id,
-                        nameAsPerAgreement AS name,
-                        teamLeaderName AS owner,
-                        onboardingDate,
-                        status
-                    FROM franchisees 
-                    WHERE nameAsPerAgreement IS NOT NULL AND nameAsPerAgreement != '' AND nameAsPerAgreement != 'Unknown'
-                """)
-                rows = cursor.fetchall()
+            cursor.execute("""
+                SELECT 
+                    id,
+                    nameAsPerAgreement AS name,
+                    teamLeaderName AS owner,
+                    onboardingDate,
+                    status
+                FROM franchisees 
+                WHERE nameAsPerAgreement IS NOT NULL AND TRIM(nameAsPerAgreement) != '' AND LOWER(TRIM(nameAsPerAgreement)) != 'unknown'
+            """)
+            rows = cursor.fetchall()
 
-                enq_clause = get_enq_exclude_clause("e")
-                cursor.execute(f"""
-                    SELECT TRIM(LOWER(e.franchiseeName)) AS fran_key, COUNT(DISTINCT e.id) AS placed
-                    FROM enquiries e
-                    JOIN invoice i ON i.enquiry_id = e.id
-                    WHERE e.franchiseeName IS NOT NULL AND e.franchiseeName != ''
-                      AND {enq_clause}
-                    GROUP BY TRIM(LOWER(e.franchiseeName))
-                """, [])
-                placement_map = {r['fran_key']: r['placed'] for r in cursor.fetchall()}
+            # Placement count from clean invoices where is_revenue = 1
+            cursor.execute("""
+                SELECT 
+                    TRIM(LOWER(REGEXP_REPLACE(franchiseName, '[^a-zA-Z0-9]', ''))) AS fran_key,
+                    COUNT(DISTINCT enquiry_id) AS placed
+                FROM v_invoice_clean
+                WHERE is_revenue = 1 AND franchiseName IS NOT NULL AND TRIM(franchiseName) != ''
+                GROUP BY TRIM(LOWER(REGEXP_REPLACE(franchiseName, '[^a-zA-Z0-9]', '')))
+            """)
+            placement_map = {r['fran_key']: r['placed'] for r in cursor.fetchall()}
 
-                franchisees = []
-                existing_names = set()
-                for r in rows:
-                    clean_name = r['name'].strip()
-                    existing_names.add(clean_name.lower())
-                    stable_id = make_stable_id('f', clean_name)
-                    franchisees.append({
-                        'id': stable_id,
-                        'name': clean_name,
-                        'city': 'India Hub',
-                        'owner': r['owner'] or 'Franchise Lead',
-                        'onboardingDate': str(r['onboardingDate']) if r['onboardingDate'] else '2025-01-15',
-                        'status': r['status'] or 'Active',
-                        'candidatesPlaced': placement_map.get(clean_name.lower(), 0)
-                    })
-
-                # Discover and include any franchisee in enquiries not yet in franchisees table
-                cursor.execute(f"""
-                    SELECT DISTINCT TRIM(e.franchiseeName) AS name, TRIM(e.teamLeaderName) AS owner
-                    FROM enquiries e
-                    WHERE e.franchiseeName IS NOT NULL AND TRIM(e.franchiseeName) != '' AND LOWER(TRIM(e.franchiseeName)) != 'unknown'
-                """)
-                enq_frans = cursor.fetchall()
-                for ef in enq_frans:
-                    fname = (ef['name'] or '').strip()
-                    if fname and fname.lower() not in existing_names:
-                        existing_names.add(fname.lower())
-                        stable_id = make_stable_id('f', fname)
-                        franchisees.append({
-                            'id': stable_id,
-                            'name': fname,
-                            'city': 'India Hub',
-                            'owner': ef['owner'] or 'Franchise Lead',
-                            'onboardingDate': '2024-04-01',
-                            'status': 'Active',
-                            'candidatesPlaced': placement_map.get(fname.lower(), 0)
-                        })
-                return jsonify(franchisees)
-            except Exception as err:
-                print('franchisees list error, returning static backup:', str(err))
-                return jsonify(initial_franchisees)
+            franchisees = []
+            seen_names = set()
+            for r in rows:
+                clean_name = r['name'].strip()
+                norm_key = re.sub(r'[^a-zA-Z0-9]', '', clean_name).lower()
+                if not norm_key or norm_key in seen_names:
+                    continue
+                seen_names.add(norm_key)
+                stable_id = make_stable_id('f', clean_name)
+                onb = str(r['onboardingDate'])[:10] if r['onboardingDate'] else None
+                franchisees.append({
+                    'id': stable_id,
+                    'name': clean_name,
+                    'owner': r['owner'] or 'Franchise Lead',
+                    'onboardingDate': onb,
+                    'status': r['status'] or 'Active',
+                    'candidatesPlaced': placement_map.get(norm_key, 0)
+                })
+            return jsonify(franchisees)
     except Exception as e:
+        print("get_franchisees failed:", str(e))
         return jsonify({ 'error': str(e) }), 500
     finally:
         conn.close()
@@ -1367,130 +1345,311 @@ def get_franchisees():
 
 @app.route('/api/finance/franchisee-summary', methods=['GET'])
 def get_franchisee_summary():
+    """
+    Authoritative Franchisee financial performance and ledger endpoint.
+    - Single revenue measure: rev_ex_gst from v_invoice_clean (is_revenue = 1).
+    - Single placement measure: COUNT(DISTINCT enquiry_id) from clean invoices in the period.
+    - Company share: SUM(ourShare) from v_invoice_clean in the period.
+    - Tenure split: 70/30 for >=3 years, 75/25 for <3 years. If onboardingDate is missing,
+      defaults to 75/25 and isSplitEstimated is flagged as True.
+    - Last placement date: all-time most recent clean invoice date.
+    - Monthly series: trailing 12 months revenue per month.
+    - Unmatched franchise names from clean invoices are reported in unmatched_names.
+    """
     start_date = request.args.get('start_date', '2018-01-01')
     end_date = request.args.get('end_date', '2026-12-31')
     
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        col_filter, col_params = get_collision_filter_and_params()
-        enq_clause = get_enq_exclude_clause("e")
-        # 1. Franchise Inflow (total billed revenue generated by franchise offices)
-        inflow_query = f"""
-            SELECT COALESCE(SUM(ia.gross_revenue), 0.0) AS franchise_inflow
-            FROM enquiries e
-            LEFT JOIN (
-                SELECT
-                    enquiry_id,
-                    SUM(rev_ex_gst) AS gross_revenue,
-                    MAX(billDate) AS billDate
-                FROM v_invoice_clean
-                WHERE is_revenue = 1
-                  AND billDate IS NOT NULL
-                GROUP BY enquiry_id
-            ) ia ON e.id = ia.enquiry_id
-            WHERE e.franchiseeName IS NOT NULL AND e.franchiseeName != '' AND e.franchiseeName != 'Unknown'
-              AND (ia.billDate BETWEEN %s AND %s OR (ia.billDate IS NULL AND e.bill_date BETWEEN %s AND %s))
-              AND {enq_clause}
-              AND (ia.enquiry_id IS NOT NULL OR e.bill_amount > 0)
-        """
-        params_inflow = [start_date, end_date, start_date, end_date]
-        cursor.execute(inflow_query, params_inflow)
-        franchise_inflow = float(cursor.fetchone()['franchise_inflow'] or 0.0)
-        
-        # 2. Franchise Fees collected (one-time onboarding fees)
-        total_onboarding_fees = 0.0
-        try:
-            fees_query = """
-                SELECT COALESCE(SUM(amount), 0.0) AS total_onboarding_fees
-                FROM franchisePayments
-                WHERE paymentDate BETWEEN %s AND %s
-            """
-            cursor.execute(fees_query, [start_date, end_date])
-            row = cursor.fetchone()
-            if row:
-                total_onboarding_fees = float(row.get('total_onboarding_fees') or 0.0)
-        except Exception:
-            total_onboarding_fees = 0.0
-        
-        # 3. Location Ledger rows
-        ledger_query = f"""
+        def _norm(name_str):
+            if not name_str:
+                return ''
+            s = name_str.lower().strip()
+            s = re.sub(r'[^\w\s]', '', s)
+            return re.sub(r'\s+', ' ', s).strip()
+
+        # 1. Fetch all registered franchisees from franchisees table
+        cursor.execute("""
             SELECT 
-                f.id,
-                f.nameAsPerAgreement AS name,
-                COALESCE(f.teamLeaderName, 'Franchise Lead') AS owner,
-                'India' AS city,
-                LOWER(TRIM(COALESCE(f.status, 'active'))) AS status,
-                f.onboardingDate,
-                f.created_at,
-                COALESCE(rev.candidates_placed, 0) AS candidates_placed,
-                COALESCE(rev.inflow_revenue, 0.0) AS inflow_revenue
-            FROM franchisees f
-            LEFT JOIN (
-                SELECT 
-                    e.franchiseeName,
-                    COUNT(ia.enquiry_id) AS candidates_placed,
-                    SUM(COALESCE(ia.gross_revenue, e.bill_amount, 0.0)) AS inflow_revenue
-                FROM enquiries e
-                LEFT JOIN (
-                    SELECT
-                        enquiry_id,
-                        SUM(rev_ex_gst) AS gross_revenue,
-                        MAX(billDate) AS billDate
-                    FROM v_invoice_clean
-                    WHERE is_revenue = 1
-                      AND billDate IS NOT NULL
-                    GROUP BY enquiry_id
-                ) ia ON e.id = ia.enquiry_id
-                WHERE (ia.billDate BETWEEN %s AND %s OR (ia.billDate IS NULL AND e.bill_date BETWEEN %s AND %s))
-                  AND {enq_clause}
-                  AND (ia.enquiry_id IS NOT NULL OR e.bill_amount > 0)
-                GROUP BY e.franchiseeName
-            ) rev ON TRIM(LOWER(rev.franchiseeName)) = TRIM(LOWER(f.nameAsPerAgreement))
-            WHERE f.nameAsPerAgreement IS NOT NULL AND TRIM(f.nameAsPerAgreement) != '' AND TRIM(f.nameAsPerAgreement) != 'Unknown'
-            ORDER BY inflow_revenue DESC
-            LIMIT 500
-        """
-        params_ledger = [start_date, end_date, start_date, end_date]
-        cursor.execute(ledger_query, params_ledger)
-        rows = cursor.fetchall()
-        
-        ledger = []
-        for r in rows:
+                id,
+                nameAsPerAgreement AS name,
+                teamLeaderName AS teamLeader,
+                onboardingDate,
+                status
+            FROM franchisees
+            WHERE nameAsPerAgreement IS NOT NULL AND TRIM(nameAsPerAgreement) != '' AND LOWER(TRIM(nameAsPerAgreement)) != 'unknown'
+        """)
+        f_rows = cursor.fetchall()
+
+        # Build map of normalized name -> franchisee record
+        fran_dict = {}
+        for r in f_rows:
             clean_name = (r['name'] or '').strip()
-            # Dynamic tenure split: 70-30 for >= 3 years, 75-25 for < 3 years
-            tenure_split = get_franchisee_tenure_split(
-                onboarding_date=r.get('onboardingDate') or r.get('created_at'),
-                bill_date=end_date
-            )
-            sharing_pct = round(tenure_split['franchisee_pct'] * 100.0, 1)
+            nk = _norm(clean_name)
+            if nk and nk not in fran_dict:
+                fran_dict[nk] = {
+                    'raw_id': r['id'],
+                    'name': clean_name,
+                    'teamLeader': (r['teamLeader'] or '').strip() or 'Franchise Lead',
+                    'onboardingDate': str(r['onboardingDate'])[:10] if r['onboardingDate'] else None,
+                    'status': r['status'] or 'active'
+                }
+
+        # 2. Fetch revenue, placements, and company share for the selected period
+        cursor.execute("""
+            SELECT 
+                TRIM(franchiseName) AS franchiseName,
+                COUNT(DISTINCT enquiry_id) AS placements,
+                COALESCE(SUM(rev_ex_gst), 0.0) AS revenue_ex_gst,
+                COALESCE(SUM(ourShare), 0.0) AS company_share
+            FROM v_invoice_clean
+            WHERE is_revenue = 1
+              AND billDate BETWEEN %s AND %s
+              AND franchiseName IS NOT NULL AND TRIM(franchiseName) != ''
+            GROUP BY TRIM(franchiseName)
+        """, [start_date, end_date])
+        period_rev_rows = cursor.fetchall()
+
+        # 3. Fetch all-time latest placement date per franchisee
+        cursor.execute("""
+            SELECT 
+                TRIM(franchiseName) AS franchiseName,
+                MAX(billDate) AS last_placement_date
+            FROM v_invoice_clean
+            WHERE is_revenue = 1
+              AND franchiseName IS NOT NULL AND TRIM(franchiseName) != ''
+            GROUP BY TRIM(franchiseName)
+        """)
+        last_date_rows = cursor.fetchall()
+        last_date_map = {}
+        for ldr in last_date_rows:
+            nk = _norm(ldr['franchiseName'])
+            ld = str(ldr['last_placement_date'])[:10] if ldr['last_placement_date'] else None
+            if nk and ld:
+                if nk not in last_date_map or ld > last_date_map[nk]:
+                    last_date_map[nk] = ld
+
+        # 4. Fetch trailing 12-month monthly series (from 11 months ago to current month)
+        today = datetime.date.today()
+        twelve_months = []
+        for i in range(11, -1, -1):
+            m = today.month - i
+            y = today.year
+            while m <= 0:
+                m += 12
+                y -= 1
+            ym_str = f"{y:04d}-{m:02d}"
+            lbl = datetime.date(y, m, 1).strftime('%b %y')
+            twelve_months.append({'month': ym_str, 'label': lbl})
+
+        cursor.execute("""
+            SELECT 
+                TRIM(franchiseName) AS franchiseName,
+                DATE_FORMAT(billDate, '%Y-%m') AS ym,
+                COALESCE(SUM(rev_ex_gst), 0.0) AS monthly_rev
+            FROM v_invoice_clean
+            WHERE is_revenue = 1
+              AND billDate >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+              AND franchiseName IS NOT NULL AND TRIM(franchiseName) != ''
+            GROUP BY TRIM(franchiseName), DATE_FORMAT(billDate, '%Y-%m')
+        """)
+        month_rows = cursor.fetchall()
+        monthly_map = {}
+        for mr in month_rows:
+            nk = _norm(mr['franchiseName'])
+            ym = mr['ym']
+            rev = float(mr['monthly_rev'] or 0.0)
+            if nk not in monthly_map:
+                monthly_map[nk] = {}
+            monthly_map[nk][ym] = monthly_map[nk].get(ym, 0.0) + rev
+
+        # 5. Aggregate period revenues and match with registered franchisees
+        period_data_map = {}
+        unmatched_names = []
+
+        for pr in period_rev_rows:
+            raw_fran = pr['franchiseName']
+            nk = _norm(raw_fran)
+            placements = int(pr['placements'] or 0)
+            rev_ex = float(pr['revenue_ex_gst'] or 0.0)
+            comp_sh = float(pr['company_share'] or 0.0)
+
+            if nk in fran_dict:
+                if nk not in period_data_map:
+                    period_data_map[nk] = {'placements': 0, 'revenue_ex_gst': 0.0, 'company_share': 0.0}
+                period_data_map[nk]['placements'] += placements
+                period_data_map[nk]['revenue_ex_gst'] += rev_ex
+                period_data_map[nk]['company_share'] += comp_sh
+            else:
+                unmatched_names.append({
+                    'name': raw_fran,
+                    'placements': placements,
+                    'revenueExGst': round(rev_ex, 2),
+                    'companyShare': round(comp_sh, 2),
+                    'lastPlacementDate': last_date_map.get(nk)
+                })
+
+        # 6. Build consistent ledger records for all registered franchisees
+        ledger = []
+        tot_rev = 0.0
+        tot_comp = 0.0
+        tot_placements = 0
+
+        for nk, f in fran_dict.items():
+            p_data = period_data_map.get(nk, {'placements': 0, 'revenue_ex_gst': 0.0, 'company_share': 0.0})
+            placements = p_data['placements']
+            revenue_ex_gst = round(p_data['revenue_ex_gst'], 2)
+            company_share = round(p_data['company_share'], 2)
+
+            tot_rev += revenue_ex_gst
+            tot_comp += company_share
+            tot_placements += placements
+
+            # Tenure split
+            onb_date = f['onboardingDate']
+            is_split_est = onb_date is None
+            if onb_date:
+                split = get_franchisee_tenure_split(onboarding_date=onb_date, bill_date=end_date)
+            else:
+                split = {'franchisee_pct': 0.75, 'company_pct': 0.25}
+            split_pct = round(split['franchisee_pct'] * 100.0, 1)
+
+            # Last placement date & active status
+            last_p_date = last_date_map.get(nk)
+            days_since = None
+            is_active = False
+            if last_p_date:
+                try:
+                    lp_dt = datetime.datetime.strptime(last_p_date, '%Y-%m-%d').date()
+                    days_since = (today - lp_dt).days
+                    is_active = (days_since <= 90) or (placements > 0)
+                except Exception:
+                    pass
+
+            # New < 1y check
+            is_new = False
+            if onb_date:
+                try:
+                    onb_dt = datetime.datetime.strptime(onb_date, '%Y-%m-%d').date()
+                    is_new = (today - onb_dt).days <= 365
+                except Exception:
+                    pass
+
+            status_label = 'active' if is_active else 'inactive'
+
+            # 12-month series
+            f_monthly_dict = monthly_map.get(nk, {})
+            monthly_series = []
+            for tm in twelve_months:
+                ym_val = tm['month']
+                monthly_series.append({
+                    'month': ym_val,
+                    'label': tm['label'],
+                    'revenue': round(f_monthly_dict.get(ym_val, 0.0), 2)
+                })
 
             ledger.append({
-                'id': make_stable_id('f', clean_name) if clean_name else str(r['id']),
-                'name': r['name'] or 'N/A',
-                'owner': r['owner'] or 'N/A',
-                'city': r['city'] or 'India',
-                'status': r['status'] or 'active',
-                'profitSharingPercentage': sharing_pct,
-                'candidatesPlaced': int(r['candidates_placed']),
-                'revenuePaid': float(r['inflow_revenue']),
-                # TODO: Once expenditure table gets a franchisee_id column, sum real expense transactions per franchisee here
-                'expenses': 0.0,
-                'netProfit': float(r['inflow_revenue'])
+                'id': make_stable_id('f', f['name']),
+                'name': f['name'],
+                'teamLeader': f['teamLeader'],
+                'status': status_label,
+                'isActive': is_active,
+                'isNew': is_new,
+                'daysSinceLastPlacement': days_since,
+                'onboardingDate': onb_date,
+                'splitPct': split_pct,
+                'isSplitEstimated': is_split_est,
+                'placements': placements,
+                'revenueExGst': revenue_ex_gst,
+                'companyShare': company_share,
+                'lastPlacementDate': last_p_date,
+                'monthlySeries': monthly_series
             })
-            
+
+        # Sort ledger by revenueExGst descending, then placements descending, then name
+        ledger.sort(key=lambda x: (x['revenueExGst'], x['placements'], x['name']), reverse=True)
+
         return jsonify({
-            'franchise_inflow': franchise_inflow,
-            'total_onboarding_fees': total_onboarding_fees,
-            'ledger': ledger
+            'success': True,
+            'franchise_inflow': round(tot_rev, 2),
+            'total_revenue_ex_gst': round(tot_rev, 2),
+            'total_company_share': round(tot_comp, 2),
+            'total_placements': tot_placements,
+            'total_onboarding_fees': None,  # CRM does not track onboarding fee receipts
+            'active_franchisees_count': sum(1 for r in ledger if r['isActive']),
+            'total_franchisees_count': len(ledger),
+            'ledger': ledger,
+            'unmatched_names': unmatched_names
         })
     except Exception as e:
         print("get_franchisee_summary failed:", str(e))
-        return jsonify({
-            'franchise_inflow': 0.0,
-            'total_onboarding_fees': 0.0,
-            'ledger': []
-        })
+        return jsonify({ 'success': False, 'error': str(e) }), 500
+    finally:
+        conn.close()
+
+
+@app.route('/api/franchisees/<path:fran_identifier>/placements', methods=['GET'])
+def get_franchisee_placements(fran_identifier):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        def _norm(name_str):
+            if not name_str: return ''
+            s = name_str.lower().strip()
+            s = re.sub(r'[^\w\s]', '', s)
+            return re.sub(r'\s+', ' ', s).strip()
+
+        clean_id = fran_identifier.strip()
+        matched_name = clean_id
+        
+        cursor.execute("SELECT nameAsPerAgreement FROM franchisees WHERE nameAsPerAgreement IS NOT NULL")
+        all_frans = cursor.fetchall()
+        for f in all_frans:
+            fn = f['nameAsPerAgreement'].strip()
+            if make_stable_id('f', fn) == clean_id or _norm(fn) == _norm(clean_id):
+                matched_name = fn
+                break
+
+        cursor.execute("""
+            SELECT 
+                id,
+                enquiry_id,
+                billNumber,
+                billDate,
+                candidateName,
+                companyName,
+                postOfCandidate,
+                COALESCE(rev_ex_gst, 0.0) AS revenueExGst,
+                COALESCE(ourShare, 0.0) AS companyShare,
+                COALESCE(teamLeader, '') AS teamLeader
+            FROM v_invoice_clean
+            WHERE is_revenue = 1
+              AND (franchiseName = %s OR TRIM(LOWER(REGEXP_REPLACE(franchiseName, '[^a-zA-Z0-9]', ''))) = %s)
+            ORDER BY billDate DESC, id DESC
+            LIMIT 30
+        """, [matched_name, re.sub(r'[^a-zA-Z0-9]', '', matched_name).lower()])
+        rows = cursor.fetchall()
+
+        placements = []
+        for r in rows:
+            placements.append({
+                'id': r['id'],
+                'enquiryId': r['enquiry_id'],
+                'billNumber': r['billNumber'] or '—',
+                'billDate': str(r['billDate'])[:10] if r['billDate'] else '—',
+                'candidateName': r['candidateName'] or 'Candidate',
+                'companyName': r['companyName'] or 'Client',
+                'postOfCandidate': r['postOfCandidate'] or 'Placement',
+                'revenueExGst': float(r['revenueExGst'] or 0.0),
+                'companyShare': float(r['companyShare'] or 0.0),
+                'teamLeader': r['teamLeader'] or '—'
+            })
+
+        return jsonify({'success': True, 'placements': placements})
+    except Exception as e:
+        print("get_franchisee_placements failed:", str(e))
+        return jsonify({'success': False, 'error': str(e)}), 500
     finally:
         conn.close()
 
