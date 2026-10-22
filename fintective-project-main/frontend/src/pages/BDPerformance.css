@@ -1,0 +1,683 @@
+/* BD Member Performance Clean Minimalist Stylesheet */
+.bd-performance-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  color: var(--text-main);
+  box-sizing: border-box;
+}
+
+/* 1. Header Card */
+.bdp-header-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 22px 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.bdp-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.bdp-header-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bdp-title {
+  font-family: var(--font-serif, inherit);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.bdp-subtitle {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.bdp-count-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  background: var(--bg-main);
+  border: 1px solid var(--border-color);
+  padding: 6px 14px;
+  border-radius: 8px;
+}
+
+.bdp-count-num {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-main);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.bdp-count-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Filters Row */
+.bdp-filters-row {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-color);
+}
+
+.bdp-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1 1 180px;
+  min-width: 160px;
+}
+
+.bdp-filter-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.bdp-filter-select {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-main);
+  color: var(--text-main);
+  font-size: 0.84rem;
+  font-weight: 500;
+  outline: none;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.bdp-filter-select:focus {
+  border-color: var(--accent-teal);
+}
+
+.bdp-filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 1px;
+}
+
+.bdp-btn-toggle-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-main);
+  color: var(--text-main);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  height: 38px;
+  white-space: nowrap;
+}
+
+.bdp-btn-toggle-filters:hover {
+  border-color: var(--text-muted);
+}
+
+.bdp-btn-toggle-filters.active {
+  background: rgba(15, 110, 86, 0.08);
+  border-color: var(--accent-teal);
+  color: var(--accent-teal);
+}
+
+.bdp-badge-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--accent-teal);
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.bdp-btn-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  height: 38px;
+}
+
+.bdp-btn-reset:hover {
+  color: #dc2626;
+  border-color: #dc2626;
+  background: rgba(220, 38, 38, 0.04);
+}
+
+/* Advanced Filters Expanded */
+.bdp-advanced-filters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border-color);
+}
+
+/* 2. Summary Row (2 Cards) */
+.bdp-summary-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+}
+
+.bdp-summary-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.bdp-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.bdp-card-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-main);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin: 0;
+}
+
+.bdp-card-pill {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.bdp-card-pill.profitable {
+  background: rgba(15, 110, 86, 0.08);
+  color: #0F6E56;
+  border: 1px solid rgba(15, 110, 86, 0.2);
+}
+
+.bdp-card-pill.loss {
+  background: rgba(220, 38, 38, 0.08);
+  color: #dc2626;
+  border: 1px solid rgba(220, 38, 38, 0.2);
+}
+
+/* Revenue Card Stats */
+.bdp-stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.bdp-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  position: relative;
+}
+
+.bdp-stat-item:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  right: -6px;
+  top: 10%;
+  height: 80%;
+  width: 1px;
+  background: var(--border-color);
+}
+
+.bdp-stat-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bdp-stat-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.bdp-stat-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.bdp-stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-main);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.bdp-stat-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+
+/* Stacked Progress Bar */
+.bdp-stacked-bar {
+  display: flex;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #f1f5f9;
+}
+
+.bdp-bar-segment {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+/* Cost & Return Stats */
+.bdp-cost-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.bdp-cost-stats-grid .bdp-stat-item:first-child::after {
+  content: '';
+  position: absolute;
+  right: -8px;
+  top: 10%;
+  height: 80%;
+  width: 1px;
+  background: var(--border-color);
+}
+
+/* 3. Member Directory Card */
+.bdp-directory-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.bdp-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.bdp-toolbar-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bdp-toolbar-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.bdp-toolbar-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.bdp-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bdp-search-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-main);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 6px 10px;
+  min-width: 180px;
+}
+
+.bdp-search-input {
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 0.8rem;
+  outline: none;
+  width: 100%;
+}
+
+.bdp-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.bdp-sort-select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-main);
+  color: var(--text-main);
+  font-size: 0.8rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.bdp-btn-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-main);
+  color: var(--text-main);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bdp-btn-export:hover {
+  border-color: var(--text-muted);
+}
+
+/* Table */
+.bdp-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.bdp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  text-align: left;
+}
+
+.bdp-th {
+  padding: 10px 14px;
+  background: var(--bg-main);
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.bdp-th.text-right {
+  text-align: right;
+}
+
+.bdp-th.text-center {
+  text-align: center;
+}
+
+.bdp-tr {
+  border-bottom: 1px solid var(--border-color);
+  transition: background 0.12s ease;
+  cursor: pointer;
+}
+
+.bdp-tr:last-child {
+  border-bottom: none;
+}
+
+.bdp-tr:hover {
+  background: rgba(15, 110, 86, 0.03);
+}
+
+.bdp-tr:focus-visible {
+  outline: 2px solid var(--accent-teal);
+  outline-offset: -2px;
+}
+
+.bdp-td {
+  padding: 12px 14px;
+  vertical-align: middle;
+}
+
+.bdp-td.text-right {
+  text-align: right;
+}
+
+.bdp-td.text-center {
+  text-align: center;
+}
+
+/* Member Column */
+.bdp-member-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bdp-member-name {
+  font-weight: 700;
+  color: var(--text-main);
+  font-size: 0.85rem;
+}
+
+.bdp-member-sub {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* Numerical Cells */
+.bdp-num-val {
+  font-weight: 700;
+  color: var(--text-main);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+}
+
+/* Collected Progress Track */
+.bdp-mini-bar-track {
+  width: 80px;
+  height: 4px;
+  background: #f1f5f9;
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 3px 0 2px auto;
+}
+
+.bdp-mini-bar-fill {
+  height: 100%;
+  background: #0F6E56;
+  border-radius: 2px;
+}
+
+.bdp-pct-sub {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* At Risk Column */
+.bdp-risk-pending {
+  color: #b45309;
+  font-weight: 600;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.bdp-risk-lost {
+  color: #dc2626;
+  font-weight: 600;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+/* Cost Column */
+.bdp-cost-base {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* Net ROI Column */
+.bdp-roi-val {
+  font-weight: 700;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.bdp-roi-val.positive {
+  color: #0F6E56;
+}
+
+.bdp-roi-val.negative {
+  color: #dc2626;
+}
+
+.bdp-roi-sub {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Status Pill */
+.bdp-pill-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bdp-pill-tag.profitable {
+  background: rgba(15, 110, 86, 0.08);
+  color: #0F6E56;
+}
+
+.bdp-pill-tag.dormant {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.bdp-pill-tag.cancellation,
+.bdp-pill-tag.negative {
+  background: rgba(220, 38, 38, 0.08);
+  color: #dc2626;
+}
+
+.bdp-pill-tag.lag {
+  background: rgba(217, 119, 6, 0.08);
+  color: #b45309;
+}
+
+.bdp-empty-row {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text-muted);
+}
+
+/* Responsive Breakpoints */
+@media (max-width: 1100px) {
+  .bdp-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .bdp-header-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .bdp-stats-row {
+    grid-template-columns: 1fr 1fr;
+    row-gap: 14px;
+  }
+
+  .bdp-stat-item:nth-child(2)::after {
+    display: none;
+  }
+
+  .bdp-cost-stats-grid {
+    grid-template-columns: 1fr;
+    row-gap: 14px;
+  }
+
+  .bdp-cost-stats-grid .bdp-stat-item:first-child::after {
+    display: none;
+  }
+
+  .bdp-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .bdp-toolbar-right {
+    width: 100%;
+  }
+
+  .bdp-search-box {
+    flex: 1;
+  }
+}

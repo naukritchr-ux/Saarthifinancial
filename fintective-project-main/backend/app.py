@@ -409,7 +409,7 @@ def get_transactions():
     with _tx_cache_lock:
         now = time.time()
         if cache_key in _tx_cache and (now - _tx_cache_time < TX_CACHE_TTL_SECONDS):
-            resp = jsonify(cached_rows)
+            resp = jsonify(_tx_cache[cache_key])
             resp.headers['Cache-Control'] = 'public, max-age=60, stale-while-revalidate=120'
             return resp
     
@@ -4071,7 +4071,7 @@ def start_background_sync_daemon():
     threading.Thread(target=render_keepalive, daemon=True).start()
 
     def sync_loop():
-        time.sleep(3)
+        time.sleep(45)  # Allow incoming web requests priority on cold start before background sync
         while True:
             try:
                 print("[Auto-Pool Daemon] Running automated background Saarthi CRM sync...")
