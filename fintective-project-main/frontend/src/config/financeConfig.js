@@ -43,7 +43,9 @@ export function getTransactionShares(tx = {}) {
   }
 
   // 2. Standard agreement ratio: 25% company / 75% franchisee
-  const rShare = Math.round(gross * DEFAULT_COMPANY_SHARE_RATE);
+  const companyRate = DEFAULT_COMPANY_SHARE_RATE;
+  const franchiseeRate = DEFAULT_FRANCHISEE_SHARE_RATE;
+  const rShare = Math.round(gross * companyRate);
   const franchiseeShare = gross - rShare;
 
   return {
