@@ -22,6 +22,7 @@ import GoalSetterModal from '../components/GoalSetterModal';
 import OutcomeRecorderModal from '../components/OutcomeRecorderModal';
 import AuditPanel from '../components/AuditPanel';
 import FinancialPerformanceCard from '../components/FinancialPerformanceCard';
+import ProfileGoalSetter from '../components/ProfileGoalSetter';
 import {
   CumulativeTargetChart,
   PlanAheadTrajectoryChart
@@ -118,6 +119,11 @@ const GrowthTracking = () => {
 
   // Tab 1 Overview Measure Toggle: 'deals' | 'revenue'
   const [overviewMeasure, setOverviewMeasure] = useState('deals');
+
+  // Linked Scenario & Goal Setting state for Tab 1
+  const [scenarioMultiplier, setScenarioMultiplier] = useState(1.0);
+  const [previewTarget, setPreviewTarget] = useState(null);
+  const [previewLabel, setPreviewLabel] = useState('');
 
   // Tab 2 Plan Ahead Growth Rate Preset State
   const [growthRatePct, setGrowthRatePct] = useState(15);
@@ -746,7 +752,38 @@ const GrowthTracking = () => {
 
           {/* Cumulative Trajectory Chart (Actual vs Projected vs Target with Monthly Bars) */}
           <div style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '0.74rem', fontWeight: '600', color: 'var(--text-muted)' }}>Scenario Pace:</span>
+                <div style={{ display: 'inline-flex', background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '2px' }}>
+                  {[
+                    { label: '1x (Pace)', mult: 1.0 },
+                    { label: '1.5x', mult: 1.5 },
+                    { label: '2x', mult: 2.0 },
+                    { label: '3x', mult: 3.0 }
+                  ].map(sc => (
+                    <button
+                      key={sc.mult}
+                      type="button"
+                      onClick={() => setScenarioMultiplier(sc.mult)}
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        border: 'none',
+                        background: scenarioMultiplier === sc.mult ? 'var(--accent-teal)' : 'transparent',
+                        color: scenarioMultiplier === sc.mult ? '#ffffff' : 'var(--text-muted)',
+                        fontSize: '0.72rem',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {sc.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div style={{ display: 'inline-flex', background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '2px' }}>
                 <button
                   type="button"
@@ -786,12 +823,39 @@ const GrowthTracking = () => {
             <CumulativeTargetChart
               monthlySeries={summaryData?.monthly_series}
               companyQuota={summaryData?.company_quota}
+              savedGoal={summaryData?.own_pledge}
+              previewTarget={previewTarget}
+              previewLabel={previewLabel}
               monthsElapsed={summaryData?.period?.months_elapsed || 7}
               projectedTotal={summaryData?.pace?.projected_total_by_fy_end}
               measure={overviewMeasure}
               height={220}
             />
           </div>
+
+          {/* Goal Setter for Selected BD Specialist / Profile */}
+          <ProfileGoalSetter
+            bdProfile={bdFilter}
+            selectedFy={selectedFy}
+            tlFilter={tlFilter}
+            franchiseFilter={franchiseFilter}
+            measure={overviewMeasure}
+            summaryData={summaryData}
+            scenarioMultiplier={scenarioMultiplier}
+            onScenarioChange={setScenarioMultiplier}
+            onPreviewChange={(val, label) => {
+              setPreviewTarget(val);
+              setPreviewLabel(label);
+            }}
+            onGoalSaved={() => {
+              fetchSummaryData();
+              fetchTargets();
+            }}
+            isAdminOrManager={isAdminOrManager}
+            currentUser={currentUser}
+            userRole={userRole}
+            isLoading={summaryLoading}
+          />
 
           {/* Same-Period vs Prior Year vs Team Average Table */}
           <div className="same-period-card">

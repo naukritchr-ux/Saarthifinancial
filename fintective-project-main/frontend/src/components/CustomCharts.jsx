@@ -389,7 +389,10 @@ export const CumulativeTargetChart = ({
   monthsElapsed = 7,
   projectedTotal = 0,
   measure = 'deals', // 'deals' or 'revenue'
-  height = 200
+  height = 200,
+  savedGoal = null,
+  previewTarget = null,
+  previewLabel = ''
 }) => {
   const isRev = measure === 'revenue';
   const months = monthlySeries.length > 0 ? monthlySeries : [
@@ -408,6 +411,18 @@ export const CumulativeTargetChart = ({
   ];
 
   const quotaVal = isRev ? Number(companyQuota?.quota_revenue || 0) : Number(companyQuota?.quota_deals || 0);
+
+  // Extract saved goal value if present
+  let savedGoalVal = 0;
+  if (savedGoal) {
+    if (typeof savedGoal === 'object') {
+      savedGoalVal = isRev ? Number(savedGoal.target_revenue || 0) : Number(savedGoal.target_deals || savedGoal.target_placements || 0);
+    } else {
+      savedGoalVal = Number(savedGoal);
+    }
+  }
+
+  const previewVal = previewTarget !== null && previewTarget !== undefined ? Number(previewTarget) : null;
 
   // Calculate monthly values & cumulative actuals
   let runningActual = 0;
@@ -437,7 +452,17 @@ export const CumulativeTargetChart = ({
     return Math.round(lastActual + pacePerMonth * remainingIdx);
   });
 
-  const maxVal = Math.max(quotaVal, projectedEnd, lastActual, 10) * 1.15;
+  // Build scenario preview points from current elapsed month to month 12
+  const previewData = previewVal ? monthData.map((m, idx) => {
+    if (idx < monthsElapsed - 1) return null;
+    if (idx === monthsElapsed - 1) return lastActual;
+    const remainingMonths = Math.max(1, 12 - monthsElapsed);
+    const step = (previewVal - lastActual) / remainingMonths;
+    const remainingIdx = idx - (monthsElapsed - 1);
+    return Math.round(lastActual + step * remainingIdx);
+  }) : [];
+
+  const maxVal = Math.max(quotaVal, projectedEnd, lastActual, savedGoalVal, previewVal || 0, 10) * 1.15;
 
   const width = 680;
   const paddingL = 50;
@@ -455,7 +480,10 @@ export const CumulativeTargetChart = ({
   const getY = (val) => paddingT + plotH - (val / maxVal) * plotH;
 
   // Target line path: (0,0) to (11, quotaVal)
-  const targetPath = `M ${getX(0)},${getY(quotaVal / 12)} L ${getX(11)},${getY(quotaVal)}`;
+  const targetPath = quotaVal > 0 ? `M ${getX(0)},${getY(quotaVal / 12)} L ${getX(11)},${getY(quotaVal)}` : '';
+
+  // Saved goal path
+  const savedGoalPath = savedGoalVal > 0 ? `M ${getX(0)},${getY(savedGoalVal / 12)} L ${getX(11)},${getY(savedGoalVal)}` : '';
 
   // Actual line path
   const actualCoords = monthData
@@ -471,6 +499,15 @@ export const CumulativeTargetChart = ({
     })
     .filter(Boolean);
   const projPath = projCoords.length > 0 ? `M ${projCoords.join(' L ')}` : '';
+
+  // Scenario preview path
+  const previewCoords = previewVal ? monthData
+    .map((m, idx) => {
+      const pVal = previewData[idx];
+      return pVal !== null ? `${getX(idx)},${getY(pVal)}` : null;
+    })
+    .filter(Boolean) : [];
+  const previewPath = previewCoords.length > 0 ? `M ${previewCoords.join(' L ')}` : '';
 
   // 4 Y-ticks
   const yTicks = [0, maxVal * 0.33, maxVal * 0.66, maxVal];
@@ -491,19 +528,33 @@ export const CumulativeTargetChart = ({
             Cumulative FY Trajectory vs Quota ({isRev ? 'Revenue' : 'Deals'})
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '0.74rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '0.74rem', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ width: '14px', height: '3px', backgroundColor: '#0F6E56', display: 'inline-block', borderRadius: '2px' }} />
             <span style={{ color: 'var(--text-main)', fontWeight: '600' }}>Actual YTD ({formatVal(lastActual)})</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ width: '14px', height: '3px', borderTop: '2px dashed #2563EB', display: 'inline-block' }} />
-            <span style={{ color: 'var(--text-muted)' }}>Projected at pace ({formatVal(projectedEnd)})</span>
+            <span style={{ color: 'var(--text-muted)' }}>Projected ({formatVal(projectedEnd)})</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '14px', height: '2px', backgroundColor: '#94a3b8', display: 'inline-block' }} />
-            <span style={{ color: 'var(--text-muted)' }}>Target path ({formatVal(quotaVal)})</span>
-          </div>
+          {savedGoalVal > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: '14px', height: '3px', borderTop: '2px dashed #0F6E56', display: 'inline-block' }} />
+              <span style={{ color: '#0F6E56', fontWeight: '700' }}>Goal ({formatVal(savedGoalVal)})</span>
+            </div>
+          )}
+          {previewVal > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: '14px', height: '3px', borderTop: '2px dashed #7c3aed', display: 'inline-block' }} />
+              <span style={{ color: '#7c3aed', fontWeight: '700' }}>{previewLabel || 'Scenario'} ({formatVal(previewVal)})</span>
+            </div>
+          )}
+          {quotaVal > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: '14px', height: '2px', backgroundColor: '#94a3b8', display: 'inline-block' }} />
+              <span style={{ color: 'var(--text-muted)' }}>Quota ({formatVal(quotaVal)})</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -546,9 +597,19 @@ export const CumulativeTargetChart = ({
           );
         })}
 
-        {/* Target Path Line */}
-        {quotaVal > 0 && (
+        {/* Target Path Line (Quota) */}
+        {quotaVal > 0 && targetPath && (
           <path d={targetPath} fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="4 4" />
+        )}
+
+        {/* Saved Goal Path Line */}
+        {savedGoalVal > 0 && savedGoalPath && (
+          <path d={savedGoalPath} fill="none" stroke="#0F6E56" strokeWidth="2.2" strokeDasharray="5 3" />
+        )}
+
+        {/* Scenario Preview Line */}
+        {previewVal > 0 && previewPath && (
+          <path d={previewPath} fill="none" stroke="#7c3aed" strokeWidth="2.4" strokeDasharray="4 3" strokeLinecap="round" />
         )}
 
         {/* Projected Pace Path */}
@@ -587,6 +648,34 @@ export const CumulativeTargetChart = ({
             strokeWidth="1.5"
           >
             <title>{`March FY Projected Total: ${formatVal(projectedData[11])}`}</title>
+          </circle>
+        )}
+
+        {/* Scenario Preview Node */}
+        {previewVal > 0 && previewData[11] !== null && (
+          <circle
+            cx={getX(11)}
+            cy={getY(previewData[11])}
+            r={5}
+            fill="#7c3aed"
+            stroke="#FFFFFF"
+            strokeWidth="1.5"
+          >
+            <title>{`March FY Scenario Target: ${formatVal(previewVal)}`}</title>
+          </circle>
+        )}
+
+        {/* Saved Goal Node */}
+        {savedGoalVal > 0 && (
+          <circle
+            cx={getX(11)}
+            cy={getY(savedGoalVal)}
+            r={5}
+            fill="#0F6E56"
+            stroke="#FFFFFF"
+            strokeWidth="1.5"
+          >
+            <title>{`Saved Goal: ${formatVal(savedGoalVal)}`}</title>
           </circle>
         )}
       </svg>
@@ -849,6 +938,7 @@ export const PlanAheadTrajectoryChart = ({
       </svg>
     </div>
   );
+};
 
 /**
  * Cash Flow Waterfall Chart Component

@@ -1118,29 +1118,75 @@ def predict_growth():
 # --------------------------------------------------------------------------
 # 3. POST /api/growth-targets (Create target memo)
 # --------------------------------------------------------------------------
+def _ensure_growth_targets_table(cursor):
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS growth_targets (
+            id VARCHAR(100) PRIMARY KEY,
+            entity_type VARCHAR(50) NOT NULL,
+            entity_id VARCHAR(100) NOT NULL,
+            growth_pct_target DECIMAL(10, 4) NOT NULL,
+            salary_target DECIMAL(15, 2) NULL,
+            period_start VARCHAR(100) NOT NULL,
+            period_end VARCHAR(100) NOT NULL,
+            guidelines TEXT NULL,
+            status VARCHAR(50) DEFAULT 'active',
+            actual_growth_pct DECIMAL(10, 4) NULL,
+            actual_value DECIMAL(15, 2) NULL,
+            kra_summary TEXT NULL,
+            target_letter_text MEDIUMTEXT NULL,
+            outcome_letter_text MEDIUMTEXT NULL,
+            target_letter_sent_at VARCHAR(100) NULL,
+            outcome_recorded_at VARCHAR(100) NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_gt_entity (entity_type, entity_id),
+            INDEX idx_gt_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """)
+    for col_sql in [
+        "ALTER TABLE growth_targets ADD COLUMN target_placements INT NULL",
+        "ALTER TABLE growth_targets ADD COLUMN target_revenue DECIMAL(15, 2) NULL",
+        "ALTER TABLE growth_targets ADD COLUMN target_author VARCHAR(50) NULL",
+        "ALTER TABLE growth_targets ADD COLUMN updated_by VARCHAR(100) NULL",
+        "ALTER TABLE growth_targets ADD COLUMN financial_year VARCHAR(50) NULL",
+        "ALTER TABLE growth_targets ADD COLUMN metric_type VARCHAR(50) DEFAULT 'deals'"
+    ]:
+        try:
+            cursor.execute(col_sql)
+        except Exception:
+            pass
+
 @growth_tracking_bp.route("/api/growth-targets", methods=["POST"])
 def create_growth_target():
     data = request.get_json() or {}
     entity_type = data.get("entity_type", "employee").strip().lower()
     entity_id = str(data.get("entity_id", "")).strip()
     growth_pct_target = float(data.get("growth_pct_target", 0.0))
-    salary_target = float(data.get("salary_target")) if data.get("salary_target") is not None and data.get("salary_target") != "" else None
-    period_start = data.get("period_start", "").strip()
-    period_end = data.get("period_end", "").strip()
+    salary_target = float(data.get("salary_target")) if data.get("salary_target") is not None and str(data.get("salary_target")).strip() != "" else None
+    period_start = data.get("period_start", "").strip() or "2026-04-01"
+    period_end = data.get("period_end", "").strip() or "2027-03-31"
     guidelines = data.get("guidelines", "").strip()
 
-    if not entity_id or not period_start or not period_end:
-        return jsonify({"error": "Missing required fields: entity_id, period_start, period_end"}), 400
+    target_placements = int(data.get("target_placements")) if data.get("target_placements") is not None and str(data.get("target_placements")).strip() != "" else None
+    target_revenue = float(data.get("target_revenue")) if data.get("target_revenue") is not None and str(data.get("target_revenue")).strip() != "" else None
+    target_author = str(data.get("target_author", "self")).strip()
+    updated_by = str(data.get("updated_by", "system")).strip()
+    financial_year = str(data.get("financial_year", "")).strip()
+    metric_type = str(data.get("metric_type", "deals")).strip()
+
+    if not entity_id:
+        return jsonify({"error": "Missing required field: entity_id"}), 400
 
     normalized_growth = growth_pct_target / 100.0 if growth_pct_target > 1.0 else growth_pct_target
     target_id = f"gt-{uuid.uuid4().hex[:10]}"
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        _ensure_growth_targets_table(cursor)
         entity_name = _resolve_entity_info(cursor, entity_type, entity_id, data.get("entity_name"))
         historical_series, _, _ = _fetch_historical_revenue_and_stats(cursor, entity_type, entity_id, entity_name)
         base_value = historical_series[-1]['revenue'] if historical_series else 0.0
-        target_value = base_value * (1.0 + normalized_growth) if base_value > 0 else 0.0
+        target_value = target_revenue if target_revenue else (base_value * (1.0 + normalized_growth) if base_value > 0 else 0.0)
 
         letter_text = generate_target_letter(
             entity_name=entity_name,
@@ -1156,37 +1202,35 @@ def create_growth_target():
 
         now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS growth_targets (
-                id VARCHAR(100) PRIMARY KEY,
-                entity_type VARCHAR(50) NOT NULL,
-                entity_id VARCHAR(100) NOT NULL,
-                growth_pct_target DECIMAL(10, 4) NOT NULL,
-                salary_target DECIMAL(15, 2) NULL,
-                period_start VARCHAR(100) NOT NULL,
-                period_end VARCHAR(100) NOT NULL,
-                guidelines TEXT NULL,
-                status VARCHAR(50) DEFAULT 'active',
-                actual_growth_pct DECIMAL(10, 4) NULL,
-                actual_value DECIMAL(15, 2) NULL,
-                kra_summary TEXT NULL,
-                target_letter_text MEDIUMTEXT NULL,
-                outcome_letter_text MEDIUMTEXT NULL,
-                target_letter_sent_at VARCHAR(100) NULL,
-                outcome_recorded_at VARCHAR(100) NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                INDEX idx_gt_entity (entity_type, entity_id),
-                INDEX idx_gt_status (status)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-        """)
+        # Supersede previous active targets for this profile and FY to ensure single active goal
+        try:
+            if financial_year:
+                cursor.execute("""
+                    UPDATE growth_targets 
+                    SET status = 'superseded', updated_at = NOW()
+                    WHERE (entity_id = %s OR LOWER(entity_id) = %s)
+                      AND (financial_year = %s OR period_start = %s)
+                      AND status = 'active'
+                """, [entity_id, entity_id.lower(), financial_year, period_start])
+            else:
+                cursor.execute("""
+                    UPDATE growth_targets 
+                    SET status = 'superseded', updated_at = NOW()
+                    WHERE (entity_id = %s OR LOWER(entity_id) = %s)
+                      AND period_start = %s
+                      AND status = 'active'
+                """, [entity_id, entity_id.lower(), period_start])
+        except Exception as e:
+            print("supersede notice:", e)
 
         insert_sql = """
             INSERT INTO growth_targets (
                 id, entity_type, entity_id, growth_pct_target, salary_target,
                 period_start, period_end, guidelines, status,
+                target_placements, target_revenue, target_author, updated_by,
+                financial_year, metric_type,
                 target_letter_text, target_letter_sent_at, created_at, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         cursor.execute(insert_sql, [
             target_id,
@@ -1198,12 +1242,19 @@ def create_growth_target():
             period_end,
             guidelines,
             'active',
+            target_placements,
+            target_revenue,
+            target_author,
+            updated_by,
+            financial_year,
+            metric_type,
             letter_text,
             now_str,
             now_str,
             now_str
         ])
         conn.commit()
+        _clear_cache_prefix("growth_summary_")
         _clear_cache_prefix("roster_")
         _clear_cache_prefix("predict_")
 
@@ -1217,16 +1268,41 @@ def create_growth_target():
             'growth_pct_target_pct': round(normalized_growth * 100, 2),
             'base_value': round(base_value, 2),
             'target_value': round(target_value, 2),
+            'target_placements': target_placements,
+            'target_revenue': target_revenue,
+            'target_author': target_author,
+            'updated_by': updated_by,
+            'financial_year': financial_year,
+            'metric_type': metric_type,
             'salary_target': salary_target,
             'period_start': period_start,
             'period_end': period_end,
             'guidelines': guidelines,
             'status': 'active',
             'target_letter_text': letter_text,
-            'created_at': now_str
+            'created_at': now_str,
+            'updated_at': now_str
         }), 201
     except Exception as e:
         print(f"[create_growth_target] Error: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+@growth_tracking_bp.route("/api/growth-targets/<target_id>", methods=["DELETE"])
+def delete_growth_target(target_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        _ensure_growth_targets_table(cursor)
+        cursor.execute("UPDATE growth_targets SET status = 'cancelled', updated_at = NOW() WHERE id = %s", [target_id])
+        conn.commit()
+        _clear_cache_prefix("growth_summary_")
+        _clear_cache_prefix("roster_")
+        _clear_cache_prefix("predict_")
+        return jsonify({'success': True, 'id': target_id, 'status': 'cancelled'})
+    except Exception as e:
+        print(f"[delete_growth_target] Error: {e}")
         return jsonify({'error': str(e)}), 500
     finally:
         conn.close()
@@ -2303,21 +2379,29 @@ def get_growth_targets_summary():
         own_pledge = None
         try:
             cursor.execute("""
-                SELECT growth_pct_target, target_revenue, target_placements, target_author, status
+                SELECT id, growth_pct_target, target_revenue, target_placements, target_author, status, updated_by, updated_at, financial_year, metric_type
                 FROM growth_targets
                 WHERE (entity_id = %s OR LOWER(TRIM(entity_id)) = %s)
+                  AND status = 'active'
+                  AND (financial_year = %s OR financial_year IS NULL OR financial_year = '' OR period_start LIKE %s)
                 ORDER BY created_at DESC LIMIT 1
-            """, [calc_entity_name, calc_entity_name.lower()])
+            """, [calc_entity_name, calc_entity_name.lower(), fy_str, f"{start_year}%"])
             tgt_row = cursor.fetchone()
-            if tgt_row and tgt_row.get('target_placements'):
+            if tgt_row and (tgt_row.get('target_placements') or tgt_row.get('target_revenue') or tgt_row.get('growth_pct_target')):
                 own_pledge = {
+                    'id': tgt_row['id'],
                     'growth_pct': float(tgt_row.get('growth_pct_target') or 15.0),
-                    'target_deals': int(tgt_row['target_placements']),
-                    'target_revenue': float(tgt_row.get('target_revenue') or (baseline_revenue * 1.15)),
-                    'author': tgt_row.get('target_author') or 'Direct'
+                    'target_deals': int(tgt_row['target_placements']) if tgt_row.get('target_placements') else None,
+                    'target_revenue': float(tgt_row.get('target_revenue')) if tgt_row.get('target_revenue') else None,
+                    'author': tgt_row.get('target_author') or 'Direct',
+                    'updated_by': tgt_row.get('updated_by') or 'User',
+                    'updated_at': str(tgt_row.get('updated_at') or tgt_row.get('created_at') or ''),
+                    'financial_year': tgt_row.get('financial_year') or fy_str,
+                    'metric_type': tgt_row.get('metric_type') or 'deals',
+                    'status': tgt_row.get('status') or 'active'
                 }
-        except Exception:
-            pass
+        except Exception as e:
+            print("own_pledge query notice:", e)
 
         quota_deals = own_pledge['target_deals'] if own_pledge else (max(1, int(round(baseline_deals * 1.15))) if baseline_deals > 0 else max(10, int(round(closed_cnt * 1.2))))
         quota_revenue = own_pledge['target_revenue'] if own_pledge else (round(baseline_revenue * 1.15, 2) if baseline_revenue > 0 else round(closed_rev * 1.2, 2))
@@ -2487,6 +2571,7 @@ def get_growth_targets():
         params = []
 
         entity_name = request.args.get("entity_name")
+        fy_filter = request.args.get("fy") or request.args.get("financial_year")
         if entity_type and entity_type.strip().lower() != 'company':
             query += " AND entity_type = %s"
             params.append(entity_type.strip().lower())
@@ -2500,6 +2585,9 @@ def get_growth_targets():
         elif entity_name:
             query += " AND LOWER(entity_id) = %s"
             params.append(entity_name.strip().lower())
+        if fy_filter:
+            query += " AND (financial_year = %s OR financial_year IS NULL OR financial_year = '')"
+            params.append(fy_filter.strip())
         if status:
             query += " AND status = %s"
             params.append(status.strip().lower())
@@ -2519,6 +2607,12 @@ def get_growth_targets():
                 'growth_pct_target': float(r['growth_pct_target']),
                 'growth_pct_target_pct': round(float(r['growth_pct_target']) * 100, 2),
                 'salary_target': float(r['salary_target']) if r['salary_target'] is not None else None,
+                'target_placements': int(r['target_placements']) if r.get('target_placements') is not None else None,
+                'target_revenue': float(r['target_revenue']) if r.get('target_revenue') is not None else None,
+                'target_author': r.get('target_author') or 'Direct',
+                'updated_by': r.get('updated_by') or 'System',
+                'financial_year': r.get('financial_year') or '',
+                'metric_type': r.get('metric_type') or 'deals',
                 'period_start': r['period_start'],
                 'period_end': r['period_end'],
                 'guidelines': r['guidelines'],
@@ -2531,7 +2625,8 @@ def get_growth_targets():
                 'outcome_letter_text': r['outcome_letter_text'],
                 'target_letter_sent_at': r['target_letter_sent_at'],
                 'outcome_recorded_at': r['outcome_recorded_at'],
-                'created_at': str(r['created_at'])
+                'created_at': str(r['created_at']),
+                'updated_at': str(r.get('updated_at') or r['created_at'])
             })
 
         return jsonify(results)
