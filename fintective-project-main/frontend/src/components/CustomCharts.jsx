@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatLakhs } from '../utils/formatters';
 
 /**
  * Donut Chart Component using SVG
@@ -164,19 +165,25 @@ export const BarChart = ({
 /**
  * Progress Bar List for Top Expenses
  */
-export const ProgressBarList = ({ data }) => {
-  const total = data.reduce((sum, item) => sum + item.value, 0);
+export const ProgressBarList = ({ data, onSelect = null, selectedLabel = null }) => {
+  const total = data.reduce((sum, item) => sum + (Number(item.value) || 0), 0);
 
   return (
     <div className="progress-bar-list">
       {data.map((item, i) => {
         const percent = total > 0 ? (item.value / total) * 100 : 0;
+        const isSelected = selectedLabel && selectedLabel === item.label;
         return (
-          <div className="progress-bar-item" key={i}>
+          <div
+            className={`progress-bar-item ${isSelected ? 'selected' : ''}`}
+            key={i}
+            onClick={() => onSelect && onSelect(item.label)}
+            style={{ cursor: onSelect ? 'pointer' : 'default' }}
+          >
             <div className="progress-bar-header">
               <span className="progress-item-label">{item.label}</span>
               <span className="progress-item-value">
-                ₹{(item.value / 1000).toFixed(0)}K <span className="percentage">({percent.toFixed(0)}%)</span>
+                {formatLakhs(item.value)} <span className="percentage">({percent.toFixed(0)}%)</span>
               </span>
             </div>
             <div className="progress-bar-track">
