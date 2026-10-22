@@ -115,7 +115,7 @@ import gzip
 _tx_cache = {}
 _tx_cache_time = 0
 _tx_cache_lock = threading.Lock()
-TX_CACHE_TTL_SECONDS = 180  # 3 minutes
+TX_CACHE_TTL_SECONDS = 600  # 10 minutes (auto-invalidated on sync/update)
 
 _ml_insights_cache = None
 _ml_insights_cache_time = 0
@@ -409,9 +409,9 @@ def get_transactions():
     with _tx_cache_lock:
         now = time.time()
         if cache_key in _tx_cache and (now - _tx_cache_time < TX_CACHE_TTL_SECONDS):
-            cached_rows = _tx_cache[cache_key]
-            elapsed_ms = round((time.time() - t0) * 1000)
-            return jsonify(cached_rows)
+            resp = jsonify(cached_rows)
+            resp.headers['Cache-Control'] = 'public, max-age=60, stale-while-revalidate=120'
+            return resp
     
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -936,7 +936,9 @@ def get_transactions():
             with _tx_cache_lock:
                 _tx_cache[cache_key] = filtered_result
                 _tx_cache_time = time.time()
-            return jsonify(filtered_result)
+            resp = jsonify(filtered_result)
+            resp.headers['Cache-Control'] = 'public, max-age=60, stale-while-revalidate=120'
+            return resp
 
     except Exception as e:
         elapsed_ms = round((time.time() - t0) * 1000)

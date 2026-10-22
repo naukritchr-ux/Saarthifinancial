@@ -260,7 +260,7 @@ export const FinanceProvider = ({ children }) => {
 
   const [dataSource, setDataSource] = useState(() => {
     try {
-      const cached = sessionStorage.getItem('fintective_cached_txs');
+      const cached = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
       return cached ? 'cached' : 'sample';
     } catch {
       return 'sample';
@@ -269,7 +269,7 @@ export const FinanceProvider = ({ children }) => {
 
   const [dataState, setDataState] = useState(() => {
     try {
-      const cached = sessionStorage.getItem('fintective_cached_txs');
+      const cached = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
       return cached ? 'cached' : 'connecting';
     } catch {
       return 'connecting';
@@ -406,7 +406,7 @@ export const FinanceProvider = ({ children }) => {
 
   const [isLoadingData, setIsLoadingData] = useState(() => {
     try {
-      const cached = sessionStorage.getItem('fintective_cached_txs');
+      const cached = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
       return !cached;
     } catch {
       return true;
@@ -414,10 +414,30 @@ export const FinanceProvider = ({ children }) => {
   });
   const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
 
-  // Poll /api/health with backoff up to 50s for cold Render instance warm-up
-  const pollServerHealth = async (maxWaitSeconds = 50) => {
+  // Poll /api/health with backoff up to 40s for cold Render instance warm-up
+  const pollServerHealth = async (maxWaitSeconds = 40) => {
+    // 1. Fast path: try immediate health ping (resolves in ~300ms if server is already awake)
+    try {
+      const quickRes = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(3000) });
+      if (quickRes.ok) {
+        const json = await quickRes.json();
+        const isDbConnected = json.database?.status === 'connected';
+        setBackendHealth({
+          isDbConnected,
+          cacheWarm: Boolean(json.cache?.warm),
+          host: json.database?.host || '',
+          lastChecked: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          raw: json
+        });
+        setConnectionProgress({ isConnecting: false, elapsedSec: 0, message: 'Connected' });
+        return { ok: true, isDbConnected, data: json };
+      }
+    } catch {
+      // Cold-start detected, proceed to poll loop
+    }
+
     const startTime = Date.now();
-    let delayMs = 1200;
+    let delayMs = 1000;
     while ((Date.now() - startTime) < maxWaitSeconds * 1000) {
       const elapsedSec = Math.max(1, Math.round((Date.now() - startTime) / 1000));
       setConnectionProgress({
@@ -447,7 +467,7 @@ export const FinanceProvider = ({ children }) => {
         // Cold start in progress or network delay, retry
       }
       await new Promise(r => setTimeout(r, delayMs));
-      delayMs = Math.min(delayMs * 1.3, 4000);
+      delayMs = Math.min(delayMs * 1.3, 3000);
     }
 
     setConnectionProgress({ isConnecting: false, elapsedSec: maxWaitSeconds, message: 'Server unreachable' });
@@ -524,18 +544,20 @@ export const FinanceProvider = ({ children }) => {
       const health = await pollServerHealth(40);
 
       if (health.ok) {
-        // 3. Parallel async fetch of endpoints with retry
-        const [txRes, franRes, bdRes, tlRes, budgetRes, mlRes] = await Promise.allSettled([
+        // 3. Parallel async fetch of core endpoints with retry
+        const [txRes, franRes, bdRes, tlRes, budgetRes] = await Promise.allSettled([
           fetchWithRetry(`${API_BASE_URL}/transactions`),
           fetchWithRetry(`${API_BASE_URL}/franchisees`),
           fetchWithRetry(`${API_BASE_URL}/bd-agents`),
           fetchWithRetry(`${API_BASE_URL}/team-leaders`),
-          fetchWithRetry(`${API_BASE_URL}/budgets`),
-          fetchWithRetry(`${API_BASE_URL}/ml/insights`)
+          fetchWithRetry(`${API_BASE_URL}/budgets`)
         ]);
 
-        // Check for 401 Unauthorized across all endpoint responses
-        const any401 = [txRes, franRes, bdRes, tlRes, budgetRes, mlRes].some(
+        // Kick off heavy ML model insights asynchronously in background without delaying main dashboard
+        fetchMlInsights();
+
+        // Check for 401 Unauthorized across core endpoint responses
+        const any401 = [txRes, franRes, bdRes, tlRes, budgetRes].some(
           r => (r.status === 'rejected' && (r.reason?.status === 401 || r.reason?.isAuthError)) ||
                (r.status === 'fulfilled' && r.value?.status === 401)
         );
@@ -551,7 +573,7 @@ export const FinanceProvider = ({ children }) => {
         }
 
         // Check for HTML response (misrouted proxy / catch-all rewrite)
-        const anyHtml = [txRes, franRes, bdRes, tlRes, budgetRes, mlRes].some(
+        const anyHtml = [txRes, franRes, bdRes, tlRes, budgetRes].some(
           r => (r.status === 'rejected' && r.reason?.isHtml) ||
                (r.status === 'fulfilled' && (r.value?.headers?.get('content-type') || '').includes('text/html'))
         );
@@ -661,22 +683,6 @@ export const FinanceProvider = ({ children }) => {
           }
         } else {
           setEndpointStatus(prev => ({ ...prev, budgets: { status: 'failed', error: budgetRes.reason?.message || 'Request failed' } }));
-        }
-
-        // Process /ml/insights
-        if (mlRes.status === 'fulfilled' && mlRes.value.ok) {
-          try {
-            const mlData = await mlRes.value.json();
-            if (mlData && typeof mlData === 'object') {
-              setMlInsights(mlData);
-              setEndpointStatus(prev => ({ ...prev, mlInsights: { status: 'ok', error: null } }));
-              try { sessionStorage.setItem('fintective_ml_insights', JSON.stringify(mlData)); } catch (e) {}
-            }
-          } catch (e) {
-            setEndpointStatus(prev => ({ ...prev, mlInsights: { status: 'failed', error: e.message } }));
-          }
-        } else {
-          setEndpointStatus(prev => ({ ...prev, mlInsights: { status: 'failed', error: mlRes.reason?.message || 'Request failed' } }));
         }
       }
     } catch (err) {
