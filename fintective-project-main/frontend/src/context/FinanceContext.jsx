@@ -99,6 +99,8 @@ export const getCurrentFY = () => {
 
 const DEFAULT_TRANSACTIONS = [];
 
+const TX_CACHE_VERSION = 'v2_payroll_included';
+
 export const FinanceProvider = ({ children }) => {
   const currentFY = getCurrentFY();
 
@@ -108,10 +110,22 @@ export const FinanceProvider = ({ children }) => {
 
   const [transactions, setTransactions] = useState(() => {
     try {
+      const storedVersion = localStorage.getItem('fintective_tx_cache_version');
+      if (storedVersion !== TX_CACHE_VERSION) {
+        localStorage.removeItem('fintective_cached_txs');
+        sessionStorage.removeItem('fintective_cached_txs');
+        return [];
+      }
       const cached = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) {
+          const hasSalaries = parsed.some(tx => tx.category === 'Salaries' || tx.is_payroll);
+          if (!hasSalaries) {
+            localStorage.removeItem('fintective_cached_txs');
+            sessionStorage.removeItem('fintective_cached_txs');
+            return [];
+          }
           return parsed.map(tx => ({
             ...tx,
             financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || currentFY
@@ -607,6 +621,7 @@ export const FinanceProvider = ({ children }) => {
               try {
                 sessionStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
                 localStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
+                localStorage.setItem('fintective_tx_cache_version', TX_CACHE_VERSION);
               } catch (e) {}
             }
           } catch (jsonErr) {
@@ -710,13 +725,16 @@ export const FinanceProvider = ({ children }) => {
       try {
         const cachedTxs = JSON.parse(cachedTxsStr);
         if (Array.isArray(cachedTxs) && cachedTxs.length > 0) {
-          console.log('[Fintective Data State] Backend offline. Using cached transactions from sessionStorage.');
-          setTransactions(cachedTxs);
-          setDataSource('cached');
-          setDataState('cached');
-          setIsLoadingData(false);
-          setIsBackgroundSyncing(false);
-          return false;
+          const hasSalaries = cachedTxs.some(tx => tx.category === 'Salaries' || tx.is_payroll);
+          if (hasSalaries) {
+            console.log('[Fintective Data State] Backend offline. Using cached transactions from sessionStorage.');
+            setTransactions(cachedTxs);
+            setDataSource('cached');
+            setDataState('cached');
+            setIsLoadingData(false);
+            setIsBackgroundSyncing(false);
+            return false;
+          }
         }
       } catch (e) {}
     }
