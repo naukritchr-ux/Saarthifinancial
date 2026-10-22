@@ -486,7 +486,7 @@ export default function CostOfPerformance({ setActivePage }) {
   };
 
   // CSV Report Export Handler
-  const handleExport = () => {
+  const handleExport = async () => {
     const q = new URLSearchParams({
       entity: activeTab,
       month: cleanMonthParam,
@@ -516,7 +516,7 @@ export default function CostOfPerformance({ setActivePage }) {
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = downloadUrl;
-      a.download = `cost_of_performance_${appliedFilters.financialYear || 'report'}.csv`;
+      a.download = `cost_of_performance_${selectedYear || 'report'}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
