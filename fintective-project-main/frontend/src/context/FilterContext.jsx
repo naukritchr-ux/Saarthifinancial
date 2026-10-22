@@ -38,7 +38,15 @@ export function FilterProvider({ children }) {
         company: params.get('company') ? params.get('company').split(',') : [],
         category: params.get('category') ? params.get('category').split(',') : [],
         paymentMode: params.get('mode') ? params.get('mode').split(',') : [],
-        search: params.get('q') || ''
+        search: params.get('q') || '',
+        types: params.get('types') ? params.get('types').split(',') : [],
+        subCategory: params.get('subCat') ? params.get('subCat').split(',') : [],
+        amountMin: params.get('min') || '',
+        amountMax: params.get('max') || '',
+        dateFrom: params.get('from') || '',
+        dateTo: params.get('to') || '',
+        actualProjected: params.get('timing') || 'all',
+        status: params.get('status') ? params.get('status').split(',') : []
       };
     } catch (e) {
       return {
@@ -59,7 +67,15 @@ export function FilterProvider({ children }) {
         company: [],
         category: [],
         paymentMode: [],
-        search: ''
+        search: '',
+        types: [],
+        subCategory: [],
+        amountMin: '',
+        amountMax: '',
+        dateFrom: '',
+        dateTo: '',
+        actualProjected: 'all',
+        status: []
       };
     }
   };
@@ -96,6 +112,14 @@ export function FilterProvider({ children }) {
       if (filters.category?.length) params.set('category', filters.category.join(','));
       if (filters.paymentMode?.length) params.set('mode', filters.paymentMode.join(','));
       if (filters.search) params.set('q', filters.search);
+      if (filters.types?.length) params.set('types', filters.types.join(','));
+      if (filters.subCategory?.length) params.set('subCat', filters.subCategory.join(','));
+      if (filters.amountMin) params.set('min', filters.amountMin);
+      if (filters.amountMax) params.set('max', filters.amountMax);
+      if (filters.dateFrom) params.set('from', filters.dateFrom);
+      if (filters.dateTo) params.set('to', filters.dateTo);
+      if (filters.actualProjected && filters.actualProjected !== 'all') params.set('timing', filters.actualProjected);
+      if (filters.status?.length) params.set('status', filters.status.join(','));
 
       const queryString = params.toString();
       const newUrl = `${window.location.pathname}${queryString ? '?' + queryString : ''}`;
@@ -140,7 +164,15 @@ export function FilterProvider({ children }) {
       company: [],
       category: [],
       paymentMode: [],
-      search: ''
+      search: '',
+      types: [],
+      subCategory: [],
+      amountMin: '',
+      amountMax: '',
+      dateFrom: '',
+      dateTo: '',
+      actualProjected: 'all',
+      status: []
     });
   }, []);
 
@@ -415,6 +447,14 @@ export function FilterProvider({ children }) {
     filters.company.forEach(v => tags.push({ key: 'company', item: v, label: `Client: ${v}` }));
     filters.category.forEach(v => tags.push({ key: 'category', item: v, label: `Category: ${v}` }));
     filters.paymentMode.forEach(v => tags.push({ key: 'paymentMode', item: v, label: `Mode: ${v}` }));
+    if (filters.types?.length) filters.types.forEach(v => tags.push({ key: 'types', item: v, label: `Type: ${v}` }));
+    if (filters.subCategory?.length) filters.subCategory.forEach(v => tags.push({ key: 'subCategory', item: v, label: `Sub-cat: ${v}` }));
+    if (filters.amountMin) tags.push({ key: 'amountMin', label: `Min ₹${Number(filters.amountMin).toLocaleString()}` });
+    if (filters.amountMax) tags.push({ key: 'amountMax', label: `Max ₹${Number(filters.amountMax).toLocaleString()}` });
+    if (filters.dateFrom) tags.push({ key: 'dateFrom', label: `From: ${filters.dateFrom}` });
+    if (filters.dateTo) tags.push({ key: 'dateTo', label: `To: ${filters.dateTo}` });
+    if (filters.actualProjected && filters.actualProjected !== 'all') tags.push({ key: 'actualProjected', label: `Timing: ${filters.actualProjected === 'actual' ? 'Actual' : 'Projected'}` });
+    if (filters.status?.length) filters.status.forEach(v => tags.push({ key: 'status', item: v, label: `Status: ${v}` }));
     if (filters.search) tags.push({ key: 'search', label: `Search: "${filters.search}"` });
 
     return tags;
@@ -431,6 +471,10 @@ export function FilterProvider({ children }) {
       setFilters(prev => ({ ...prev, timePerspective: 'all' }));
     } else if (tag.key === 'search') {
       setFilters(prev => ({ ...prev, search: '' }));
+    } else if (tag.key === 'amountMin' || tag.key === 'amountMax' || tag.key === 'dateFrom' || tag.key === 'dateTo') {
+      setFilters(prev => ({ ...prev, [tag.key]: '' }));
+    } else if (tag.key === 'actualProjected') {
+      setFilters(prev => ({ ...prev, actualProjected: 'all' }));
     }
   }, [toggleArrayItem]);
 
