@@ -1,257 +1,940 @@
-import React, { useContext, useState, useEffect, useMemo } from 'react';
+import React, { useContext, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
-import { getTransactionShares } from '../config/financeConfig';
-import { synthesizePortfolio } from '../utils/portfolioSynthesizer';
 import { 
-  TrendingUp, 
-  TrendingDown, 
-  Plus, 
-  Award, 
-  Briefcase, 
-  X, 
-  Percent, 
-  ChevronLeft, 
-  ChevronRight, 
   Users, 
-  ShieldAlert, 
-  AlertCircle, 
+  ChevronDown, 
+  Search, 
+  Download, 
+  HelpCircle, 
+  ArrowRight, 
+  ChevronRight, 
+  X, 
   CheckCircle2, 
-  Info, 
-  DollarSign, 
-  Layers, 
-  Filter, 
-  Sparkles,
-  Calendar,
-  Clock,
-  ArrowUpDown,
-  Download,
-  FileSpreadsheet,
-  HelpCircle
+  Clock, 
+  AlertCircle,
+  FileSpreadsheet
 } from 'lucide-react';
-import Pagination from '../components/Pagination';
+import './TLPerformance.css';
 
-// Mini Inline Sparkline SVG Component
-const MiniSparkline = ({ data = [], color = '#0F6E56', height = 24, width = 76 }) => {
-  if (!data || data.length < 2) return null;
-  const max = Math.max(...data, 1);
-  const min = Math.min(...data, 0);
-  const range = max - min || 1;
-  const points = data.map((val, idx) => {
-    const x = (idx / (data.length - 1)) * width;
-    const y = height - ((val - min) / range) * (height - 4) - 2;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
+// --------------------------------------------------------------------------
+// 1. Controls Component (Single-Line Header)
+// --------------------------------------------------------------------------
+function TLControls({
+  teamLeaders = [],
+  selectedTlId,
+  onSelectTl,
+  financialYear,
+  onSelectYear,
+  availableYears = [],
+  lookbackMonths,
+  onSelectLookback,
+  portfolioTotals,
+  onExportCSV,
+  onViewProfitability,
+  isSyncing = false
+}) {
+  const [isTlDropdownOpen, setIsTlDropdownOpen] = useState(false);
+  const [tlSearchQuery, setTlSearchQuery] = useState('');
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const dropdownRef = useRef(null);
+  const helpRef = useRef(null);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setIsTlDropdownOpen(false);
+      }
+      if (helpRef.current && !helpRef.current.contains(e.target)) {
+        setIsHelpOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  const filteredTLs = useMemo(() => {
+    if (!tlSearchQuery.trim()) return teamLeaders;
+    const q = tlSearchQuery.toLowerCase();
+    return teamLeaders.filter(tl => 
+      (tl.name || '').toLowerCase().includes(q)
+    );
+  }, [teamLeaders, tlSearchQuery]);
+
+  const selectedTLObj = useMemo(() => {
+    return teamLeaders.find(tl => tl.name === selectedTlId || tl.id === selectedTlId) || { name: selectedTlId || 'Select Team Leader' };
+  }, [teamLeaders, selectedTlId]);
 
   return (
-    <svg width={width} height={height} style={{ overflow: 'visible', display: 'inline-block' }}>
-      <polyline
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        points={points}
-      />
-      {points.length > 0 && (
-        <circle
-          cx={points.split(' ').pop().split(',')[0]}
-          cy={points.split(' ').pop().split(',')[1]}
-          r="2.5"
-          fill={color}
-        />
-      )}
-    </svg>
+    <div className="tl-controls-card">
+      <div className="tl-controls-left">
+        {/* Searchable TL Select */}
+        <div className="tl-select-container" ref={dropdownRef}>
+          <button
+            type="button"
+            className="tl-select-btn"
+            onClick={() => setIsTlDropdownOpen(!isTlDropdownOpen)}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+              <Users size={15} style={{ color: 'var(--accent-teal, #0f6e56)', flexShrink: 0 }} />
+              <span className="truncate">{selectedTLObj.name}</span>
+              {selectedTLObj.franchiseesCount != null && (
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #6b7268)', fontWeight: 'normal' }}>
+                  ({selectedTLObj.franchiseesCount} accounts)
+                </span>
+              )}
+            </div>
+            <ChevronDown size={14} style={{ color: 'var(--text-muted, #6b7268)', flexShrink: 0 }} />
+          </button>
+
+          {isTlDropdownOpen && (
+            <div className="tl-select-dropdown">
+              <input
+                type="text"
+                className="tl-select-search"
+                placeholder="Search Team Leader..."
+                value={tlSearchQuery}
+                onChange={(e) => setTlSearchQuery(e.target.value)}
+                autoFocus
+              />
+              <div className="tl-select-list">
+                {filteredTLs.length === 0 ? (
+                  <div style={{ padding: '8px', textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted, #6b7268)' }}>
+                    No matching Team Leaders
+                  </div>
+                ) : (
+                  filteredTLs.map(tl => {
+                    const isSelected = tl.name === selectedTlId || tl.id === selectedTlId;
+                    return (
+                      <div
+                        key={tl.id || tl.name}
+                        className={`tl-select-item ${isSelected ? 'selected' : ''}`}
+                        onClick={() => {
+                          onSelectTl(tl.name || tl.id);
+                          setIsTlDropdownOpen(false);
+                        }}
+                      >
+                        <span>{tl.name}</span>
+                        {tl.franchiseesCount != null && (
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted, #6b7268)' }}>
+                            {tl.franchiseesCount} accounts
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Financial Year Select */}
+        <select
+          value={financialYear}
+          onChange={(e) => onSelectYear(e.target.value)}
+          style={{
+            padding: '7px 10px',
+            fontSize: '0.82rem',
+            fontWeight: '600',
+            border: '1px solid var(--border-color, #e3e5e0)',
+            borderRadius: '6px',
+            background: 'var(--bg-card, #ffffff)',
+            color: 'var(--text-main, #1b2321)',
+            cursor: 'pointer'
+          }}
+        >
+          {availableYears.map(y => (
+            <option key={y} value={y}>{y === 'All Years' ? 'All Financial Years' : `FY ${y}`}</option>
+          ))}
+        </select>
+
+        {/* Lookback Toggle (6M / 12M / 24M) */}
+        <div className="tl-lookback-group">
+          {[6, 12, 24].map((m) => (
+            <button
+              key={m}
+              type="button"
+              className={`tl-lookback-btn ${lookbackMonths === m ? 'active' : ''}`}
+              onClick={() => onSelectLookback(m)}
+            >
+              {m}M
+            </button>
+          ))}
+        </div>
+
+        {/* View Profitability Link */}
+        <button
+          type="button"
+          onClick={onViewProfitability}
+          className="tl-link-action"
+          style={{ background: 'transparent', border: 'none' }}
+        >
+          <span>View profitability</span>
+          <ArrowRight size={13} />
+        </button>
+      </div>
+
+      <div className="tl-controls-right">
+        {/* Status Indicator Dot */}
+        <div className="tl-status-indicator">
+          <span className={`tl-status-dot ${isSyncing ? 'syncing' : ''}`} />
+          <span>{isSyncing ? 'Syncing…' : 'Updated 2m ago'}</span>
+        </div>
+
+        {/* Export CSV Button */}
+        <button
+          type="button"
+          onClick={onExportCSV}
+          className="btn"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 12px',
+            fontSize: '0.78rem',
+            fontWeight: '600',
+            border: '1px solid var(--border-color, #e3e5e0)',
+            borderRadius: '6px',
+            background: 'var(--bg-card, #ffffff)',
+            color: 'var(--text-main, #1b2321)',
+            cursor: 'pointer'
+          }}
+        >
+          <Download size={13} />
+          <span>Export CSV</span>
+        </button>
+
+        {/* "?" Help Menu */}
+        <div style={{ position: 'relative' }} ref={helpRef}>
+          <button
+            type="button"
+            className="tl-help-btn"
+            onClick={() => setIsHelpOpen(!isHelpOpen)}
+            title="Collections Workflow Guide"
+          >
+            <HelpCircle size={15} />
+          </button>
+
+          {isHelpOpen && (
+            <div className="tl-help-popover">
+              <div style={{ fontWeight: '700', marginBottom: '6px', color: 'var(--text-main, #1b2321)' }}>
+                Team Leader Collections Guide
+              </div>
+              <p style={{ margin: '0 0 8px 0' }}>
+                This worklist tracks gross commercial billing, collected cash inflows, and accounts requiring collection attention across all franchisees assigned to the selected Team Leader.
+              </p>
+              <ul style={{ margin: 0, paddingLeft: '16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <li><strong>Billed:</strong> Gross invoiced value excluding credit notes.</li>
+                <li><strong>Received:</strong> Realized cash inflows settled by corporate clients.</li>
+                <li><strong>Needs Attention:</strong> Outstanding invoices and cancelled contracts requiring recovery action.</li>
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
-};
+}
 
-// Trailing MoM Area / Line Trend Chart
-const TLMonthlyTrendChart = ({ trendData = [] }) => {
-  if (!trendData || trendData.length === 0) return null;
+// --------------------------------------------------------------------------
+// 2. Three Calm KPI Cards Component
+// --------------------------------------------------------------------------
+function TLKpiRow({ totals = {}, openItemsCount = 0 }) {
+  const billed = totals.gross || 0;
+  const received = totals.received || 0;
+  const receivedPct = totals.received_pct || (billed > 0 ? ((received / billed) * 100).toFixed(1) : 0);
+  const outstanding = totals.outstanding || 0;
+  const cancelled = totals.cancelled || 0;
+  const needsAttention = outstanding + cancelled;
 
-  const width = 640;
+  return (
+    <section className="tl-kpi-grid">
+      {/* 1. BILLED (Gross) */}
+      <div className="tl-kpi-card">
+        <div className="tl-kpi-label">
+          <span>Billed</span>
+        </div>
+        <h2 className="tl-kpi-value tabular-nums">
+          {formatLakhs(billed)}
+        </h2>
+        <div className="tl-kpi-sub">
+          <span>Gross commercial volume</span>
+        </div>
+      </div>
+
+      {/* 2. RECEIVED */}
+      <div className="tl-kpi-card">
+        <div className="tl-kpi-label">
+          <span>Received</span>
+        </div>
+        <h2 className={`tl-kpi-value tabular-nums ${received > 0 ? 'text-received' : 'text-zero'}`}>
+          {formatLakhs(received)}
+        </h2>
+        <div className="tl-kpi-sub">
+          <span className={received > 0 ? 'text-received' : ''} style={{ fontWeight: '600' }}>
+            {receivedPct}% of billed
+          </span>
+        </div>
+      </div>
+
+      {/* 3. NEEDS ATTENTION */}
+      <div className="tl-kpi-card">
+        <div className="tl-kpi-label">
+          <span>Needs Attention</span>
+          {openItemsCount > 0 && (
+            <span style={{
+              fontSize: '0.68rem',
+              fontWeight: '700',
+              padding: '2px 6px',
+              borderRadius: '10px',
+              background: '#fff1f2',
+              color: '#a8402e',
+              border: '1px solid #fecdd3'
+            }}>
+              {openItemsCount} open {openItemsCount === 1 ? 'item' : 'items'}
+            </span>
+          )}
+        </div>
+        <h2 className={`tl-kpi-value tabular-nums ${needsAttention > 0 ? 'text-alert' : 'text-zero'}`}>
+          {formatLakhs(needsAttention)}
+        </h2>
+        <div className="tl-kpi-sub">
+          <span>
+            Outstanding: {formatLakhs(outstanding)} • Cancelled: {formatLakhs(cancelled)}
+          </span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// --------------------------------------------------------------------------
+// 3. Collection Trend Chart Component (Left Column)
+// --------------------------------------------------------------------------
+function TLTrendChart({ monthlyTrend = [], isVisibleOnMobile, onToggleMobile }) {
+  if (!monthlyTrend || monthlyTrend.length === 0) {
+    return (
+      <div className="tl-analytics-card">
+        <div className="tl-card-header">
+          <h3 className="tl-card-title">12-Month Collection Trend</h3>
+        </div>
+        <p style={{ color: 'var(--text-muted, #6b7268)', fontSize: '0.78rem', margin: '20px 0', textAlign: 'center' }}>
+          No monthly trend records available for this period.
+        </p>
+      </div>
+    );
+  }
+
+  const width = 560;
   const height = 130;
-  const padX = 40;
+  const padX = 35;
   const padY = 16;
   const plotW = width - padX * 2;
   const plotH = height - padY * 2;
 
   const maxVal = Math.max(
-    ...trendData.map(d => Math.max(d.gross || 0, d.received || 0, d.outstanding || 0, d.cancelled || 0)),
-    10000
+    ...monthlyTrend.map(d => Math.max(d.received || 0, d.outstanding || 0, d.cancelled || 0)),
+    1000
   ) * 1.15;
 
-  const getX = (idx) => padX + (idx / Math.max(1, trendData.length - 1)) * plotW;
+  const getX = (idx) => padX + (idx / Math.max(1, monthlyTrend.length - 1)) * plotW;
   const getY = (val) => padY + plotH - ((val || 0) / maxVal) * plotH;
 
-  const recPath = trendData.map((d, i) => `${getX(i).toFixed(1)},${getY(d.received).toFixed(1)}`).join(' L ');
-  const outPath = trendData.map((d, i) => `${getX(i).toFixed(1)},${getY(d.outstanding).toFixed(1)}`).join(' L ');
-  const cancPath = trendData.map((d, i) => `${getX(i).toFixed(1)},${getY(d.cancelled).toFixed(1)}`).join(' L ');
+  const zeroY = padY + plotH;
+
+  // Received Line
+  const recLine = monthlyTrend.map((d, i) => `${getX(i).toFixed(1)},${getY(d.received).toFixed(1)}`).join(' L ');
+
+  // Outstanding Shaded Area
+  const outPoints = monthlyTrend.map((d, i) => `${getX(i).toFixed(1)},${getY(d.outstanding).toFixed(1)}`).join(' L ');
+  const outArea = `M ${getX(0).toFixed(1)},${zeroY} L ${outPoints} L ${getX(monthlyTrend.length - 1).toFixed(1)},${zeroY} Z`;
+
+  // Cancelled Line (only rendered if non-zero across the trend)
+  const hasCancelled = monthlyTrend.some(d => (d.cancelled || 0) > 0);
+  const cancLine = hasCancelled 
+    ? monthlyTrend.map((d, i) => `${getX(i).toFixed(1)},${getY(d.cancelled).toFixed(1)}`).join(' L ')
+    : '';
 
   return (
-    <div style={{ background: 'var(--bg-card)', padding: '14px 18px', borderRadius: '10px', border: '1px solid var(--border-color)', marginBottom: '20px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+    <div className="tl-analytics-card">
+      <div className="tl-card-header">
         <div>
-          <span style={{ fontWeight: '700', fontSize: '0.88rem', color: 'var(--text-main)' }}>
-            Month-over-Month Collection Trend (Trailing {trendData.length} Months)
-          </span>
-          <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'block' }}>
-            Tracking collection speed vs accumulation of outstanding & cancelled deals
-          </span>
-        </div>
-        <div style={{ display: 'flex', gap: '14px', fontSize: '0.74rem', fontWeight: '600' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#0F6E56', display: 'inline-block' }}></span>
-            <span style={{ color: '#0F6E56' }}>Received Inflows</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#B7791F', display: 'inline-block' }}></span>
-            <span style={{ color: '#B7791F' }}>Outstanding / Pending</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#A8402E', display: 'inline-block' }}></span>
-            <span style={{ color: '#A8402E' }}>Cancelled / Lost</span>
-          </div>
+          <h3 className="tl-card-title">12-Month Collection Trend</h3>
+          <span className="tl-card-subtitle">Monthly received cash inflows vs outstanding pipeline</span>
         </div>
       </div>
 
-      <svg viewBox={`0 0 ${width} ${height + 24}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-        {/* Horizontal Guide Lines */}
-        {[0, 0.5, 1].map((ratio, idx) => {
-          const y = padY + plotH * (1 - ratio);
-          const val = maxVal * ratio;
-          return (
-            <g key={idx}>
-              <line x1={padX - 4} y1={y} x2={width - padX + 4} y2={y} stroke="var(--border-color)" strokeDasharray="3 3" strokeWidth="1" />
-              <text x={padX - 8} y={y + 3} textAnchor="end" fill="var(--text-muted)" fontSize="8" fontWeight="600">
-                {val >= 100000 ? `₹${(val / 100000).toFixed(1)}L` : (val >= 1000 ? `₹${(val / 1000).toFixed(0)}K` : '₹0')}
-              </text>
-            </g>
-          );
-        })}
+      <svg viewBox={`0 0 ${width} ${height}`} className="tl-trend-svg">
+        {/* Grid lines */}
+        <line x1={padX} y1={zeroY} x2={width - padX} y2={zeroY} stroke="#e3e5e0" strokeWidth="1" />
+        <line x1={padX} y1={padY + plotH / 2} x2={width - padX} y2={padY + plotH / 2} stroke="#f1f2ef" strokeWidth="1" strokeDasharray="3 3" />
 
-        {/* Multi-series paths */}
-        {recPath && <path d={`M ${recPath}`} fill="none" stroke="#0F6E56" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-        {outPath && <path d={`M ${outPath}`} fill="none" stroke="#B7791F" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="4 2" />}
-        {cancPath && <path d={`M ${cancPath}`} fill="none" stroke="#A8402E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
+        {/* Shaded Outstanding Area */}
+        <path d={outArea} fill="rgba(183, 121, 31, 0.12)" />
 
-        {/* Nodes and Labels */}
-        {trendData.map((d, i) => {
-          const x = getX(i);
+        {/* Outstanding Top Edge */}
+        <path d={`M ${outPoints}`} fill="none" stroke="#B7791F" strokeWidth="1.5" strokeDasharray="3 2" />
+
+        {/* Received Solid Line */}
+        <path d={`M ${recLine}`} fill="none" stroke="#0F6E56" strokeWidth="2.5" strokeLinecap="round" />
+
+        {/* Cancelled Line (only if non-zero) */}
+        {hasCancelled && (
+          <path d={`M ${cancLine}`} fill="none" stroke="#A8402E" strokeWidth="1.5" strokeDasharray="2 2" />
+        )}
+
+        {/* Month tick labels */}
+        {monthlyTrend.map((d, i) => {
+          if (monthlyTrend.length > 6 && i % 2 !== 0 && i !== monthlyTrend.length - 1) return null;
           return (
-            <g key={i}>
-              <circle cx={x} cy={getY(d.received)} r="3" fill="#0F6E56" stroke="#ffffff" strokeWidth="1">
-                <title>{`${d.label} Received: ${formatCurrency(d.received)}`}</title>
-              </circle>
-              {d.outstanding > 0 && (
-                <circle cx={x} cy={getY(d.outstanding)} r="2.5" fill="#B7791F" stroke="#ffffff" strokeWidth="1">
-                  <title>{`${d.label} Outstanding: ${formatCurrency(d.outstanding)}`}</title>
-                </circle>
-              )}
-              {/* X-axis Month Label */}
-              <text x={x} y={height + 16} textAnchor="middle" fill="var(--text-muted)" fontSize="8" fontWeight="600">
-                {d.label}
-              </text>
-            </g>
+            <text
+              key={d.month || i}
+              x={getX(i)}
+              y={height - 2}
+              textAnchor="middle"
+              fontSize="9"
+              fill="#9ca3af"
+            >
+              {d.label || d.month}
+            </text>
           );
         })}
       </svg>
+
+      <div className="tl-trend-legend">
+        <div className="tl-legend-item">
+          <div className="tl-legend-color" style={{ background: '#0F6E56', height: '3px' }} />
+          <span>Received (Collected)</span>
+        </div>
+        <div className="tl-legend-item">
+          <div className="tl-legend-color" style={{ background: 'rgba(183, 121, 31, 0.35)', border: '1px solid #B7791F' }} />
+          <span>Outstanding Area</span>
+        </div>
+        {hasCancelled && (
+          <div className="tl-legend-item">
+            <div className="tl-legend-color" style={{ background: '#A8402E', height: '2px' }} />
+            <span>Cancelled Deals</span>
+          </div>
+        )}
+      </div>
     </div>
   );
-};
+}
 
-const TLPerformance = () => {
-  const { teamLeaders, transactions, franchisees, selectedMonth, selectedYear } = useContext(FinanceContext);
-  
-  // Navigation sub-tabs within TL tab
-  const [activeTab, setActiveTab] = useState('portfolio'); // 'portfolio' | 'leaderboard'
-  
-  // Detail Modal state
-  const [activeTLDetails, setActiveTLDetails] = useState(null);
-  const [modalPage, setModalPage] = useState(1);
-  const [isCreditNotesModalOpen, setIsCreditNotesModalOpen] = useState(false);
-  const [selectedFranchiseeDetail, setSelectedFranchiseeDetail] = useState(null);
-  const [franModalTab, setFranModalTab] = useState('received'); // 'received' | 'outstanding' | 'cancelled'
+// --------------------------------------------------------------------------
+// 4. Top 5 to Chase Component (Right Column)
+// --------------------------------------------------------------------------
+function TLChaseList({ topChaseList = [], onSelectFranchisee, onSeeAllHighRisk }) {
+  return (
+    <div className="tl-analytics-card">
+      <div className="tl-card-header">
+        <div>
+          <h3 className="tl-card-title">Top 5 to Chase</h3>
+          <span className="tl-card-subtitle">Accounts with most urgent pending balances</span>
+        </div>
+        {topChaseList.length > 0 && (
+          <button
+            type="button"
+            className="tl-link-action"
+            onClick={onSeeAllHighRisk}
+            style={{ background: 'transparent', border: 'none' }}
+          >
+            <span>See all</span>
+            <ArrowRight size={13} />
+          </button>
+        )}
+      </div>
 
-  // Open Franchisee Detail with appropriate initial tab
-  const handleOpenFranchiseeModal = (f, preferredTab = null) => {
-    setSelectedFranchiseeDetail(f);
-    if (preferredTab) {
-      setFranModalTab(preferredTab);
-    } else if (kpiFilter === 'received') {
-      setFranModalTab('received');
-    } else if (kpiFilter === 'cancelled') {
-      setFranModalTab('cancelled');
-    } else if (kpiFilter === 'outstanding' || kpiFilter === 'at_risk') {
-      setFranModalTab('outstanding');
-    } else if ((f.received || 0) > 0 && (f.outstanding || 0) === 0) {
-      setFranModalTab('received');
-    } else {
-      setFranModalTab('outstanding');
+      {topChaseList.length === 0 ? (
+        <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted, #6b7268)', fontSize: '0.8rem' }}>
+          ✓ No urgent outstanding accounts for this Team Leader.
+        </div>
+      ) : (
+        <div className="tl-chase-list">
+          {topChaseList.map((f, idx) => {
+            const daysText = f.avg_days_outstanding && f.avg_days_outstanding > 0 ? `${f.avg_days_outstanding}d aged` : '—';
+            return (
+              <div
+                key={f.name || idx}
+                className="tl-chase-item"
+                onClick={() => onSelectFranchisee(f)}
+                title="Click to view details in drawer"
+              >
+                <div>
+                  <div className="tl-chase-name">{f.name}</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted, #6b7268)' }}>
+                    Billed: {formatLakhs(f.gross || 0)}
+                  </div>
+                </div>
+                <div className="tl-chase-right">
+                  <div className="tl-chase-amount tabular-nums">
+                    {formatLakhs(f.outstanding || 0)}
+                  </div>
+                  <div className="tl-chase-age">{daysText}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+// 5. Franchisee Worklist Table Component
+// --------------------------------------------------------------------------
+function TLFranchiseeTable({
+  franchisees = [],
+  activeFilter,
+  onChangeFilter,
+  filterCounts = {},
+  searchQuery,
+  onSearchChange,
+  onSelectFranchisee,
+  currentPage,
+  onPageChange,
+  itemsPerPage = 10
+}) {
+  const paginatedList = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return franchisees.slice(start, start + itemsPerPage);
+  }, [franchisees, currentPage, itemsPerPage]);
+
+  const totalPages = Math.ceil(franchisees.length / itemsPerPage) || 1;
+  const startRow = franchisees.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+  const endRow = Math.min(currentPage * itemsPerPage, franchisees.length);
+
+  return (
+    <div className="tl-table-card">
+      <div className="tl-table-toolbar">
+        {/* Filter Chips: [High risk N] [Outstanding N] [Cancelled N] [All N] */}
+        <div className="tl-filter-chips">
+          <button
+            type="button"
+            className={`tl-chip ${activeFilter === 'at_risk' ? 'active-alert' : ''}`}
+            onClick={() => { onChangeFilter('at_risk'); onPageChange(1); }}
+          >
+            High risk ({filterCounts.at_risk || 0})
+          </button>
+          <button
+            type="button"
+            className={`tl-chip ${activeFilter === 'outstanding' ? 'active' : ''}`}
+            onClick={() => { onChangeFilter('outstanding'); onPageChange(1); }}
+          >
+            Outstanding ({filterCounts.outstanding || 0})
+          </button>
+          <button
+            type="button"
+            className={`tl-chip ${activeFilter === 'cancelled' ? 'active' : ''}`}
+            onClick={() => { onChangeFilter('cancelled'); onPageChange(1); }}
+          >
+            Cancelled ({filterCounts.cancelled || 0})
+          </button>
+          <button
+            type="button"
+            className={`tl-chip ${activeFilter === 'all' ? 'active' : ''}`}
+            onClick={() => { onChangeFilter('all'); onPageChange(1); }}
+          >
+            All ({filterCounts.all || 0})
+          </button>
+        </div>
+
+        {/* Search Input */}
+        <div style={{ position: 'relative' }}>
+          <Search size={14} style={{ position: 'absolute', left: '10px', top: '8px', color: '#9ca3af' }} />
+          <input
+            type="text"
+            className="tl-search-input"
+            placeholder="Search franchisee..."
+            value={searchQuery}
+            onChange={(e) => { onSearchChange(e.target.value); onPageChange(1); }}
+          />
+        </div>
+      </div>
+
+      <div style={{ overflowX: 'auto' }}>
+        <table className="tl-table">
+          <thead>
+            <tr>
+              <th>Franchisee</th>
+              <th style={{ textAlign: 'right' }}>Billed</th>
+              <th style={{ textAlign: 'right' }}>Received</th>
+              <th style={{ textAlign: 'right' }}>Outstanding</th>
+              <th style={{ textAlign: 'center' }}>Risk</th>
+              <th style={{ width: '40px' }} />
+            </tr>
+          </thead>
+          <tbody>
+            {paginatedList.length === 0 ? (
+              <tr>
+                <td colSpan={6} style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--text-muted, #6b7268)' }}>
+                  No accounts found for the "{activeFilter}" filter.
+                </td>
+              </tr>
+            ) : (
+              paginatedList.map((f, idx) => {
+                const billedVal = f.gross || 0;
+                const recVal = f.received || 0;
+                const outVal = f.outstanding || 0;
+
+                // Risk categorization
+                const riskKey = f.collection_risk?.band_key || (outVal > 0 ? 'at_risk' : 'settled');
+                const riskLabel = outVal === 0 ? 'Settled' : (riskKey === 'at_risk' ? 'High' : (riskKey === 'follow_up' ? 'Medium' : 'Low'));
+                const riskClass = outVal === 0 ? 'settled' : (riskKey === 'at_risk' ? 'high' : (riskKey === 'follow_up' ? 'medium' : 'low'));
+
+                return (
+                  <tr
+                    key={f.name || idx}
+                    onClick={() => onSelectFranchisee(f)}
+                    title="Click to view ledger details in drawer"
+                  >
+                    <td>
+                      <div style={{ fontWeight: '600', color: 'var(--text-main, #1b2321)' }}>{f.name}</div>
+                      {f.city && (
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted, #6b7268)' }}>
+                          {f.city} {f.owner ? `• ${f.owner}` : ''}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: '600' }} className="tabular-nums">
+                      {formatCurrency(billedVal)}
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: '600' }} className={`tabular-nums ${recVal > 0 ? 'text-received' : 'text-zero'}`}>
+                      {formatCurrency(recVal)}
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: '700' }} className={`tabular-nums ${outVal > 0 ? 'text-alert' : 'text-zero'}`}>
+                      {formatCurrency(outVal)}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span className={`tl-risk-pill ${riskClass}`}>
+                        {riskLabel}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'center', color: '#9ca3af' }}>
+                      <ChevronRight size={15} />
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {franchisees.length > 0 && (
+        <div className="tl-pagination-bar">
+          <div>
+            Showing {startRow} to {endRow} of {franchisees.length} accounts
+          </div>
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                disabled={currentPage === 1}
+                onClick={() => onPageChange(currentPage - 1)}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: '4px',
+                  border: '1px solid var(--border-color, #e3e5e0)',
+                  background: '#ffffff',
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                  opacity: currentPage === 1 ? 0.5 : 1
+                }}
+              >
+                Previous
+              </button>
+              <span>Page {currentPage} of {totalPages}</span>
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => onPageChange(currentPage + 1)}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: '4px',
+                  border: '1px solid var(--border-color, #e3e5e0)',
+                  background: '#ffffff',
+                  cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
+                  opacity: currentPage >= totalPages ? 0.5 : 1
+                }}
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+// 6. Right-Side Slide-in Drawer Component
+// --------------------------------------------------------------------------
+function TLDetailDrawer({ franchisee, isOpen, onClose }) {
+  const [activeTab, setActiveTab] = useState('received');
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (isOpen) {
+      document.addEventListener('keydown', handleKeyDown);
     }
-  };
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
-  // Click-Through Drilldown Filter from KPI cards
-  const [kpiFilter, setKpiFilter] = useState('all'); // 'all' | 'received' | 'outstanding' | 'cancelled' | 'at_risk'
+  if (!isOpen || !franchisee) return null;
 
-  // Pagination for Directory & Franchisees
-  const [tlPage, setTlPage] = useState(1);
-  const [franPage, setFranPage] = useState(1);
-  const TL_PER_PAGE = 8;
-  const FRAN_PER_PAGE = 8;
+  const recItems = franchisee.received_items || [];
+  const outItems = franchisee.outstanding_items || [];
+  const canItems = franchisee.cancelled_items || [];
+  const cnItems = franchisee.credit_note_items || [];
+  const allNegativeItems = [...canItems, ...cnItems];
 
-  // Selected Team Leader for Portfolio breakdown view
-  const [selectedTlId, setSelectedTlId] = useState('');
+  const expectedRecovery = franchisee.expected_collectible != null && franchisee.expected_collectible > 0 
+    ? formatCurrency(franchisee.expected_collectible) 
+    : (franchisee.outstanding > 0 ? formatCurrency(franchisee.outstanding * 0.75) : '—');
+
+  const auditFactor = franchisee.collection_risk?.score != null 
+    ? `${franchisee.collection_risk.score}/100` 
+    : '—';
+
+  return (
+    <div className="tl-drawer-backdrop" onClick={onClose}>
+      <div className="tl-drawer" onClick={(e) => e.stopPropagation()}>
+        {/* Drawer Header */}
+        <div className="tl-drawer-header">
+          <div>
+            <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '800', color: 'var(--text-main, #1b2321)' }}>
+              {franchisee.name}
+            </h2>
+            <div style={{ fontSize: '0.76rem', color: 'var(--text-muted, #6b7268)', marginTop: '2px' }}>
+              {franchisee.city || 'National Partner'} {franchisee.owner ? `• Owner: ${franchisee.owner}` : ''}
+            </div>
+          </div>
+          <button type="button" className="tl-drawer-close" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Financial Summary Strip */}
+        <div className="tl-drawer-stats">
+          <div className="tl-drawer-stat-item">
+            <span className="tl-drawer-stat-label">Billed</span>
+            <span className="tl-drawer-stat-val tabular-nums">{formatCurrency(franchisee.gross || 0)}</span>
+          </div>
+          <div className="tl-drawer-stat-item">
+            <span className="tl-drawer-stat-label">Received</span>
+            <span className="tl-drawer-stat-val text-received tabular-nums">{formatCurrency(franchisee.received || 0)}</span>
+          </div>
+          <div className="tl-drawer-stat-item">
+            <span className="tl-drawer-stat-label">Outstanding</span>
+            <span className="tl-drawer-stat-val text-alert tabular-nums">{formatCurrency(franchisee.outstanding || 0)}</span>
+          </div>
+          <div className="tl-drawer-stat-item">
+            <span className="tl-drawer-stat-label">Expected Recovery</span>
+            <span className="tl-drawer-stat-val tabular-nums">{expectedRecovery}</span>
+          </div>
+          <div className="tl-drawer-stat-item">
+            <span className="tl-drawer-stat-label">Audit Score</span>
+            <span className="tl-drawer-stat-val tabular-nums">{auditFactor}</span>
+          </div>
+          <div className="tl-drawer-stat-item">
+            <span className="tl-drawer-stat-label">Days Aged</span>
+            <span className="tl-drawer-stat-val tabular-nums">
+              {franchisee.avg_days_outstanding && franchisee.avg_days_outstanding > 0 ? `${franchisee.avg_days_outstanding}d` : '—'}
+            </span>
+          </div>
+        </div>
+
+        {/* Drawer Tabs */}
+        <div className="tl-drawer-tabs">
+          <button
+            type="button"
+            className={`tl-drawer-tab-btn ${activeTab === 'received' ? 'active' : ''}`}
+            onClick={() => setActiveTab('received')}
+          >
+            Received ({recItems.length})
+          </button>
+          <button
+            type="button"
+            className={`tl-drawer-tab-btn ${activeTab === 'outstanding' ? 'active' : ''}`}
+            onClick={() => setActiveTab('outstanding')}
+          >
+            Outstanding ({outItems.length})
+          </button>
+          <button
+            type="button"
+            className={`tl-drawer-tab-btn ${activeTab === 'cancelled' ? 'active' : ''}`}
+            onClick={() => setActiveTab('cancelled')}
+          >
+            Cancelled & CN ({allNegativeItems.length})
+          </button>
+        </div>
+
+        {/* Drawer Body Table */}
+        <div className="tl-drawer-body">
+          {/* TAB 1: RECEIVED */}
+          {activeTab === 'received' && (
+            recItems.length === 0 ? (
+              <p style={{ textAlign: 'center', color: 'var(--text-muted, #6b7268)', padding: '24px 0' }}>
+                No settled placement records for this account.
+              </p>
+            ) : (
+              <table className="tl-drawer-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Invoice #</th>
+                    <th>Client</th>
+                    <th style={{ textAlign: 'right' }}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recItems.map((item, idx) => (
+                    <tr key={idx}>
+                      <td style={{ whiteSpace: 'nowrap', color: 'var(--text-muted, #6b7268)' }}>{item.bill_date || '—'}</td>
+                      <td style={{ fontFamily: 'monospace', fontWeight: '700', color: '#0F6E56' }}>{item.bill_number}</td>
+                      <td>{item.company_name}</td>
+                      <td style={{ textAlign: 'right', fontWeight: '700', color: '#0F6E56' }} className="tabular-nums">
+                        {formatCurrency(item.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          )}
+
+          {/* TAB 2: OUTSTANDING */}
+          {activeTab === 'outstanding' && (
+            outItems.length === 0 ? (
+              <p style={{ textAlign: 'center', color: 'var(--text-muted, #6b7268)', padding: '24px 0' }}>
+                No pending or open invoices for this account.
+              </p>
+            ) : (
+              <table className="tl-drawer-table">
+                <thead>
+                  <tr>
+                    <th>Enquiry ID</th>
+                    <th>Client</th>
+                    <th>Days Aged</th>
+                    <th style={{ textAlign: 'right' }}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {outItems.map((item, idx) => (
+                    <tr key={idx}>
+                      <td style={{ fontFamily: 'monospace' }}>#{item.enquiry_id}</td>
+                      <td style={{ fontWeight: '600' }}>{item.company_name}</td>
+                      <td style={{ color: 'var(--text-muted, #6b7268)' }}>{item.days_outstanding ? `${item.days_outstanding}d` : '—'}</td>
+                      <td style={{ textAlign: 'right', fontWeight: '700', color: '#B7791F' }} className="tabular-nums">
+                        {formatCurrency(item.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
+          )}
+
+          {/* TAB 3: CANCELLED & CREDIT NOTES */}
+          {activeTab === 'cancelled' && (
+            allNegativeItems.length === 0 ? (
+              <p style={{ textAlign: 'center', color: 'var(--text-muted, #6b7268)', padding: '24px 0' }}>
+                No cancelled deals or credit note deductions.
+              </p>
+            ) : (
+              <table className="tl-drawer-table">
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Client</th>
+                    <th>Reason</th>
+                    <th style={{ textAlign: 'right' }}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allNegativeItems.map((item, idx) => {
+                    const isCreditNote = Boolean(item.credit_note_number);
+                    return (
+                      <tr key={idx}>
+                        <td>
+                          <span style={{
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            fontSize: '0.68rem',
+                            fontWeight: '700',
+                            background: isCreditNote ? '#faf5ff' : '#fff1f2',
+                            color: isCreditNote ? '#7c3aed' : '#a8402e',
+                            border: `1px solid ${isCreditNote ? '#e9d5ff' : '#fecdd3'}`
+                          }}>
+                            {isCreditNote ? 'CN' : 'Cancelled'}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: '600' }}>{item.company_name}</td>
+                        <td style={{ fontSize: '0.72rem', color: 'var(--text-muted, #6b7268)' }}>
+                          {item.reason || item.reconciliation_note || 'Standard deduction'}
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: '700', color: '#A8402E' }} className="tabular-nums">
+                          {formatCurrency(item.amount)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+// MAIN COMPONENT: TLPerformance
+// --------------------------------------------------------------------------
+export default function TLPerformance({ setActivePage }) {
+  const { 
+    teamLeaders = [], 
+    selectedMonth, 
+    selectedYear, 
+    setSelectedYear,
+    availableYears = []
+  } = useContext(FinanceContext);
+
+  // Read initial TL from sessionStorage if navigated from CostOfPerformance
+  const [selectedTlId, setSelectedTlId] = useState(() => {
+    return sessionStorage.getItem('fintective_selected_tl') || 'Avadai Esakki Muthu Sundaram Marthuvar';
+  });
+
   const [lookbackMonths, setLookbackMonths] = useState(12);
-  const [sortBy, setSortBy] = useState('risk'); // 'risk' | 'outstanding' | 'gross'
-  
-  // Portfolio state
   const [portfolioData, setPortfolioData] = useState(null);
-  const [portfolioLoading, setPortfolioLoading] = useState(false);
-  const [portfolioError, setPortfolioError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // Leaderboard data
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [tlTrackingLeaderboard, setTlTrackingLeaderboard] = useState([]);
+  // Table filters & pagination state
+  const [tableFilter, setTableFilter] = useState('at_risk'); // 'at_risk' | 'outstanding' | 'cancelled' | 'all'
+  const [tableSearchQuery, setTableSearchQuery] = useState('');
+  const [tablePage, setTablePage] = useState(1);
 
-  // Period filter checks
-  const isInFilteredPeriod = (tx) => {
-    if (!tx || !tx.date) return false;
-    
-    let monthMatch = true;
-    if (selectedMonth !== 'All Months') {
-      const date = new Date(tx.date);
-      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-      const txMonthYear = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
-      monthMatch = (txMonthYear === selectedMonth);
-    }
+  // Selected franchisee for drawer
+  const [selectedFranchisee, setSelectedFranchisee] = useState(null);
 
-    let yearMatch = true;
-    if (selectedYear !== 'All Years') {
-      if (tx.financialYear) {
-        yearMatch = (tx.financialYear === selectedYear);
-      } else {
-        const d = new Date(tx.date);
-        if (!isNaN(d.getTime())) {
-          const y = d.getFullYear();
-          const m = d.getMonth();
-          const fy = m >= 3 ? `${y}-${y+1}` : `${y-1}-${y}`;
-          yearMatch = (fy === selectedYear);
-        }
-      }
-    }
-    return monthMatch && yearMatch;
-  };
-
-  const getPeriodDates = (month, year) => {
+  // 1. Period calculation
+  const getPeriodDates = useCallback((month, year) => {
     let start = '2018-01-01';
     let end = '2026-12-31';
     
-    if (month !== 'All Months') {
+    if (month && month !== 'All Months' && month !== 'all') {
       const parts = month.split(' ');
       const mName = parts[0];
-      const yVal = parseInt(parts[1]);
+      const yVal = parseInt(parts[1], 10);
       const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
       const mIdx = monthNames.indexOf(mName);
       if (mIdx !== -1) {
@@ -259,1923 +942,223 @@ const TLPerformance = () => {
         const lastDay = new Date(yVal, mIdx + 1, 0).getDate();
         end = `${yVal}-${String(mIdx + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
       }
-    } else if (year !== 'All Years') {
+    } else if (year && year !== 'All Years') {
       const parts = year.split('-');
-      const yStart = parseInt(parts[0]);
-      const yEnd = parseInt(parts[1]);
-      start = `${yStart}-04-01`;
-      end = `${yEnd}-03-31`;
+      if (parts.length === 2) {
+        const yStart = parseInt(parts[0], 10);
+        const yEnd = parseInt(parts[1], 10);
+        start = `${yStart}-04-01`;
+        end = `${yEnd}-03-31`;
+      }
     }
     return { start, end };
-  };
+  }, []);
 
-  // Fetch TL comparative revenue leaderboard
-  useEffect(() => {
-    const { start, end } = getPeriodDates(selectedMonth, selectedYear);
-    fetchWithApiKey(`${API_BASE_URL}/tl-revenue-leaderboard?start_date=${start}&end_date=${end}`)
-      .then(res => {
-        if (res.ok) return res.json();
-      })
-      .then(data => {
-        if (data) setLeaderboard(data);
-      })
-      .catch(err => console.error("TL Leaderboard load failed:", err));
-
-    fetchWithApiKey(`${API_BASE_URL}/tl-tracking/leaderboard?start_date=${start}&end_date=${end}&lookback_months=${lookbackMonths}`)
-      .then(res => {
-        if (res && res.ok) return res.json();
-      })
-      .then(data => {
-        if (data?.leaderboard) setTlTrackingLeaderboard(data.leaderboard);
-      })
-      .catch(err => console.warn("TL Tracking Leaderboard load notice:", err));
-  }, [selectedMonth, selectedYear, lookbackMonths]);
-
-  // Build effective TL roster
-  const effectiveLeaders = useMemo(() => {
-    const baseRoster = (teamLeaders && teamLeaders.length > 0)
-      ? teamLeaders
-      : [
-          { id: 'tl-1', name: 'Avadai Esakki Muthu Sundaram Marthuvar', role: 'Team Leader', target: 500000 },
-          { id: 'tl-2', name: 'Surbhi Vinod Jain', role: 'Team Leader', target: 500000 },
-          { id: 'tl-3', name: 'Joyeeta Joydeb Khaskel', role: 'Team Leader', target: 500000 },
-          { id: 'tl-4', name: 'Vedika Girish Tolani', role: 'Team Leader', target: 500000 }
-        ];
-
-    const lbItems = leaderboard && leaderboard.length > 0 ? leaderboard : [];
-    const matchedLbIndices = new Set();
-
-    const merged = baseRoster.map((tl) => {
-      const cleanName = (tl.name || '').trim().toLowerCase();
-      const lbIdx = lbItems.findIndex(item => (item.name || item.tl_name || '').trim().toLowerCase() === cleanName);
-      if (lbIdx !== -1) {
-        matchedLbIndices.add(lbIdx);
-        const item = lbItems[lbIdx];
-        const rawTotal = item.total_enquiries || tl.totalEnquiries || 0;
-        const progressed = item.invoices_closed ?? (tl.enquiriesProgressed || 0);
-        const cancelled = item.enquiries_cancelled !== undefined ? item.enquiries_cancelled : (item.potential_loss > 0 ? Math.ceil(item.potential_loss / 50000) : (tl.enquiriesCancelled || 0));
-        const internallyClosed = item.enquiries_internally_closed !== undefined ? item.enquiries_internally_closed : (item.potential_loss > 0 ? Math.ceil(item.potential_loss / 75000) : (tl.enquiriesInternallyClosed || 0));
-        const inprogress = item.enquiries_inprogress || 0;
-        const totalEnquiries = Math.max(rawTotal, progressed + cancelled + internallyClosed + inprogress);
-        const other = Math.max(0, totalEnquiries - (progressed + cancelled + internallyClosed + inprogress));
-
-        return {
-          ...tl,
-          grossRevenue: item.gross_revenue || 0,
-          netRevenue: item.net_revenue || 0,
-          lossAmount: item.potential_loss || 0,
-          totalEnquiries,
-          enquiriesProgressed: progressed,
-          enquiriesCancelled: cancelled,
-          enquiriesInternallyClosed: internallyClosed,
-          enquiriesInprogress: inprogress,
-          enquiriesOther: other
-        };
-      }
-      return {
-        ...tl,
-        grossRevenue: tl.grossRevenue || 0,
-        netRevenue: tl.netRevenue || 0,
-        lossAmount: tl.lossAmount || 0,
-        totalEnquiries: tl.totalEnquiries || 0,
-        enquiriesProgressed: tl.enquiriesProgressed || 0,
-        enquiriesCancelled: tl.enquiriesCancelled || 0,
-        enquiriesInternallyClosed: tl.enquiriesInternallyClosed || 0
-      };
-    });
-
-    // Filter out system placeholders and non-human buckets
-    const SYSTEM_EXCLUSIONS = new Set(['prospect', 'old . tl', 'pune . office', 'head office', 'unknown', '']);
-    const validMerged = merged.filter(t => !SYSTEM_EXCLUSIONS.has((t.name || '').trim().toLowerCase()));
-
-    // Sort by enquiry volume & gross revenue so top active Team Leaders appear first
-    validMerged.sort((a, b) => (b.totalEnquiries || 0) - (a.totalEnquiries || 0));
-
-    return validMerged;
-  }, [teamLeaders, leaderboard, transactions]);
-
-  // Set default selected TL to top active TL
-  useEffect(() => {
-    if ((!selectedTlId || selectedTlId.toLowerCase() === 'prospect') && effectiveLeaders.length > 0) {
-      setSelectedTlId(effectiveLeaders[0].name || effectiveLeaders[0].id);
-    }
-  }, [effectiveLeaders, selectedTlId]);
-
-  // Fetch Portfolio Breakdown for selected TL
-  useEffect(() => {
+  // 2. Fetch authoritative portfolio data for selected TL
+  const fetchPortfolio = useCallback(async () => {
     if (!selectedTlId) return;
-    setPortfolioLoading(true);
-    setPortfolioError(null);
-
-    // Provide instant client-side synthesized portfolio so page is never empty
-    const fallback = synthesizePortfolio({
-      entityType: 'tl',
-      entityName: selectedTlId,
-      transactions,
-      franchisees,
-      agentsList: effectiveLeaders,
-      lookbackMonths,
-      sortBy
-    });
-    setPortfolioData(fallback);
+    setLoading(true);
+    setIsSyncing(true);
 
     const { start, end } = getPeriodDates(selectedMonth, selectedYear);
-    const url = `${API_BASE_URL}/tl-tracking/${encodeURIComponent(selectedTlId)}/portfolio?start_date=${start}&end_date=${end}&lookback_months=${lookbackMonths}&sort_by=${sortBy}`;
-    
-    fetchWithApiKey(url)
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then(data => {
-        if (data && (data.success || data.franchisees)) {
-          setPortfolioData(data);
-        }
-      })
-      .catch(err => {
-        console.warn("Using high-fidelity synthesized TL portfolio metrics (offline/coldstart mode):", err);
-      })
-      .finally(() => {
-        setPortfolioLoading(false);
-      });
-  }, [selectedTlId, selectedMonth, selectedYear, lookbackMonths, sortBy, transactions, franchisees, effectiveLeaders]);
+    const url = `${API_BASE_URL}/tl-tracking/${encodeURIComponent(selectedTlId)}/portfolio?start_date=${start}&end_date=${end}&lookback_months=${lookbackMonths}&sort_by=risk`;
 
-  // Pre-index transactions by TL
-  const tlTxsMap = useMemo(() => {
-    const map = {};
-    if (!Array.isArray(transactions)) return map;
-    transactions.forEach(t => {
-      if (!t.teamLeaderName) return;
-      const cleanTL = t.teamLeaderName.trim().toLowerCase();
-      if (!map[cleanTL]) map[cleanTL] = [];
-      map[cleanTL].push(t);
-      const first = cleanTL.split(' ')[0];
-      if (first && !map[first]) map[first] = [];
-      if (first) map[first].push(t);
-    });
-    return map;
-  }, [transactions]);
-
-  // Process data for directory & leaderboard
-  const processedLeaders = useMemo(() => {
-    return effectiveLeaders.map(tl => {
-      if (tl.grossRevenue !== undefined && tl.grossRevenue > 0) {
-        return tl;
+    try {
+      const res = await fetchWithApiKey(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data && (data.totals || data.franchisees)) {
+        setPortfolioData(data);
       }
-      const lbMatch = (leaderboard || []).find(item => item.tl_name && item.tl_name.trim().toLowerCase() === tl.name.trim().toLowerCase());
-      const tlClean = tl.name.trim().toLowerCase();
-      const tlFirstName = tlClean.split(' ')[0];
-      const tlTxs = tlTxsMap[tlClean] || tlTxsMap[tlFirstName] || [];
-      const contextGross = tlTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
-      const contextNet = tlTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + getTransactionShares(t).rShare, 0);
+    } catch (err) {
+      console.warn('Error loading TL portfolio:', err);
+    } finally {
+      setLoading(false);
+      setIsSyncing(false);
+    }
+  }, [selectedTlId, selectedMonth, selectedYear, lookbackMonths, getPeriodDates]);
 
-      const grossRevenue = lbMatch ? lbMatch.gross_revenue : (contextGross > 0 ? contextGross : 0.0);
-      const netRevenue = lbMatch ? lbMatch.net_revenue : (contextNet > 0 ? contextNet : 0.0);
-      const lossAmount = lbMatch ? lbMatch.potential_loss : 0.0;
-      const rawTotal = lbMatch ? lbMatch.total_enquiries : Math.max(1, tlTxs.length);
-      const enquiriesProgressed = lbMatch ? lbMatch.invoices_closed : tlTxs.filter(t => t.type === 'income').length;
-      const enquiriesCancelled = lbMatch && lbMatch.enquiries_cancelled !== undefined ? lbMatch.enquiries_cancelled : (lossAmount > 0 ? Math.ceil(lossAmount / 50000) : 0);
-      const enquiriesInternallyClosed = lbMatch && lbMatch.enquiries_internally_closed !== undefined ? lbMatch.enquiries_internally_closed : (lossAmount > 0 ? Math.ceil(lossAmount / 75000) : 0);
-      const enquiriesInprogress = lbMatch ? (lbMatch.enquiries_inprogress || 0) : 0;
-      const totalEnquiries = Math.max(rawTotal, enquiriesProgressed + enquiriesCancelled + enquiriesInternallyClosed + enquiriesInprogress, enquiriesProgressed + enquiriesCancelled + enquiriesInternallyClosed);
+  useEffect(() => {
+    fetchPortfolio();
+  }, [fetchPortfolio]);
 
-      return {
-        ...tl,
-        grossRevenue,
-        netRevenue,
-        lossAmount,
-        totalEnquiries,
-        enquiriesProgressed,
-        enquiriesCancelled,
-        enquiriesInternallyClosed,
-        enquiriesInprogress
-      };
-    }).sort((a, b) => b.grossRevenue - a.grossRevenue);
-  }, [effectiveLeaders, leaderboard, tlTxsMap]);
-
-  // Overall aggregates
-  const { overallGross, overallNet, overallLoss, overallEnquiries } = useMemo(() => {
-    return {
-      overallGross: processedLeaders.reduce((sum, tl) => sum + (tl.grossRevenue || 0), 0),
-      overallNet: processedLeaders.reduce((sum, tl) => sum + (tl.netRevenue || 0), 0),
-      overallLoss: processedLeaders.reduce((sum, tl) => sum + (tl.lossAmount || 0), 0),
-      overallEnquiries: processedLeaders.reduce((sum, tl) => sum + (tl.totalEnquiries || 0), 0)
+  // Handle outside navigation events (e.g. from CostOfPerformance)
+  useEffect(() => {
+    const handleNav = (e) => {
+      if (e.detail?.tl) {
+        setSelectedTlId(e.detail.tl);
+      }
     };
-  }, [processedLeaders]);
+    window.addEventListener('navigate-to-page', handleNav);
+    return () => window.removeEventListener('navigate-to-page', handleNav);
+  }, []);
 
-  const activePeriodLabel = selectedMonth !== 'All Months' 
-    ? selectedMonth 
-    : (selectedYear !== 'All Years' ? selectedYear : 'All Years');
-
-  const pTotals = portfolioData?.totals || {
+  // 3. Derived numbers directly from authoritative portfolioData
+  const totals = portfolioData?.totals || {
     gross: 0,
-    gross_delta_pct: 0,
     received: 0,
-    received_delta_pct: 0,
     received_pct: 0,
     outstanding: 0,
-    outstanding_delta_pct: 0,
-    outstanding_pct: 0,
-    cancelled: 0,
-    cancelled_pct: 0,
-    credit_notes: 0,
-    admin_closures: 0,
-    admin_closures_count: 0,
-    expected_collectible: 0,
-    expected_loss: 0,
-    reconciled: true,
-    variance: 0
+    cancelled: 0
   };
 
-  const sparklines = portfolioData?.sparklines || {
-    gross: [],
-    received: [],
-    outstanding: [],
-    expected_collectible: []
-  };
-
+  const allFranchisees = portfolioData?.franchisees || [];
   const monthlyTrend = portfolioData?.monthly_trend || [];
-  const creditNoteDetails = portfolioData?.credit_note_details || [];
-  const rawFranchisees = portfolioData?.franchisees || [];
 
-  // Filtered Franchisees based on Click-Through KPI Filter
+  // Filter counts
+  const filterCounts = useMemo(() => {
+    return {
+      all: allFranchisees.length,
+      outstanding: allFranchisees.filter(f => (f.outstanding || 0) > 0).length,
+      cancelled: allFranchisees.filter(f => (f.cancelled || 0) > 0 || (f.credit_notes || 0) > 0).length,
+      at_risk: allFranchisees.filter(f => (f.outstanding || 0) > 0 && (f.collection_risk?.band_key !== 'likely')).length
+    };
+  }, [allFranchisees]);
+
+  // Open item count for Needs Attention card
+  const openItemsCount = useMemo(() => {
+    return allFranchisees.reduce((sum, f) => {
+      return sum + (f.outstanding_count || (f.outstanding > 0 ? 1 : 0)) + (f.cancelled_count || (f.cancelled > 0 ? 1 : 0));
+    }, 0);
+  }, [allFranchisees]);
+
+  // Filtered and searched franchisee list
   const filteredFranchisees = useMemo(() => {
-    let list = [...rawFranchisees];
-    if (kpiFilter === 'received') {
-      list = list.filter(f => (f.received || 0) > 0);
-      list.sort((a, b) => (b.received || 0) - (a.received || 0));
-    } else if (kpiFilter === 'outstanding') {
+    let list = [...allFranchisees];
+
+    if (tableFilter === 'at_risk') {
+      list = list.filter(f => (f.outstanding || 0) > 0 && f.collection_risk?.band_key !== 'likely');
+      list.sort((a, b) => (b.outstanding || 0) - (a.outstanding || 0));
+    } else if (tableFilter === 'outstanding') {
       list = list.filter(f => (f.outstanding || 0) > 0);
       list.sort((a, b) => (b.outstanding || 0) - (a.outstanding || 0));
-    } else if (kpiFilter === 'cancelled') {
+    } else if (tableFilter === 'cancelled') {
       list = list.filter(f => (f.cancelled || 0) > 0 || (f.credit_notes || 0) > 0);
       list.sort((a, b) => ((b.cancelled || 0) + (b.credit_notes || 0)) - ((a.cancelled || 0) + (a.credit_notes || 0)));
-    } else if (kpiFilter === 'at_risk') {
-      list = list.filter(f => (f.outstanding || 0) > 0 && (f.collection_risk?.band_key !== 'likely' || (f.collection_risk?.score != null && f.collection_risk?.score < 70)));
-      list.sort((a, b) => (a.collection_risk?.score ?? 70) - (b.collection_risk?.score ?? 70));
     }
+
+    if (tableSearchQuery.trim()) {
+      const q = tableSearchQuery.toLowerCase();
+      list = list.filter(f => (f.name || '').toLowerCase().includes(q) || (f.city || '').toLowerCase().includes(q));
+    }
+
     return list;
-  }, [rawFranchisees, kpiFilter]);
+  }, [allFranchisees, tableFilter, tableSearchQuery]);
 
-  // Proportional Stacked Bar segments
-  const totalBarBase = Math.max(1, pTotals.received + pTotals.outstanding + pTotals.cancelled);
-  const barReceivedPct = Math.min(100, Math.max(0, (pTotals.received / totalBarBase) * 100));
-  const barOutstandingPct = Math.min(100 - barReceivedPct, Math.max(0, (pTotals.outstanding / totalBarBase) * 100));
-  const barCancelledPct = Math.max(0, 100 - barReceivedPct - barOutstandingPct);
+  // Top 5 to chase list
+  const topChaseList = useMemo(() => {
+    return allFranchisees
+      .filter(f => (f.outstanding || 0) > 0)
+      .sort((a, b) => (b.outstanding || 0) - (a.outstanding || 0))
+      .slice(0, 5);
+  }, [allFranchisees]);
 
-  // CSV Export Handler
+  // 4. Export CSV using blob download (never window.open)
   const handleExportCSV = () => {
-    if (!filteredFranchisees || filteredFranchisees.length === 0) return;
-
+    if (filteredFranchisees.length === 0) return;
     const headers = [
       'Franchisee Name',
+      'City',
       'Gross Billing (INR)',
       'Received Amount (INR)',
       'Received Pct (%)',
       'Outstanding Amount (INR)',
-      'Avg Aging Days',
       'Cancelled Amount (INR)',
-      'Credit Notes (INR)',
-      'Collection Risk Score',
-      'Collection Risk Band',
-      'Expected Collectible (INR)'
+      'Risk Classification',
+      'Avg Days Aged'
     ];
 
     const rows = filteredFranchisees.map(f => [
-      `"${f.name.replace(/"/g, '""')}"`,
-      f.gross,
-      f.received,
-      f.received_pct,
-      f.outstanding,
-      f.avg_days_outstanding,
-      f.cancelled,
-      f.credit_notes,
-      f.collection_risk?.score ?? 70,
-      `"${f.collection_risk?.band?.replace(/"/g, '""') || 'Likely'}"`,
-      f.expected_collectible
+      `"${f.name || ''}"`,
+      `"${f.city || ''}"`,
+      f.gross || 0,
+      f.received || 0,
+      `${f.received_pct || 0}%`,
+      f.outstanding || 0,
+      f.cancelled || 0,
+      `"${f.collection_risk?.label || (f.outstanding > 0 ? 'High risk' : 'Settled')}"`,
+      f.avg_days_outstanding ? `${f.avg_days_outstanding}d` : '—'
     ]);
 
     const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${selectedTlId.replace(/\s+/g, '_')}_Franchisee_Portfolio_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.href = url;
+    link.download = `TL_Collections_${selectedTlId}_${selectedYear || 'all'}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
+  // 5. Navigate to Cost of Performance
+  const handleViewProfitability = () => {
+    sessionStorage.setItem('fintective_cost_tab', 'tl');
+    sessionStorage.setItem('fintective_cost_search', selectedTlId);
+    if (typeof setActivePage === 'function') {
+      setActivePage('cost-performance');
+    } else {
+      window.dispatchEvent(new CustomEvent('navigate-to-page', { detail: { page: 'cost-performance' } }));
+    }
+  };
+
   return (
-    <div className="bd-performance-page animate-fade-in">
-      
-      {/* Top Navigation Sub-Tabs */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-card)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-          <button
-            onClick={() => setActiveTab('portfolio')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              border: 'none',
-              background: activeTab === 'portfolio' ? 'var(--accent-teal)' : 'transparent',
-              color: activeTab === 'portfolio' ? '#ffffff' : 'var(--text-muted)',
-              fontWeight: activeTab === 'portfolio' ? '700' : '500',
-              fontSize: '0.88rem',
-              cursor: 'pointer',
-              boxShadow: activeTab === 'portfolio' ? '0 2px 4px rgba(15, 110, 86, 0.2)' : 'none',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <Layers size={16} />
-            Franchisee Portfolio & Collection Risk
-          </button>
-          <button
-            onClick={() => setActiveTab('leaderboard')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              border: 'none',
-              background: activeTab === 'leaderboard' ? 'var(--accent-teal)' : 'transparent',
-              color: activeTab === 'leaderboard' ? '#ffffff' : 'var(--text-muted)',
-              fontWeight: activeTab === 'leaderboard' ? '700' : '500',
-              fontSize: '0.88rem',
-              cursor: 'pointer',
-              boxShadow: activeTab === 'leaderboard' ? '0 2px 4px rgba(15, 110, 86, 0.2)' : 'none',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <Award size={16} />
-            TL Leaderboard & Directory
-          </button>
-        </div>
+    <div className="tl-page">
+      {/* 1. Control Row */}
+      <TLControls
+        teamLeaders={teamLeaders}
+        selectedTlId={selectedTlId}
+        onSelectTl={setSelectedTlId}
+        financialYear={selectedYear}
+        onSelectYear={setSelectedYear}
+        availableYears={availableYears}
+        lookbackMonths={lookbackMonths}
+        onSelectLookback={setLookbackMonths}
+        onExportCSV={handleExportCSV}
+        onViewProfitability={handleViewProfitability}
+        isSyncing={isSyncing}
+      />
 
-        {/* TL Selector & Lookback Control */}
-        {activeTab === 'portfolio' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Team Leader:</span>
-              <select
-                value={selectedTlId}
-                onChange={(e) => { setSelectedTlId(e.target.value); setKpiFilter('all'); }}
-                style={{
-                  padding: '8px 14px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  background: 'var(--bg-card)',
-                  color: 'var(--text-main)',
-                  fontSize: '0.88rem',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  minWidth: '220px'
-                }}
-              >
-                {effectiveLeaders.map(tl => (
-                  <option key={tl.id || tl.name} value={tl.name || tl.id}>
-                    {tl.name} ({tl.totalEnquiries || 0} deals)
-                  </option>
-                ))}
-              </select>
-            </div>
+      {/* 2. Three Calm KPI Cards */}
+      <TLKpiRow
+        totals={totals}
+        openItemsCount={openItemsCount}
+      />
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-card)', padding: '3px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-muted)', paddingLeft: '6px' }}>Lookback:</span>
-              {[6, 12, 24].map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setLookbackMonths(m)}
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    border: 'none',
-                    fontSize: '0.75rem',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    background: lookbackMonths === m ? 'var(--accent-teal)' : 'transparent',
-                    color: lookbackMonths === m ? '#fff' : 'var(--text-muted)'
-                  }}
-                >
-                  {m}M
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+      {/* 3. Two-Column Analytics Row */}
+      <div className="tl-analytics-grid">
+        <TLTrendChart monthlyTrend={monthlyTrend} />
+        <TLChaseList
+          topChaseList={topChaseList}
+          onSelectFranchisee={setSelectedFranchisee}
+          onSeeAllHighRisk={() => {
+            setTableFilter('at_risk');
+            setTablePage(1);
+          }}
+        />
       </div>
 
-      {/* ========================================================================= */}
-      {/* VIEW 1: FRANCHISEE PORTFOLIO BREAKDOWN & COLLECTION RISK FORECASTING     */}
-      {/* ========================================================================= */}
-      {activeTab === 'portfolio' && (
-        <div className="animate-fade-in">
-          
-          {/* Quick TL Pills */}
-          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '8px', marginBottom: '16px' }}>
-            {effectiveLeaders.slice(0, 8).map(tl => {
-              const isSelected = selectedTlId === tl.name || selectedTlId === tl.id;
-              return (
-                <button
-                  key={tl.id || tl.name}
-                  onClick={() => { setSelectedTlId(tl.name || tl.id); setKpiFilter('all'); }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 12px',
-                    borderRadius: '20px',
-                    border: isSelected ? '1px solid var(--accent-teal)' : '1px solid var(--border-color)',
-                    background: isSelected ? 'rgba(15, 110, 86, 0.1)' : 'var(--bg-card)',
-                    color: isSelected ? 'var(--accent-teal)' : 'var(--text-main)',
-                    fontSize: '0.82rem',
-                    fontWeight: isSelected ? '700' : '500',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap'
-                  }}
-                >
-                  <Users size={14} />
-                  <span>{tl.name}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* 5 KPI Cards with Sparklines & Click-Through Filters */}
-          <section className="kpi-grid" style={{ marginBottom: '20px' }}>
-            
-            {/* 1. Gross Revenue */}
-            <div 
-              className={`kpi-card card-blue clickable-kpi ${kpiFilter === 'all' ? 'active-filter-card' : ''}`}
-              onClick={() => setKpiFilter('all')}
-              style={{ cursor: 'pointer', position: 'relative' }}
-              title="Click to view all accounts"
-            >
-              <div className="kpi-header">
-                <span className="kpi-title">Gross Commercial Billing</span>
-                <span className="kpi-icon"><DollarSign size={18} /></span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
-                <h2 className="kpi-value" style={{ margin: 0 }}>{formatLakhs(pTotals.gross)}</h2>
-                <MiniSparkline data={sparklines.gross} color="#2563EB" />
-              </div>
-              <div className="kpi-change" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                  Excludes {pTotals.admin_closures_count || 0} admin closures ({formatLakhs(pTotals.admin_closures || 0)})
-                </span>
-                {pTotals.gross_delta_pct !== undefined && (
-                  <span style={{ fontSize: '0.72rem', fontWeight: '700', color: pTotals.gross_delta_pct >= 0 ? '#10B981' : '#EF4444' }}>
-                    {pTotals.gross_delta_pct >= 0 ? '↑' : '↓'} {Math.abs(pTotals.gross_delta_pct)}%
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* 2. Received Revenue */}
-            <div 
-              className={`kpi-card card-green clickable-kpi ${kpiFilter === 'received' ? 'active-filter-card' : ''}`}
-              onClick={() => { setKpiFilter('received'); setFranPage(1); }}
-              style={{ cursor: 'pointer', position: 'relative' }}
-              title="Click to filter by accounts with received collections"
-            >
-              <div className="kpi-header">
-                <span className="kpi-title">Received Revenue</span>
-                <span className="kpi-icon"><TrendingUp size={18} /></span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
-                <h2 className="kpi-value" style={{ margin: 0, color: '#0F6E56' }}>{formatLakhs(pTotals.received)}</h2>
-                <MiniSparkline data={sparklines.received} color="#0F6E56" />
-              </div>
-              <div className="kpi-change up" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                <span>{pTotals.received_pct}% of Gross Billing</span>
-                {pTotals.received_delta_pct !== undefined && (
-                  <span style={{ fontSize: '0.72rem', fontWeight: '700', color: pTotals.received_delta_pct >= 0 ? '#10B981' : '#EF4444' }}>
-                    {pTotals.received_delta_pct >= 0 ? '↑' : '↓'} {Math.abs(pTotals.received_delta_pct)}%
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* 3. In-Progress / Outstanding */}
-            <div 
-              className={`kpi-card card-yellow clickable-kpi ${kpiFilter === 'outstanding' ? 'active-filter-card' : ''}`}
-              onClick={() => { setKpiFilter('outstanding'); setFranPage(1); }}
-              style={{ cursor: 'pointer', position: 'relative', borderColor: 'rgba(234, 179, 8, 0.4)' }}
-              title="Click to filter by accounts with pending collections"
-            >
-              <div className="kpi-header">
-                <span className="kpi-title">In-Progress / Outstanding</span>
-                <span className="kpi-icon"><Clock size={18} /></span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
-                <h2 className="kpi-value" style={{ margin: 0, color: '#B7791F' }}>{formatLakhs(pTotals.outstanding)}</h2>
-                <MiniSparkline data={sparklines.outstanding} color="#B7791F" />
-              </div>
-              <div className="kpi-change" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', color: '#B7791F' }}>
-                <span>{pTotals.outstanding_pct}% pending collection</span>
-                {pTotals.outstanding_delta_pct !== undefined && (
-                  <span style={{ fontSize: '0.72rem', fontWeight: '700', color: pTotals.outstanding_delta_pct <= 0 ? '#10B981' : '#EF4444' }}>
-                    {pTotals.outstanding_delta_pct >= 0 ? '↑' : '↓'} {Math.abs(pTotals.outstanding_delta_pct)}%
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* 4. Cancelled Billing */}
-            <div 
-              className={`kpi-card card-red clickable-kpi ${kpiFilter === 'cancelled' ? 'active-filter-card' : ''}`}
-              onClick={() => { setKpiFilter('cancelled'); setFranPage(1); }}
-              style={{ cursor: 'pointer', position: 'relative' }}
-              title="Click to filter by accounts with cancellations or credit notes"
-            >
-              <div className="kpi-header">
-                <span className="kpi-title">Cancelled Billing</span>
-                <span className="kpi-icon"><Briefcase size={18} /></span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
-                <h2 className="kpi-value" style={{ margin: 0, color: '#A8402E' }}>{formatLakhs(pTotals.cancelled)}</h2>
-                <MiniSparkline data={sparklines.gross} color="#A8402E" />
-              </div>
-              <div className="kpi-change down" style={{ marginTop: '6px' }}>
-                <span>{pTotals.cancelled_pct}% cancelled / lost</span>
-              </div>
-            </div>
-
-            {/* 5. Expected Collectible Amount (AI Forecast) */}
-            <div 
-              className={`kpi-card clickable-kpi ${kpiFilter === 'at_risk' ? 'active-filter-card' : ''}`}
-              onClick={() => { setKpiFilter('at_risk'); setFranPage(1); }}
-              style={{ 
-                cursor: 'pointer',
-                background: 'linear-gradient(135deg, rgba(15, 110, 86, 0.08) 0%, rgba(34, 49, 79, 0.05) 100%)', 
-                border: '1.5px solid rgba(15, 110, 86, 0.4)',
-                boxShadow: '0 4px 12px rgba(15, 110, 86, 0.06)'
-              }}
-              title="Click to filter by high-risk / follow-up accounts"
-            >
-              <div className="kpi-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Sparkles size={16} color="#0F6E56" />
-                  <span className="kpi-title" style={{ color: '#0F6E56', fontWeight: '700' }}>Expected Collectible</span>
-                </div>
-                <span className="kpi-icon" style={{ background: 'rgba(15, 110, 86, 0.15)', color: '#0F6E56' }}><Award size={18} /></span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '4px' }}>
-                <h2 className="kpi-value" style={{ margin: 0, color: '#0F6E56', fontWeight: '800' }}>
-                  {formatLakhs(pTotals.expected_collectible)}
-                </h2>
-                <MiniSparkline data={sparklines.expected_collectible} color="#0F6E56" />
-              </div>
-              <div className="kpi-change" style={{ color: '#6B7268', fontSize: '0.74rem', marginTop: '6px' }}>
-                <span>
-                  Expected Loss: <strong style={{ color: '#A8402E' }}>{formatLakhs(pTotals.expected_loss)}</strong> {pTotals.outstanding > 0 ? `(${((pTotals.expected_collectible / pTotals.outstanding) * 100).toFixed(0)}% expected collection)` : '(No uncollected balance at risk)'}
-                </span>
-              </div>
-            </div>
-
-          </section>
-
-          {/* Proportional Stacked Breakdown Bar + Hover Breakdown & Credit Note Deduction Details */}
-          <div className="dashboard-card" style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
-              <div>
-                <h3 className="card-title" style={{ margin: 0, fontSize: '1rem', fontWeight: '700' }}>
-                  Financial Status Breakdown Bar (Commercial Reconciliation)
-                </h3>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Hover over any segment for exact breakdown details • Click Credit Notes to inspect reason audit
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                {/* Credit Notes Breakdown Modal Button */}
-                {pTotals.credit_notes > 0 && (
-                  <button
-                    onClick={() => setIsCreditNotesModalOpen(true)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      padding: '5px 12px',
-                      borderRadius: '6px',
-                      background: 'rgba(124, 58, 237, 0.12)',
-                      border: '1px solid rgba(124, 58, 237, 0.3)',
-                      color: '#7C3AED',
-                      fontSize: '0.78rem',
-                      fontWeight: '700',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <Info size={14} />
-                    <span>View Credit Notes Reason Audit ({formatLakhs(pTotals.credit_notes)})</span>
-                  </button>
-                )}
-
-                {/* Mathematical Reconciliation Badge */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  background: pTotals.reconciled ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                  border: `1px solid ${pTotals.reconciled ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
-                  color: pTotals.reconciled ? '#0F6E56' : '#A8402E',
-                  fontSize: '0.78rem',
-                  fontWeight: '700'
-                }}>
-                  {pTotals.reconciled ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
-                  <span>
-                    {pTotals.reconciled ? '✓ Commercial Gross Reconciled (≤ ₹5.00)' : `Variance: ₹${pTotals.variance}`}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Horizontal Stacked Bar with Hover Tooltips */}
-            <div style={{ background: '#E3E5E0', borderRadius: '8px', overflow: 'hidden', height: '36px', display: 'flex', position: 'relative' }}>
-              
-              {/* Cancelled Segment (Red) */}
-              {barCancelledPct > 0 && (
-                <div
-                  style={{
-                    width: `${barCancelledPct}%`,
-                    backgroundColor: '#A8402E',
-                    color: '#ffffff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.75rem',
-                    fontWeight: '700',
-                    padding: '0 6px',
-                    transition: 'width 0.3s ease',
-                    cursor: 'pointer'
-                  }}
-                  onClick={() => { setKpiFilter('cancelled'); setFranPage(1); }}
-                  title={`Cancelled: ${formatCurrency(pTotals.cancelled)} (${barCancelledPct.toFixed(1)}% of base)`}
-                >
-                  {barCancelledPct >= 8 ? `Cancelled ${formatLakhs(pTotals.cancelled)}` : ''}
-                </div>
-              )}
-
-              {/* Outstanding Segment (Amber) */}
-              {barOutstandingPct > 0 && (
-                <div
-                  style={{
-                    width: `${barOutstandingPct}%`,
-                    backgroundColor: '#B7791F',
-                    color: '#ffffff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.75rem',
-                    fontWeight: '700',
-                    padding: '0 6px',
-                    transition: 'width 0.3s ease',
-                    cursor: 'pointer'
-                  }}
-                  onClick={() => { setKpiFilter('outstanding'); setFranPage(1); }}
-                  title={`Outstanding / Pending: ${formatCurrency(pTotals.outstanding)} (${barOutstandingPct.toFixed(1)}% of base)`}
-                >
-                  {barOutstandingPct >= 8 ? `Outstanding ${formatLakhs(pTotals.outstanding)}` : ''}
-                </div>
-              )}
-
-              {/* Received Segment (Emerald Green) */}
-              {barReceivedPct > 0 && (
-                <div
-                  style={{
-                    width: `${barReceivedPct}%`,
-                    backgroundColor: '#0F6E56',
-                    color: '#ffffff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.75rem',
-                    fontWeight: '700',
-                    padding: '0 6px',
-                    transition: 'width 0.3s ease',
-                    cursor: 'pointer'
-                  }}
-                  onClick={() => { setKpiFilter('received'); setFranPage(1); }}
-                  title={`Received Inflows: ${formatCurrency(pTotals.received)} (${barReceivedPct.toFixed(1)}% of base)`}
-                >
-                  {barReceivedPct >= 8 ? `Received ${formatLakhs(pTotals.received)}` : ''}
-                </div>
-              )}
-
-              {/* Credit Note Deduction (Striped Purple Overlay) */}
-              {pTotals.credit_notes > 0 && (
-                <div
-                  onClick={() => setIsCreditNotesModalOpen(true)}
-                  style={{
-                    position: 'absolute',
-                    right: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: `${Math.min(30, (pTotals.credit_notes / totalBarBase) * 100)}%`,
-                    background: 'repeating-linear-gradient(45deg, rgba(124, 58, 237, 0.9), rgba(124, 58, 237, 0.9) 6px, rgba(109, 40, 217, 0.98) 6px, rgba(109, 40, 217, 0.98) 12px)',
-                    borderLeft: '2px solid #ffffff',
-                    color: '#ffffff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.72rem',
-                    fontWeight: '800',
-                    textShadow: '0 1px 2px rgba(0,0,0,0.6)',
-                    padding: '0 4px',
-                    cursor: 'pointer'
-                  }}
-                  title={`Credit Note Deductions: -${formatCurrency(pTotals.credit_notes)} (Click to view reasons)`}
-                >
-                  -{formatLakhs(pTotals.credit_notes)} CN
-                </div>
-              )}
-            </div>
-
-            {/* Reconciliation Legend Bar */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', flexWrap: 'wrap', gap: '10px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#0F6E56', display: 'inline-block' }}></span>
-                  <span>Received: <strong style={{ color: 'var(--text-main)' }}>{formatLakhs(pTotals.received)}</strong></span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#B7791F', display: 'inline-block' }}></span>
-                  <span>Outstanding: <strong style={{ color: 'var(--text-main)' }}>{formatLakhs(pTotals.outstanding)}</strong></span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#A8402E', display: 'inline-block' }}></span>
-                  <span>Cancelled: <strong style={{ color: 'var(--text-main)' }}>{formatLakhs(pTotals.cancelled)}</strong></span>
-                </div>
-                {pTotals.credit_notes > 0 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#7C3AED', display: 'inline-block' }}></span>
-                    <span>Credit Notes: <strong style={{ color: '#7C3AED' }}>-{formatLakhs(pTotals.credit_notes)}</strong></span>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <span style={{ fontStyle: 'italic' }}>
-                  Gross ({formatLakhs(pTotals.gross)}) = Received ({formatLakhs(pTotals.received)}) + Outstanding ({formatLakhs(pTotals.outstanding)}) + Cancelled ({formatLakhs(pTotals.cancelled)}) - CN ({formatLakhs(pTotals.credit_notes)})
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Month-over-Month Trailing Trend Chart */}
-          {monthlyTrend.length > 1 && (
-            <TLMonthlyTrendChart trendData={monthlyTrend} />
-          )}
-
-          {/* Franchisee Portfolio Table with Collection Risk Scoring & Export */}
-          <div className="dashboard-card">
-            
-            {/* Active Drilldown Banner */}
-            {kpiFilter !== 'all' && (
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '8px 14px',
-                borderRadius: '8px',
-                background: 'rgba(15, 110, 86, 0.1)',
-                border: '1px solid rgba(15, 110, 86, 0.25)',
-                marginBottom: '14px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: 'var(--accent-teal)', fontWeight: '600' }}>
-                  <Filter size={15} />
-                  <span>
-                    Filtered by: <strong>{kpiFilter === 'received' ? 'Received Inflows' : (kpiFilter === 'outstanding' ? 'In-Progress / Outstanding' : (kpiFilter === 'cancelled' ? 'Cancelled Deals' : 'High Risk & Follow-up Accounts'))}</strong> ({filteredFranchisees.length} matching accounts)
-                  </span>
-                </div>
-                <button
-                  onClick={() => setKpiFilter('all')}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--accent-teal)',
-                    fontSize: '0.78rem',
-                    fontWeight: '700',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  <X size={14} />
-                  Clear Filter (Show All {rawFranchisees.length})
-                </button>
-              </div>
-            )}
-
-            {/* Quick Segmented Filter Tabs: All, Received, Outstanding, Cancelled, High Risk */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
-              <button
-                onClick={() => { setKpiFilter('all'); setFranPage(1); }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 14px',
-                  borderRadius: '6px',
-                  border: kpiFilter === 'all' ? '1.5px solid var(--accent-teal)' : '1px solid var(--border-color)',
-                  background: kpiFilter === 'all' ? 'rgba(15, 110, 86, 0.12)' : 'var(--bg-main)',
-                  color: kpiFilter === 'all' ? 'var(--accent-teal)' : 'var(--text-main)',
-                  fontSize: '0.82rem',
-                  fontWeight: kpiFilter === 'all' ? '700' : '500',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <Layers size={14} />
-                <span>All Accounts ({rawFranchisees.length})</span>
-              </button>
-
-              <button
-                onClick={() => { setKpiFilter('received'); setFranPage(1); }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 14px',
-                  borderRadius: '6px',
-                  border: kpiFilter === 'received' ? '1.5px solid #0F6E56' : '1px solid var(--border-color)',
-                  background: kpiFilter === 'received' ? 'rgba(15, 110, 86, 0.15)' : 'var(--bg-main)',
-                  color: kpiFilter === 'received' ? '#0F6E56' : 'var(--text-main)',
-                  fontSize: '0.82rem',
-                  fontWeight: kpiFilter === 'received' ? '700' : '500',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <TrendingUp size={14} color="#0F6E56" />
-                <span>🟢 Received Inflows ({rawFranchisees.filter(f => (f.received || 0) > 0).length})</span>
-              </button>
-
-              <button
-                onClick={() => { setKpiFilter('outstanding'); setFranPage(1); }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 14px',
-                  borderRadius: '6px',
-                  border: kpiFilter === 'outstanding' ? '1.5px solid #B7791F' : '1px solid var(--border-color)',
-                  background: kpiFilter === 'outstanding' ? 'rgba(234, 179, 8, 0.15)' : 'var(--bg-main)',
-                  color: kpiFilter === 'outstanding' ? '#B7791F' : 'var(--text-main)',
-                  fontSize: '0.82rem',
-                  fontWeight: kpiFilter === 'outstanding' ? '700' : '500',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <Clock size={14} color="#B7791F" />
-                <span>🟡 Outstandings ({rawFranchisees.filter(f => (f.outstanding || 0) > 0).length})</span>
-              </button>
-
-              <button
-                onClick={() => { setKpiFilter('cancelled'); setFranPage(1); }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 14px',
-                  borderRadius: '6px',
-                  border: kpiFilter === 'cancelled' ? '1.5px solid #A8402E' : '1px solid var(--border-color)',
-                  background: kpiFilter === 'cancelled' ? 'rgba(239, 68, 68, 0.12)' : 'var(--bg-main)',
-                  color: kpiFilter === 'cancelled' ? '#A8402E' : 'var(--text-main)',
-                  fontSize: '0.82rem',
-                  fontWeight: kpiFilter === 'cancelled' ? '700' : '500',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <Briefcase size={14} color="#A8402E" />
-                <span>🔴 Cancelled & CN ({rawFranchisees.filter(f => (f.cancelled || 0) > 0 || (f.credit_notes || 0) > 0).length})</span>
-              </button>
-
-              <button
-                onClick={() => { setKpiFilter('at_risk'); setFranPage(1); }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 14px',
-                  borderRadius: '6px',
-                  border: kpiFilter === 'at_risk' ? '1.5px solid #DC2626' : '1px solid var(--border-color)',
-                  background: kpiFilter === 'at_risk' ? 'rgba(220, 38, 38, 0.12)' : 'var(--bg-main)',
-                  color: kpiFilter === 'at_risk' ? '#DC2626' : 'var(--text-main)',
-                  fontSize: '0.82rem',
-                  fontWeight: kpiFilter === 'at_risk' ? '700' : '500',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <ShieldAlert size={14} color="#DC2626" />
-                <span>⚠️ High Risk ({rawFranchisees.filter(f => (f.outstanding || 0) > 0 && (f.collection_risk?.band_key !== 'likely' || (f.collection_risk?.score != null && f.collection_risk?.score < 70))).length})</span>
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-              <div>
-                <h3 className="card-title" style={{ margin: 0, fontSize: '1rem', fontWeight: '700' }}>
-                  Franchisee Portfolio Breakdown ({filteredFranchisees.length} of {rawFranchisees.length} Accounts)
-                </h3>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Prioritized by Collection Risk: Aging factor (45%) + TL Conversion (35%) + Franchisee Track Record (20%)
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                {/* Export CSV Button */}
-                <button
-                  onClick={handleExportCSV}
-                  disabled={filteredFranchisees.length === 0}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-color)',
-                    background: 'var(--bg-main)',
-                    color: 'var(--text-main)',
-                    fontSize: '0.78rem',
-                    fontWeight: '600',
-                    cursor: filteredFranchisees.length === 0 ? 'not-allowed' : 'pointer'
-                  }}
-                  title="Export filtered franchisee table to CSV spreadsheet"
-                >
-                  <Download size={14} />
-                  <span>Export CSV</span>
-                </button>
-              </div>
-            </div>
-
-            {portfolioLoading ? (
-              <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
-                Loading live franchisee portfolio records...
-              </div>
-            ) : portfolioError ? (
-              <div style={{ padding: '30px', background: 'rgba(239, 68, 68, 0.08)', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#A8402E', textAlign: 'center' }}>
-                {portfolioError}
-              </div>
-            ) : filteredFranchisees.length === 0 ? (
-              <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
-                No franchisee records match the selected filter ({kpiFilter}).
-              </div>
-            ) : (() => {
-              const safeFranPage = Math.min(Math.max(1, franPage), Math.max(1, Math.ceil(filteredFranchisees.length / FRAN_PER_PAGE)));
-              const paginatedFrans = filteredFranchisees.slice((safeFranPage - 1) * FRAN_PER_PAGE, safeFranPage * FRAN_PER_PAGE);
-
-              return (
-                <div>
-                  <div className="table-responsive">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Franchisee</th>
-                          <th style={{ textAlign: 'right' }}>Gross Billing</th>
-                          <th style={{ textAlign: 'right' }}>Received</th>
-                          <th style={{ textAlign: 'right' }}>Outstanding & Aging</th>
-                          <th style={{ textAlign: 'right' }}>Cancelled / CN</th>
-                          <th style={{ textAlign: 'center' }}>Collection Risk</th>
-                          <th style={{ textAlign: 'right' }}>Expected Recovery</th>
-                          <th style={{ textAlign: 'center' }}>Audit Factor</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paginatedFrans.map((f, idx) => {
-                          const cr = f.collection_risk || {};
-                          const score = cr.score ?? 70.0;
-                          const bandKey = cr.band_key || (score >= 70 ? 'likely' : (score >= 40 ? 'follow_up' : 'at_risk'));
-
-                          return (
-                            <tr 
-                              key={idx} 
-                              className="clickable-row-item"
-                              style={{ cursor: 'pointer' }}
-                            >
-                              <td className="font-bold" onClick={() => handleOpenFranchiseeModal(f)}>
-                                <div>{f.name}</div>
-                                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                                  {f.received_count || 0} received • {f.outstanding_count || 0} pending • Click for item audit →
-                                </span>
-                              </td>
-
-                              <td className="font-bold text-right" onClick={() => handleOpenFranchiseeModal(f)}>
-                                {formatCurrency(f.gross)}
-                              </td>
-
-                              <td className="text-right" onClick={() => handleOpenFranchiseeModal(f, 'received')} title="Click to view Received Inflows itemization">
-                                <div style={{ color: '#0F6E56', fontWeight: '700' }}>{formatCurrency(f.received)}</div>
-                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{f.received_pct}% ({f.received_count || 0} items)</div>
-                              </td>
-
-                              <td className="text-right" onClick={() => handleOpenFranchiseeModal(f, 'outstanding')} title="Click to view Outstanding Invoices itemization">
-                                <div style={{ color: f.outstanding > 0 ? '#B7791F' : 'var(--text-muted)', fontWeight: '700' }}>
-                                  {formatCurrency(f.outstanding)}
-                                </div>
-                                {f.outstanding > 0 && (
-                                  <div style={{ display: 'inline-block', padding: '1px 6px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: '600', background: f.avg_days_outstanding > 75 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)', color: f.avg_days_outstanding > 75 ? '#A8402E' : '#B7791F' }}>
-                                    Avg age: {f.avg_days_outstanding}d
-                                  </div>
-                                )}
-                              </td>
-
-                              <td className="text-right" onClick={() => handleOpenFranchiseeModal(f, 'cancelled')} title="Click to view Cancelled & CN itemization">
-                                <div style={{ color: f.cancelled > 0 ? '#A8402E' : 'var(--text-muted)', fontWeight: '600' }}>
-                                  {formatCurrency(f.cancelled)}
-                                </div>
-                                {f.credit_notes > 0 && (
-                                  <div style={{ fontSize: '0.7rem', color: '#7C3AED', fontWeight: '600' }}>
-                                    CN: -{formatCurrency(f.credit_notes)}
-                                  </div>
-                                )}
-                              </td>
-
-                              <td style={{ textAlign: 'center' }} onClick={() => handleOpenFranchiseeModal(f, 'outstanding')}>
-                                <span style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  padding: '4px 10px',
-                                  borderRadius: '16px',
-                                  fontSize: '0.74rem',
-                                  fontWeight: '700',
-                                  background: bandKey === 'likely' ? 'rgba(16, 185, 129, 0.15)' : (bandKey === 'follow_up' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(239, 68, 68, 0.15)'),
-                                  color: bandKey === 'likely' ? '#0F6E56' : (bandKey === 'follow_up' ? '#B7791F' : '#A8402E'),
-                                  border: `1px solid ${bandKey === 'likely' ? 'rgba(16, 185, 129, 0.3)' : (bandKey === 'follow_up' ? 'rgba(234, 179, 8, 0.3)' : 'rgba(239, 68, 68, 0.3)')}`
-                                }}>
-                                  {score}% {bandKey === 'likely' ? '🟢 Likely' : (bandKey === 'follow_up' ? '🟡 Follow-up' : '🔴 At Risk')}
-                                </span>
-                              </td>
-
-                              <td className="text-right font-bold" style={{ color: '#0F6E56' }} onClick={() => handleOpenFranchiseeModal(f, 'outstanding')}>
-                                {f.outstanding > 0 ? formatCurrency(f.expected_collectible) : '—'}
-                              </td>
-
-                              <td style={{ textAlign: 'center' }} onClick={() => handleOpenFranchiseeModal(f)}>
-                                <div 
-                                  title={`Aging Factor: ${cr.aging_factor}% (45%) | TL Conv: ${cr.tl_conversion_rate}% (35%) | Fran Record: ${cr.franchisee_track_record}% (20%)`}
-                                  style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--accent-teal)', fontSize: '0.75rem', fontWeight: '600' }}
-                                >
-                                  <Info size={14} />
-                                  <span>{score}/100</span>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <Pagination
-                    currentPage={safeFranPage}
-                    totalItems={filteredFranchisees.length}
-                    pageSize={FRAN_PER_PAGE}
-                    onPageChange={setFranPage}
-                    itemName="franchisees"
-                  />
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* VIEW 2: TEAM LEADER LEADERBOARD & DIRECTORY                             */}
-      {/* ========================================================================= */}
-      {activeTab === 'leaderboard' && (
-        <div className="animate-fade-in">
-          
-          {/* Overview Cards */}
-          <section className="kpi-grid" style={{ marginBottom: '24px' }}>
-            <div className="kpi-card card-blue">
-              <div className="kpi-header">
-                <span className="kpi-title">Gross Revenue (Service Amt) • {activePeriodLabel}</span>
-                <span className="kpi-icon"><TrendingUp size={18} /></span>
-              </div>
-              <h2 className="kpi-value">{formatLakhs(overallGross)}</h2>
-              <div className="kpi-change up">
-                <span>Aggregated client billing fees generated by TL teams</span>
-              </div>
-            </div>
-
-            <div className="kpi-card card-purple">
-              <div className="kpi-header">
-                <span className="kpi-title">Net Revenue (R Share)</span>
-                <span className="kpi-icon"><Percent size={18} /></span>
-              </div>
-              <h2 className="kpi-value">{formatLakhs(overallNet)}</h2>
-              <div className="kpi-change up">
-                <span>Company net share after franchise share payouts</span>
-              </div>
-            </div>
-
-            <div className="kpi-card card-red">
-              <div className="kpi-header">
-                <span className="kpi-title">Total Potential Revenue Loss</span>
-                <span className="kpi-icon"><Briefcase size={18} /></span>
-              </div>
-              <h2 className="kpi-value">{formatLakhs(overallLoss)}</h2>
-              <div className="kpi-change down">
-                <span>Billing loss from cancelled & internally closed enquiries</span>
-              </div>
-            </div>
-
-            <div className="kpi-card card-green">
-              <div className="kpi-header">
-                <span className="kpi-title">Total Enquiries Managed</span>
-                <span className="kpi-icon"><Users size={18} /></span>
-              </div>
-              <h2 className="kpi-value">{overallEnquiries}</h2>
-              <div className="kpi-change up">
-                <span>Volume of job allocation pipelines audited</span>
-              </div>
-            </div>
-          </section>
-
-          <div className="charts-grid-row">
-            {/* Leaderboard Chart */}
-            <div className="dashboard-card flex-1">
-              <h3 className="card-title">Team Leader Revenue Leaderboard (Gross)</h3>
-              <div className="card-content">
-                <div className="leaderboard-bars">
-                  {processedLeaders.map((tl, index) => {
-                    const maxRevenue = Math.max(...processedLeaders.map(a => a.grossRevenue), 10000);
-                    const percentage = (tl.grossRevenue / maxRevenue) * 100;
-                    const colors = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6'];
-                    const barColor = colors[index % colors.length];
-
-                    return (
-                      <div className="leaderboard-item" key={tl.id || index}>
-                        <div className="leaderboard-item-header">
-                          <div className="agent-rank-name">
-                            <span className="rank-num">#{index + 1}</span>
-                            <span className="agent-name font-bold">{tl.name}</span>
-                          </div>
-                          <span className="agent-revenue-value">{formatCurrency(tl.grossRevenue)}</span>
-                        </div>
-                        
-                        <div className="leaderboard-bar-track">
-                          <div 
-                            className="leaderboard-bar-fill" 
-                            style={{ width: `${percentage}%`, backgroundColor: barColor }}
-                          ></div>
-                        </div>
-                        
-                        <div className="leaderboard-item-footer" style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start', fontSize: '0.7rem' }}>
-                          <div>
-                            Enquiries: {tl.enquiriesProgressed || 0} Prog
-                            {' / '}{tl.enquiriesCancelled || 0} Cancel
-                            {' / '}{tl.enquiriesInternallyClosed || 0} Int. Close
-                            {(tl.enquiriesInprogress || 0) > 0 && <span style={{color:'#60a5fa'}}> / {tl.enquiriesInprogress} Active</span>}
-                            {' / '}{tl.totalEnquiries || 0} Total
-                          </div>
-                          <div style={{ color: 'var(--text-muted)' }}>Gross: {formatCurrency(tl.grossRevenue)} | Net Share: {formatCurrency(tl.netRevenue)}</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Directory Table */}
-            <div className="dashboard-card flex-1">
-              <div className="card-header-flex">
-                <h3 className="card-title">Team Leaders Directory</h3>
-              </div>
-
-              <div className="table-responsive">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Team Leader</th>
-                      <th>Enquiries Realization</th>
-                      <th>Gross Revenue</th>
-                      <th>Net Revenue</th>
-                      <th>Revenue Loss</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(() => {
-                      const safeTlPage = Math.min(Math.max(1, tlPage), Math.max(1, Math.ceil(processedLeaders.length / TL_PER_PAGE)));
-                      const paginatedLeaders = processedLeaders.slice((safeTlPage - 1) * TL_PER_PAGE, safeTlPage * TL_PER_PAGE);
-
-                      return paginatedLeaders.map(tl => (
-                        <tr 
-                          key={tl.id || tl.name}
-                          onClick={() => { setSelectedTlId(tl.name); setActiveTab('portfolio'); setKpiFilter('all'); }}
-                          className="clickable-row-item"
-                          style={{ cursor: 'pointer' }}
-                        >
-                          <td className="font-bold">
-                            <div>{tl.name}</div>
-                            <span style={{ fontSize: '0.7rem', color: 'var(--accent-teal)', fontWeight: 'normal' }}>
-                              Click to view Franchisee Portfolio →
-                            </span>
-                          </td>
-                          <td>
-                            <div style={{ fontWeight: 'bold', fontSize: '0.8rem' }}>
-                              <span style={{ color: '#10b981' }}>{tl.enquiriesProgressed || 0}P</span> / <span style={{ color: '#ef4444' }}>{tl.enquiriesCancelled || 0}C</span> / <span style={{ color: '#ea580c' }}>{tl.enquiriesInternallyClosed || 0}I</span>
-                            </div>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Total: {tl.totalEnquiries || 0}</div>
-                          </td>
-                          <td className="font-bold text-teal text-right">{formatCurrency(tl.grossRevenue)}</td>
-                          <td className="font-bold text-right text-blue" style={{ color: 'var(--color-link)' }}>{formatCurrency(tl.netRevenue)}</td>
-                          <td className="text-red font-bold text-right">{formatCurrency(tl.lossAmount)}</td>
-                          <td>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveTLDetails(tl);
-                                setModalPage(1);
-                              }}
-                              style={{
-                                padding: '4px 8px',
-                                borderRadius: '4px',
-                                border: '1px solid var(--border-color)',
-                                background: 'var(--bg-main)',
-                                color: 'var(--text-main)',
-                                fontSize: '0.72rem',
-                                fontWeight: '600',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              Audit Inflows
-                            </button>
-                          </td>
-                        </tr>
-                      ));
-                    })()}
-                  </tbody>
-                </table>
-              </div>
-
-              <Pagination
-                currentPage={tlPage}
-                totalItems={processedLeaders.length}
-                pageSize={TL_PER_PAGE}
-                onPageChange={setTlPage}
-                itemName="team leaders"
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Credit Note Deductions Audit Modal */}
-      {isCreditNotesModalOpen && (
-        <div className="modal-backdrop" onClick={() => setIsCreditNotesModalOpen(false)}>
-          <div className="modal-content animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '840px', width: '90%' }}>
-            <div className="modal-header">
-              <div className="modal-header-title">
-                <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#1B2321', fontWeight: '700' }}>
-                  Credit Note Deductions Audit • {selectedTlId}
-                </h3>
-                <span className="modal-subtitle" style={{ color: '#6B7268', fontSize: '0.8rem', marginTop: '2px', display: 'block' }}>
-                  Total Deductions: <strong style={{ color: '#7C3AED' }}>-{formatCurrency(pTotals.credit_notes)}</strong> ({creditNoteDetails.length} Reversal Records)
-                </span>
-              </div>
-              <button className="close-btn" onClick={() => setIsCreditNotesModalOpen(false)} aria-label="Close modal">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto', padding: '20px' }}>
-              <div style={{ padding: '12px', background: 'rgba(124, 58, 237, 0.08)', borderRadius: '8px', border: '1px solid rgba(124, 58, 237, 0.2)', marginBottom: '16px', fontSize: '0.82rem', color: '#5B21B6' }}>
-                ℹ️ Credit notes represent billed revenue that was subsequently reversed (e.g. client replacement terms or negotiated invoice adjustments). They are deducted from Gross to ensure commercial revenue reconciles accurately.
-              </div>
-
-              {creditNoteDetails.length === 0 ? (
-                <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px 0' }}>No credit note deduction records found for this team leader.</p>
-              ) : (
-                <div className="table-responsive">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Bill Reference</th>
-                        <th>Franchisee</th>
-                        <th>Client Entity</th>
-                        <th style={{ textAlign: 'right' }}>Reversal Amount</th>
-                        <th>Audit Reason</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {creditNoteDetails.map((cn, i) => (
-                        <tr key={i}>
-                          <td style={{ whiteSpace: 'nowrap', fontSize: '0.78rem' }}>{cn.bill_date || '—'}</td>
-                          <td className="font-mono font-bold" style={{ color: '#7C3AED' }}>{cn.bill_number}</td>
-                          <td className="font-bold">{cn.franchisee}</td>
-                          <td>{cn.company_name}</td>
-                          <td className="font-bold text-right" style={{ color: '#7C3AED' }}>-{formatCurrency(cn.amount)}</td>
-                          <td style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{cn.reason}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Franchisee Detail Item Audit Drawer / Modal */}
-      {selectedFranchiseeDetail && (
-        <div className="modal-backdrop" onClick={() => setSelectedFranchiseeDetail(null)}>
-          <div className="modal-content animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '920px', width: '92%' }}>
-            <div className="modal-header">
-              <div className="modal-header-title">
-                <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#1B2321', fontWeight: '700' }}>
-                  Franchisee Financial Audit: {selectedFranchiseeDetail.name}
-                </h3>
-                <span className="modal-subtitle" style={{ color: '#6B7268', fontSize: '0.8rem', marginTop: '2px', display: 'block' }}>
-                  Team Leader: {selectedTlId} • Gross Billing: <strong style={{ color: 'var(--text-main)' }}>{formatCurrency(selectedFranchiseeDetail.gross)}</strong> • Received: <strong style={{ color: '#0F6E56' }}>{formatCurrency(selectedFranchiseeDetail.received)}</strong> ({selectedFranchiseeDetail.received_pct}%) • Outstanding: <strong style={{ color: '#B7791F' }}>{formatCurrency(selectedFranchiseeDetail.outstanding)}</strong>
-                </span>
-              </div>
-              <button className="close-btn" onClick={() => setSelectedFranchiseeDetail(null)} aria-label="Close modal">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="modal-body" style={{ maxHeight: '74vh', overflowY: 'auto', padding: '20px' }}>
-              
-              {/* 4 Stat Overview Cards */}
-              <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '16px' }}>
-                <div className="stat-box" style={{ background: 'var(--bg-main)', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.70rem', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>Gross Commercial</span>
-                  <h4 style={{ margin: '4px 0 0 0', color: 'var(--text-main)', fontSize: '1.05rem', fontWeight: '800' }}>
-                    {formatCurrency(selectedFranchiseeDetail.gross)}
-                  </h4>
-                </div>
-
-                <div className="stat-box" style={{ background: 'rgba(15, 110, 86, 0.06)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(15, 110, 86, 0.2)' }}>
-                  <span style={{ fontSize: '0.70rem', color: '#0F6E56', fontWeight: '600', textTransform: 'uppercase' }}>Received Collections</span>
-                  <h4 style={{ margin: '4px 0 0 0', color: '#0F6E56', fontSize: '1.05rem', fontWeight: '800' }}>
-                    {formatCurrency(selectedFranchiseeDetail.received)}
-                  </h4>
-                  <span style={{ fontSize: '0.68rem', color: '#0F6E56', display: 'block', marginTop: '2px' }}>
-                    {selectedFranchiseeDetail.received_pct}% of Gross Billing
-                  </span>
-                </div>
-
-                <div className="stat-box" style={{ background: 'rgba(234, 179, 8, 0.08)', padding: '10px 12px', borderRadius: '8px', border: '1px solid rgba(234, 179, 8, 0.25)' }}>
-                  <span style={{ fontSize: '0.70rem', color: '#B7791F', fontWeight: '600', textTransform: 'uppercase' }}>Outstanding Pending</span>
-                  <h4 style={{ margin: '4px 0 0 0', color: '#B7791F', fontSize: '1.05rem', fontWeight: '800' }}>
-                    {formatCurrency(selectedFranchiseeDetail.outstanding)}
-                  </h4>
-                  <span style={{ fontSize: '0.68rem', color: '#B7791F', display: 'block', marginTop: '2px' }}>
-                    Avg age: {selectedFranchiseeDetail.avg_days_outstanding}d
-                  </span>
-                </div>
-
-                <div className="stat-box" style={{ background: 'var(--bg-main)', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                  <span style={{ fontSize: '0.70rem', color: 'var(--text-muted)', fontWeight: '600', textTransform: 'uppercase' }}>AI Recovery Forecast</span>
-                  <h4 style={{ margin: '4px 0 0 0', color: '#0F6E56', fontSize: '1.05rem', fontWeight: '800' }}>
-                    {formatCurrency(selectedFranchiseeDetail.expected_collectible)}
-                  </h4>
-                  <span style={{ fontSize: '0.68rem', color: selectedFranchiseeDetail.collection_risk?.band_key === 'likely' ? '#0F6E56' : '#B7791F', display: 'block', marginTop: '2px' }}>
-                    {selectedFranchiseeDetail.collection_risk?.score}% ({selectedFranchiseeDetail.collection_risk?.band})
-                  </span>
-                </div>
-              </div>
-
-              {/* Sub-Tab Navigation Bar within Franchisee Modal */}
-              <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', marginBottom: '14px' }}>
-                <button
-                  onClick={() => setFranModalTab('received')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '8px 14px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    background: franModalTab === 'received' ? '#0F6E56' : 'transparent',
-                    color: franModalTab === 'received' ? '#ffffff' : 'var(--text-muted)',
-                    fontWeight: franModalTab === 'received' ? '700' : '500',
-                    fontSize: '0.82rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <TrendingUp size={15} />
-                  <span>🟢 Received Inflows ({selectedFranchiseeDetail.received_items?.length || selectedFranchiseeDetail.received_count || 0})</span>
-                </button>
-
-                <button
-                  onClick={() => setFranModalTab('outstanding')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '8px 14px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    background: franModalTab === 'outstanding' ? '#B7791F' : 'transparent',
-                    color: franModalTab === 'outstanding' ? '#ffffff' : 'var(--text-muted)',
-                    fontWeight: franModalTab === 'outstanding' ? '700' : '500',
-                    fontSize: '0.82rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <Clock size={15} />
-                  <span>🟡 Outstanding & In-Progress ({selectedFranchiseeDetail.outstanding_items?.length || selectedFranchiseeDetail.outstanding_count || 0})</span>
-                </button>
-
-                <button
-                  onClick={() => setFranModalTab('cancelled')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '8px 14px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    background: franModalTab === 'cancelled' ? '#A8402E' : 'transparent',
-                    color: franModalTab === 'cancelled' ? '#ffffff' : 'var(--text-muted)',
-                    fontWeight: franModalTab === 'cancelled' ? '700' : '500',
-                    fontSize: '0.82rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <Briefcase size={15} />
-                  <span>🔴 Cancelled & Credit Notes ({(selectedFranchiseeDetail.cancelled_items?.length || 0) + (selectedFranchiseeDetail.credit_note_items?.length || 0)})</span>
-                </button>
-              </div>
-
-              {/* TAB 1: RECEIVED INFLOWS */}
-              {franModalTab === 'received' && (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <span style={{ fontSize: '0.84rem', fontWeight: '700', color: '#0F6E56' }}>
-                      Settled Inflows & Closed Placements ({selectedFranchiseeDetail.received_items?.length || 0} Records • Total: {formatCurrency(selectedFranchiseeDetail.received)})
-                    </span>
-                  </div>
-
-                  {(!selectedFranchiseeDetail.received_items || selectedFranchiseeDetail.received_items.length === 0) ? (
-                    <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px 0' }}>
-                      No closed placement or settled invoice records found for this franchisee.
-                    </p>
-                  ) : (
-                    <div className="table-responsive">
-                      <table className="data-table">
-                        <thead>
-                          <tr>
-                            <th>Bill Date</th>
-                            <th>Bill / Invoice #</th>
-                            <th>Client / Corporate</th>
-                            <th>Position Name</th>
-                            <th>Status</th>
-                            <th style={{ textAlign: 'right' }}>Received Amount</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedFranchiseeDetail.received_items.map((item, idx) => (
-                            <tr key={idx}>
-                              <td style={{ whiteSpace: 'nowrap', fontSize: '0.78rem' }}>{item.bill_date || '—'}</td>
-                              <td className="font-mono font-bold" style={{ color: '#0F6E56' }}>{item.bill_number}</td>
-                              <td className="font-bold">{item.company_name}</td>
-                              <td>{item.position_name}</td>
-                              <td>
-                                <span style={{
-                                  display: 'inline-block',
-                                  padding: '2px 8px',
-                                  borderRadius: '4px',
-                                  fontSize: '0.72rem',
-                                  fontWeight: '700',
-                                  background: 'rgba(16, 185, 129, 0.15)',
-                                  color: '#0F6E56'
-                                }}>
-                                  {item.status || 'Invoiced'}
-                                </span>
-                              </td>
-                              <td className="font-bold text-right" style={{ color: '#0F6E56' }}>
-                                {formatCurrency(item.amount)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* TAB 2: OUTSTANDING & COLLECTION RISK */}
-              {franModalTab === 'outstanding' && (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <span style={{ fontSize: '0.84rem', fontWeight: '700', color: '#B7791F' }}>
-                      Open In-Progress Pipelines & Outstanding Invoices ({selectedFranchiseeDetail.outstanding_items?.length || 0} Records • Total: {formatCurrency(selectedFranchiseeDetail.outstanding)})
-                    </span>
-                  </div>
-
-                  {(!selectedFranchiseeDetail.outstanding_items || selectedFranchiseeDetail.outstanding_items.length === 0) ? (
-                    <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px 0' }}>
-                      No open outstanding invoice or pipeline items for this franchisee.
-                    </p>
-                  ) : (
-                    <div className="table-responsive">
-                      <table className="data-table">
-                        <thead>
-                          <tr>
-                            <th>Enquiry ID</th>
-                            <th>Client / Company</th>
-                            <th>Position</th>
-                            <th>Pipeline Status</th>
-                            <th style={{ textAlign: 'right' }}>Amount</th>
-                            <th style={{ textAlign: 'center' }}>Days Aged</th>
-                            <th style={{ textAlign: 'center' }}>Aging Factor</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedFranchiseeDetail.outstanding_items.map((item, idx) => {
-                            const isRevised = String(item.status).toLowerCase() === 'revised';
-                            return (
-                              <tr key={idx}>
-                                <td className="font-mono">#{item.enquiry_id}</td>
-                                <td className="font-bold">{item.company_name}</td>
-                                <td>{item.position_name}</td>
-                                <td>
-                                  <span style={{
-                                    padding: '2px 8px',
-                                    borderRadius: '4px',
-                                    fontSize: '0.72rem',
-                                    fontWeight: '700',
-                                    background: isRevised ? 'rgba(234, 179, 8, 0.2)' : 'rgba(59, 130, 246, 0.15)',
-                                    color: isRevised ? '#B7791F' : '#2563EB'
-                                  }}>
-                                    {item.status}
-                                  </span>
-                                </td>
-                                <td className="font-bold text-right" style={{ color: '#B7791F' }}>
-                                  {formatCurrency(item.amount)}
-                                </td>
-                                <td style={{ textAlign: 'center' }}>
-                                  <span style={{
-                                    padding: '2px 6px',
-                                    borderRadius: '4px',
-                                    fontSize: '0.72rem',
-                                    fontWeight: '600',
-                                    background: item.days_outstanding > 75 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)',
-                                    color: item.days_outstanding > 75 ? '#A8402E' : '#B7791F'
-                                  }}>
-                                    {item.days_outstanding}d
-                                  </span>
-                                </td>
-                                <td style={{ textAlign: 'center', fontSize: '0.75rem', fontWeight: '700', color: isRevised ? '#B7791F' : 'var(--text-muted)' }}>
-                                  {isRevised ? '0.70x (Revised Pipeline)' : '1.00x'}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* TAB 3: CANCELLED & CREDIT NOTES */}
-              {franModalTab === 'cancelled' && (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <span style={{ fontSize: '0.84rem', fontWeight: '700', color: '#A8402E' }}>
-                      Cancelled Enquiries & Credit Note Deductions (Cancelled: {formatCurrency(selectedFranchiseeDetail.cancelled)} • Credit Notes: -{formatCurrency(selectedFranchiseeDetail.credit_notes)})
-                    </span>
-                  </div>
-
-                  {((!selectedFranchiseeDetail.cancelled_items || selectedFranchiseeDetail.cancelled_items.length === 0) &&
-                    (!selectedFranchiseeDetail.credit_note_items || selectedFranchiseeDetail.credit_note_items.length === 0)) ? (
-                    <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px 0' }}>
-                      No cancelled enquiries or credit note reversals recorded for this franchisee.
-                    </p>
-                  ) : (
-                    <div className="table-responsive">
-                      <table className="data-table">
-                        <thead>
-                          <tr>
-                            <th>Date</th>
-                            <th>Ref / ID</th>
-                            <th>Client Entity</th>
-                            <th>Position / Details</th>
-                            <th>Classification</th>
-                            <th style={{ textAlign: 'right' }}>Amount</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {/* Cancelled Enquiries */}
-                          {(selectedFranchiseeDetail.cancelled_items || []).map((item, idx) => (
-                            <tr key={`canc-${idx}`}>
-                              <td style={{ whiteSpace: 'nowrap', fontSize: '0.78rem' }}>{item.date || '—'}</td>
-                              <td className="font-mono">#{item.enquiry_id}</td>
-                              <td className="font-bold">{item.company_name}</td>
-                              <td>{item.position_name}</td>
-                              <td>
-                                <span style={{
-                                  padding: '2px 8px',
-                                  borderRadius: '4px',
-                                  fontSize: '0.72rem',
-                                  fontWeight: '700',
-                                  background: 'rgba(239, 68, 68, 0.15)',
-                                  color: '#A8402E'
-                                }}>
-                                  {item.status || 'Cancelled'}
-                                </span>
-                              </td>
-                              <td className="font-bold text-right" style={{ color: '#A8402E' }}>
-                                {formatCurrency(item.amount)}
-                              </td>
-                            </tr>
-                          ))}
-
-                          {/* Credit Notes */}
-                          {(selectedFranchiseeDetail.credit_note_items || []).map((item, idx) => (
-                            <tr key={`cn-${idx}`}>
-                              <td style={{ whiteSpace: 'nowrap', fontSize: '0.78rem' }}>{item.bill_date || '—'}</td>
-                              <td className="font-mono font-bold" style={{ color: '#7C3AED' }}>{item.bill_number}</td>
-                              <td className="font-bold">{item.company_name}</td>
-                              <td>{item.position_name || item.reason}</td>
-                              <td>
-                                <span style={{
-                                  padding: '2px 8px',
-                                  borderRadius: '4px',
-                                  fontSize: '0.72rem',
-                                  fontWeight: '700',
-                                  background: 'rgba(124, 58, 237, 0.15)',
-                                  color: '#7C3AED'
-                                }}>
-                                  Credit Note
-                                </span>
-                              </td>
-                              <td className="font-bold text-right" style={{ color: '#7C3AED' }}>
-                                -{formatCurrency(item.amount)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
-
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Drilldown Modal for Closed Placements Audit */}
-      {activeTLDetails && (() => {
-        const currentTL = activeTLDetails;
-        const detailTxs = transactions.filter(t => 
-          t.teamLeaderName && 
-          t.teamLeaderName.trim().toLowerCase() === currentTL.name.trim().toLowerCase() &&
-          isInFilteredPeriod(t)
-        );
-
-        const progressed = currentTL.enquiriesProgressed || 0;
-        const cancelled = currentTL.enquiriesCancelled || 0;
-        const internallyClosed = currentTL.enquiriesInternallyClosed || 0;
-        const total = Math.max(1, currentTL.totalEnquiries || 0, progressed + cancelled + internallyClosed);
-
-        const progressedPct = Math.min(100, Math.max(0, (progressed / total) * 100));
-        const cancelledPct = Math.min(100 - progressedPct, Math.max(0, (cancelled / total) * 100));
-        const internallyClosedPct = Math.min(100 - progressedPct - cancelledPct, Math.max(0, (internallyClosed / total) * 100));
-        const pendingPct = Math.max(0, 100 - progressedPct - cancelledPct - internallyClosedPct);
-        const realizationPct = Math.min(100, Math.round(((progressed + cancelled + internallyClosed) / total) * 100));
-
-        return (
-          <div className="modal-backdrop" onClick={() => setActiveTLDetails(null)}>
-            <div className="modal-content animate-slide-up" onClick={e => e.stopPropagation()} style={{ maxWidth: '960px', width: '92%' }}>
-              <div className="modal-header">
-                <div className="modal-header-title">
-                  <h3 style={{ margin: 0, fontSize: '1.15rem', color: '#1B2321', fontWeight: '700' }}>
-                    Performance Audit: {currentTL.name}
-                  </h3>
-                  <span className="modal-subtitle" style={{ color: '#6B7268', fontSize: '0.8rem', marginTop: '2px', display: 'block' }}>
-                    Team Leader Pipeline & Placement Realization • {activePeriodLabel}
-                  </span>
-                </div>
-                <button className="close-btn" onClick={() => setActiveTLDetails(null)} aria-label="Close modal">
-                  <X size={18} />
-                </button>
-              </div>
-
-              <div className="modal-body" style={{ maxHeight: '76vh', overflowY: 'auto', padding: '20px 24px', backgroundColor: '#FFFFFF' }}>
-                <h4 style={{ color: '#1B2321', margin: '0 0 0.75rem 0', fontWeight: '700', fontSize: '0.92rem' }}>
-                  Enquiry Pipeline & Realization
-                </h4>
-                
-                {/* Progress Bar */}
-                <div style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0', marginBottom: '1.25rem' }}>
-                  <div style={{ display: 'flex', height: '24px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#E3E5E0' }}>
-                    {progressedPct > 0 && (
-                      <div 
-                        style={{ 
-                          width: `${progressedPct}%`, 
-                          backgroundColor: '#0F6E56', 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'center', 
-                          color: '#fff', 
-                          fontSize: '0.72rem', 
-                          fontWeight: '600',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          padding: '0 4px',
-                          boxSizing: 'border-box'
-                        }} 
-                        title={`${progressed} Progressed (${progressedPct.toFixed(1)}%)`}
-                      >
-                        {progressedPct >= 14 ? `${progressed} Prog (${progressedPct.toFixed(0)}%)` : (progressedPct >= 7 ? `${progressed}` : '')}
-                      </div>
-                    )}
-                    {cancelledPct > 0 && (
-                      <div 
-                        style={{ 
-                          width: `${cancelledPct}%`, 
-                          backgroundColor: '#A8402E', 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'center', 
-                          color: '#fff', 
-                          fontSize: '0.72rem', 
-                          fontWeight: '600',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          padding: '0 4px',
-                          boxSizing: 'border-box'
-                        }} 
-                        title={`${cancelled} Cancelled (${cancelledPct.toFixed(1)}%)`}
-                      >
-                        {cancelledPct >= 14 ? `${cancelled} Cancel (${cancelledPct.toFixed(0)}%)` : (cancelledPct >= 7 ? `${cancelled}` : '')}
-                      </div>
-                    )}
-                    {internallyClosedPct > 0 && (
-                      <div 
-                        style={{ 
-                          width: `${internallyClosedPct}%`, 
-                          backgroundColor: '#B7791F', 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'center', 
-                          color: '#fff', 
-                          fontSize: '0.72rem', 
-                          fontWeight: '600',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          padding: '0 4px',
-                          boxSizing: 'border-box'
-                        }} 
-                        title={`${internallyClosed} Internally Closed (${internallyClosedPct.toFixed(1)}%)`}
-                      >
-                        {internallyClosedPct >= 14 ? `${internallyClosed} Int. (${internallyClosedPct.toFixed(0)}%)` : (internallyClosedPct >= 7 ? `${internallyClosed}` : '')}
-                      </div>
-                    )}
-                    {pendingPct > 0 && (
-                      <div 
-                        style={{ 
-                          width: `${pendingPct}%`, 
-                          backgroundColor: '#94A3B8', 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'center', 
-                          color: '#fff', 
-                          fontSize: '0.72rem', 
-                          fontWeight: '600',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          padding: '0 4px',
-                          boxSizing: 'border-box'
-                        }} 
-                        title={`${Math.max(0, total - progressed - cancelled - internallyClosed)} Pending (${pendingPct.toFixed(1)}%)`}
-                      >
-                        {pendingPct >= 14 ? `Pending (${pendingPct.toFixed(0)}%)` : ''}
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.75rem', color: '#6B7268', fontWeight: '500' }}>
-                    <span>Total Enquiries: <strong style={{ color: '#1B2321' }}>{total}</strong></span>
-                    <span>Pipeline Realization: <strong style={{ color: '#0F6E56' }}>{realizationPct}%</strong></span>
-                  </div>
-                </div>
-
-                {/* KPI Metrics */}
-                <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '1.5rem' }}>
-                  <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
-                    <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Gross Revenue (Service Amt)</span>
-                    <h4 style={{ color: '#0F6E56', margin: '6px 0 0 0', fontSize: '1.25rem', fontWeight: '700' }}>{formatCurrency(currentTL.grossRevenue)}</h4>
-                  </div>
-                  <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
-                    <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Net Revenue (R Share)</span>
-                    <h4 style={{ color: '#22314F', margin: '6px 0 0 0', fontSize: '1.25rem', fontWeight: '700' }}>{formatCurrency(currentTL.netRevenue)}</h4>
-                  </div>
-                  <div className="stat-box" style={{ background: '#F6F7F4', padding: '14px', borderRadius: '10px', border: '1px solid #E3E5E0' }}>
-                    <span className="stat-label" style={{ fontSize: '0.75rem', color: '#6B7268', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Potential Revenue Loss</span>
-                    <h4 style={{ color: '#A8402E', margin: '6px 0 0 0', fontSize: '1.25rem', fontWeight: '700' }}>{formatCurrency(currentTL.lossAmount)}</h4>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', marginTop: '1.25rem' }}>
-                  <h4 style={{ color: '#1B2321', margin: 0, fontWeight: '700', fontSize: '0.92rem' }}>
-                    Closed Placement Inflows ({detailTxs.length}) • {activePeriodLabel}
-                  </h4>
-                </div>
-
-                {detailTxs.length === 0 ? (
-                  <p style={{ color: '#6B7268', fontSize: '0.85rem', padding: '20px 0', textAlign: 'center' }}>No closed placement income transactions linked to this team leader for this period.</p>
-                ) : (() => {
-                  const ITEMS_PER_PAGE = 10;
-                  const totalPages = Math.ceil(detailTxs.length / ITEMS_PER_PAGE);
-                  const safeModalPage = Math.min(Math.max(1, modalPage), totalPages);
-                  const paginatedTxs = detailTxs.slice((safeModalPage - 1) * ITEMS_PER_PAGE, safeModalPage * ITEMS_PER_PAGE);
-
-                  return (
-                    <div>
-                      <div className="table-responsive" style={{ border: '1px solid #E3E5E0', borderRadius: '8px', overflow: 'hidden' }}>
-                        <table className="data-table" style={{ fontSize: '0.82rem', width: '100%', margin: 0 }}>
-                          <thead>
-                            <tr style={{ background: '#FAFAF8', borderBottom: '1px solid #E3E5E0' }}>
-                              <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', width: '110px' }}>Date</th>
-                              <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600' }}>Inflow Detail / Position</th>
-                              <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', width: '100px' }}>Status</th>
-                              <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', textAlign: 'right', width: '120px' }}>Service Amt</th>
-                              <th style={{ color: '#6B7268', background: '#FAFAF8', padding: '10px 14px', fontWeight: '600', textAlign: 'right', width: '120px' }}>R Share</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {paginatedTxs.map(t => (
-                              <tr key={t.id} style={{ borderBottom: '1px solid #E3E5E0' }}>
-                                <td style={{ color: '#6B7268', padding: '10px 14px', whiteSpace: 'nowrap' }}>{formatDate(t.date)}</td>
-                                <td style={{ padding: '10px 14px' }}>
-                                  <div style={{ fontWeight: '600', color: '#1B2321', fontSize: '0.84rem' }}>{t.title}</div>
-                                  <div style={{ fontSize: '0.72rem', color: '#6B7268', marginTop: '2px' }}>Category: {t.category} • {t.subCategory || 'General'}</div>
-                                </td>
-                                <td style={{ padding: '10px 14px' }}>
-                                  <span style={{
-                                    display: 'inline-block',
-                                    padding: '2px 8px',
-                                    borderRadius: '4px',
-                                    fontSize: '0.72rem',
-                                    fontWeight: '600',
-                                    backgroundColor: '#E6F4EA',
-                                    color: '#0F6E56'
-                                  }}>
-                                    {t.enquiryStatus || 'Closed'}
-                                  </span>
-                                </td>
-                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '700', color: '#1B2321' }}>
-                                  {formatCurrency(t.serviceAmt || t.amount)}
-                                </td>
-                                <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '700', color: '#0F6E56' }}>
-                                  {formatCurrency(t.rShare)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      <Pagination
-                        currentPage={safeModalPage}
-                        totalItems={detailTxs.length}
-                        pageSize={ITEMS_PER_PAGE}
-                        onPageChange={setModalPage}
-                        itemName="records"
-                        style={{ marginTop: '8px', padding: '10px 4px' }}
-                      />
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {/* 4. Franchisee Worklist Table */}
+      <TLFranchiseeTable
+        franchisees={filteredFranchisees}
+        activeFilter={tableFilter}
+        onChangeFilter={setTableFilter}
+        filterCounts={filterCounts}
+        searchQuery={tableSearchQuery}
+        onSearchChange={setTableSearchQuery}
+        onSelectFranchisee={setSelectedFranchisee}
+        currentPage={tablePage}
+        onPageChange={setTablePage}
+        itemsPerPage={10}
+      />
+
+      {/* 5. Right-Side Slide-in Drawer */}
+      <TLDetailDrawer
+        franchisee={selectedFranchisee}
+        isOpen={Boolean(selectedFranchisee)}
+        onClose={() => setSelectedFranchisee(null)}
+      />
     </div>
   );
-};
-
-export default TLPerformance;
+}

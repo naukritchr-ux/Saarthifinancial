@@ -64,7 +64,7 @@ const VERDICTS = [
   { id: 'loss', label: 'Loss Drain', badgeClass: 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' }
 ];
 
-export default function CostOfPerformance() {
+export default function CostOfPerformance({ setActivePage }) {
   const { 
     selectedMonth, 
     setSelectedMonth, 
@@ -1024,19 +1024,40 @@ export default function CostOfPerformance() {
                         </span>
                       </td>
 
-                      {/* Audit Drilldown Action */}
+                      {/* Audit & Collections Action */}
                       <td className="px-4 py-3 text-center">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setAuditTarget(r);
-                          }}
-                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-900 bg-teal-50/60 hover:bg-teal-100/60 px-2 py-1 rounded border border-teal-200 transition-colors"
-                        >
-                          <span>Audit</span>
-                          <ExternalLink className="w-2.5 h-2.5" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setAuditTarget(r);
+                            }}
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-700 hover:text-teal-900 bg-teal-50/60 hover:bg-teal-100/60 px-2 py-1 rounded border border-teal-200 transition-colors"
+                          >
+                            <span>Audit</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </button>
+                          {activeTab === 'tl' && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                sessionStorage.setItem('fintective_selected_tl', r.dimension_value);
+                                if (typeof setActivePage === 'function') {
+                                  setActivePage('tl-performance');
+                                } else {
+                                  window.dispatchEvent(new CustomEvent('navigate-to-page', { detail: { page: 'tl-performance', tl: r.dimension_value } }));
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:text-blue-900 bg-blue-50/60 hover:bg-blue-100/60 px-2 py-1 rounded border border-blue-200 transition-colors"
+                              title={`View collections worklist for ${r.dimension_value}`}
+                            >
+                              <span>Collections</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

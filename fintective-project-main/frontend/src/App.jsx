@@ -73,7 +73,7 @@ function AppContent() {
       case 'dashboard':
         return <Dashboard setActivePage={setActivePage} />;
       case 'cost-performance':
-        return <CostOfPerformance />;
+        return <CostOfPerformance setActivePage={setActivePage} />;
       case 'franchisees':
         return <Franchisees />;
       case 'bd-performance':
@@ -81,7 +81,7 @@ function AppContent() {
       case 'industry-analysis':
         return <IndustryAnalysis />;
       case 'tl-performance':
-        return <TLPerformance />;
+        return <TLPerformance setActivePage={setActivePage} />;
       case 'portal-analytics':
         return <JobPortalAnalytics />;
       case 'cash-outflow':
