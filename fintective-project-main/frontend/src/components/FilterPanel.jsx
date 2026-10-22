@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import '../pages/CostOfPerformance.css';
 import { 
   Filter, X, Check, ChevronDown, ChevronUp, Search, 
   RotateCcw, Calendar, Sliders, Info

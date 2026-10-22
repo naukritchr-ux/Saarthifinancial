@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext, useMemo, useCallback, useRef } 
 import { FinanceContext } from '../context/FinanceContext';
 import FilterPanel from '../components/FilterPanel';
 import AuditDrawer from '../components/AuditDrawer';
+import './CostOfPerformance.css';
 import { 
   Filter, Search, X, Check, ChevronDown, ChevronUp, Download, 
   RotateCcw, Calendar, Sliders, AlertCircle, TrendingUp, TrendingDown, 
