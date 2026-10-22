@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useContext, useMemo, useCallback, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { FinanceContext } from '../context/FinanceContext';
 import FilterPanel from '../components/FilterPanel';
 import AuditDrawer from '../components/AuditDrawer';
@@ -28,7 +27,6 @@ const VERDICTS = [
 ];
 
 export default function CostOfPerformance() {
-  const [searchParams, setSearchParams] = useSearchParams();
   const { 
     selectedMonth, 
     setSelectedMonth, 
@@ -39,15 +37,21 @@ export default function CostOfPerformance() {
     userRole 
   } = useContext(FinanceContext);
 
-  // 1. URL State Initialization
-  const initialTab = searchParams.get('tab') || 'bd';
-  const initialVerdict = searchParams.get('verdict') || 'all';
-  const initialSearch = searchParams.get('search') || '';
+  // 1. URL State Initialization using native window.location.search
+  const getInitialParam = (key, defaultVal = '') => {
+    if (typeof window === 'undefined') return defaultVal;
+    return new URLSearchParams(window.location.search).get(key) || defaultVal;
+  };
 
   const parseArrayParam = (key) => {
-    const val = searchParams.get(key);
+    if (typeof window === 'undefined') return [];
+    const val = new URLSearchParams(window.location.search).get(key);
     return val ? val.split(',').filter(Boolean) : [];
   };
+
+  const initialTab = getInitialParam('tab', 'bd');
+  const initialVerdict = getInitialParam('verdict', 'all');
+  const initialSearch = getInitialParam('search', '');
 
   // 2. Active Tab & Instant Controls
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -186,8 +190,9 @@ export default function CostOfPerformance() {
     return selectedMonth;
   }, [selectedMonth]);
 
-  // Synchronize applied filters with URL query parameters
+  // Synchronize applied filters with URL query parameters using window.history.replaceState
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     const params = new URLSearchParams();
     params.set('tab', activeTab);
     if (activeVerdict !== 'all') params.set('verdict', activeVerdict);
@@ -208,8 +213,9 @@ export default function CostOfPerformance() {
     if (appliedFilters.clientStatuses.length) params.set('client_status', appliedFilters.clientStatuses.join(','));
     if (appliedFilters.enquiryStatuses.length) params.set('enquiry_status', appliedFilters.enquiryStatuses.join(','));
 
-    setSearchParams(params, { replace: true });
-  }, [activeTab, activeVerdict, debouncedSearch, appliedFilters, setSearchParams]);
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState({}, '', newUrl);
+  }, [activeTab, activeVerdict, debouncedSearch, appliedFilters]);
 
   // Fetch Cascading Dynamic Filter Options from Backend
   const fetchFilterOptions = useCallback(async () => {
