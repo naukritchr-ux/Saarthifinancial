@@ -59,6 +59,8 @@ def parse_float(val, default=0.0):
 def fetch_saarthi_endpoint(endpoint_path, timeout=12):
     """
     Tries verified Saarthi CRM endpoints with error capturing and pagination support.
+    Supports SAARTHI_API_TOKEN Bearer auth, records status/body snippets for failures,
+    and falls back to empty response only if all candidate endpoints fail.
     """
     clean_path = endpoint_path.lstrip('/')
     base_url_env = os.environ.get('SAARTHI_API_BASE_URL', '').rstrip('/')
@@ -72,47 +74,91 @@ def fetch_saarthi_endpoint(endpoint_path, timeout=12):
     ]
     candidates = [c for c in candidates if c]
 
+    headers = dict(HTTP_HEADERS)
+    api_token = (os.environ.get('SAARTHI_API_TOKEN') or '').strip()
+    if api_token:
+        headers['Authorization'] = f"Bearer {api_token}"
+
     attempt_errors = []
+    empty_fallback = None
+
     for url in candidates:
         try:
-            req = urllib.request.Request(url, headers=HTTP_HEADERS)
+            req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=timeout) as response:
-                if response.status == 200:
-                    raw_data = response.read().decode('utf-8')
+                status_code = getattr(response, 'status', 200)
+                raw_data = response.read().decode('utf-8', errors='replace')
+                
+                if status_code != 200:
+                    snippet = raw_data[:150].strip()
+                    attempt_errors.append(f"{url} -> HTTP {status_code}: non-200 status {f'({snippet})' if snippet else ''}".strip())
+                    continue
+
+                try:
                     parsed = json.loads(raw_data)
-                    if isinstance(parsed, list):
+                except Exception as json_err:
+                    snippet = raw_data[:150].strip()
+                    attempt_errors.append(f"{url} -> HTTP 200: Non-JSON body ({snippet})")
+                    continue
+
+                if isinstance(parsed, list):
+                    if len(parsed) > 0:
                         return {"ok": True, "data": parsed, "url": url}
-                    elif isinstance(parsed, dict):
-                        data_arr = parsed.get("data") or parsed.get("enquiries") or parsed.get("invoices") or parsed.get("expenses") or parsed.get("franchisees") or []
-                        if isinstance(data_arr, list):
-                            # Check for pagination metadata
-                            total_pages = parsed.get("totalPages") or parsed.get("last_page") or (parsed.get("pagination") or {}).get("totalPages")
-                            if total_pages and int(total_pages) > 1:
-                                page_limit = min(int(total_pages), 50)
-                                for p in range(2, page_limit + 1):
-                                    p_url = f"{url}?page={p}"
-                                    try:
-                                        p_req = urllib.request.Request(p_url, headers=HTTP_HEADERS)
-                                        with urllib.request.urlopen(p_req, timeout=timeout) as p_res:
-                                            if p_res.status == 200:
-                                                p_data = json.loads(p_res.read().decode('utf-8'))
-                                                p_items = p_data if isinstance(p_data, list) else (p_data.get("data") or [])
-                                                data_arr.extend(p_items)
-                                    except Exception as p_err:
-                                        print(f"[SYNC PAGINATION WARN] Page {p} on {url}: {p_err}")
-                                        break
-                            return {"ok": True, "data": data_arr, "url": url}
-                        return {"ok": True, "data": [parsed], "url": url}
+                    else:
+                        if empty_fallback is None:
+                            empty_fallback = {"ok": True, "data": [], "url": url}
+                        attempt_errors.append(f"{url} -> HTTP 200: returned empty list []")
+                        continue
+                elif isinstance(parsed, dict):
+                    data_arr = parsed.get("data") or parsed.get("enquiries") or parsed.get("invoices") or parsed.get("expenses") or parsed.get("franchisees") or []
+                    if isinstance(data_arr, list):
+                        if len(data_arr) == 0:
+                            if empty_fallback is None:
+                                empty_fallback = {"ok": True, "data": [], "url": url}
+                            attempt_errors.append(f"{url} -> HTTP 200: empty data array in response object")
+                            continue
+
+                        # Check for pagination metadata
+                        total_pages = parsed.get("totalPages") or parsed.get("last_page") or (parsed.get("pagination") or {}).get("totalPages")
+                        if total_pages and int(total_pages) > 1:
+                            page_limit = min(int(total_pages), 50)
+                            for p in range(2, page_limit + 1):
+                                sep = "&" if "?" in url else "?"
+                                p_url = f"{url}{sep}page={p}"
+                                try:
+                                    p_req = urllib.request.Request(p_url, headers=headers)
+                                    with urllib.request.urlopen(p_req, timeout=timeout) as p_res:
+                                        if getattr(p_res, 'status', 200) == 200:
+                                            p_data = json.loads(p_res.read().decode('utf-8', errors='replace'))
+                                            p_items = p_data if isinstance(p_data, list) else (p_data.get("data") or [])
+                                            data_arr.extend(p_items)
+                                except Exception as p_err:
+                                    print(f"[SYNC PAGINATION WARN] Page {p} on {url}: {p_err}")
+                                    break
+                        return {"ok": True, "data": data_arr, "url": url}
+                    return {"ok": True, "data": [parsed], "url": url}
+                else:
+                    attempt_errors.append(f"{url} -> HTTP 200: unexpected JSON type ({type(parsed).__name__})")
+                    continue
+
         except urllib.error.HTTPError as he:
-            attempt_errors.append(f"{url} -> HTTP {he.code}: {he.reason}")
+            body_snippet = ""
+            try:
+                body_snippet = he.read().decode('utf-8', errors='ignore')[:150].strip()
+            except Exception:
+                pass
+            attempt_errors.append(f"{url} -> HTTP {he.code}: {he.reason} {f'({body_snippet})' if body_snippet else ''}".strip())
         except urllib.error.URLError as ue:
             attempt_errors.append(f"{url} -> URL Error: {ue.reason}")
         except Exception as err:
             attempt_errors.append(f"{url} -> Error: {str(err)}")
             continue
 
+    if empty_fallback is not None:
+        return empty_fallback
+
     err_summary = "; ".join(attempt_errors) if attempt_errors else f"Failed to fetch {endpoint_path}"
-    return {"ok": False, "data": [], "error": f"Failed to fetch {endpoint_path}: {err_summary}"}
+    return {"ok": False, "data": [], "error": f"Failed to fetch {endpoint_path}: {err_summary}", "url": candidates[0] if candidates else endpoint_path}
 
 # --------------------------------------------------------------------------
 # Expense sync + reconciliation helpers
@@ -320,7 +366,7 @@ def get_ghost_row_report(prune=False, tables=None):
         conn.close()
 
 
-def sync_saarthi_all():
+def sync_saarthi_all(existing_log_id=None):
     """
     Main sync engine: Fetches all Saarthi APIs and upserts into MySQL.
     Protected by sync_lock (in-process) and a MySQL GET_LOCK (across workers)
@@ -334,16 +380,30 @@ def sync_saarthi_all():
         }
 
     conn = None
+    start_time = datetime.datetime.now()
+    log_id = existing_log_id
+    db_lock_held = False
+    lock_busy = False
+
     try:
+        conn = get_db_connection()
+
+        # Step 1: Create in_progress row BEFORE ensure_tables_exist() if not already provided
+        if not log_id:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO crm_sync_logs (sync_type, status, started_at)
+                        VALUES ('all', 'in_progress', NOW())
+                    """)
+                    log_id = cur.lastrowid
+            except Exception as e:
+                print("Early log insert notice:", str(e))
+
+        # Step 2: Ensure schema tables exist
         ensure_tables_exist()
-        start_time = datetime.datetime.now()
-        log_id = None
-        db_lock_held = False
-        lock_busy = False
 
         try:
-            conn = get_db_connection()
-
             # Cross-process lock: another gunicorn worker may already be syncing.
             try:
                 with conn.cursor() as cur:
@@ -355,14 +415,14 @@ def sync_saarthi_all():
                         cur.execute("""
                             SELECT id, TIMESTAMPDIFF(MINUTE, started_at, NOW()) AS age_minutes 
                             FROM crm_sync_logs 
-                            WHERE status = 'in_progress' 
+                            WHERE status = 'in_progress' AND id != %s
                             ORDER BY id DESC LIMIT 1
-                        """)
+                        """, (log_id or 0,))
                         stale_row = cur.fetchone()
                         if stale_row and stale_row.get("age_minutes", 0) > 3:
                             print(f"[SYNC] Detected stale in_progress sync log ID {stale_row['id']} ({stale_row['age_minutes']}m old). Auto-recovering lock...")
                             cur.execute("SELECT RELEASE_LOCK(%s)", (DB_SYNC_LOCK_NAME,))
-                            cur.execute("UPDATE crm_sync_logs SET status = 'failed', completed_at = NOW(), message = 'Auto-recovered from stale lock' WHERE status = 'in_progress'")
+                            cur.execute("UPDATE crm_sync_logs SET status = 'failed', completed_at = NOW(), message = 'Auto-recovered from stale lock' WHERE status = 'in_progress' AND id != %s", (log_id or 0,))
                             conn.commit()
                             cur.execute("SELECT GET_LOCK(%s, 0) AS got", (DB_SYNC_LOCK_NAME,))
                             got = (cur.fetchone() or {}).get("got")
@@ -375,24 +435,14 @@ def sync_saarthi_all():
             except Exception as lock_err:
                 print("DB sync-lock notice (continuing without it):", str(lock_err))
 
-            if not lock_busy:
-                with conn.cursor() as cur:
-                    # Clean up any lingering in_progress logs from previously terminated workers
-                    cur.execute("""
-                        UPDATE crm_sync_logs 
-                        SET status = 'failed', completed_at = NOW(), message = 'Interrupted by server restart' 
-                        WHERE status = 'in_progress'
-                    """)
-                    cur.execute("""
-                        INSERT INTO crm_sync_logs (sync_type, status, started_at)
-                        VALUES ('all', 'in_progress', NOW())
-                    """)
-                    log_id = cur.lastrowid
         except Exception as e:
-            print("Log entry notice:", str(e))
+            print("Sync initialization notice:", str(e))
 
         if lock_busy:
             try:
+                if log_id:
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE crm_sync_logs SET status = 'failed', completed_at = NOW(), message = 'Sync locked by concurrent worker' WHERE id = %s", (log_id,))
                 conn.close()
             except Exception:
                 pass
@@ -410,6 +460,7 @@ def sync_saarthi_all():
             "expenses": 0,
             "clients": 0,
             "legals": 0,
+            "payroll": 0,
             "errors": [],
             "notes": [],
             "ghost_rows": {}
@@ -843,10 +894,10 @@ def sync_saarthi_all():
                 print(f"[SYNC OK] Synced {stats['franchise_payments']} Franchise Payments.")
 
             # 7. Sync Corporate Payroll Records to MySQL
-            print("[SYNC] Syncing Payroll Records from Saarthi API to MySQL...")
+            print("[SYNC] Syncing Payroll Records from Saarthi API to MySQL (force refresh)...")
             try:
                 from payroll_service import get_all_payroll_transactions
-                p_txs = get_all_payroll_transactions()
+                p_txs = get_all_payroll_transactions(force_refresh=True)
                 if p_txs:
                     p_rows = []
                     for t in p_txs:
@@ -892,19 +943,32 @@ def sync_saarthi_all():
                     stats["payroll"] = len(p_rows)
                     print(f"[SYNC OK] Synced {stats['payroll']} Payroll Records into MySQL.")
             except Exception as p_err:
-                print("[SYNC WARN] Payroll sync warning (continuing):", p_err)
+                print("[SYNC WARN] Payroll sync warning:", str(p_err))
+                stats["notes"].append(f"Payroll sync warning: {p_err}")
+                stats["errors"].append(f"Payroll sync failed: {p_err}")
 
             # Finalize log entry
             duration = (datetime.datetime.now() - start_time).total_seconds()
-            if stats["errors"]:
+            
+            # Requirement 1: If enquiries AND invoices both synced 0 rows while stats["errors"] is non-empty,
+            # set stats["ok"] = False and write crm_sync_logs.status = 'failed' with joined errors
+            if stats["enquiries"] == 0 and stats["invoices"] == 0 and stats["errors"]:
+                stats["ok"] = False
+                final_status = "failed"
+                final_message = f"Sync failed in {duration:.2f}s: " + " | ".join(stats["errors"])
+            elif stats["errors"]:
                 final_status = "completed_with_warnings"
                 final_message = f"Sync finished with warnings in {duration:.2f}s: " + " | ".join(stats["errors"])
             else:
                 final_status = "completed"
                 final_message = f"Sync completed successfully in {duration:.2f}s"
+
+            if stats.get("payroll"):
+                final_message += f" | Payroll: {stats['payroll']}"
             if stats["notes"]:
                 final_message += " | " + " | ".join(stats["notes"])
             final_message = final_message[:4000]
+
             if log_id:
                 with conn.cursor() as cur:
                     cur.execute("""
@@ -953,10 +1017,15 @@ def sync_saarthi_all():
                 except Exception:
                     pass
 
-        # Fix A5: Invalidate all worker caches after sync completes
+        # Requirement 6: Resolve invalidate_all_caches via sys.modules to prevent duplicate app instances
         try:
-            from app import invalidate_all_caches
-            invalidate_all_caches()
+            import sys
+            app_mod = sys.modules.get("app") or sys.modules.get("__main__")
+            if app_mod and hasattr(app_mod, "invalidate_all_caches"):
+                app_mod.invalidate_all_caches()
+            else:
+                from growth_tracking_controller import _clear_cache_prefix
+                _clear_cache_prefix("")
         except Exception as inv_err:
             try:
                 from growth_tracking_controller import _clear_cache_prefix

@@ -508,8 +508,21 @@ export default function CostOfPerformance({ setActivePage }) {
       enquiry_status: appliedFilters.enquiryStatuses.join(',')
     });
 
-    const url = getApiEndpoint(`/cost-performance/report?${q.toString()}`);
-    window.open(url, '_blank');
+    try {
+      const res = await fetchWithApiKey(url);
+      if (!res.ok) throw new Error(`Export failed with HTTP ${res.status}`);
+      const blob = await res.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `cost_of_performance_${appliedFilters.financialYear || 'report'}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('Failed to export CSV report:', err);
+    }
   };
 
   // Format currency in Indian Lakhs / Rupees

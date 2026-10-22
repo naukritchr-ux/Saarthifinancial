@@ -108,13 +108,13 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 _employees_cache = None
 _attendance_cache: Dict[str, Any] = {}
 
-def fetch_employees_list() -> List[Dict[str, Any]]:
+def fetch_employees_list(force_refresh: bool = False) -> List[Dict[str, Any]]:
     global _employees_cache
-    if _employees_cache is not None:
+    if not force_refresh and _employees_cache is not None:
         return _employees_cache
     
     cache_file = os.path.join(CACHE_DIR, 'employees.json')
-    if os.path.exists(cache_file):
+    if not force_refresh and os.path.exists(cache_file):
         try:
             with open(cache_file, 'r', encoding='utf-8') as f:
                 _employees_cache = json.load(f)
@@ -126,21 +126,32 @@ def fetch_employees_list() -> List[Dict[str, Any]]:
         r = requests.get('https://api.sarthi360.in/employees', timeout=20)
         if r.status_code == 200:
             _employees_cache = r.json()
-            with open(cache_file, 'w', encoding='utf-8') as f:
-                json.dump(_employees_cache, f)
+            try:
+                with open(cache_file, 'w', encoding='utf-8') as f:
+                    json.dump(_employees_cache, f)
+            except Exception:
+                pass
             return _employees_cache
     except Exception as e:
         print('[Payroll Service] Error fetching employees from API:', e)
     
+    # If forced refresh failed from network, fall back to disk cache if available
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                _employees_cache = json.load(f)
+                return _employees_cache
+        except Exception:
+            pass
     return []
 
-def fetch_monthly_attendance(financial_year: str, month_idx: int) -> List[Dict[str, Any]]:
+def fetch_monthly_attendance(financial_year: str, month_idx: int, force_refresh: bool = False) -> List[Dict[str, Any]]:
     cache_key = f"{financial_year}_{month_idx}"
-    if cache_key in _attendance_cache:
+    if not force_refresh and cache_key in _attendance_cache:
         return _attendance_cache[cache_key]
     
     cache_file = os.path.join(CACHE_DIR, f"att_{cache_key}.json")
-    if os.path.exists(cache_file):
+    if not force_refresh and os.path.exists(cache_file):
         try:
             with open(cache_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -155,12 +166,24 @@ def fetch_monthly_attendance(financial_year: str, month_idx: int) -> List[Dict[s
         if r.status_code == 200:
             data = r.json()
             _attendance_cache[cache_key] = data
-            with open(cache_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f)
+            try:
+                with open(cache_file, 'w', encoding='utf-8') as f:
+                    json.dump(data, f)
+            except Exception:
+                pass
             return data
     except Exception as e:
         print(f"[Payroll Service] Error fetching attendance for {financial_year} month {month_idx}:", e)
     
+    # If forced refresh failed from network, fall back to disk cache if available
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                _attendance_cache[cache_key] = data
+                return data
+        except Exception:
+            pass
     return []
 
 def calculate_single_employee_payroll(emp: Dict[str, Any], record: Dict[str, Any], financial_year: str, month_idx: int) -> Optional[Dict[str, Any]]:
@@ -311,8 +334,8 @@ def calculate_single_employee_payroll(emp: Dict[str, Any], record: Dict[str, Any
         'month_idx': month_idx
     }
 
-def get_payroll_transactions_for_fy(financial_year: str = '2026-2027') -> List[Dict[str, Any]]:
-    employees = fetch_employees_list()
+def get_payroll_transactions_for_fy(financial_year: str = '2026-2027', force_refresh: bool = False) -> List[Dict[str, Any]]:
+    employees = fetch_employees_list(force_refresh=force_refresh)
     if not employees:
         return []
     
@@ -332,7 +355,7 @@ def get_payroll_transactions_for_fy(financial_year: str = '2026-2027') -> List[D
     transactions = []
 
     for m in range(12):
-        att_records = fetch_monthly_attendance(financial_year, m)
+        att_records = fetch_monthly_attendance(financial_year, m, force_refresh=force_refresh)
         if not att_records:
             continue
         
@@ -388,59 +411,60 @@ def get_payroll_transactions_for_fy(financial_year: str = '2026-2027') -> List[D
 
 _cached_all_payroll = None
 
-def get_all_payroll_transactions() -> List[Dict[str, Any]]:
+def get_all_payroll_transactions(force_refresh: bool = False) -> List[Dict[str, Any]]:
     global _cached_all_payroll
-    if _cached_all_payroll is not None:
+    if not force_refresh and _cached_all_payroll is not None:
         return _cached_all_payroll
     
-    # 1. Try reading directly from MySQL payroll_records table
-    try:
-        from db import get_db_connection
-        conn = get_db_connection()
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT id, employee_id, employee_name, department, financial_year,
-                       DATE_FORMAT(date, '%Y-%m-%d') as date, ctc_amount, net_payable,
-                       fixed_gross, paid_days, category, sub_category, payment_mode,
-                       reference_id, description
-                FROM payroll_records
-                ORDER BY date DESC
-            """)
-            db_rows = cur.fetchall()
-            if db_rows and len(db_rows) > 0:
-                txs = []
-                for r in db_rows:
-                    txs.append({
-                        'id': r['id'],
-                        'title': f"Salary: {r['employee_name']}",
-                        'companyName': f"Payroll ({r['date'][:7]})",
-                        'amount': float(r['ctc_amount'] or 0),
-                        'type': 'expense',
-                        'category': 'Salaries',
-                        'subCategory': r.get('sub_category') or 'Salaries & Wages',
-                        'date': r['date'],
-                        'paymentMode': r.get('payment_mode') or 'Direct Bank Transfer',
-                        'referenceId': r.get('reference_id') or f"PAY-{r['id']}",
-                        'description': r.get('description') or f"Payroll CTC for {r['employee_name']}",
-                        'financialYear': r.get('financial_year') or '2026-2027',
-                        'is_payroll': True,
-                        'employeeId': r.get('employee_id'),
-                        'employeeName': r.get('employee_name'),
-                        'department': r.get('department'),
-                        'netPayable': float(r.get('net_payable') or 0),
-                        'fixedGross': float(r.get('fixed_gross') or 0),
-                        'paidDays': float(r.get('paid_days') or 0)
-                    })
-                conn.close()
-                _cached_all_payroll = txs
-                return txs
-        conn.close()
-    except Exception as db_err:
-        print("[Payroll Service] DB read notice:", db_err)
+    # 1. Try reading directly from MySQL payroll_records table (unless force_refresh is requested)
+    if not force_refresh:
+        try:
+            from db import get_db_connection
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id, employee_id, employee_name, department, financial_year,
+                           DATE_FORMAT(date, '%Y-%m-%d') as date, ctc_amount, net_payable,
+                           fixed_gross, paid_days, category, sub_category, payment_mode,
+                           reference_id, description
+                    FROM payroll_records
+                    ORDER BY date DESC
+                """)
+                db_rows = cur.fetchall()
+                if db_rows and len(db_rows) > 0:
+                    txs = []
+                    for r in db_rows:
+                        txs.append({
+                            'id': r['id'],
+                            'title': f"Salary: {r['employee_name']}",
+                            'companyName': f"Payroll ({r['date'][:7]})",
+                            'amount': float(r['ctc_amount'] or 0),
+                            'type': 'expense',
+                            'category': 'Salaries',
+                            'subCategory': r.get('sub_category') or 'Salaries & Wages',
+                            'date': r['date'],
+                            'paymentMode': r.get('payment_mode') or 'Direct Bank Transfer',
+                            'referenceId': r.get('reference_id') or f"PAY-{r['id']}",
+                            'description': r.get('description') or f"Payroll CTC for {r['employee_name']}",
+                            'financialYear': r.get('financial_year') or '2026-2027',
+                            'is_payroll': True,
+                            'employeeId': r.get('employee_id'),
+                            'employeeName': r.get('employee_name'),
+                            'department': r.get('department'),
+                            'netPayable': float(r.get('net_payable') or 0),
+                            'fixedGross': float(r.get('fixed_gross') or 0),
+                            'paidDays': float(r.get('paid_days') or 0)
+                        })
+                    conn.close()
+                    _cached_all_payroll = txs
+                    return txs
+            conn.close()
+        except Exception as db_err:
+            print("[Payroll Service] DB read notice:", db_err)
 
-    # 2. Disk cache fallback
+    # 2. Disk cache fallback (unless force_refresh is requested)
     cache_file = os.path.join(CACHE_DIR, 'all_payroll_txs.json')
-    if os.path.exists(cache_file):
+    if not force_refresh and os.path.exists(cache_file):
         try:
             with open(cache_file, 'r', encoding='utf-8') as f:
                 _cached_all_payroll = json.load(f)
@@ -448,14 +472,21 @@ def get_all_payroll_transactions() -> List[Dict[str, Any]]:
         except Exception:
             pass
 
-    # 3. Live API fallback
+    # 3. Live API fallback / force_refresh path
     all_txs = []
     try:
-        fy_26_txs = get_payroll_transactions_for_fy('2026-2027')
+        fy_26_txs = get_payroll_transactions_for_fy('2026-2027', force_refresh=force_refresh)
         all_txs.extend(fy_26_txs)
     except Exception as e:
         print("[Payroll Service] Note on FY 2026-2027:", e)
     
+    if all_txs:
+        try:
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                json.dump(all_txs, f)
+        except Exception:
+            pass
+
     _cached_all_payroll = all_txs
     return all_txs
 

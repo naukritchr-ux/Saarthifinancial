@@ -926,6 +926,21 @@ export const FinanceProvider = ({ children }) => {
 
   const syncWithSaarthi = async () => {
     try {
+      // 1. Capture baselineLogId before the POST request
+      let baselineLogId = null;
+      try {
+        const initStatusRes = await fetchWithApiKey(`${API_BASE_URL}/sync/status`, { timeoutMs: 10000 });
+        if (initStatusRes && initStatusRes.ok) {
+          const initData = await initStatusRes.json();
+          const latestInit = initData.latest || (initData.logs && initData.logs[0]);
+          if (latestInit?.id) {
+            baselineLogId = latestInit.id;
+          }
+        }
+      } catch (e) {
+        console.warn('[Sync] Baseline log fetch notice:', e);
+      }
+
       const response = await fetchWithApiKey(`${API_BASE_URL}/finance/sync-saarthi`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -944,9 +959,47 @@ export const FinanceProvider = ({ children }) => {
               const statusRes = await fetchWithApiKey(`${API_BASE_URL}/sync/status`, { timeoutMs: 15000 });
               if (statusRes && statusRes.ok) {
                 const sData = await statusRes.json();
+
+                // Treat trigger_error as a failure immediately
+                if (sData.trigger_error) {
+                  return { success: false, error: sData.trigger_error };
+                }
+
                 const latest = sData.latest || (sData.logs && sData.logs[0]);
                 if (latest) {
+                  // In the poll loop, ignore any log whose id equals baselineLogId unless trigger_error is set
+                  if (baselineLogId && latest.id === baselineLogId && !sData.trigger_error) {
+                    continue;
+                  }
+
+                  // If still running, keep waiting
+                  if (latest.status === 'in_progress') {
+                    continue;
+                  }
+
                   if (latest.status === 'completed' || latest.status === 'completed_with_warnings') {
+                    const totalCounts = (latest.enquiries_count || 0) + (latest.invoices_count || 0);
+                    const isZeroCountWarning = latest.status === 'completed_with_warnings' && totalCounts === 0;
+
+                    if (isZeroCountWarning) {
+                      // Treat 'completed_with_warnings' as a warning/failure when counts are 0, passing message through as errors[]
+                      return {
+                        success: false,
+                        error: latest.message || 'Sync completed with warnings (0 records synced)',
+                        data: {
+                          ok: false,
+                          franchisees: latest.franchisees_count || 0,
+                          enquiries: latest.enquiries_count || 0,
+                          invoices: latest.invoices_count || 0,
+                          expenses: latest.expenses_count || 0,
+                          clients: latest.clients_count || 0,
+                          legals: latest.legals_count || 0,
+                          duration_seconds: latest.duration_seconds || 0,
+                          errors: latest.message ? [latest.message] : ['Completed with warnings: 0 records synced']
+                        }
+                      };
+                    }
+
                     await fetchAllData();
                     return {
                       success: true,
@@ -959,7 +1012,8 @@ export const FinanceProvider = ({ children }) => {
                         clients: latest.clients_count || 0,
                         legals: latest.legals_count || 0,
                         duration_seconds: latest.duration_seconds || 0,
-                        notes: latest.message ? [latest.message] : []
+                        notes: latest.message ? [latest.message] : [],
+                        errors: latest.status === 'completed_with_warnings' && latest.message ? [latest.message] : []
                       }
                     };
                   }

@@ -19,8 +19,7 @@ import {
   ArrowUpDown
 } from 'lucide-react';
 import { formatCurrency, formatLakhs } from '../utils/formatters';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+import { fetchWithApiKey, API_BASE_URL } from '../utils/apiClient';
 
 /**
  * Universal Audit Drawer Component
@@ -108,9 +107,7 @@ export const AuditDrawer = ({
       });
 
       const endpoint = `${API_BASE_URL}/audit/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}?${qParams.toString()}`;
-      const res = await fetch(endpoint, {
-        headers: { 'X-API-Key': 'saarthi-secret-api-key-2026' }
-      });
+      const res = await fetchWithApiKey(endpoint);
 
       if (!res.ok) throw new Error(`Audit load failed with status ${res.status}`);
       const json = await res.json();

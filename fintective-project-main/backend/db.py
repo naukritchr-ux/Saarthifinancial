@@ -342,6 +342,31 @@ def ensure_tables_exist():
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
 
+            # 10. Payroll Records
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS payroll_records (
+                    id VARCHAR(100) PRIMARY KEY,
+                    employee_id VARCHAR(100) NULL,
+                    employee_name VARCHAR(255) NULL,
+                    department VARCHAR(100) NULL,
+                    financial_year VARCHAR(50) NULL,
+                    date DATE NULL,
+                    ctc_amount DECIMAL(15, 2) DEFAULT 0.00,
+                    net_payable DECIMAL(15, 2) DEFAULT 0.00,
+                    fixed_gross DECIMAL(15, 2) DEFAULT 0.00,
+                    paid_days DECIMAL(15, 2) DEFAULT 0.00,
+                    category VARCHAR(100) NULL,
+                    sub_category VARCHAR(100) NULL,
+                    payment_mode VARCHAR(100) NULL,
+                    reference_id VARCHAR(100) NULL,
+                    description TEXT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_pay_emp (employee_id),
+                    INDEX idx_pay_date (date),
+                    INDEX idx_pay_fy (financial_year)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
             # Seed default incentive rules if empty
             cur.execute("SELECT COUNT(*) as cnt FROM incentive_rules;")
             if cur.fetchone()["cnt"] == 0:

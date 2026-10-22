@@ -1146,9 +1146,10 @@ def get_finance_summary():
 
 @app.route('/api/sync/ghost-report', methods=['GET'])
 def get_sync_ghost_report():
-    user_role = (request.headers.get('X-User-Role') or request.args.get('role') or 'admin').lower()
-    if user_role not in ('admin', 'manager', 'head_office'):
-        return jsonify({'error': 'Unauthorized: Admin role required'}), 403
+    admin_api_key = (os.environ.get('ADMIN_API_KEY') or os.environ.get('API_KEY') or '').strip()
+    incoming_key = (request.headers.get('X-Admin-API-Key') or request.headers.get('X-API-Key') or '').strip()
+    if not admin_api_key or incoming_key != admin_api_key:
+        return jsonify({'error': 'Unauthorized: Valid ADMIN_API_KEY required'}), 403
 
     from sync_service import get_ghost_row_report
     report = get_ghost_row_report(prune=False)
@@ -1156,9 +1157,10 @@ def get_sync_ghost_report():
 
 @app.route('/api/sync/prune', methods=['POST'])
 def post_sync_prune():
-    user_role = (request.headers.get('X-User-Role') or request.args.get('role') or 'admin').lower()
-    if user_role not in ('admin', 'head_office'):
-        return jsonify({'error': 'Unauthorized: Admin role required'}), 403
+    admin_api_key = (os.environ.get('ADMIN_API_KEY') or os.environ.get('API_KEY') or '').strip()
+    incoming_key = (request.headers.get('X-Admin-API-Key') or request.headers.get('X-API-Key') or '').strip()
+    if not admin_api_key or incoming_key != admin_api_key:
+        return jsonify({'error': 'Unauthorized: Valid ADMIN_API_KEY required'}), 403
 
     data = request.json or {}
     prune_enabled = data.get('confirm_prune') is True
@@ -3670,9 +3672,12 @@ def health_check():
         'timestamp': datetime.datetime.now().isoformat()
     })
 
+LAST_TRIGGER_ERROR = None
+
 @app.route('/api/finance/sync-saarthi', methods=['POST'])
 @app.route('/api/sync', methods=['POST'])
 def sync_saarthi_endpoint():
+    global LAST_TRIGGER_ERROR
     import threading
     from sync_service import sync_saarthi_all
     
@@ -3701,23 +3706,44 @@ def sync_saarthi_endpoint():
     finally:
         conn.close()
 
+    # Synchronously create in_progress row in crm_sync_logs before background worker starts
+    log_id = None
+    LAST_TRIGGER_ERROR = None
+    try:
+        ensure_tables_exist()
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO crm_sync_logs (sync_type, status, started_at)
+                VALUES ('manual', 'in_progress', NOW())
+            """)
+            log_id = cur.lastrowid
+        conn.close()
+    except Exception as insert_err:
+        print('[SYNC LOG INSERT NOTICE]', insert_err)
+
     # Launch background thread to execute sync without HTTP gateway timeout
-    def bg_sync_worker():
+    def bg_sync_worker(target_log_id):
+        global LAST_TRIGGER_ERROR
         try:
-            print('[BG SYNC] Started background sync_saarthi_all...')
-            res = sync_saarthi_all()
+            print(f'[BG SYNC] Started background sync_saarthi_all (log_id={target_log_id})...')
+            res = sync_saarthi_all(existing_log_id=target_log_id)
             invalidate_all_caches()
+            if not res.get('ok') and res.get('errors'):
+                LAST_TRIGGER_ERROR = " | ".join(res.get('errors'))
             print('[BG SYNC] Completed background sync_saarthi_all:', res.get('ok'))
         except Exception as bg_err:
+            LAST_TRIGGER_ERROR = str(bg_err)
             print('[BG SYNC ERROR]', bg_err)
 
-    t = threading.Thread(target=bg_sync_worker, daemon=True)
+    t = threading.Thread(target=bg_sync_worker, args=(log_id,), daemon=True)
     t.start()
 
     return jsonify({
         'success': True,
         'status': 'started',
         'is_running': True,
+        'log_id': log_id,
         'message': 'Saarthi Live CRM sync initiated in background.',
         'poll_url': '/api/sync/status'
     }), 200
@@ -3725,6 +3751,7 @@ def sync_saarthi_endpoint():
 @app.route('/api/finance/sync-status', methods=['GET'])
 @app.route('/api/sync/status', methods=['GET'])
 def get_sync_status():
+    global LAST_TRIGGER_ERROR
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
@@ -3748,6 +3775,7 @@ def get_sync_status():
             return jsonify({
                 'success': True,
                 'is_running': is_running,
+                'trigger_error': LAST_TRIGGER_ERROR,
                 'latest': latest,
                 'logs': logs
             })
@@ -3761,9 +3789,9 @@ def get_sync_status():
 # ----------------------------------------------------
 @app.route('/api/health/sync-debug', methods=['GET'])
 def sync_debug_health():
-    """Diagnostic: test DB connectivity and Saarthi API reachability from this server."""
-    import urllib.request as ureq, urllib.error
-    result = {'db': {}, 'saarthi_api': {}}
+    """Diagnostic: test DB connectivity and Saarthi API reachability across all 6 endpoints."""
+    from sync_service import fetch_saarthi_endpoint, EXPENSE_ENDPOINT
+    result = {'db': {}, 'endpoints': {}}
 
     # Test DB
     try:
@@ -3776,16 +3804,23 @@ def sync_debug_health():
     except Exception as e:
         result['db'] = {'ok': False, 'error': str(e)}
 
-    # Test Saarthi API reachability
-    for url in ['https://api.sarthi360.in/api/enquiries', 'https://sarthi360.in/api/enquiries']:
-        try:
-            req = ureq.Request(url, headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'})
-            with ureq.urlopen(req, timeout=10) as r:
-                result['saarthi_api'][url] = {'ok': True, 'status': r.status}
-        except urllib.error.HTTPError as he:
-            result['saarthi_api'][url] = {'ok': False, 'error': f'HTTP {he.code}: {he.reason}'}
-        except Exception as e:
-            result['saarthi_api'][url] = {'ok': False, 'error': str(e)}
+    # Loop over all six endpoints using fetch_saarthi_endpoint
+    endpoints = [
+        ("franchisees", "franchisees"),
+        ("enquiries", "enquiries"),
+        ("invoices", "Invoice"),
+        ("expenses", EXPENSE_ENDPOINT),
+        ("clients", "clients_info"),
+        ("legals", "legals_info")
+    ]
+    for name, path in endpoints:
+        res = fetch_saarthi_endpoint(path, timeout=10)
+        result['endpoints'][name] = {
+            'ok': res.get('ok', False),
+            'url': res.get('url'),
+            'row_count': len(res.get('data') or []),
+            'error': res.get('error')
+        }
 
     return jsonify({'success': True, 'diagnostics': result})
 

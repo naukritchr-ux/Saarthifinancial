@@ -44,3 +44,28 @@ npm run dev
 ```
 
 Open the local address printed by Vite (typically [http://localhost:5173](http://localhost:5173)) in your browser to view the application running completely on the Python stack!
+
+---
+
+## Production Deployment & Environment Configuration
+
+### Backend (Render / Production)
+* **Production Command**: Run the Flask backend using Gunicorn:
+  ```bash
+  gunicorn app:app
+  ```
+  Or with workers:
+  ```bash
+  gunicorn -w 4 -b 0.0.0.0:$PORT app:app
+  ```
+* **Environment Variables**:
+  * `API_KEY`: Secret API key to authenticate all frontend and API client requests.
+  * `ADMIN_API_KEY`: Admin-level secret API key required for sensitive operations (e.g., `/api/sync/prune`, `/api/sync/ghost-report`). Defaults to `API_KEY` if not set.
+  * `SAARTHI_API_TOKEN`: Optional bearer token passed in `Authorization: Bearer <token>` when syncing from `api.sarthi360.in`.
+  * `ENFORCE_API_KEY`: Set to `true` (default in production) to require `X-API-Key`.
+
+### Frontend (Vercel / Production)
+* **`VITE_API_URL`**: Set directly to your deployed Render backend URL (e.g., `https://fintective-backend.onrender.com/api`).
+  > **Note**: Avoid relying on Vercel catch-all rewrites for long-running calls (such as `/api/finance/sync-saarthi` or reports), as serverless gateway timeouts can drop the connection prematurely.
+* **`VITE_API_KEY`**: Must exactly match the backend `API_KEY`. Passed automatically via the `X-API-Key` header with `fetchWithApiKey`.
+
