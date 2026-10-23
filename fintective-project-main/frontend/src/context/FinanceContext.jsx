@@ -189,6 +189,7 @@ export const FinanceProvider = ({ children }) => {
   });
 
   const [selectedMonth, setSelectedMonth] = useState('All Months');
+  const [financeSummary, setFinanceSummary] = useState(null);
   const [selectedYear, setSelectedYear] = useState(() => {
     const saved = localStorage.getItem('saarthi_selected_year');
     const normalized = saved ? normalizeFinancialYear(saved) : null;
@@ -559,12 +560,13 @@ export const FinanceProvider = ({ children }) => {
 
       if (health.ok) {
         // 3. Parallel async fetch of core endpoints with retry
-        const [txRes, franRes, bdRes, tlRes, budgetRes] = await Promise.allSettled([
+        const [txRes, franRes, bdRes, tlRes, budgetRes, summaryRes] = await Promise.allSettled([
           fetchWithRetry(`${API_BASE_URL}/transactions`),
           fetchWithRetry(`${API_BASE_URL}/franchisees`),
           fetchWithRetry(`${API_BASE_URL}/bd-agents`),
           fetchWithRetry(`${API_BASE_URL}/team-leaders`),
-          fetchWithRetry(`${API_BASE_URL}/budgets`)
+          fetchWithRetry(`${API_BASE_URL}/budgets`),
+          fetchWithRetry(`${API_BASE_URL}/finance/summary?fy=2026-2027`)
         ]);
 
         // Kick off heavy ML model insights asynchronously in background without delaying main dashboard
@@ -698,6 +700,16 @@ export const FinanceProvider = ({ children }) => {
           }
         } else {
           setEndpointStatus(prev => ({ ...prev, budgets: { status: 'failed', error: budgetRes.reason?.message || 'Request failed' } }));
+        }
+
+        // Process /finance/summary
+        if (summaryRes.status === 'fulfilled' && summaryRes.value.ok) {
+          try {
+            const summaryData = await summaryRes.value.json();
+            if (summaryData && typeof summaryData === 'object') {
+              setFinanceSummary(summaryData);
+            }
+          } catch (e) {}
         }
       }
     } catch (err) {
@@ -1400,6 +1412,8 @@ export const FinanceProvider = ({ children }) => {
     fetchAllData,
     currentCashBalance,
     movingAvgBurn,
+    financeSummary,
+    setFinanceSummary,
     isSidebarOpen,
     setIsSidebarOpen,
     toggleSidebar,
@@ -1418,6 +1432,7 @@ export const FinanceProvider = ({ children }) => {
     bdAgents,
     teamLeaders,
     budgets,
+    financeSummary,
     selectedMonth,
     selectedYear,
     userRole,

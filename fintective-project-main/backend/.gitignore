@@ -45,24 +45,14 @@ htmlcov/
 
 # Environments
 .env
-.venv
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# IDEs and Editors
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Database dumps and CSV spreadsheets (excluding standard config files if needed)
-*.sql
+.env.staging
+.env.*
+*.parquet
 *.csv
-*.docx
-*.doc
-*.xlsx
-*.xls
-Saarthi_Finance_Formulas_Guide.docx
+baselines/
+scratch/
+cache/
+models/reactivation_*
+models/*_card.json
+models/*.joblib
 

@@ -338,7 +338,12 @@ def get_cost_performance_filter_options():
                 c.status AS client_status
             FROM v_invoice_clean v
             LEFT JOIN enquiries e ON v.enquiry_id = e.id
-            LEFT JOIN clients_info c ON LOWER(TRIM(v.companyName)) = LOWER(TRIM(c.companyName))
+            LEFT JOIN (
+                SELECT LOWER(TRIM(companyName)) AS companyName, MAX(status) AS status
+                FROM clients_info
+                WHERE companyName IS NOT NULL AND TRIM(companyName) != ''
+                GROUP BY LOWER(TRIM(companyName))
+            ) c ON LOWER(TRIM(v.companyName)) = c.companyName
             WHERE 1=1 {date_clause}
         """
         cursor.execute(sql, date_params)
@@ -516,7 +521,12 @@ def get_cost_performance_report():
                 c.status AS client_status
             FROM v_invoice_clean v
             LEFT JOIN enquiries e ON v.enquiry_id = e.id
-            LEFT JOIN clients_info c ON LOWER(TRIM(v.companyName)) = LOWER(TRIM(c.companyName))
+            LEFT JOIN (
+                SELECT LOWER(TRIM(companyName)) AS companyName, MAX(status) AS status
+                FROM clients_info
+                WHERE companyName IS NOT NULL AND TRIM(companyName) != ''
+                GROUP BY LOWER(TRIM(companyName))
+            ) c ON LOWER(TRIM(v.companyName)) = c.companyName
             WHERE 1=1 {date_clause}
         """
         cursor.execute(inv_sql, date_params)
@@ -534,7 +544,12 @@ def get_cost_performance_report():
                 e.enquiryStatus,
                 c.status AS client_status
             FROM enquiries e
-            LEFT JOIN clients_info c ON LOWER(TRIM(e.companyName)) = LOWER(TRIM(c.companyName))
+            LEFT JOIN (
+                SELECT LOWER(TRIM(companyName)) AS companyName, MAX(status) AS status
+                FROM clients_info
+                WHERE companyName IS NOT NULL AND TRIM(companyName) != ''
+                GROUP BY LOWER(TRIM(companyName))
+            ) c ON LOWER(TRIM(e.companyName)) = c.companyName
             WHERE 1=1 {enq_date_clause}
         """
         cursor.execute(enq_sql, enq_params)

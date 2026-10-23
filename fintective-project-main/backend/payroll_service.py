@@ -2,8 +2,27 @@ import os
 import json
 import re
 import datetime
-import requests
+import urllib.request
+try:
+    import requests
+except ImportError:
+    requests = None
 from typing import Dict, List, Any, Optional
+
+def _http_get_json(url: str, timeout: int = 15):
+    if requests is not None:
+        try:
+            r = requests.get(url, timeout=timeout)
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            pass
+    # Fallback to standard library urllib
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        if resp.status == 200:
+            return json.loads(resp.read().decode('utf-8'))
+    return None
 
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cache')
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -126,9 +145,9 @@ def fetch_employees_list(force_refresh: bool = False) -> List[Dict[str, Any]]:
             pass
 
     try:
-        r = requests.get('https://api.sarthi360.in/employees', timeout=20)
-        if r.status_code == 200:
-            _employees_cache = r.json()
+        data = _http_get_json('https://api.sarthi360.in/employees', timeout=20)
+        if data:
+            _employees_cache = data
             try:
                 with open(cache_file, 'w', encoding='utf-8') as f:
                     json.dump(_employees_cache, f)
@@ -165,9 +184,8 @@ def fetch_monthly_attendance(financial_year: str, month_idx: int, force_refresh:
 
     try:
         url = f"https://api.sarthi360.in/api/payroll/attendance?financialYear={financial_year}&month={month_idx}"
-        r = requests.get(url, timeout=15)
-        if r.status_code == 200:
-            data = r.json()
+        data = _http_get_json(url, timeout=15)
+        if data is not None:
             _attendance_cache[cache_key] = data
             try:
                 with open(cache_file, 'w', encoding='utf-8') as f:
@@ -331,6 +349,7 @@ def calculate_single_employee_payroll(emp: Dict[str, Any], record: Dict[str, Any
         'unpaid_leaves': unpaid_leaves,
         'net_payable': net_payable,
         'ctc': ctc,
+        'pf': pf,
         'payment_date': record.get('PaymentDate'),
         'transaction_id': record.get('TransactionID'),
         'financial_year': financial_year,
@@ -355,17 +374,20 @@ def get_payroll_transactions_for_fy(financial_year: str = '2026-2027', force_ref
     except:
         start_year = 2026
 
-    transactions = []
-
+    today_date = get_ist_today()
     for m in range(12):
-        att_records = fetch_monthly_attendance(financial_year, m, force_refresh=force_refresh)
-        if not att_records:
-            continue
-        
         cal_month_num = (m + 4) if m < 9 else (m - 8)
         cal_year = start_year if m < 9 else start_year + 1
         month_date_str = f"{cal_year}-{cal_month_num:02d}-28"
         month_label = f"{months_names[m]} {cal_year}"
+
+        # Skip future months beyond today (e.g. Jan/Feb 2027 placeholders)
+        if cal_year > today_date.year or (cal_year == today_date.year and cal_month_num > today_date.month):
+            continue
+
+        att_records = fetch_monthly_attendance(financial_year, m, force_refresh=force_refresh)
+        if not att_records:
+            continue
 
         for record in att_records:
             emp_id = record.get('EmployeeID')
@@ -423,16 +445,18 @@ def get_all_payroll_transactions(force_refresh: bool = False) -> List[Dict[str, 
     if not force_refresh:
         try:
             from db import get_db_connection
+            today_date = get_ist_today()
             conn = get_db_connection()
             with conn.cursor() as cur:
                 cur.execute("""
                     SELECT id, employee_id, employee_name, department, financial_year,
-                           DATE_FORMAT(date, '%Y-%m-%d') as date, ctc_amount, net_payable,
+                           DATE_FORMAT(date, '%%Y-%%m-%%d') as date, ctc_amount, net_payable,
                            fixed_gross, paid_days, category, sub_category, payment_mode,
                            reference_id, description
                     FROM payroll_records
+                    WHERE date <= %s
                     ORDER BY date DESC
-                """)
+                """, [today_date])
                 db_rows = cur.fetchall()
                 if db_rows and len(db_rows) > 0:
                     txs = []

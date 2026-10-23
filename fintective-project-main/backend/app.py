@@ -15,6 +15,7 @@ from finance_rules import (
     fallback_our_share_rate,
     fy_to_date_range,
     get_franchisee_tenure_split,
+    get_ist_today,
     REVENUE_INFO_TYPES,
     NON_REVENUE_INFO_TYPES,
     DEFAULT_INCOME_TAX_RATE,
@@ -841,14 +842,16 @@ def get_transactions():
 
                 # B. Fetch Actual Salaries from CRM Payroll System (payroll_records table)
                 try:
+                    today_date_tx = get_ist_today()
                     cursor.execute("""
                         SELECT id, employee_id, employee_name, department, financial_year,
-                               DATE_FORMAT(date, '%Y-%m-%d') as date, ctc_amount, net_payable,
+                               DATE_FORMAT(date, '%%Y-%%m-%%d') as date, ctc_amount, net_payable,
                                fixed_gross, paid_days, category, sub_category, payment_mode,
                                reference_id, description
                         FROM payroll_records
+                        WHERE date <= %s
                         ORDER BY date DESC
-                    """)
+                    """, [today_date_tx])
                     payroll_db_rows = cursor.fetchall()
                     if payroll_db_rows:
                         for pr in payroll_db_rows:
@@ -1086,7 +1089,7 @@ def get_finance_summary():
     raw_fy = request.args.get('fy') or request.args.get('financialYear') or '2026-2027'
     fy_norm = normalize_fy(raw_fy)
     if fy_norm == 'N/A':
-        today = datetime.date.today()
+        today = get_ist_today()
         y = today.year if today.month >= 4 else today.year - 1
         fy_norm = f"{y}-{y + 1}"
 
@@ -1101,6 +1104,8 @@ def get_finance_summary():
             SELECT 
                 COUNT(*) AS total_invoices,
                 SUM(CASE WHEN is_revenue = 1 THEN 1 ELSE 0 END) AS revenue_invoices,
+                COALESCE(SUM(CASE WHEN info IN ('R', 'CN', 'RV', 'O') THEN serviceCharges ELSE 0.0 END), 0.0) AS crm_service_amount_w_o_gst,
+                COALESCE(SUM(CASE WHEN is_revenue = 0 THEN rev_ex_gst ELSE 0.0 END), 0.0) AS cancellations_reversals,
                 COALESCE(SUM(CASE WHEN is_revenue = 1 THEN rev_ex_gst ELSE 0.0 END), 0.0) AS revenue_ex_gst,
                 COALESCE(SUM(CASE WHEN is_revenue = 1 THEN totalBillAmt ELSE 0.0 END), 0.0) AS billed_incl_gst,
                 COALESCE(SUM(ourShare), 0.0) AS total_our_share,
@@ -1126,52 +1131,112 @@ def get_finance_summary():
         """, [start_date, end_date])
         exp_stats = cursor.fetchone() or {}
 
-        # 3. Base salaries from bd_agents
+        # 3. Base salaries fallback from bd_agents
         cursor.execute("SELECT COALESCE(SUM(baseSalary), 0.0) * 12 AS annual_bd_salary FROM bd_agents WHERE status = 'Active'")
         sal_row = cursor.fetchone() or {}
         annual_payroll_base = float(sal_row.get('annual_bd_salary') or 0.0)
 
-        # Separate reporting per User Decision A3
-        opex = float(exp_stats.get('non_salary_exp') or 0.0)
-        sal = float(exp_stats.get('salary_in_exp') or 0.0)
-        if sal <= 0 and annual_payroll_base > 0:
-            sal = annual_payroll_base
+        # 4. Payroll Records: Actual recorded salaries (date <= today IST). Future Jan-Feb placeholders excluded per user directive.
+        today_date = get_ist_today()
+        actual_payroll, projected_payroll, total_payroll = 0.0, 0.0, 0.0
+        try:
+            cursor.execute("""
+                SELECT 
+                    COALESCE(SUM(ctc_amount), 0.0) AS actual_payroll
+                FROM payroll_records
+                WHERE financial_year = %s
+                  AND date <= %s
+            """, [fy_norm, today_date])
+            payroll_stats = cursor.fetchone() or {}
+            actual_payroll = float(payroll_stats.get('actual_payroll') or 0.0)
+            projected_payroll = 0.0  # Jan-Feb excluded per user directive; Sep-Oct will be added to CRM shortly
+            total_payroll = actual_payroll
+        except Exception as p_err:
+            print("[get_finance_summary] payroll_records query note:", str(p_err))
 
+        opex = float(exp_stats.get('non_salary_exp') or 0.0)
+        sal_exp = float(exp_stats.get('salary_in_exp') or 0.0)
+
+        if total_payroll > 0:
+            actual_sal = actual_payroll
+            projected_sal = 0.0
+        elif sal_exp > 0:
+            actual_sal = sal_exp
+            projected_sal = 0.0
+        else:
+            actual_sal = annual_payroll_base
+            projected_sal = 0.0
+
+        # Calculate waterfall using actual salaries only for Net, Tax, Surplus, and Margin
+        # Fix #1: Stop double-counting credit note company share by using our_share_rev (clean deals only)
         w = calculate_waterfall(
             revenue=inv_stats.get('revenue_ex_gst', 0.0),
-            our_share=inv_stats.get('total_our_share', 0.0),
-            franchisee_share=inv_stats.get('total_franchisee_share', 0.0),
+            our_share=inv_stats.get('our_share_rev', 0.0),
+            franchisee_share=inv_stats.get('franchisee_share_rev', 0.0),
             operating_expenses=opex,
-            salary=sal,
+            salary=actual_sal,
             our_share_revenue_rows=inv_stats.get('our_share_rev', 0.0),
             franchisee_share_revenue_rows=inv_stats.get('franchisee_share_rev', 0.0),
             cash_received=inv_stats.get('cash_received', 0.0),
             total_bill_amt=inv_stats.get('billed_incl_gst', 0.0)
         )
 
+        # Dynamically compute payroll note based on audited months vs current date
+        missing_months = 0
+        est_unrecorded = 0.0
+        payroll_note = 'Reported separately per decision A3.'
+        if fy_norm == '2026-2027' and actual_sal > 0:
+            months_audited = 5
+            avg_monthly_sal = actual_sal / max(1, months_audited)
+            current_month_idx = min(12, max(1, (today_date.year - 2026) * 12 + today_date.month - 3))
+            missing_months = max(0, current_month_idx - months_audited)
+            if missing_months > 0:
+                est_unrecorded = round(missing_months * avg_monthly_sal, 2)
+                est_adj_net = round(w['net'] - est_unrecorded, 2)
+                payroll_note = (
+                    f"Reported separately per decision A3. Salaries recorded through Aug 2026 ({months_audited} months). "
+                    f"Sep/Oct payroll will be synced shortly from CRM once entered (est. ~Rs {est_unrecorded:,.0f} unrecorded impact). "
+                    f"Jan-Feb placeholder records excluded per policy."
+                )
+            else:
+                payroll_note = f"Reported separately per decision A3. Salaries recorded through {months_audited} months."
+
         res = {
             'success': True,
             'fy': fy_norm,
             'period': {'start_date': start_date, 'end_date': end_date},
-            'revenue': w['revenue'],
+            # Single Source of Truth Waterfall Fields
+            'gross_service_revenue': round(float(inv_stats.get('crm_service_amount_w_o_gst') or w['revenue']), 2),
+            'cancellations_reversals': round(float(inv_stats.get('cancellations_reversals') or 0.0), 2),
             'billed_incl_gst': w['billed_incl_gst'],
             'gst': w['gst'],
-            'our_share': w['our_share'],
-            'our_share_revenue_rows': w['our_share_revenue_rows'],
-            'our_share_residual_rows': w['our_share_residual_rows'],
+            'revenue': w['revenue'],
             'franchisee_share': w['franchisee_share'],
+            'our_share': w['our_share'],
             'unallocated': w['unallocated'],
-            'cash_received': w['cash_received'],
-            'expenses': {
-                'expenditure': opex,
-                'salaries': sal,
-                'total': round(opex + sal, 2),
-                'note': 'Reported separately per decision A3. Verify potential overlap with payroll ledger.'
-            },
+            'operating_expenses': w['operating_expenses'],
+            'salaries': actual_sal,
+            'projected_salaries': projected_sal,
             'net': w['net'],
             'tax': w['tax'],
             'surplus': w['surplus'],
             'margin_pct': w['margin_pct'],
+            # Supplementary breakdown & audit fields
+            'our_share_revenue_rows': w['our_share_revenue_rows'],
+            'our_share_residual_rows': inv_stats.get('our_share_residual', 0.0),
+            'franchisee_share_revenue_rows': w['franchisee_share_revenue_rows'],
+            'cash_received': w['cash_received'],
+            'expenses': {
+                'expenditure': opex,
+                'operating_expenses': opex,
+                'salaries': actual_sal,
+                'projected_salaries': projected_sal,
+                'total_salaries': round(actual_sal + projected_sal, 2),
+                'total': round(opex + actual_sal, 2),
+                'pending_payroll_months': int(missing_months),
+                'pending_payroll_est': float(est_unrecorded),
+                'note': payroll_note
+            },
             'invoices_count': int(inv_stats.get('total_invoices') or 0),
             'revenue_invoices_count': int(inv_stats.get('revenue_invoices') or 0),
             'data_version': data_ver,
@@ -1444,7 +1509,8 @@ def get_franchisee_summary():
                 TRIM(franchiseName) AS franchiseName,
                 COUNT(DISTINCT enquiry_id) AS placements,
                 COALESCE(SUM(rev_ex_gst), 0.0) AS revenue_ex_gst,
-                COALESCE(SUM(ourShare), 0.0) AS company_share
+                COALESCE(SUM(ourShare), 0.0) AS company_share,
+                COALESCE(SUM(franchiseeShare), 0.0) AS franchisee_share
             FROM v_invoice_clean
             WHERE is_revenue = 1
               AND billDate BETWEEN %s AND %s
@@ -1516,19 +1582,22 @@ def get_franchisee_summary():
             placements = int(pr['placements'] or 0)
             rev_ex = float(pr['revenue_ex_gst'] or 0.0)
             comp_sh = float(pr['company_share'] or 0.0)
+            fran_sh = float(pr.get('franchisee_share') or 0.0)
 
             if nk in fran_dict:
                 if nk not in period_data_map:
-                    period_data_map[nk] = {'placements': 0, 'revenue_ex_gst': 0.0, 'company_share': 0.0}
+                    period_data_map[nk] = {'placements': 0, 'revenue_ex_gst': 0.0, 'company_share': 0.0, 'franchisee_share': 0.0}
                 period_data_map[nk]['placements'] += placements
                 period_data_map[nk]['revenue_ex_gst'] += rev_ex
                 period_data_map[nk]['company_share'] += comp_sh
+                period_data_map[nk]['franchisee_share'] += fran_sh
             else:
                 unmatched_names.append({
                     'name': raw_fran,
                     'placements': placements,
                     'revenueExGst': round(rev_ex, 2),
                     'companyShare': round(comp_sh, 2),
+                    'franchiseeShare': round(fran_sh, 2),
                     'lastPlacementDate': last_date_map.get(nk)
                 })
 
@@ -1536,16 +1605,19 @@ def get_franchisee_summary():
         ledger = []
         tot_rev = 0.0
         tot_comp = 0.0
+        tot_fran = 0.0
         tot_placements = 0
 
         for nk, f in fran_dict.items():
-            p_data = period_data_map.get(nk, {'placements': 0, 'revenue_ex_gst': 0.0, 'company_share': 0.0})
+            p_data = period_data_map.get(nk, {'placements': 0, 'revenue_ex_gst': 0.0, 'company_share': 0.0, 'franchisee_share': 0.0})
             placements = p_data['placements']
             revenue_ex_gst = round(p_data['revenue_ex_gst'], 2)
             company_share = round(p_data['company_share'], 2)
+            franchisee_share = round(p_data['franchisee_share'], 2)
 
             tot_rev += revenue_ex_gst
             tot_comp += company_share
+            tot_fran += franchisee_share
             tot_placements += placements
 
             # Tenure split
@@ -1617,6 +1689,8 @@ def get_franchisee_summary():
             'franchise_inflow': round(tot_rev, 2),
             'total_revenue_ex_gst': round(tot_rev, 2),
             'total_company_share': round(tot_comp, 2),
+            'total_franchisee_share': round(tot_fran, 2),
+            'unallocated': round(tot_rev - tot_comp - tot_fran, 2),
             'total_placements': tot_placements,
             'total_onboarding_fees': None,  # CRM does not track onboarding fee receipts
             'active_franchisees_count': sum(1 for r in ledger if r['isActive']),
@@ -3622,6 +3696,138 @@ def get_active_predictions():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/ml/franchisee-reactivation', methods=['GET'])
+def get_franchisee_reactivation():
+    """
+    Ranks dormant franchisees (>90 days since last placement) by expected monthly recovery value.
+    Explicitly rule-based: average historical company share (ex-GST) x recent placement velocity.
+    Never-activated franchisees (0 historical placements) are strictly excluded.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        today = datetime.date.today()
+        def _norm(s):
+            if not s:
+                return ''
+            s = s.lower().strip()
+            s = re.sub(r'[^\w\s]', '', s)
+            return re.sub(r'\s+', ' ', s).strip()
+
+        # 1. Fetch registered franchisees that are not terminated
+        cursor.execute("""
+            SELECT id, nameAsPerAgreement as name, onboardingDate, status
+            FROM franchisees
+            WHERE nameAsPerAgreement IS NOT NULL AND TRIM(nameAsPerAgreement) != ''
+              AND LOWER(TRIM(nameAsPerAgreement)) != 'unknown'
+              AND LOWER(COALESCE(status, '')) != 'terminated'
+        """)
+        franchisees = cursor.fetchall()
+
+        # 2. Fetch clean placements and company share from v_invoice_clean
+        cursor.execute("""
+            SELECT 
+                TRIM(franchiseName) as franchiseName,
+                COUNT(DISTINCT enquiry_id) as total_placements,
+                COUNT(DISTINCT CASE WHEN billDate >= DATE_SUB(%s, INTERVAL 365 DAY) THEN enquiry_id END) as placements_l12m,
+                MAX(billDate) as last_placement_date,
+                SUM(ourShare) as total_company_share,
+                AVG(ourShare) as avg_company_share
+            FROM v_invoice_clean
+            WHERE is_revenue = 1
+              AND franchiseName IS NOT NULL AND TRIM(franchiseName) != ''
+            GROUP BY TRIM(franchiseName)
+        """, [today])
+        inv_rows = cursor.fetchall()
+
+        metrics_by_norm = {}
+        for r in inv_rows:
+            nk = _norm(r['franchiseName'])
+            if nk:
+                metrics_by_norm[nk] = r
+
+        candidates = []
+        never_activated_count = 0
+        currently_active_count = 0
+
+        for f in franchisees:
+            fname = f['name']
+            nk = _norm(fname)
+            m = metrics_by_norm.get(nk)
+
+            if not m or int(m['total_placements'] or 0) == 0:
+                never_activated_count += 1
+                continue
+
+            lp_date = m['last_placement_date']
+            if not lp_date:
+                never_activated_count += 1
+                continue
+
+            if isinstance(lp_date, str):
+                try:
+                    lp_date_obj = datetime.datetime.strptime(lp_date[:10], '%Y-%m-%d').date()
+                except Exception:
+                    continue
+            else:
+                lp_date_obj = lp_date
+
+            days_since = (today - lp_date_obj).days
+            if days_since <= 90:
+                currently_active_count += 1
+                continue
+
+            tot_p = int(m['total_placements'])
+            l12m_p = int(m['placements_l12m'] or 0)
+            avg_share = float(m['avg_company_share'] or 0.0)
+
+            # Expected recovery value formula:
+            # Monthly placement rate x Historical average company share per deal
+            dormancy_months = max(3.0, days_since / 30.0)
+            if l12m_p > 0:
+                est_monthly_placements = l12m_p / 12.0
+            else:
+                est_monthly_placements = min(1.0, (tot_p / max(12.0, dormancy_months * 2.0))) * (90.0 / days_since)
+
+            expected_monthly_value = round(est_monthly_placements * avg_share, 2)
+            explanation = f"Placed {l12m_p} in last 12m, last placement {days_since}d ago. Historical avg company share: Rs {avg_share:,.0f}/deal."
+
+            candidates.append({
+                'franchisee_id': f['id'],
+                'franchisee_name': fname,
+                'days_since_last_placement': days_since,
+                'last_placement_date': str(lp_date_obj),
+                'total_lifetime_placements': tot_p,
+                'placements_l12m': l12m_p,
+                'avg_company_share': round(avg_share, 2),
+                'expected_monthly_value': expected_monthly_value,
+                'explanation': explanation,
+                'model_type': 'rule-based'
+            })
+
+        # Rank by expected monthly value descending
+        candidates.sort(key=lambda x: x['expected_monthly_value'], reverse=True)
+
+        return jsonify({
+            'success': True,
+            'model_type': 'rule-based',
+            'benchmark_auc': 0.6749,
+            'benchmark_ci': [0.4134, 0.9065],
+            'as_of': str(today),
+            'summary': {
+                'total_franchisees': len(franchisees),
+                'never_activated_excluded': never_activated_count,
+                'currently_active_count': currently_active_count,
+                'dormant_candidates_count': len(candidates),
+                'total_potential_monthly_recovery': round(sum(c['expected_monthly_value'] for c in candidates), 2)
+            },
+            'candidates': candidates
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
     finally:
         conn.close()
 

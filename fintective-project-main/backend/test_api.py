@@ -1,4 +1,6 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
 os.environ['FLASK_TESTING'] = 'true'
 import warnings
 warnings.filterwarnings('ignore')
@@ -11,7 +13,7 @@ class TestSaarthiAPI(unittest.TestCase):
     def setUp(self):
         self.app = app.test_client()
         self.app.testing = True
-        self.api_key = os.environ.get('API_KEY', 'saarthi-secret-api-key-2026')
+        self.api_key = os.environ.get('API_KEY', '')
         self.headers = {'X-API-Key': self.api_key}
 
     def test_health_endpoint_unauthenticated(self):

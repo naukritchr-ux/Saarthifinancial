@@ -22,6 +22,15 @@ REVENUE_INFO_TYPES = ('R', 'PR', 'O')
 NON_REVENUE_INFO_TYPES = ('CN', 'LEGAL-CN', 'LEGAL', 'RV')
 FLAGGED_INFO_TYPES = ('C', '')
 
+def get_ist_today():
+    """
+    Returns today's date in Asia/Kolkata (IST, UTC+05:30).
+    Guarantees consistent date evaluation regardless of server location or UTC time.
+    """
+    utc_now = datetime.datetime.now(datetime.timezone.utc)
+    ist_offset = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+    return utc_now.astimezone(ist_offset).date()
+
 # Accounting constants
 DEFAULT_INCOME_TAX_RATE = 0.25
 DEFAULT_GST_RATE = 0.18
@@ -29,6 +38,25 @@ BENCHMARK_COMPANY_SHARE_RATE = 0.25
 BENCHMARK_FRANCHISEE_SHARE_RATE = 0.75
 TENURE_3PLUS_COMPANY_SHARE_RATE = 0.30
 TENURE_3PLUS_FRANCHISEE_SHARE_RATE = 0.70
+
+# Statutory Provident Fund (EPF) constants
+PF_WAGE_CAP = 15000
+PF_RATE = 0.12
+PF_STATUTORY_MAX_CONTRIBUTION = 1800
+
+def calculate_pf(pf_wages, pf_app=True):
+    """
+    Statutory EPF employee contribution (matching payroll_service.py:242, 298):
+    - 0 if pf_app is False
+    - 12% of pf_wages if pf_app is True and pf_wages < 15,000
+    - Capped at ₹1,800 if pf_app is True and pf_wages >= 15,000
+    At exactly ₹15,000, 15,000 * 0.12 = ₹1,800, so both branches agree.
+    """
+    if not pf_app:
+        return 0
+    w = round(float(pf_wages or 0.0))
+    return round(w * PF_RATE) if w < PF_WAGE_CAP else PF_STATUTORY_MAX_CONTRIBUTION
+
 
 def get_franchisee_tenure_split(years_completed=None, onboarding_date=None, bill_date=None):
     """

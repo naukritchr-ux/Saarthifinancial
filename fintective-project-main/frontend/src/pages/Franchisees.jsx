@@ -322,6 +322,107 @@ function FranchiseeDrawer({ franchisee, isOpen, onClose, setActivePage }) {
 }
 
 // --------------------------------------------------------------------------
+// 2.5. Dormant Franchisees Reactivation Ranking Component
+// --------------------------------------------------------------------------
+export function DormantReactivationSection({ 
+  candidates = [], 
+  summary = null, 
+  loading = false, 
+  monthlyCostGap = 0, 
+  onSelectFranchisee 
+}) {
+  // Exclude never-activated hubs
+  const eligibleCandidates = useMemo(() => {
+    return (candidates || []).filter(c => (c.placements_l12m > 0 || c.total_lifetime_placements > 0));
+  }, [candidates]);
+
+  // Total potential monthly recovery (upper bound)
+  const totalRecovery = summary?.total_potential_monthly_recovery ?? eligibleCandidates.reduce((sum, c) => sum + (c.expected_monthly_value || 0), 0);
+
+  return (
+    <div className="fran-reactivation-card" data-testid="dormant-reactivation-section">
+      <div className="fran-reactivation-header">
+        <div className="fran-reactivation-title-wrap">
+          <h2 className="fran-reactivation-title">Dormant franchisees to reactivate</h2>
+          <span 
+            className="fran-ranking-badge" 
+            title="Assumes the hub returns to its recent pace; upper bound, not a forecast."
+            data-testid="ranking-badge"
+          >
+            <Info size={13} />
+            <span>Rule-based ranking</span>
+          </span>
+        </div>
+        <div className="fran-reactivation-meta">
+          <span className="fran-recovery-total" data-testid="recovery-total">
+            up to {formatCurrency(totalRecovery)}/month
+          </span>
+          {monthlyCostGap > 0 && (
+            <span className="fran-cost-gap-note" data-testid="cost-gap-note">
+              (monthly cost gap: {formatCurrency(monthlyCostGap)})
+            </span>
+          )}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="fran-reactivation-empty">Loading reactivation rankings...</div>
+      ) : eligibleCandidates.length === 0 ? (
+        <div className="fran-reactivation-empty" data-testid="reactivation-empty">
+          No dormant franchise hubs currently eligible for reactivation.
+        </div>
+      ) : (
+        <div className="fran-table-responsive">
+          <table className="fran-reactivation-table" data-testid="reactivation-table">
+            <thead>
+              <tr>
+                <th className="fran-rank-col">#</th>
+                <th>Franchisee</th>
+                <th>Last Placement</th>
+                <th style={{ textAlign: 'right' }}>Placements (12M)</th>
+                <th style={{ textAlign: 'right' }}>Avg Co. Share / Deal</th>
+                <th style={{ textAlign: 'right' }}>Expected Monthly Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {eligibleCandidates.map((c, idx) => (
+                <tr 
+                  key={c.franchisee_id || idx}
+                  onClick={() => onSelectFranchisee && onSelectFranchisee(c)}
+                  data-testid="reactivation-row"
+                >
+                  <td className="fran-rank-col">{idx + 1}</td>
+                  <td>
+                    <div className="fran-name-cell">
+                      <span className="fran-name-text">{c.franchisee_name}</span>
+                    </div>
+                    {c.explanation && (
+                      <span className="fran-explanation-sub">{c.explanation}</span>
+                    )}
+                  </td>
+                  <td className="fran-days-col">
+                    {c.days_since_last_placement}d ago
+                  </td>
+                  <td style={{ textAlign: 'right', fontWeight: '600' }}>
+                    {c.placements_l12m}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    {formatCurrency(c.avg_company_share)}
+                  </td>
+                  <td className="fran-expected-col">
+                    {formatCurrency(c.expected_monthly_value)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
 // 3. MAIN COMPONENT: Franchisees
 // --------------------------------------------------------------------------
 export default function Franchisees({ setActivePage }) {
@@ -332,7 +433,8 @@ export default function Franchisees({ setActivePage }) {
     setSelectedYear,
     availableMonths = [],
     availableYears = [],
-    addFranchisee
+    addFranchisee,
+    financeSummary
   } = useContext(FinanceContext);
 
   const [summaryData, setSummaryData] = useState({
@@ -371,6 +473,40 @@ export default function Franchisees({ setActivePage }) {
 
   // ML segments cache
   const [mlMap, setMlMap] = useState({});
+
+  // Reactivation ranking state
+  const [reactivationData, setReactivationData] = useState({ candidates: [], summary: null });
+  const [loadingReactivation, setLoadingReactivation] = useState(false);
+
+  // Fetch Rule-Based Franchisee Reactivation Ranking
+  useEffect(() => {
+    let isMounted = true;
+    setLoadingReactivation(true);
+    fetchWithApiKey(`${API_BASE_URL}/ml/franchisee-reactivation`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (isMounted && data && data.success) {
+          setReactivationData({
+            candidates: data.candidates || [],
+            summary: data.summary || null
+          });
+        }
+      })
+      .catch(err => {
+        console.warn('[Reactivation] Failed to load ranking:', err.message);
+      })
+      .finally(() => {
+        if (isMounted) setLoadingReactivation(false);
+      });
+    return () => { isMounted = false; };
+  }, []);
+
+  const monthlyCostGap = useMemo(() => {
+    if (!financeSummary) return 0;
+    const exp = (financeSummary.operating_expenses || 0) + (financeSummary.salaries || 0);
+    const ourShare = financeSummary.our_share || 0;
+    return Math.max(0, (exp - ourShare) / 5);
+  }, [financeSummary]);
 
   // 1. Fetch ML Insights for segment badges
   useEffect(() => {
@@ -778,6 +914,22 @@ export default function Franchisees({ setActivePage }) {
           </select>
         </div>
       </div>
+
+      {/* 4.5. Dormant Franchisees to Reactivate */}
+      <DormantReactivationSection
+        candidates={reactivationData.candidates}
+        summary={reactivationData.summary}
+        loading={loadingReactivation}
+        monthlyCostGap={monthlyCostGap}
+        onSelectFranchisee={(c) => {
+          const matched = (summaryData.ledger || []).find(f => 
+            f.name.toLowerCase().trim() === c.franchisee_name.toLowerCase().trim()
+          );
+          if (matched) {
+            setSelectedFranchisee(matched);
+          }
+        }}
+      />
 
       {/* 5. Main Franchisees Table */}
       <div className="fran-card-table">

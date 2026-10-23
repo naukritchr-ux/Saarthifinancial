@@ -38,7 +38,8 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
     bdAgents, 
     activeModule, 
     backendHealth,
-    isLoadingData
+    isLoadingData,
+    financeSummary
   } = useContext(FinanceContext);
 
   // Local Modal & View States
@@ -732,6 +733,29 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
           <div className="kpi-main-metric" style={{ color: profit >= 0 ? '#0f6e56' : '#a8402e' }}>
             {formatLakhs(profit)}
           </div>
+
+          {/* Dynamic Payroll Status Badge from API Numeric Fields */}
+          {(() => {
+            const expData = financeSummary?.expenses || {};
+            const isFY27 = selectedYear === '2026-2027' || selectedYear === 'FY 2026-27';
+            const pendingMonths = expData.pending_payroll_months || 0;
+            const pendingEst = expData.pending_payroll_est || 0;
+            if (!isFY27 || pendingMonths <= 0) return null;
+
+            const estLabel = pendingEst > 0 ? `(~₹${(pendingEst / 100000).toFixed(1)}L est.)` : '';
+            const badgeLabel = `Sep–Oct payroll pending in CRM ${estLabel}`.trim();
+
+            return (
+              <div 
+                className="kpi-sub-note" 
+                style={{ fontSize: '11px', color: '#b45309', margin: '4px 0 6px 0', display: 'flex', alignItems: 'center', gap: '4px' }}
+                title={expData.note || 'Salaries recorded through Aug 2026 (5 months).'}
+              >
+                <AlertCircle size={12} />
+                <span>{badgeLabel}</span>
+              </div>
+            );
+          })()}
 
           <div className="kpi-bottom-row">
             <span className={`kpi-delta-tag ${profitChange.positive ? 'positive' : 'negative'}`}>
