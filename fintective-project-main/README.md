@@ -69,3 +69,35 @@ Open the local address printed by Vite (typically [http://localhost:5173](http:/
   > **Note**: Avoid relying on Vercel catch-all rewrites for long-running calls (such as `/api/finance/sync-saarthi` or reports), as serverless gateway timeouts can drop the connection prematurely.
 * **`VITE_API_KEY`**: Must exactly match the backend `API_KEY`. Passed automatically via the `X-API-Key` header with `fetchWithApiKey`.
 
+## Running Tests Safely
+
+Fintective separates read-only tests from tests that write to the database (`@pytest.mark.writes_db`).
+
+### 1. Default Safety Guard
+When running tests against your default development or live CRM database (`.env`), any test that performs database writes (`INSERT`, `UPDATE`, `DELETE`, or modifying API endpoints) is **automatically skipped** with the following message:
+```text
+Skipped: this test writes data and the configured database is not a test/staging database.
+```
+Read-only tests against the database continue to run normally.
+
+### 2. Running Write Tests Against a Staging/Test Database
+To run the full suite including write tests, configure a staging or test database whose name **strictly ends in `_staging` or `_test`**:
+
+1. **Create the staging database copy in MySQL**:
+   ```sql
+   CREATE DATABASE crm_db_staging CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+   -- Dump schema and bootstrap tables into crm_db_staging
+   ```
+2. **Set `TEST_DATABASE_URL`**:
+   Provide the connection URL pointing to the staging database via environment variable:
+   ```bash
+   # Windows PowerShell
+   $env:TEST_DATABASE_URL="mysql://db_user:db_password@localhost:3306/crm_db_staging"
+   python -m pytest
+
+   # Linux / macOS
+   TEST_DATABASE_URL="mysql://db_user:db_password@localhost:3306/crm_db_staging" python -m pytest
+   ```
+   When `FLASK_TESTING=true` and `TEST_DATABASE_URL` is set, `backend/db.py` uses **only** `TEST_DATABASE_URL` and ignores all other production DB variables. Because the database name ends in `_staging` or `_test`, the write tests will execute safely without touching production data.
+
+

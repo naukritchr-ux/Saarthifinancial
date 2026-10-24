@@ -9,33 +9,62 @@ from dotenv import load_dotenv
 # Load env file
 load_dotenv()
 
-# Parse DATABASE_URL / MYSQL_URL / AIVEN_URL / DB_URI if provided
-database_url = os.getenv("DATABASE_URL") or os.getenv("MYSQL_URL") or os.getenv("AIVEN_URL") or os.getenv("DB_URI")
+is_flask_testing = os.getenv("FLASK_TESTING", "").strip().lower() in ("true", "1", "yes")
+test_database_url = os.getenv("TEST_DATABASE_URL", "").strip()
 
-parsed_host = ""
-parsed_port = 3306
-parsed_user = ""
-parsed_password = ""
-parsed_name = ""
-
-if database_url:
+if is_flask_testing and test_database_url:
+    # Use ONLY TEST_DATABASE_URL and IGNORE DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+    # and the other URL variables (DATABASE_URL, MYSQL_URL, AIVEN_URL, DB_URI).
+    parsed_host = ""
+    parsed_port = 3306
+    parsed_user = ""
+    parsed_password = ""
+    parsed_name = ""
     try:
-        parsed = urllib.parse.urlparse(database_url)
+        parsed = urllib.parse.urlparse(test_database_url)
         parsed_host = parsed.hostname or ""
         parsed_port = parsed.port or 3306
-        parsed_user = parsed.username or ""
-        parsed_password = parsed.password or ""
+        parsed_user = urllib.parse.unquote(parsed.username or "")
+        parsed_password = urllib.parse.unquote(parsed.password or "")
         if parsed.path and len(parsed.path) > 1:
             parsed_name = parsed.path.lstrip('/')
     except Exception as parse_err:
-        print("[DB WARN] Error parsing DATABASE_URL:", str(parse_err))
+        print("[DB WARN] Error parsing TEST_DATABASE_URL:", str(parse_err))
 
-DB_HOST = (os.getenv("DB_HOST", "").strip() or parsed_host or "localhost")
-DB_PORT = int(os.getenv("DB_PORT", str(parsed_port)))
-DB_USER = (os.getenv("DB_USER", "").strip() or parsed_user or "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "") or parsed_password
-DB_NAME = (os.getenv("DB_NAME", "").strip() or parsed_name or "crm_db")
-DB_SSL = os.getenv("DB_SSL", "false").lower() in ("true", "1", "yes")
+    DB_HOST = parsed_host or "localhost"
+    DB_PORT = int(parsed_port)
+    DB_USER = parsed_user or "root"
+    DB_PASSWORD = parsed_password
+    DB_NAME = parsed_name or "crm_db_test"
+    DB_SSL = os.getenv("DB_SSL", "false").lower() in ("true", "1", "yes")
+else:
+    # Parse DATABASE_URL / MYSQL_URL / AIVEN_URL / DB_URI if provided
+    database_url = os.getenv("DATABASE_URL") or os.getenv("MYSQL_URL") or os.getenv("AIVEN_URL") or os.getenv("DB_URI")
+
+    parsed_host = ""
+    parsed_port = 3306
+    parsed_user = ""
+    parsed_password = ""
+    parsed_name = ""
+
+    if database_url:
+        try:
+            parsed = urllib.parse.urlparse(database_url)
+            parsed_host = parsed.hostname or ""
+            parsed_port = parsed.port or 3306
+            parsed_user = urllib.parse.unquote(parsed.username or "")
+            parsed_password = urllib.parse.unquote(parsed.password or "")
+            if parsed.path and len(parsed.path) > 1:
+                parsed_name = parsed.path.lstrip('/')
+        except Exception as parse_err:
+            print("[DB WARN] Error parsing DATABASE_URL:", str(parse_err))
+
+    DB_HOST = (os.getenv("DB_HOST", "").strip() or parsed_host or "localhost")
+    DB_PORT = int(os.getenv("DB_PORT", str(parsed_port)))
+    DB_USER = (os.getenv("DB_USER", "").strip() or parsed_user or "root")
+    DB_PASSWORD = os.getenv("DB_PASSWORD", "") or parsed_password
+    DB_NAME = (os.getenv("DB_NAME", "").strip() or parsed_name or "crm_db")
+    DB_SSL = os.getenv("DB_SSL", "false").lower() in ("true", "1", "yes")
 
 def get_db_connection(select_db=True, max_retries=3, retry_delay=1.0):
     """

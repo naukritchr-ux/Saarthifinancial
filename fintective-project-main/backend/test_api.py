@@ -6,6 +6,7 @@ import warnings
 warnings.filterwarnings('ignore')
 import json
 import unittest
+import pytest
 from app import app, get_bd_revenue
 from db import get_db_connection
 
@@ -80,6 +81,7 @@ class TestSaarthiAPI(unittest.TestCase):
         self.assertIn('duplicate_expenses', data)
         print(f"  Action items: {len(data['ghost_deals'])} ghost deals, {len(data['duplicate_expenses'])} duplicates")
 
+    @pytest.mark.writes_db
     def test_audit_logging(self):
         print("\nTesting audit logging behavior...")
         # Create a test transaction
@@ -123,6 +125,7 @@ class TestSaarthiAPI(unittest.TestCase):
         print(f"  Audit log verified for DELETE: {del_audit_row['table_name']} -> {del_audit_row['record_id']}")
         conn.close()
 
+    @pytest.mark.writes_db
     def test_soft_delete_and_restore(self):
         print("\nTesting soft-delete and restore behavior...")
         # 1. Create a test transaction (expense)

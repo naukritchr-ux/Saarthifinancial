@@ -293,6 +293,11 @@ def retire_missing_expenses(cur, api_ids):
         legacy_retired = cur.rowcount or 0
     return len(missing), legacy_retired
 
+# Exhaustive allowlist of tables that may be inspected/pruned via the sync ghost-row report.
+# Adding a table here is a deliberate, code-reviewed decision — never derive this set from
+# request input.
+_PRUNABLE_TABLES = frozenset({"enquiries", "invoice"})
+
 
 def reconcile_missing_ids(cur, table, api_ids, prune=False):
     """
@@ -300,7 +305,10 @@ def reconcile_missing_ids(cur, table, api_ids, prune=False):
     the sync only upserts so they would otherwise live on and inflate revenue).
     Reports by default; deletes only when prune=True and the payload looks complete.
     Returns the number of ghost rows found.
+    Raises ValueError for unknown/unallowlisted table names.
     """
+    if table not in _PRUNABLE_TABLES:
+        raise ValueError(f"[SYNC] Table '{table}' is not in the prunable allowlist.")
     cur.execute(f"SELECT id FROM `{table}`")
     local_ids = [r["id"] for r in (cur.fetchall() or [])]
     api_keys = {str(i) for i in api_ids}
@@ -317,19 +325,32 @@ def reconcile_missing_ids(cur, table, api_ids, prune=False):
     return len(ghosts)
 
 
-def get_ghost_row_report(prune=False, tables=None):
+def get_ghost_row_report(prune=False, tables=None, force=False):
     """
-    Admin audit report listing ghost rows (rows present in local DB that no longer exist in upstream CRM).
-    prune=False by default (dry-run).
-    If prune=True, only prunes specified tables if safety thresholds pass.
+    Admin audit report listing ghost rows (rows present in local DB that no longer
+    exist in upstream CRM).
+
+    prune=False  – dry-run; only reports, never deletes.
+    force=False  – when prune=True, refuse if ghost_count > 10 % of local rows
+                   unless force=True.
+    Raises ValueError for unknown table names or safety-threshold violations.
+    Writes one audit_log row per table after a real prune.
     """
     tables_to_check = tables or ["enquiries", "invoice"]
+    # --- SQLi guard: reject any table name not in the allowlist ---
+    unknown = [t for t in tables_to_check if t not in _PRUNABLE_TABLES]
+    if unknown:
+        raise ValueError(
+            f"Unknown/disallowed table name(s) in prune request: {unknown}. "
+            f"Allowed: {sorted(_PRUNABLE_TABLES)}"
+        )
+    # --------------------------------------------------------------
     report = {
         "timestamp": datetime.datetime.now().isoformat(),
         "dry_run": not prune,
         "tables": {}
     }
-    
+
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
@@ -341,22 +362,63 @@ def get_ghost_row_report(prune=False, tables=None):
                     cur.execute(f"SELECT id FROM `{tbl}`")
                     local_ids = [str(r["id"]) for r in (cur.fetchall() or [])]
                     ghost_ids = [i for i in local_ids if i not in api_ids]
-                    
+                    local_count = len(local_ids)
+                    ghost_count = len(ghost_ids)
+
                     pruned_count = 0
+                    refused = False
+                    refuse_reason = None
+
                     if prune and ghost_ids:
-                        if len(api_ids) >= 0.9 * len(local_ids):
+                        # Safety threshold: refuse if > 10 % of local rows are ghosts
+                        # unless caller explicitly sent force=True.
+                        if ghost_count > 0.10 * max(local_count, 1) and not force:
+                            refused = True
+                            refuse_reason = (
+                                f"Ghost count {ghost_count} exceeds 10 % of local rows "
+                                f"({local_count}). Send {{\"force\": true}} to override."
+                            )
+                        elif len(api_ids) >= 0.9 * max(local_count, 1):
                             for batch in _chunked(ghost_ids, 500):
                                 placeholders = ", ".join(["%s"] * len(batch))
-                                cur.execute(f"DELETE FROM `{tbl}` WHERE id IN ({placeholders})", batch)
-                            pruned_count = len(ghost_ids)
-                    
-                    report["tables"][tbl] = {
-                        "local_count": len(local_ids),
+                                cur.execute(
+                                    f"DELETE FROM `{tbl}` WHERE id IN ({placeholders})",
+                                    batch
+                                )
+                            pruned_count = ghost_count
+
+                            # Audit log: one row per table, ids truncated to 20
+                            try:
+                                sample_ids = ",".join(str(i) for i in ghost_ids[:20])
+                                cur.execute(
+                                    """
+                                    INSERT INTO audit_log
+                                        (table_name, record_id, field_changed, old_value, new_value, changed_by)
+                                    VALUES (%s, %s, %s, %s, %s, %s)
+                                    """,
+                                    (
+                                        tbl,
+                                        "PRUNE_BATCH",
+                                        "DELETE",
+                                        f"{pruned_count} rows deleted",
+                                        sample_ids,
+                                        "sync_prune_api",
+                                    )
+                                )
+                            except Exception as audit_err:
+                                print(f"[PRUNE AUDIT WARN] Failed to write audit_log for `{tbl}`: {audit_err}")
+
+                    tbl_report = {
+                        "local_count": local_count,
                         "upstream_crm_count": len(api_ids),
-                        "ghost_count": len(ghost_ids),
+                        "ghost_count": ghost_count,
                         "ghost_ids_sample": ghost_ids[:20],
-                        "pruned": pruned_count
+                        "pruned": pruned_count,
                     }
+                    if refused:
+                        tbl_report["refused"] = True
+                        tbl_report["refuse_reason"] = refuse_reason
+                    report["tables"][tbl] = tbl_report
                 else:
                     report["tables"][tbl] = {
                         "error": api_res.get("error", "Failed to fetch upstream API")

@@ -128,6 +128,17 @@ _clients_cache_time = 0
 _clients_lock = threading.Lock()
 CLIENTS_CACHE_TTL_SECONDS = 300  # 5 minutes
 
+_sync_debug_cache = None
+_sync_debug_cache_time = 0
+_sync_debug_lock = threading.Lock()
+SYNC_DEBUG_CACHE_TTL_SECONDS = 60
+
+def _clear_sync_debug_cache():
+    global _sync_debug_cache, _sync_debug_cache_time
+    with _sync_debug_lock:
+        _sync_debug_cache = None
+        _sync_debug_cache_time = 0
+
 # Bug B: Data versioning across all worker processes
 _data_version_cache = {'version': 2, 'as_of': None, 'time': 0}
 _data_version_lock = threading.Lock()
@@ -166,6 +177,7 @@ def invalidate_all_caches():
     with _clients_lock:
         _clients_cache = None
         _clients_cache_time = 0
+    _clear_sync_debug_cache()
     refresh_live_exclusions(force=True)
     get_data_version(force=True)
     try:
@@ -269,7 +281,7 @@ def handle_preflight_and_api_key():
         return res
 
     # Allow health diagnostic and warmup endpoints without auth
-    if request.path in ['/health', '/api/health', '/api/health/sync-debug', '/api/warmup']:
+    if request.path in ['/health', '/api/health', '/api/warmup']:
         return None
 
     incoming_key = request.headers.get('X-API-Key')
@@ -1051,7 +1063,7 @@ def get_moving_avg_burn():
                      COALESCE(exp.expense, 0) - COALESCE(inc.our_income, 0) AS net_burn
               FROM (
                 SELECT DISTINCT DATE_FORMAT(billDate, '%%Y-%%m') AS month
-                FROM expenditure WHERE billDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
+                FROM expenditure WHERE billDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH) AND is_deleted = 0
                 UNION
                 SELECT DISTINCT DATE_FORMAT(billDate, '%%Y-%%m') AS month
                 FROM v_invoice_clean WHERE billDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
@@ -1251,28 +1263,46 @@ def get_finance_summary():
 
 @app.route('/api/sync/ghost-report', methods=['GET'])
 def get_sync_ghost_report():
-    admin_api_key = (os.environ.get('ADMIN_API_KEY') or os.environ.get('API_KEY') or '').strip()
-    incoming_key = (request.headers.get('X-Admin-API-Key') or request.headers.get('X-API-Key') or '').strip()
-    if not admin_api_key or incoming_key != admin_api_key:
-        return jsonify({'error': 'Unauthorized: Valid ADMIN_API_KEY required'}), 403
-
+    """
+    Dry-run ghost-row report. Protected by the normal X-API-Key middleware only.
+    Never deletes anything.
+    """
     from sync_service import get_ghost_row_report
-    report = get_ghost_row_report(prune=False)
+    try:
+        report = get_ghost_row_report(prune=False)
+    except ValueError as ve:
+        return jsonify({'error': str(ve)}), 400
     return jsonify(report)
 
 @app.route('/api/sync/prune', methods=['POST'])
 def post_sync_prune():
-    admin_api_key = (os.environ.get('ADMIN_API_KEY') or os.environ.get('API_KEY') or '').strip()
-    incoming_key = (request.headers.get('X-Admin-API-Key') or request.headers.get('X-API-Key') or '').strip()
-    if not admin_api_key or incoming_key != admin_api_key:
-        return jsonify({'error': 'Unauthorized: Valid ADMIN_API_KEY required'}), 403
+    """
+    Real prune endpoint. Off by default — requires ENABLE_PRUNE_API=true in env.
+    A real delete needs {"confirm_prune": true}.
+    If ghost_count > 10 % of local rows, also requires {"force": true}.
+    Protected by the normal X-API-Key middleware only.
+    """
+    if os.environ.get('ENABLE_PRUNE_API', '').strip().lower() != 'true':
+        return jsonify({'error': 'Prune via API is disabled'}), 403
 
     data = request.json or {}
     prune_enabled = data.get('confirm_prune') is True
+    force = data.get('force') is True
     tables = data.get('tables') or ['enquiries', 'invoice']
 
-    from sync_service import get_ghost_row_report
-    report = get_ghost_row_report(prune=prune_enabled, tables=tables)
+    # --- SQLi guard: allowlist table names before they reach SQL ---
+    from sync_service import get_ghost_row_report, _PRUNABLE_TABLES
+    unknown_tables = [t for t in tables if t not in _PRUNABLE_TABLES]
+    if unknown_tables:
+        return jsonify({
+            'error': f"Unknown/disallowed table name(s): {unknown_tables}. Allowed: {sorted(_PRUNABLE_TABLES)}"
+        }), 400
+    # ---------------------------------------------------------------
+
+    try:
+        report = get_ghost_row_report(prune=prune_enabled, tables=tables, force=force)
+    except ValueError as ve:
+        return jsonify({'error': str(ve)}), 400
     if prune_enabled:
         invalidate_all_caches()
     return jsonify(report)
@@ -1358,26 +1388,38 @@ def delete_transaction(id):
             log_audit('transactions', id, 'DELETE', json.dumps(serialize_row(row)), None)
             return jsonify({ 'success': True, 'deleted': serialize_row(row) })
         else:
-            if id.startswith('exp-'):
-                raw_id = id.split('-')[1]
+            import re
+            exp_match = re.match(r'^exp-(\d+)$', id)
+            fran_match = re.match(r'^fran-pay-(\d+)$', id)
+
+            if exp_match:
+                raw_id = exp_match.group(1)
                 cursor.execute("SELECT * FROM expenditure WHERE id = %s", [raw_id])
                 row = cursor.fetchone()
-                row_str = json.dumps(serialize_row(row)) if row else None
+                if not row:
+                    return jsonify({ 'error': 'Not found' }), 404
+                row_str = json.dumps(serialize_row(row))
                     
                 cursor.execute("DELETE FROM expenditure WHERE id = %s", [raw_id])
                 conn.commit()
+                if cursor.rowcount == 0:
+                    return jsonify({ 'error': 'Not found' }), 404
                 
                 # Log audit
                 log_audit('expenditure', id, 'DELETE', row_str, None)
                 return jsonify({ 'success': True, 'deleted': { 'id': id } })
-            elif id.startswith('fran-pay-'):
-                raw_id = id.split('-')[1]
+            elif fran_match:
+                raw_id = fran_match.group(1)
                 cursor.execute("SELECT * FROM franchisePayments WHERE franchisePayment_id = %s", [raw_id])
                 row = cursor.fetchone()
-                row_str = json.dumps(serialize_row(row)) if row else None
+                if not row:
+                    return jsonify({ 'error': 'Not found' }), 404
+                row_str = json.dumps(serialize_row(row))
                     
                 cursor.execute("DELETE FROM franchisePayments WHERE franchisePayment_id = %s", [raw_id])
                 conn.commit()
+                if cursor.rowcount == 0:
+                    return jsonify({ 'error': 'Not found' }), 404
                 
                 # Log audit
                 log_audit('franchisePayments', id, 'DELETE', row_str, None)
@@ -3260,7 +3302,7 @@ def compute_ml_insights(force=False):
         df_exp = pd.DataFrame()
         if cursor:
             try:
-                cursor.execute("SELECT id, billDate, particulars, expenses, amount FROM expenditure WHERE particulars != 'particulars' AND expenses != 'expenses'")
+                cursor.execute("SELECT id, billDate, particulars, expenses, amount FROM expenditure WHERE particulars != 'particulars' AND expenses != 'expenses' AND is_deleted = 0")
                 exp_rows = cursor.fetchall()
                 if exp_rows:
                     df_exp = pd.DataFrame(exp_rows)
@@ -3894,26 +3936,28 @@ def warmup():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     from db import test_connection
-    db_status = test_connection()
+    try:
+        raw_db = test_connection()
+        is_connected = (raw_db.get('status') == 'connected')
+        if not is_connected:
+            print(f"[HEALTH CHECK DB WARN] Database disconnected: {raw_db}")
+    except Exception as e:
+        print(f"[HEALTH CHECK DB ERROR] {e}")
+        is_connected = False
     
     with _tx_cache_lock:
         cache_warm = bool(_tx_cache and (time.time() - _tx_cache_time < TX_CACHE_TTL_SECONDS))
         cache_age_sec = round(time.time() - _tx_cache_time) if _tx_cache_time else None
-        cached_keys = list(_tx_cache.keys())
     
     return jsonify({
-        'status': 'ok' if db_status.get('status') == 'connected' else 'degraded',
+        'status': 'ok' if is_connected else 'degraded',
         'service': 'fintective-backend',
-        'database': db_status,
+        'database': {
+            'status': 'connected' if is_connected else 'disconnected'
+        },
         'cache': {
             'warm': cache_warm,
-            'age_seconds': cache_age_sec,
-            'ttl_seconds': TX_CACHE_TTL_SECONDS,
-            'active_keys': len(cached_keys)
-        },
-        'exclusions': {
-            'colliding_bills_count': len(COLLIDING_BILL_NUMBERS),
-            'duplicate_enquiries_count': len(ENQUIRY_IDS_TO_EXCLUDE)
+            'age_seconds': cache_age_sec
         },
         'timestamp': datetime.datetime.now().isoformat()
     })
@@ -4033,42 +4077,72 @@ def get_sync_status():
 # ----------------------------------------------------
 # SYNC DEBUG DIAGNOSTIC ENDPOINT
 # ----------------------------------------------------
+def _map_endpoint_error_code(res):
+    if res.get('ok'):
+        return None
+    raw_error = str(res.get('error') or '').lower()
+    if any(k in raw_error for k in ['timeout', 'timed out', 'url error', 'connection', 'unreachable', 'errno', 'gaierror', 'name or service not known']):
+        return 'unreachable'
+    if any(k in raw_error for k in ['http', 'json', '500', '502', '503', '504', '404', '403', '401', '400', 'bad_response']):
+        return 'bad_response'
+    return 'unreachable'
+
 @app.route('/api/health/sync-debug', methods=['GET'])
 def sync_debug_health():
-    """Diagnostic: test DB connectivity and Saarthi API reachability across all 6 endpoints."""
-    from sync_service import fetch_saarthi_endpoint, EXPENSE_ENDPOINT
-    result = {'db': {}, 'endpoints': {}}
+    """
+    Diagnostic: test DB connectivity and Saarthi API reachability across all 6 endpoints.
+    Requires normal X-API-Key.
+    Cached in-memory for 60 seconds (thread-safe) to prevent repeated outbound CRM calls.
+    Returns sanitized endpoint metrics without upstream URLs or raw internal error messages.
+    """
+    global _sync_debug_cache, _sync_debug_cache_time
 
-    # Test DB
-    try:
-        conn = get_db_connection()
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) AS n FROM enquiries")
-            row = cur.fetchone()
-        conn.close()
-        result['db'] = {'ok': True, 'enquiries_count': int(row['n']) if row else 0}
-    except Exception as e:
-        result['db'] = {'ok': False, 'error': str(e)}
+    now = time.time()
+    with _sync_debug_lock:
+        if _sync_debug_cache is not None and (now - _sync_debug_cache_time < SYNC_DEBUG_CACHE_TTL_SECONDS):
+            return jsonify(_sync_debug_cache)
 
-    # Loop over all six endpoints using fetch_saarthi_endpoint
-    endpoints = [
-        ("franchisees", "franchisees"),
-        ("enquiries", "enquiries"),
-        ("invoices", "Invoice"),
-        ("expenses", EXPENSE_ENDPOINT),
-        ("clients", "clients_info"),
-        ("legals", "legals_info")
-    ]
-    for name, path in endpoints:
-        res = fetch_saarthi_endpoint(path, timeout=10)
-        result['endpoints'][name] = {
-            'ok': res.get('ok', False),
-            'url': res.get('url'),
-            'row_count': len(res.get('data') or []),
-            'error': res.get('error')
-        }
+        result = {'db': {}, 'endpoints': {}}
 
-    return jsonify({'success': True, 'diagnostics': result})
+        # Test DB: generic ok boolean without raw error or internal details
+        try:
+            conn = get_db_connection()
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            conn.close()
+            result['db'] = {'ok': True}
+        except Exception as e:
+            print(f"[SYNC DEBUG DB ERROR] {e}")
+            result['db'] = {'ok': False}
+
+        # Loop over all six endpoints using fetch_saarthi_endpoint
+        from sync_service import fetch_saarthi_endpoint, EXPENSE_ENDPOINT
+        endpoints = [
+            ("franchisees", "franchisees"),
+            ("enquiries", "enquiries"),
+            ("invoices", "Invoice"),
+            ("expenses", EXPENSE_ENDPOINT),
+            ("clients", "clients_info"),
+            ("legals", "legals_info")
+        ]
+        for name, path in endpoints:
+            res = fetch_saarthi_endpoint(path, timeout=10)
+            is_ok = bool(res.get('ok', False))
+            ep_info = {
+                'ok': is_ok,
+                'row_count': len(res.get('data') or [])
+            }
+            if not is_ok:
+                short_code = _map_endpoint_error_code(res)
+                ep_info['error'] = short_code
+                ep_info['error_code'] = short_code
+                print(f"[SYNC DEBUG] Endpoint '{name}' failed. Raw error: {res.get('error')} | URL: {res.get('url')}")
+            result['endpoints'][name] = ep_info
+
+        payload = {'success': True, 'diagnostics': result}
+        _sync_debug_cache = payload
+        _sync_debug_cache_time = now
+        return jsonify(payload)
 
 # ----------------------------------------------------
 # JOB PORTAL & EMPLOYER ACCOUNTS APIS

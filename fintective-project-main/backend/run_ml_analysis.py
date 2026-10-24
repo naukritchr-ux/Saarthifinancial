@@ -35,7 +35,7 @@ def analyze_expenditure_anomalies():
     conn = get_db_connection()
     try:
         # Load expenditures (filtering out header rows if any)
-        query = "SELECT id, billDate, particulars, expenses, amount FROM expenditure WHERE particulars != 'particulars' AND expenses != 'expenses'"
+        query = "SELECT id, billDate, particulars, expenses, amount FROM expenditure WHERE particulars != 'particulars' AND expenses != 'expenses' AND is_deleted = 0"
         df_exp = pd.read_sql(query, conn)
         
         if df_exp.empty:

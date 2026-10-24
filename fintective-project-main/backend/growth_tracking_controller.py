@@ -839,7 +839,16 @@ def get_company_growth_breakdown():
     Computes live company-wide breakdown by Team Leader from actual invoices & franchisees.
     Provides live deals, total billing, company share, and registered active franchises.
     """
-    fy = request.args.get("financial_year", "").strip()
+    raw_fy = request.args.get("financial_year", "").strip()
+    # --- SQLi guard: normalize and validate the financial_year parameter ---
+    import re as _re
+    if raw_fy:
+        fy = normalize_fy(raw_fy)
+        if fy == 'N/A' or not _re.match(r'^\d{4}-\d{4}$', fy):
+            return jsonify({'error': 'Invalid financial_year parameter. Expected format: YYYY-YYYY (e.g. 2025-2026).'}), 400
+    else:
+        fy = ""
+    # -----------------------------------------------------------------------
     cache_key = f"company_breakdown_{fy}"
     cached_val = _get_cached(cache_key)
     if cached_val is not None:
@@ -863,25 +872,45 @@ def get_company_growth_breakdown():
             franchise_map[cname] = r['active_franchises']
 
         # 2. Deals and billing from invoices
-        fy_clause = f"AND financialYear = '{fy}'" if fy else ""
-        cursor.execute(f"""
-            SELECT 
-                TRIM(teamLeader) as tl_name,
-                COUNT(*) as deals_all,
-                SUM(totalBillAmt) as billing_all,
-                SUM(ourShare) as our_share_all,
-                COUNT(CASE WHEN financialYear = '2025-2026' THEN 1 END) as deals_fy26,
-                SUM(CASE WHEN financialYear = '2025-2026' THEN totalBillAmt ELSE 0 END) as billing_fy26,
-                SUM(CASE WHEN financialYear = '2025-2026' THEN ourShare ELSE 0 END) as our_share_fy26,
-                COUNT(DISTINCT CASE WHEN financialYear = '2025-2026' THEN franchiseName END) as billing_stores_fy26,
-                COUNT(DISTINCT franchiseName) as billing_stores_all
-            FROM invoice
-            WHERE teamLeader IS NOT NULL AND TRIM(teamLeader) != ''
-              AND LOWER(TRIM(teamLeader)) NOT IN ('head office', 'head  - office', 'unknown', 'prospect', 'old . tl', 'pune . office')
-              {fy_clause}
-            GROUP BY TRIM(teamLeader)
-            ORDER BY deals_fy26 DESC
-        """)
+        if fy:
+            inv_sql = """
+                SELECT 
+                    TRIM(teamLeader) as tl_name,
+                    COUNT(*) as deals_all,
+                    SUM(totalBillAmt) as billing_all,
+                    SUM(ourShare) as our_share_all,
+                    COUNT(CASE WHEN financialYear = '2025-2026' THEN 1 END) as deals_fy26,
+                    SUM(CASE WHEN financialYear = '2025-2026' THEN totalBillAmt ELSE 0 END) as billing_fy26,
+                    SUM(CASE WHEN financialYear = '2025-2026' THEN ourShare ELSE 0 END) as our_share_fy26,
+                    COUNT(DISTINCT CASE WHEN financialYear = '2025-2026' THEN franchiseName END) as billing_stores_fy26,
+                    COUNT(DISTINCT franchiseName) as billing_stores_all
+                FROM invoice
+                WHERE teamLeader IS NOT NULL AND TRIM(teamLeader) != ''
+                  AND LOWER(TRIM(teamLeader)) NOT IN ('head office', 'head  - office', 'unknown', 'prospect', 'old . tl', 'pune . office')
+                  AND financialYear = %s
+                GROUP BY TRIM(teamLeader)
+                ORDER BY deals_fy26 DESC
+            """
+            cursor.execute(inv_sql, (fy,))
+        else:
+            inv_sql = """
+                SELECT 
+                    TRIM(teamLeader) as tl_name,
+                    COUNT(*) as deals_all,
+                    SUM(totalBillAmt) as billing_all,
+                    SUM(ourShare) as our_share_all,
+                    COUNT(CASE WHEN financialYear = '2025-2026' THEN 1 END) as deals_fy26,
+                    SUM(CASE WHEN financialYear = '2025-2026' THEN totalBillAmt ELSE 0 END) as billing_fy26,
+                    SUM(CASE WHEN financialYear = '2025-2026' THEN ourShare ELSE 0 END) as our_share_fy26,
+                    COUNT(DISTINCT CASE WHEN financialYear = '2025-2026' THEN franchiseName END) as billing_stores_fy26,
+                    COUNT(DISTINCT franchiseName) as billing_stores_all
+                FROM invoice
+                WHERE teamLeader IS NOT NULL AND TRIM(teamLeader) != ''
+                  AND LOWER(TRIM(teamLeader)) NOT IN ('head office', 'head  - office', 'unknown', 'prospect', 'old . tl', 'pune . office')
+                GROUP BY TRIM(teamLeader)
+                ORDER BY deals_fy26 DESC
+            """
+            cursor.execute(inv_sql)
         tl_rows = cursor.fetchall()
 
         total_billing_fy26 = sum(float(r['billing_fy26'] or 0) for r in tl_rows) or 1.0
@@ -897,7 +926,7 @@ def get_company_growth_breakdown():
         # Also compute the rate only from invoices that HAVE ourShare filled (for better accuracy on missing rows)
         try:
             fy_filter = fy if fy else '2025-2026'
-            cursor.execute(f"""
+            cursor.execute("""
                 SELECT 
                     SUM(COALESCE(ourShare, 0)) as fy_our,
                     SUM(COALESCE(totalBillAmt, serviceCharges, 0)) as fy_gross,
