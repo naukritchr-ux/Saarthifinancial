@@ -1092,6 +1092,26 @@ def get_moving_avg_burn():
     finally:
         conn.close()
 
+@app.route('/api/finance/forecast', methods=['GET'])
+def get_finance_forecast():
+    """
+    Seasonal time-series forecast for revenue, operating expenses, and net runway.
+    Query parameter:
+      horizon: int (1 to 12, default 6)
+    """
+    try:
+        horizon = request.args.get('horizon', '6')
+        try:
+            horizon_int = max(1, min(12, int(horizon)))
+        except ValueError:
+            horizon_int = 6
+        from forecast_service import generate_full_forecast
+        data = generate_full_forecast(horizon=horizon_int)
+        return jsonify(data), 200
+    except Exception as e:
+        print("[get_finance_forecast error]:", str(e))
+        return jsonify({"status": "error", "message": "Failed to generate forecast"}), 500
+
 # --------------------------------------------------------------------------
 # Unified Financial Summary Endpoint: GET /api/finance/summary
 # Single clean source of truth for Dashboard KPI cards, Growth tab, and Compare card

@@ -26,6 +26,7 @@ import {
   FileText
 } from 'lucide-react';
 import Pagination from '../components/Pagination';
+import ForecastChart from '../components/ForecastChart';
 
 const LineChart = TrendingUp;
 const ArrowUpRight = TrendingUp;
@@ -844,6 +845,9 @@ const RunwayRoiTracker = ({ setActivePage }) => {
         </div>
       </section>
  
+      {/* STATISTICAL SEASONAL FORECASTING ENGINE */}
+      <ForecastChart apiBaseUrl={API_BASE_URL} />
+
       {/* 2. PROJECTION SVG CHART */}
       <div className="dashboard-card" style={{ marginBottom: '24px' }}>
         <div className="card-header-flex">
