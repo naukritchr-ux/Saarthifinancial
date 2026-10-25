@@ -166,3 +166,54 @@ def test_cash_balance_adds_manual_income(client):
     sql, params = conn.cursor.return_value.execute.call_args.args
     assert 'FROM manual_cash_entries' in sql
     assert params == ['2026-10-25'] * 4
+
+
+def test_expense_selection_keeps_annual_payment_pattern():
+    # April-March years with a large annual March payment; holdout includes March.
+    history = np.array(([100.] * 11 + [1000.]) * 3 + [100.] * 6)
+    result = forecast.select_expense_model(history, horizon=6)
+    assert result['test_months'] == 12
+    assert result['selected'] == 'Seasonal-Naive (YoY Trend)'
+    assert result['mae'] == 0
+    assert result['forecast'][-1] == 1000
+
+
+def test_expense_median_can_beat_a_one_time_training_outlier():
+    history = np.full(42, 100.)
+    history[29] = 10000.
+    result = forecast.select_expense_model(history, horizon=6)
+    assert result['selected'] == 'Trailing 6-Month Median'
+    assert result['mae'] == 0
+    assert result['mape'] == 0
+    assert np.allclose(result['forecast'], 100)
+    # The outlier remains in the actual history; no observations are dropped.
+    assert history[29] == 10000
+
+
+def test_expense_backtest_does_not_train_on_held_out_actuals():
+    history = np.array([100.] * 30 + [200.] * 12)
+    result = forecast.select_expense_model(history, horizon=3)
+    assert result['mae'] == pytest.approx(100)
+    assert result['mape'] == pytest.approx(50)
+    # Refitting the selected trailing model uses recent actuals for future months.
+    assert np.allclose(result['forecast'], 200)
+
+
+def test_expense_zero_actuals_do_not_invent_percentage_accuracy():
+    result = forecast.select_expense_model(np.zeros(36), horizon=6)
+    assert result['mape'] is None
+    assert result['wape'] is None
+    assert result['mae'] == 0
+    assert np.all(result['forecast'] == 0)
+
+
+def test_expense_short_history_has_no_fake_backtest():
+    result = forecast.select_expense_model(np.arange(1., 6.), horizon=2)
+    assert result['test_months'] == 0
+    assert result['mape'] is None and result['mae'] is None
+    assert np.allclose(result['forecast'], 3)
+
+
+def test_expense_history_rejects_non_finite_inputs():
+    with pytest.raises(ValueError, match='finite'):
+        forecast.select_expense_model(np.array([100., np.nan]))

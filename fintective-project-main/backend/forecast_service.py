@@ -246,6 +246,90 @@ def backtest_revenue_models(history: np.ndarray, test_len: int = 6) -> Dict[str,
     }
 
 
+
+# Simple expense candidates compete with the existing seasonal model. The last
+# full year is held out where available so annual payments enter validation.
+EXPENSE_CANDIDATES = (
+    'Trailing 6-Month Mean',
+    'Trailing 6-Month Median',
+    'Last Month Baseline',
+    'Seasonal-Naive (YoY Trend)',
+    'Holt-Winters (Additive Seasonality)',
+)
+
+
+def expense_candidate_forecast(name, history, horizon):
+    history = np.asarray(history, dtype=float)
+    n = len(history)
+    if not n or not np.all(np.isfinite(history)):
+        raise ValueError('Expense forecasting requires finite historical values')
+    if name == 'Holt-Winters (Additive Seasonality)':
+        if n < 24:
+            raise ValueError('Seasonal Holt-Winters requires two complete years')
+        forecast, fitted, _ = holt_winters_forecast(history, horizon, damped=False)
+        return forecast, fitted
+    if name == 'Seasonal-Naive (YoY Trend)':
+        return seasonal_naive_forecast(history, horizon)
+    if name not in EXPENSE_CANDIDATES:
+        raise ValueError('Unknown expense forecasting model')
+    window = 1 if name == 'Last Month Baseline' else 6
+    aggregate = np.median if name == 'Trailing 6-Month Median' else np.mean
+    # Backward-only fitted values: no future observations enter a prediction.
+    fitted = np.full(n, np.nan)
+    for t in range(window, n):
+        fitted[t] = max(0., float(aggregate(history[t-window:t])))
+    value = max(0., float(aggregate(history[-window:])))
+    return np.full(horizon, value), fitted
+
+
+def select_expense_model(history, horizon=6):
+    """Select by held-out MAE in rupees; retain the measured MAPE without alteration.
+
+    Up to twelve final months form one chronological holdout. Selection metrics
+    compare candidates, not an independent estimate of future accuracy. MAE gives
+    large annual bills their monetary weight, unlike percentage error on tiny bills.
+    """
+    history = np.asarray(history, dtype=float)
+    if history.ndim != 1 or not len(history) or not np.all(np.isfinite(history)):
+        raise ValueError('Expense history must be a nonempty finite monthly series')
+    test_len = min(12, max(0, len(history) - 12)) if len(history) >= 18 else 0
+    comparison = []
+    errors = None
+    selected = EXPENSE_CANDIDATES[0]
+    if test_len:
+        train, actual = history[:-test_len], history[-test_len:]
+        best_mae = math.inf
+        for name in EXPENSE_CANDIDATES:
+            try:
+                prediction, _ = expense_candidate_forecast(name, train, test_len)
+                if len(prediction) != test_len or not np.all(np.isfinite(prediction)):
+                    continue
+            except (ValueError, ArithmeticError):
+                continue
+            residual = actual - prediction
+            mae = float(np.mean(np.abs(residual)))
+            mape = calculate_mape(actual, prediction)
+            denominator = float(np.sum(np.abs(actual)))
+            wape = float(np.sum(np.abs(residual)) / denominator * 100) if denominator > 1e-6 else None
+            comparison.append({'model': name, 'mae': round(mae, 2),
+                               'mape': round(mape, 2) if mape is not None else None,
+                               'wape': round(wape, 2) if wape is not None else None})
+            if mae < best_mae:
+                best_mae, selected, errors = mae, name, residual
+        if not comparison:
+            raise ValueError('No expense model could be validated on the available history')
+    # Refit only the selected candidate on the full history for future months.
+    prediction, fitted = expense_candidate_forecast(selected, history, horizon)
+    metrics = next((r for r in comparison if r['model'] == selected), {})
+    return {
+        'selected': selected, 'forecast': prediction, 'fitted': fitted,
+        'test_months': test_len, 'mape': metrics.get('mape'),
+        'mae': metrics.get('mae'), 'wape': metrics.get('wape'),
+        'comparison': comparison,
+        'residual_rmse': float(np.sqrt(np.mean(errors ** 2))) if errors is not None else None,
+    }
+
+
 # -------------------------------------------------------------------------
 # Data Layer: Historical Ingestion
 # -------------------------------------------------------------------------
@@ -407,7 +491,7 @@ def generate_full_forecast(
     Main orchestration entrypoint:
     1. Fetches company income and operating expense data through the last closed month.
     2. Backtests revenue models and fits selected model.
-    3. Fits Holt-Winters additive model for expenses.
+    3. Compares expense baselines and seasonal models using a chronological holdout.
     4. Gathers scheduled payroll commitments.
     5. Calculates confidence intervals and runway projections.
     """
@@ -442,28 +526,17 @@ def generate_full_forecast(
         else:
             rev_se = float(np.std(rev_series) * 0.15)
 
-        # 3. Expense Model: Holt-Winters Additive Seasonality
-        exp_fc, exp_fitted, exp_hw_ok = holt_winters_forecast(exp_series, horizon=horizon, damped=False, seasonal_period=12)
-        exp_model_name = "Holt-Winters (Additive Seasonality)" if exp_hw_ok else "Seasonal-Naive Fallback"
-        
-        # Expense backtest MAPE
-        exp_test_len = 6
-        if len(exp_series) >= 24:
-            e_train = exp_series[:-exp_test_len]
-            e_test = exp_series[-exp_test_len:]
-            e_pred, _, _ = holt_winters_forecast(e_train, horizon=exp_test_len, damped=False, seasonal_period=12)
-            exp_error = calculate_mape(e_test, e_pred)
-            exp_mape = round(exp_error, 2) if exp_error is not None else None
+        # 3. Select the expense model using a chronological holdout, rather than
+        # always forcing seasonal Holt-Winters even when its validation error is high.
+        exp_selection = select_expense_model(exp_series, horizon)
+        exp_fc, exp_fitted = exp_selection['forecast'], exp_selection['fitted']
+        exp_model_name, exp_mape = exp_selection['selected'], exp_selection['mape']
+        if exp_selection['residual_rmse'] is not None:
+            exp_se = exp_selection['residual_rmse']
         else:
-            exp_mape = None
-
-        # Expense residual error for confidence intervals
-        exp_valid_mask = ~np.isnan(exp_fitted)
-        if np.any(exp_valid_mask):
-            exp_resid = exp_series[exp_valid_mask] - exp_fitted[exp_valid_mask]
-            exp_se = float(np.std(exp_resid))
-        else:
-            exp_se = float(np.std(exp_series) * 0.12)
+            valid = np.isfinite(exp_fitted)
+            residual = exp_series[valid] - exp_fitted[valid]
+            exp_se = float(np.sqrt(np.mean(residual ** 2))) if residual.size else 0.0
 
         # Historical payroll makes historical operating results comparable to forecast costs.
         cur = conn.cursor()
@@ -566,6 +639,11 @@ def generate_full_forecast(
                 'expenses': {
                     'selected_model': exp_model_name,
                     'backtest_mape': exp_mape,
+                    'backtest_mae': exp_selection['mae'],
+                    'backtest_wape': exp_selection['wape'],
+                    'backtest_months': exp_selection['test_months'],
+                    'selection_metric': 'MAE in rupees',
+                    'model_comparison': exp_selection['comparison'],
                     'training_months': len(exp_series),
                     'training_window': f'{exp_months[0]} to {exp_months[-1]}'
                 }

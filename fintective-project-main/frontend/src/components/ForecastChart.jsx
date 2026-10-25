@@ -177,7 +177,7 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
     return (
       <div className="forecast-card forecast-loading">
         <Activity className="forecast-spinner" size={32} />
-        <p>Fitting Holt-Winters & Seasonal-Naive Forecasting Models...</p>
+        <p>Comparing forecasting models against historical data...</p>
       </div>
     );
   }
@@ -213,7 +213,7 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
           </div>
           <h3 className="forecast-title">Company Income & Runway Forecast</h3>
           <p className="forecast-subtitle">
-            Holt-Winters additive seasonality & backtested Seasonal-Naive with scheduled payroll integration
+            Backtested income and expense models with scheduled payroll integration
           </p>
         </div>
 
@@ -262,6 +262,24 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
               <span className="diag-lbl">Backtest MAPE:</span>
               <strong className="diag-val">{models.expenses?.backtest_mape == null ? 'Unavailable' : `${models.expenses.backtest_mape}%`}</strong>
             </div>
+            {models.expenses?.backtest_mae != null && (
+              <div>
+                <span className="diag-lbl">Mean Monthly Error:</span>
+                <span className="diag-subval">{formatCurrency(models.expenses.backtest_mae)}</span>
+              </div>
+            )}
+            {models.expenses?.backtest_wape != null && (
+              <div>
+                <span className="diag-lbl">Total Absolute Error / Actual Expenses:</span>
+                <span className="diag-subval">{models.expenses.backtest_wape}%</span>
+              </div>
+            )}
+            {models.expenses?.backtest_months > 0 && (
+              <div>
+                <span className="diag-lbl">Model Selection Window:</span>
+                <span className="diag-subval">Last {models.expenses.backtest_months} closed months; selected by error in rupees. Future accuracy may differ.</span>
+              </div>
+            )}
             <div>
               <span className="diag-lbl">Training Window:</span>
               <span className="diag-subval">{models.expenses?.training_window} ({models.expenses?.training_months}m)</span>

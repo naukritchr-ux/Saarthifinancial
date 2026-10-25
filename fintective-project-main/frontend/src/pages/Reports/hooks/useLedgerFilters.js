@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useFilters } from '../../../context/FilterContext';
+import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
+import { FilterContext } from '../../../context/FilterContext';
 import {
   filterLedgerTransactions,
   sortLedgerTransactions,
@@ -26,7 +26,7 @@ export function useLedgerFilters({
     saveCurrentView,
     applySavedView,
     deleteSavedView
-  } = useFilters();
+  } = useContext(FilterContext);
 
   // Search input state with 250ms debounce
   const [searchInput, setSearchInput] = useState(filters.search || '');
