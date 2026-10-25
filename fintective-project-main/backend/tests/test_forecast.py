@@ -12,6 +12,7 @@ Validates:
 import unittest
 from unittest.mock import MagicMock, patch
 import datetime
+from financial_fixtures import sample_ledger
 import numpy as np
 from app import app
 from forecast_service import (
@@ -89,7 +90,8 @@ class TestForecastApi(unittest.TestCase):
              patch('forecast_service.get_ist_today', return_value=datetime.date(2026, 10, 25)), \
              patch('forecast_service.fetch_revenue_history', return_value=(months, np.full(30, 1000.), 0.8)), \
              patch('forecast_service.fetch_expense_history', return_value=(months, np.full(30, 500.))), \
-             patch('forecast_service.fetch_scheduled_payroll', return_value={}):
+             patch('forecast_service.load_financial_ledger', return_value=sample_ledger()), \
+             patch('forecast_service.fetch_scheduled_payroll', return_value=({m: 0 for m in generate_month_sequence('2026-10', 6)}, {m: 'test_planned' for m in generate_month_sequence('2026-10', 6)})):
             resp = self.client.get('/api/finance/forecast?horizon=6', headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()

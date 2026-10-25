@@ -33,7 +33,7 @@ export default function LedgerSummary({
         {/* Inflow Card */}
         <div className="rep-kpi-card">
           <div className="rep-kpi-header">
-            <span className="rep-kpi-label">Filtered Inflows</span>
+            <span className="rep-kpi-label">Recorded Income Entries</span>
             <span className="rep-kpi-icon rep-icon-inflow">
               <ArrowUpRight size={16} />
             </span>
@@ -42,14 +42,14 @@ export default function LedgerSummary({
             {formatCurrency(inflow)}
           </div>
           <div className="rep-kpi-sub">
-            Realized & billed revenue
+            Mixed billed/received records; not bank cash
           </div>
         </div>
 
         {/* Outflow Card */}
         <div className="rep-kpi-card">
           <div className="rep-kpi-header">
-            <span className="rep-kpi-label">Filtered Outflows</span>
+            <span className="rep-kpi-label">Recorded Cost Entries</span>
             <span className="rep-kpi-icon rep-icon-outflow">
               <ArrowDownRight size={16} />
             </span>
@@ -58,14 +58,14 @@ export default function LedgerSummary({
             {formatCurrency(outflow, true)}
           </div>
           <div className="rep-kpi-sub">
-            Operating expenses & payroll
+            Recorded expenses and payroll CTC; components may overlap
           </div>
         </div>
 
         {/* Net Card */}
         <div className="rep-kpi-card">
           <div className="rep-kpi-header">
-            <span className="rep-kpi-label">Net Filtered Cash</span>
+            <span className="rep-kpi-label">Net Recorded Entries</span>
             <span className={`rep-kpi-icon ${net >= 0 ? 'rep-icon-net-pos' : 'rep-icon-net-neg'}`}>
               <Layers size={16} />
             </span>
@@ -74,7 +74,7 @@ export default function LedgerSummary({
             {formatCurrency(net)}
           </div>
           <div className="rep-kpi-sub">
-            {net >= 0 ? 'Net Surplus Margin' : 'Net Operating Deficit'}
+            {net >= 0 ? 'Recorded entry surplus' : 'Recorded entry deficit'}
           </div>
         </div>
 

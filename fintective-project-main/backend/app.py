@@ -1037,71 +1037,120 @@ def log_audit(table_name, record_id, field_changed, old_value, new_value, change
     finally:
         conn.close()
 
+def _finance_dates(default_period='mtd'):
+    """Actual records never include a future date or a guessed full-year salary."""
+    today = get_ist_today()
+    if request.args.get('period', default_period) not in ('mtd', 'fytd', 'all', 'last_closed_month'):
+        raise ValueError('Unsupported actual period')
+    raw_as_of = request.args.get('as_of') or today.isoformat()
+    as_of = min(datetime.date.fromisoformat(raw_as_of), today)
+    raw_start = request.args.get('start') or request.args.get('start_date')
+    if raw_start:
+        start = datetime.date.fromisoformat(raw_start)
+    elif request.args.get('period') == 'all':
+        start = datetime.date(1900, 1, 1)
+    elif request.args.get('fy') or request.args.get('financialYear'):
+        fy = normalize_fy(request.args.get('fy') or request.args.get('financialYear'))
+        if fy == 'N/A':
+            raise ValueError('A valid financial year is required')
+        fy_start, fy_end = fy_to_date_range(fy)
+        start, as_of = datetime.date.fromisoformat(fy_start), min(as_of, datetime.date.fromisoformat(fy_end))
+    elif request.args.get('period', default_period) == 'fytd':
+        year = as_of.year if as_of.month >= 4 else as_of.year - 1
+        start = datetime.date(year, 4, 1)
+    elif request.args.get('period', default_period) == 'last_closed_month':
+        as_of = as_of.replace(day=1) - datetime.timedelta(days=1)
+        start = as_of.replace(day=1)
+    else:
+        start = as_of.replace(day=1)
+    if start > as_of:
+        raise ValueError('The selected actual period has no elapsed dates')
+    return start, as_of
+
+
+@app.route('/api/finance/actuals', methods=['GET'])
+def get_finance_actuals():
+    """Recorded actual-period sources, cash proxy and reconciliation status."""
+    conn = None
+    try:
+        from accounting_service import load_financial_ledger, summarize_ledger
+        start, as_of = _finance_dates()
+        conn = get_db_connection()
+        data = load_financial_ledger(conn, as_of)
+        result = summarize_ledger(data, as_of=as_of, start=start)
+        return jsonify({'success': True, **result})
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        print('[finance actuals]', str(exc))
+        return jsonify({'success': False, 'error': 'Unable to load actual financial records'}), 500
+    finally:
+        if conn:
+            conn.close()
+
+
 @app.route('/api/finance/cash-balance', methods=['GET'])
 def get_cash_balance():
-    as_of = request.args.get('as_of') or get_ist_today().isoformat()
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    conn = None
     try:
-        # Cash in: amountReceived (cash in) - expenditure (is_deleted = 0) - actual franchise payouts (franchisePayments)
-        cursor.execute("""
-            SELECT
-              (SELECT COALESCE(SUM(amountReceived), 0) FROM v_invoice_clean WHERE (billDate <= %s OR billDate IS NULL))
-              - (SELECT COALESCE(SUM(amount), 0) FROM expenditure WHERE (billDate <= %s OR billDate IS NULL) AND is_deleted = 0)
-              - (SELECT COALESCE(SUM(payment_amount), 0) FROM franchisePayments WHERE payment_done = 'Yes' AND (payment_date <= %s OR payment_date IS NULL))
-            + (SELECT COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END), 0)
-               FROM manual_cash_entries WHERE date <= %s)
-            AS cash_balance
-        """, [as_of, as_of, as_of, as_of])
-        row = cursor.fetchone() or {}
-        cash_balance = float(row.get('cash_balance') or 0.0)
-        return jsonify({ 'cash_balance': cash_balance })
-    except Exception as e:
-        print("get_cash_balance failed:", str(e))
-        return jsonify({ 'cash_balance': 0.0 }), 500
+        from accounting_service import load_financial_ledger, summarize_ledger, monthly_summaries, last_closed_month_end
+        from forecast_service import generate_month_sequence
+        as_of = min(datetime.date.fromisoformat(request.args.get('as_of') or get_ist_today().isoformat()), get_ist_today())
+        conn = get_db_connection()
+        ledger = load_financial_ledger(conn, as_of)
+        result = summarize_ledger(ledger, as_of=as_of)
+        # Closed-month history uses the same sources and basis as the cash cards.
+        closed_end = last_closed_month_end(as_of, get_ist_today())
+        serial = closed_end.year * 12 + closed_end.month - 1 - 5
+        months = generate_month_sequence(f'{serial // 12:04d}-{serial % 12 + 1:02d}', 6)
+        history = monthly_summaries(ledger, months)
+        return jsonify({'cash_balance': result['company_cash_movement_estimate'],
+                        'cash_balance_label': 'Estimated company-retained funds',
+                        'cash_balance_source': 'company_retained_ledger',
+                        'as_of': as_of.isoformat(), 'breakdown': result,
+                        'history': [{'month': month,
+                                     'inflow': item['company_collections_estimate'] + item['manual_income'],
+                                     'outflow': item['total_cash_outflow'],
+                                     'net': item['company_cash_movement_estimate']}
+                                    for month, item in history.items()]})
+    except ValueError as exc:
+        return jsonify({'cash_balance': None, 'error': str(exc)}), 400
+    except Exception as exc:
+        print('[cash balance]', str(exc))
+        return jsonify({'cash_balance': None, 'error': 'Unable to load cash sources'}), 500
     finally:
-        conn.close()
+        if conn:
+            conn.close()
+
 
 @app.route('/api/finance/moving-avg-burn', methods=['GET'])
 def get_moving_avg_burn():
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    conn = None
     try:
-        # Uses v_invoice_clean where is_revenue = 1 and ourShare-based burn
-        cursor.execute("""
-            SELECT AVG(net_burn) AS burn FROM (
-              SELECT months.month,
-                     COALESCE(exp.expense, 0) - COALESCE(inc.our_income, 0) AS net_burn
-              FROM (
-                SELECT DISTINCT DATE_FORMAT(billDate, '%%Y-%%m') AS month
-                FROM expenditure WHERE billDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH) AND is_deleted = 0
-                UNION
-                SELECT DISTINCT DATE_FORMAT(billDate, '%%Y-%%m') AS month
-                FROM v_invoice_clean WHERE billDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH)
-              ) months
-              LEFT JOIN (
-                SELECT DATE_FORMAT(billDate, '%%Y-%%m') AS month, SUM(amount) AS expense
-                FROM expenditure
-                WHERE billDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH) AND is_deleted = 0
-                GROUP BY month
-              ) exp ON exp.month = months.month
-              LEFT JOIN (
-                SELECT DATE_FORMAT(billDate, '%%Y-%%m') AS month, SUM(COALESCE(ourShare, rev_ex_gst * 0.25)) AS our_income
-                FROM v_invoice_clean
-                WHERE billDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH) AND is_revenue = 1
-                GROUP BY month
-              ) inc ON inc.month = months.month
-            ) x
-        """)
-        row = cursor.fetchone() or {}
-        net_burn = float(row.get('burn') or 0.0)
-        burn = max(net_burn, 0.0)
-        return jsonify({ 'burn': burn })
-    except Exception as e:
-        print("get_moving_avg_burn failed:", str(e))
-        return jsonify({ 'burn': 0.0 }), 500
+        from accounting_service import load_financial_ledger, monthly_summaries, last_closed_month_end
+        from forecast_service import generate_month_sequence
+        as_of = min(datetime.date.fromisoformat(request.args.get('as_of') or get_ist_today().isoformat()), get_ist_today())
+        cutoff = last_closed_month_end(as_of, get_ist_today()) + datetime.timedelta(days=1)
+        serial = cutoff.year * 12 + cutoff.month - 1 - 3
+        months = generate_month_sequence(f'{serial // 12:04d}-{serial % 12 + 1:02d}', 3)
+        conn = get_db_connection()
+        ledger = load_financial_ledger(conn, cutoff - datetime.timedelta(days=1))
+        records = monthly_summaries(ledger, months)
+        if not any(r['invoices_count'] or r['expense_rows'] or r['payroll_rows'] for r in records.values()):
+            return jsonify({'burn': None, 'error': 'No recorded sources are available in the selected burn window'}), 422
+        values = [r['company_cash_movement_estimate'] for r in records.values()]
+        if any(value is None for value in values):
+            return jsonify({'burn': None, 'error': 'Payroll reconciliation is required'}), 422
+        mean_net = sum(values) / 3
+        return jsonify({'burn': round(max(-mean_net, 0), 2), 'average_net': round(mean_net, 2),
+                        'months': months, 'basis': 'company_collections_less_expenditure_and_net_salary'})
+    except Exception as exc:
+        print('[moving burn]', str(exc))
+        return jsonify({'burn': None, 'error': 'Unable to calculate recorded burn'}), 500
     finally:
-        conn.close()
+        if conn:
+            conn.close()
+
 
 @app.route('/api/finance/forecast', methods=['GET'])
 def get_finance_forecast():
@@ -1131,168 +1180,48 @@ def get_finance_forecast():
 # --------------------------------------------------------------------------
 @app.route('/api/finance/summary', methods=['GET'])
 def get_finance_summary():
-    raw_fy = request.args.get('fy') or request.args.get('financialYear') or '2026-2027'
-    fy_norm = normalize_fy(raw_fy)
-    if fy_norm == 'N/A':
-        today = get_ist_today()
-        y = today.year if today.month >= 4 else today.year - 1
-        fy_norm = f"{y}-{y + 1}"
-
-    start_date, end_date = fy_to_date_range(fy_norm)
-    data_ver, as_of_ts = get_data_version()
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    """Booked-cost estimate with explicit status; cash fields are kept separate."""
+    conn = None
     try:
-        # 1. Metrics from v_invoice_clean (matches acceptance numbers table)
-        cursor.execute("""
-            SELECT 
-                COUNT(*) AS total_invoices,
-                SUM(CASE WHEN is_revenue = 1 THEN 1 ELSE 0 END) AS revenue_invoices,
-                COALESCE(SUM(CASE WHEN info IN ('R', 'CN', 'RV', 'O') THEN serviceCharges ELSE 0.0 END), 0.0) AS crm_service_amount_w_o_gst,
-                COALESCE(SUM(CASE WHEN is_revenue = 0 THEN rev_ex_gst ELSE 0.0 END), 0.0) AS cancellations_reversals,
-                COALESCE(SUM(CASE WHEN is_revenue = 1 THEN rev_ex_gst ELSE 0.0 END), 0.0) AS revenue_ex_gst,
-                COALESCE(SUM(CASE WHEN is_revenue = 1 THEN totalBillAmt ELSE 0.0 END), 0.0) AS billed_incl_gst,
-                COALESCE(SUM(ourShare), 0.0) AS total_our_share,
-                COALESCE(SUM(CASE WHEN is_revenue = 1 THEN ourShare ELSE 0.0 END), 0.0) AS our_share_rev,
-                COALESCE(SUM(CASE WHEN is_revenue = 0 THEN ourShare ELSE 0.0 END), 0.0) AS our_share_residual,
-                COALESCE(SUM(CASE WHEN is_revenue = 1 THEN franchiseeShare ELSE 0.0 END), 0.0) AS franchisee_share_rev,
-                COALESCE(SUM(franchiseeShare), 0.0) AS total_franchisee_share,
-                COALESCE(SUM(amountReceived), 0.0) AS cash_received
-            FROM v_invoice_clean
-            WHERE fy = %s
-        """, [fy_norm])
-        inv_stats = cursor.fetchone() or {}
-
-        # 2. Operating expenditures from expenditure table
-        cursor.execute("""
-            SELECT 
-                COALESCE(SUM(amount), 0.0) AS total_expenditure,
-                COALESCE(SUM(CASE WHEN LOWER(expenses) LIKE '%%salaries%%' OR LOWER(expenses) LIKE '%%salary%%' OR LOWER(particulars) LIKE '%%salary%%' THEN amount ELSE 0.0 END), 0.0) AS salary_in_exp,
-                COALESCE(SUM(CASE WHEN NOT (LOWER(expenses) LIKE '%%salaries%%' OR LOWER(expenses) LIKE '%%salary%%' OR LOWER(particulars) LIKE '%%salary%%') THEN amount ELSE 0.0 END), 0.0) AS non_salary_exp
-            FROM expenditure
-            WHERE is_deleted = 0
-              AND billDate BETWEEN %s AND %s
-        """, [start_date, end_date])
-        exp_stats = cursor.fetchone() or {}
-
-        # 3. Base salaries fallback from bd_agents
-        cursor.execute("SELECT COALESCE(SUM(baseSalary), 0.0) * 12 AS annual_bd_salary FROM bd_agents WHERE status = 'Active'")
-        sal_row = cursor.fetchone() or {}
-        annual_payroll_base = float(sal_row.get('annual_bd_salary') or 0.0)
-
-        # 4. Payroll Records: Actual recorded salaries (date <= today IST). Future Jan-Feb placeholders excluded per user directive.
-        today_date = get_ist_today()
-        actual_payroll, projected_payroll, total_payroll = 0.0, 0.0, 0.0
-        try:
-            cursor.execute("""
-                SELECT 
-                    COALESCE(SUM(ctc_amount), 0.0) AS actual_payroll
-                FROM payroll_records
-                WHERE financial_year = %s
-                  AND date <= %s
-            """, [fy_norm, today_date])
-            payroll_stats = cursor.fetchone() or {}
-            actual_payroll = float(payroll_stats.get('actual_payroll') or 0.0)
-            projected_payroll = 0.0  # Jan-Feb excluded per user directive; Sep-Oct will be added to CRM shortly
-            total_payroll = actual_payroll
-        except Exception as p_err:
-            print("[get_finance_summary] payroll_records query note:", str(p_err))
-
-        opex = float(exp_stats.get('non_salary_exp') or 0.0)
-        sal_exp = float(exp_stats.get('salary_in_exp') or 0.0)
-
-        if total_payroll > 0:
-            actual_sal = actual_payroll
-            projected_sal = 0.0
-        elif sal_exp > 0:
-            actual_sal = sal_exp
-            projected_sal = 0.0
-        else:
-            actual_sal = annual_payroll_base
-            projected_sal = 0.0
-
-        # Calculate waterfall using actual salaries only for Net, Tax, Surplus, and Margin
-        # Fix #1: Stop double-counting credit note company share by using our_share_rev (clean deals only)
-        w = calculate_waterfall(
-            revenue=inv_stats.get('revenue_ex_gst', 0.0),
-            our_share=inv_stats.get('our_share_rev', 0.0),
-            franchisee_share=inv_stats.get('franchisee_share_rev', 0.0),
-            operating_expenses=opex,
-            salary=actual_sal,
-            our_share_revenue_rows=inv_stats.get('our_share_rev', 0.0),
-            franchisee_share_revenue_rows=inv_stats.get('franchisee_share_rev', 0.0),
-            cash_received=inv_stats.get('cash_received', 0.0),
-            total_bill_amt=inv_stats.get('billed_incl_gst', 0.0)
-        )
-
-        # Dynamically compute payroll note based on audited months vs current date
-        missing_months = 0
-        est_unrecorded = 0.0
-        payroll_note = 'Reported separately per decision A3.'
-        if fy_norm == '2026-2027' and actual_sal > 0:
-            months_audited = 5
-            avg_monthly_sal = actual_sal / max(1, months_audited)
-            current_month_idx = min(12, max(1, (today_date.year - 2026) * 12 + today_date.month - 3))
-            missing_months = max(0, current_month_idx - months_audited)
-            if missing_months > 0:
-                est_unrecorded = round(missing_months * avg_monthly_sal, 2)
-                est_adj_net = round(w['net'] - est_unrecorded, 2)
-                payroll_note = (
-                    f"Reported separately per decision A3. Salaries recorded through Aug 2026 ({months_audited} months). "
-                    f"Sep/Oct payroll will be synced shortly from CRM once entered (est. ~Rs {est_unrecorded:,.0f} unrecorded impact). "
-                    f"Jan-Feb placeholder records excluded per policy."
-                )
-            else:
-                payroll_note = f"Reported separately per decision A3. Salaries recorded through {months_audited} months."
-
-        res = {
-            'success': True,
-            'fy': fy_norm,
-            'period': {'start_date': start_date, 'end_date': end_date},
-            # Single Source of Truth Waterfall Fields
-            'gross_service_revenue': round(float(inv_stats.get('crm_service_amount_w_o_gst') or w['revenue']), 2),
-            'cancellations_reversals': round(float(inv_stats.get('cancellations_reversals') or 0.0), 2),
-            'billed_incl_gst': w['billed_incl_gst'],
-            'gst': w['gst'],
-            'revenue': w['revenue'],
-            'franchisee_share': w['franchisee_share'],
-            'our_share': w['our_share'],
-            'unallocated': w['unallocated'],
-            'operating_expenses': w['operating_expenses'],
-            'salaries': actual_sal,
-            'projected_salaries': projected_sal,
-            'net': w['net'],
-            'tax': w['tax'],
-            'surplus': w['surplus'],
-            'margin_pct': w['margin_pct'],
-            # Supplementary breakdown & audit fields
-            'our_share_revenue_rows': w['our_share_revenue_rows'],
-            'our_share_residual_rows': inv_stats.get('our_share_residual', 0.0),
-            'franchisee_share_revenue_rows': w['franchisee_share_revenue_rows'],
-            'cash_received': w['cash_received'],
-            'expenses': {
-                'expenditure': opex,
-                'operating_expenses': opex,
-                'salaries': actual_sal,
-                'projected_salaries': projected_sal,
-                'total_salaries': round(actual_sal + projected_sal, 2),
-                'total': round(opex + actual_sal, 2),
-                'pending_payroll_months': int(missing_months),
-                'pending_payroll_est': float(est_unrecorded),
-                'note': payroll_note
-            },
-            'invoices_count': int(inv_stats.get('total_invoices') or 0),
-            'revenue_invoices_count': int(inv_stats.get('revenue_invoices') or 0),
-            'data_version': data_ver,
-            'as_of': as_of_ts
-        }
-        return jsonify(res)
-    except Exception as e:
-        print("[get_finance_summary Error]", str(e))
-        return jsonify({'success': False, 'error': str(e)}), 500
+        from accounting_service import load_financial_ledger, summarize_ledger
+        start, as_of = _finance_dates('fytd')
+        conn = get_db_connection()
+        row = summarize_ledger(load_financial_ledger(conn, as_of), start=start, as_of=as_of)
+        net = row['operating_profit_loss']
+        tax = round(max(net, 0) * DEFAULT_INCOME_TAX_RATE, 2) if net is not None else None
+        surplus = round(net - tax, 2) if net is not None else None
+        fy_start = start.year if start.month >= 4 else start.year - 1
+        return jsonify({
+            'success': True, 'fy': f'{fy_start}-{fy_start+1}',
+            'period': {'start_date': start.isoformat(), 'end_date': as_of.isoformat()},
+            'revenue': row['revenue'], 'our_share': row['company_income'],
+            'billed_incl_gst': row['billed_incl_gst'],
+            'gst': round(row['billed_incl_gst'] - row['revenue'], 2),
+            'franchisee_share': row['franchisee_share'],
+            'unallocated': round(row['revenue'] - row['company_income'] - row['franchisee_share'], 2),
+            'operating_expenses': row['expense_cash'], 'salaries': row['payroll_ctc_cost'],
+            'projected_salaries': 0, 'net': net, 'tax': tax, 'surplus': surplus,
+            'margin_pct': round(surplus / row['company_income'] * 100, 2) if surplus is not None and row['company_income'] else None,
+            'cash_received': row['invoice_receipts_gross'],
+            'accounting_status': row['profit_loss_status'],
+            'basis': row['profit_loss_basis'], 'tax_basis': 'Illustrative estimate, not actual tax payable',
+            'expenses': {'expenditure': row['expense_cash'], 'operating_expenses': row['expense_cash'],
+                         'salaries': row['payroll_ctc_cost'], 'net_salary_payable': row['net_salary_payable'],
+                         'total': round(row['expense_cash'] + row['payroll_ctc_cost'], 2),
+                         'pending_payroll_months': 0, 'pending_payroll_est': 0,
+                         'note': 'Only posted records through the cutoff are included. No annual salary or missing-month amounts are invented.'},
+            'invoices_count': row['invoices_count'], 'revenue_invoices_count': row['revenue_invoices_count'],
+            'cash_breakdown': row, 'as_of': as_of.isoformat(),
+        })
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        print('[finance summary]', str(exc))
+        return jsonify({'success': False, 'error': 'Unable to calculate the financial summary'}), 500
     finally:
-        conn.close()
+        if conn:
+            conn.close()
+
 
 @app.route('/api/sync/ghost-report', methods=['GET'])
 def get_sync_ghost_report():

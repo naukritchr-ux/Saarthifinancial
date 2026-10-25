@@ -3,22 +3,22 @@ import { FinanceContext } from '../context/FinanceContext';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { getTransactionShares } from '../config/financeConfig';
 import { DonutChart, Sparkline, WaterfallChart, MonthlyTrendBarChart } from '../components/CustomCharts';
-import { 
-  ArrowUpRight, 
-  ArrowDownRight, 
-  TrendingUp, 
-  DollarSign, 
-  Activity, 
-  Percent, 
-  X, 
-  Calendar, 
-  Landmark, 
-  CreditCard, 
-  Tag, 
-  AlertTriangle, 
-  AlertCircle, 
-  ChevronRight, 
-  ShieldCheck, 
+import {
+  ArrowUpRight,
+  ArrowDownRight,
+  TrendingUp,
+  DollarSign,
+  Activity,
+  Percent,
+  X,
+  Calendar,
+  Landmark,
+  CreditCard,
+  Tag,
+  AlertTriangle,
+  AlertCircle,
+  ChevronRight,
+  ShieldCheck,
   ExternalLink,
   Award,
   Users,
@@ -28,15 +28,15 @@ import {
 import './Dashboard.css';
 
 const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
-  const { 
-    moduleFilteredTransactions: transactions, 
-    selectedMonth, 
-    selectedYear, 
-    budgets, 
-    userRole, 
-    franchisees, 
-    bdAgents, 
-    activeModule, 
+  const {
+    moduleFilteredTransactions: transactions,
+    selectedMonth,
+    selectedYear,
+    budgets,
+    userRole,
+    franchisees,
+    bdAgents,
+    activeModule,
     backendHealth,
     isLoadingData,
     financeSummary
@@ -102,7 +102,7 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
           if (!isNaN(d.getTime())) {
             const y = d.getFullYear();
             const m = d.getMonth();
-            const fy = m >= 3 ? `${y}-${y+1}` : `${y-1}-${y}`;
+            const fy = m >= 3 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
             yearMatch = (fy === selectedYear);
           }
         }
@@ -140,17 +140,22 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
     const opProfit = ourShare - opexComm;
     const netProf = ourShare - exp;
     const marg = ourShare > 0 ? (netProf / ourShare) * 100 : 0;
-    return { 
-      revenue: rev, 
-      expenses: exp, 
-      profit: netProf, 
-      margin: marg, 
+    return {
+      revenue: rev,
+      expenses: exp,
+      profit: netProf,
+      margin: marg,
       ourShareTotal: ourShare,
       payrollTotal: payroll,
       opexCommTotal: opexComm,
       operatingProfit: opProfit
     };
   }, [displayTxs]);
+
+  const hasReviewedCostEstimate = (userRole === 'admin' || userRole === 'manager') && activeModule !== 'job_portal' &&
+    financeSummary?.accounting_status === 'provisional_booked_costs' && Number.isFinite(financeSummary?.net);
+  const bookedResult = hasReviewedCostEstimate ? financeSummary.net : null;
+  const bookedMargin = hasReviewedCostEstimate && financeSummary.our_share > 0 ? bookedResult / financeSummary.our_share * 100 : null;
 
   // Previous period comparison metrics
   const { prevMonthLabel, prevRevenue, prevExpenses, prevProfit, prevMargin } = useMemo(() => {
@@ -446,7 +451,7 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
     const distinctMonthsCount = Math.max(1, new Set(displayTxs.map(t => getMonthAndYear(t.date).monthYear)).size);
     const periodMultiplier = isSingleMonth ? 1 : distinctMonthsCount;
 
-    const allowedCategories = activeModule === 'job_portal' 
+    const allowedCategories = activeModule === 'job_portal'
       ? ['Portal subscriptions', 'Marketing', 'Salaries', 'Other']
       : ['Salaries', 'BD commissions', 'Marketing', 'Office & infra', 'Other'];
 
@@ -724,15 +729,16 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
         <div className="dash-kpi-card kpi-profit">
           <div className="kpi-top-row">
             <div className="kpi-label-group">
-              <span className="kpi-metric-title">Corporate Net Profit</span>
+              <span className="kpi-metric-title">Operating Result (Booked Costs)</span>
               <span className="kpi-period-badge">{periodBasisLabel}</span>
             </div>
             <span className="kpi-icon-pill"><TrendingUp size={16} /></span>
           </div>
 
           <div className="kpi-main-metric" style={{ color: profit >= 0 ? '#0f6e56' : '#a8402e' }}>
-            {formatLakhs(profit)}
+            {bookedResult == null ? 'Needs payroll review' : formatLakhs(bookedResult)}
           </div>
+          <p className="kpi-sub-note">{financeSummary?.accounting_status === 'needs_payroll_reconciliation' ? 'Payroll-related expense components need reconciliation. See recorded source breakdown in Runway & ROI.' : 'Provisional posted-period estimate. Salary obligations may still be unposted.'}</p>
 
           {/* Dynamic Payroll Status Badge from API Numeric Fields */}
           {(() => {
@@ -746,8 +752,8 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
             const badgeLabel = `Sep–Oct payroll pending in CRM ${estLabel}`.trim();
 
             return (
-              <div 
-                className="kpi-sub-note" 
+              <div
+                className="kpi-sub-note"
                 style={{ fontSize: '11px', color: '#b45309', margin: '4px 0 6px 0', display: 'flex', alignItems: 'center', gap: '4px' }}
                 title={expData.note || 'Salaries recorded through Aug 2026 (5 months).'}
               >
@@ -760,10 +766,10 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
           <div className="kpi-bottom-row">
             <span className={`kpi-delta-tag ${profitChange.positive ? 'positive' : 'negative'}`}>
               {profitChange.positive ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-              <span>{selectedMonth === 'All Months' ? `Op: ${formatLakhs(operatingProfit)}` : profitChange.text}</span>
+              <span>{bookedResult == null ? 'Awaiting reconciled costs' : 'Company-wide selected-period estimate'}</span>
             </span>
             <div className="kpi-sparkline-wrap">
-              <Sparkline points={profSparkPoints} width={80} height={24} positive={profit >= 0} />
+              {bookedResult != null && <Sparkline points={profSparkPoints} width={80} height={24} positive={bookedResult >= 0} />}
             </div>
           </div>
         </div>
@@ -772,13 +778,13 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
         <div className="dash-kpi-card kpi-margin">
           <div className="kpi-top-row">
             <div className="kpi-label-group">
-              <span className="kpi-metric-title">Profit Margin</span>
+              <span className="kpi-metric-title">Estimated Operating Margin</span>
               <span className="kpi-period-badge">{periodBasisLabel}</span>
             </div>
             <span className="kpi-icon-pill"><Percent size={16} /></span>
           </div>
 
-          <div className="kpi-main-metric">{margin.toFixed(1)}%</div>
+          <div className="kpi-main-metric">{bookedMargin == null ? 'Needs payroll review' : `${bookedMargin.toFixed(1)}%`}</div>
 
           <div className="kpi-bottom-row">
             <span className={`kpi-delta-tag ${marginChange.positive ? 'positive' : 'negative'}`}>
@@ -821,8 +827,8 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
                 <p className="dash-empty-desc">No transactions logged for this financial year.</p>
               </div>
             ) : (
-              <MonthlyTrendBarChart 
-                monthlyData={fyMonthlySeries} 
+              <MonthlyTrendBarChart
+                monthlyData={fyMonthlySeries}
                 periodLabel={`FY ${selectedYear !== 'All Years' ? selectedYear : '2026-2027'}`}
                 height={200}
               />
@@ -834,29 +840,29 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
         <div className="dash-card">
           <div className="dash-card-header">
             <div className="dash-card-title-group">
-              <h3 className="dash-card-title">Cash Flow Waterfall</h3>
+              <h3 className="dash-card-title">Booked-Cost Waterfall</h3>
               <p className="dash-card-subtitle">
-                Gross Inflow → Company Share → Operating Costs → Payroll → Net Profit ({periodBasisLabel})
+                Billed Income → Company Share → Operating Costs → Payroll CTC → Provisional Result ({periodBasisLabel})
               </p>
             </div>
           </div>
 
           <div className="dash-card-body">
-            <WaterfallChart
-              grossRevenue={revenue}
-              companyShare={ourShareTotal}
-              operatingExpenses={opexCommTotal}
-              payroll={payrollTotal}
-              netProfit={profit}
+            {hasReviewedCostEstimate ? <WaterfallChart
+              grossRevenue={financeSummary.revenue}
+              companyShare={financeSummary.our_share}
+              operatingExpenses={financeSummary.operating_expenses}
+              payroll={financeSummary.salaries}
+              netProfit={bookedResult}
               periodLabel={periodBasisLabel}
               onConfigurePayroll={() => setIsSettingsOpen && setIsSettingsOpen(true)}
               height={200}
-            />
+            /> : <p>Cost reconciliation is required before presenting a company profit/loss waterfall. Recorded cash estimates and source totals are available in Runway & ROI.</p>}
 
             <div className="waterfall-summary-pill">
               <span className="waterfall-summary-label">Company Net Retained Conversion:</span>
               <span className="waterfall-summary-val" style={{ color: profit >= 0 ? '#0f6e56' : '#a8402e' }}>
-                {revenue > 0 ? `${((profit / revenue) * 100).toFixed(1)}% of Gross` : '0%'}
+                {bookedMargin == null ? 'Not yet reconciled' : `${bookedMargin.toFixed(1)}% of company income`}
               </span>
             </div>
           </div>
@@ -960,12 +966,12 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
           </div>
 
           <div className="dash-card-body" style={{ alignItems: 'center', justifyContent: 'center' }}>
-            <DonutChart 
+            <DonutChart
               data={
-                breakdownView === 'shares' 
-                  ? sharesDonutData 
+                breakdownView === 'shares'
+                  ? sharesDonutData
                   : (breakdownView === 'franchisees' ? franchiseDonutData : streamDonutData)
-              } 
+              }
               totalLabel="REVENUE"
             />
           </div>
@@ -1114,9 +1120,9 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
               </button>
             </div>
 
-            <button 
+            <button
               type="button"
-              className="view-all-link" 
+              className="view-all-link"
               onClick={() => setActivePage('reports')}
               style={{ fontSize: '0.78rem', fontWeight: '600', color: 'var(--accent-teal)', background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
             >

@@ -3,14 +3,14 @@ import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { getTransactionShares } from '../config/financeConfig';
-import { 
-  TrendingUp, 
-  TrendingDown, 
-  Activity, 
-  Building2, 
-  Users, 
-  DollarSign, 
-  Percent, 
+import {
+  TrendingUp,
+  TrendingDown,
+  Activity,
+  Building2,
+  Users,
+  DollarSign,
+  Percent,
   Award,
   ChevronRight,
   AlertTriangle,
@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import Pagination from '../components/Pagination';
 import ForecastChart from '../components/ForecastChart';
+import FinanceActualsCard from '../components/FinanceActualsCard';
 
 const LineChart = TrendingUp;
 const ArrowUpRight = TrendingUp;
@@ -34,7 +35,7 @@ const ArrowDownRight = TrendingDown;
 
 
 const RunwayRoiTracker = ({ setActivePage }) => {
-  const { transactions, franchisees, bdAgents, selectedMonth, selectedYear, activeModule, currentCashBalance: contextCashBalance, movingAvgBurn: contextMovingBurn } = useContext(FinanceContext);
+  const { transactions, franchisees, bdAgents, selectedMonth, selectedYear, activeModule, currentCashBalance: contextCashBalance, movingAvgBurn: contextMovingBurn, cashLedgerHistory = [], cashBreakdown, financeError } = useContext(FinanceContext);
   const [activeTab, setActiveTab] = useState('summary'); // summary, invoices, franchise-roi, companies, scenario, mom-pivot, leakage
   const [leaderboard, setLeaderboard] = useState([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
@@ -51,12 +52,12 @@ const RunwayRoiTracker = ({ setActivePage }) => {
   const [overCollections, setOverCollections] = useState([]);
   const [actionItemsLoading, setActionItemsLoading] = useState(false);
   const [recentlyArchived, setRecentlyArchived] = useState([]);
-  
+
   // AI Copilot & ML States
   const [activePredictions, setActivePredictions] = useState([]);
   const [isMlActive, setIsMlActive] = useState(false);
   const [leakLeaderboard, setLeakLeaderboard] = useState([]);
-  
+
   // Dry-Run Sanitizer States
   const [uploadedFile, setUploadedFile] = useState(null);
   const [uploaderStatus, setUploaderStatus] = useState('idle'); // idle, dry-run, publishing, complete
@@ -208,7 +209,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
       if (res.ok) {
         // Add to session archived list
         setRecentlyArchived(prev => [{ ...itemInfo, id, archivedAt: new Date().toLocaleTimeString() }, ...prev]);
-        
+
         // Trigger Toast Notification with undo option
         setToastUndoId(id);
         setToastMessage(`Expense for ${formatCurrency(itemInfo.amount)} archived successfully.`);
@@ -330,33 +331,27 @@ const RunwayRoiTracker = ({ setActivePage }) => {
   const startYear = getSelectedYearValue();
   const nextYear = startYear + 1;
 
-  const monthsList = [
-    `April ${startYear}`,
-    `May ${startYear}`,
-    `June ${startYear}`,
-    `July ${startYear}`
-  ];
-  const projectedMonthsList = [
-    `August ${startYear}`,
-    `September ${startYear}`,
-    `October ${startYear}`,
-    `November ${startYear}`,
-    `December ${startYear}`,
-    `January ${nextYear}`,
-    `February ${nextYear}`,
-    `March ${nextYear}`
-  ];
-
-  // Historical data points
-  const historicalFlows = monthsList.map(m => {
-    const monthTxs = transactions.filter(t => getMonthAndYear(t.date) === m);
-    const inc = monthTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-    const exp = monthTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-    return { month: m, label: getMonthAbbr(m), inflow: inc, outflow: exp, net: inc - exp, isProjected: false };
+  const monthLabels = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const historicalFlows = cashLedgerHistory.map(record => {
+    const [year, month] = record.month.split('-').map(Number);
+    const name = `${monthLabels[month - 1]} ${year}`;
+    return {
+      month: name, label: getMonthAbbr(name), inflow: record.inflow,
+      outflow: record.outflow, net: record.net, isProjected: false
+    };
+  });
+  const last3Months = historicalFlows.slice(-3);
+  const lastClosed = cashLedgerHistory.at(-1)?.month;
+  const projectionStart = lastClosed ? new Date(Number(lastClosed.slice(0, 4)), Number(lastClosed.slice(5, 7)), 1) : new Date();
+  const monthsList = Array.from({ length: 4 }, (_, index) => {
+    const date = new Date(projectionStart.getFullYear(), projectionStart.getMonth() - 4 + index, 1);
+    return `${monthLabels[date.getMonth()]} ${date.getFullYear()}`;
+  });
+  const projectedMonthsList = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(projectionStart.getFullYear(), projectionStart.getMonth() + index, 1);
+    return `${monthLabels[date.getMonth()]} ${date.getFullYear()}`;
   });
 
-  // Calculate 3-Month Moving Average based on historical data (May, June, July)
-  const last3Months = historicalFlows.slice(1); // May, June, July
   const rawInflowAvg = last3Months.length > 0 ? (last3Months.reduce((sum, m) => sum + m.inflow, 0) / last3Months.length) : 0;
   const rawOutflowAvg = last3Months.length > 0 ? (last3Months.reduce((sum, m) => sum + m.outflow, 0) / last3Months.length) : 0;
   // Verified 3-Month Moving Average directly derived from transactions
@@ -410,18 +405,10 @@ const RunwayRoiTracker = ({ setActivePage }) => {
   // 1. Current Cash Balance (all-time inflows - all-time outflows)
   const allTimeInflow = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
   const allTimeOutflow = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-  const currentCashBalance = (contextCashBalance !== undefined && contextCashBalance !== null) 
-    ? contextCashBalance 
-    : Math.max(0, allTimeInflow - allTimeOutflow);
-
-  // 2. Moving Avg Monthly Burn (net burn = outflow - inflow, floored at 0)
-  // Consistently divide by 3 per saarthi_finance_formulas.md spec
-  const movingAvgOutflow = last3Months.reduce((sum, m) => sum + m.outflow, 0) / 3;
-  const movingAvgInflow = last3Months.reduce((sum, m) => sum + m.inflow, 0) / 3;
-  const computedBurn = Math.max(movingAvgOutflow - movingAvgInflow, 0); // only positive when truly burning cash
-  const movingAvgBurn = (contextMovingBurn !== undefined && contextMovingBurn !== null && contextMovingBurn > 0) 
-    ? contextMovingBurn 
-    : computedBurn;
+  const cashAvailable = Number.isFinite(contextCashBalance);
+  const currentCashBalance = cashAvailable ? contextCashBalance : 0;
+  const burnAvailable = Number.isFinite(contextMovingBurn);
+  const movingAvgBurn = burnAvailable ? contextMovingBurn : 0;
 
   // Baseline Runway calculations
   const isCashExhaustionRisk = movingAvgBurn > 0;
@@ -430,7 +417,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
   // Simulated Runway calculations
   const simInflowValue = avgHistoricalInflow * (1 + revGrowthPct / 100);
   const simOutflowValue = avgHistoricalOutflow * (1 + expAdjustPct / 100) + hiringSalary;
-  
+
   const rawSimBurn = simOutflowValue - simInflowValue;
   const simNetBurnRate = rawSimBurn > 0 ? rawSimBurn : 0;
   const isSimCashExhaustionRisk = simNetBurnRate > 0;
@@ -456,21 +443,21 @@ const RunwayRoiTracker = ({ setActivePage }) => {
 
     // Filter transactions linked to this agent
     const agentTxs = transactions.filter(t => t.bdAgentId === agent.id);
-    
+
     // 2. Revenue generated from recruitment income linked to this agent
     const revenueGenerated = agentTxs.filter(t => t.type === 'income').reduce((sum, t) => {
-      const netShare = (t.category === 'Recruitment' && t.rShare !== undefined && t.rShare !== null) 
-        ? t.rShare 
+      const netShare = (t.category === 'Recruitment' && t.rShare !== undefined && t.rShare !== null)
+        ? t.rShare
         : t.amount;
       return sum + netShare;
     }, 0);
-    
+
     // 3. Contract/Formula Salary
     // base + progressed + cancelled + commission percentage
     const commissionBonus = revenueGenerated * (agent.commissionRate || 0.02);
-    const contractSalary = (agent.baseSalary || 12000) + 
-      (progressed * (agent.payPerProgressed || 2500)) + 
-      (cancelled * (agent.payPerCancelled || 500)) + 
+    const contractSalary = (agent.baseSalary || 12000) +
+      (progressed * (agent.payPerProgressed || 2500)) +
+      (cancelled * (agent.payPerCancelled || 500)) +
       commissionBonus;
 
     // 4. Actual ledger payout disbursed (sum of salary & commission expenses in transaction ledger)
@@ -503,13 +490,13 @@ const RunwayRoiTracker = ({ setActivePage }) => {
   // ----------------------------------------------------
   const franchiseeROI = franchisees.map(fran => {
     const franTxs = transactions.filter(t => t.franchiseeId === fran.id);
-    
+
     // Royalty and onboarding income collected
     const royaltyInflow = franTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.franchiseeShare || t.amount || 0), 0);
-    
+
     // Direct marketing and local ad spend disbursements
     const supportOutflow = franTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-    
+
     const netHubContribution = royaltyInflow - supportOutflow;
     const hubROI = supportOutflow > 0 ? (netHubContribution / supportOutflow) * 100 : Infinity;
 
@@ -621,7 +608,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
     ...simulatedFlows.flatMap(f => [f.inflow, f.outflow, f.simInflow, f.simOutflow]),
     100000
   );
-  
+
   const getX = (idx) => {
     return paddingX + (idx / (allFlows.length - 1)) * (svgWidth - 2 * paddingX);
   };
@@ -751,36 +738,36 @@ const RunwayRoiTracker = ({ setActivePage }) => {
   const effectiveLeaderboard = (leaderboard && leaderboard.length > 0)
     ? leaderboard
     : (bdAgents && bdAgents.length > 0
-        ? bdAgents.map(a => {
-            const agentTxs = transactions.filter(t => t.bdAgentId === a.id || (t.bdAgentName && t.bdAgentName.toLowerCase().includes(a.name.toLowerCase())));
-            const gross = agentTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
-            const net = agentTxs.filter(t => t.type === 'income').reduce((sum, t) => {
-              const shares = getTransactionShares(t);
-              return sum + shares.rShare;
-            }, 0);
-            return {
-              bd_name: a.name,
-              invoices_closed: agentTxs.filter(t => t.type === 'income').length,
-              gross_revenue: gross,
-              net_revenue: net,
-              potential_loss: 0
-            };
-          })
-        : []);
+      ? bdAgents.map(a => {
+        const agentTxs = transactions.filter(t => t.bdAgentId === a.id || (t.bdAgentName && t.bdAgentName.toLowerCase().includes(a.name.toLowerCase())));
+        const gross = agentTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
+        const net = agentTxs.filter(t => t.type === 'income').reduce((sum, t) => {
+          const shares = getTransactionShares(t);
+          return sum + shares.rShare;
+        }, 0);
+        return {
+          bd_name: a.name,
+          invoices_closed: agentTxs.filter(t => t.type === 'income').length,
+          gross_revenue: gross,
+          net_revenue: net,
+          potential_loss: 0
+        };
+      })
+      : []);
 
   return (
     <div className="roi-tracker-page animate-fade-in">
-      
+
       {/* 1. RUNWAY HUD ROW */}
       <section className="kpi-grid">
         <div className="kpi-card card-blue">
           <div className="kpi-header">
-            <span className="kpi-title">Current Cash Balance</span>
+            <span className="kpi-title">Estimated Company Funds</span>
             <span className="kpi-icon"><DollarSign size={18} /></span>
           </div>
-          <h2 className="kpi-value">{formatCurrency(currentCashBalance)}</h2>
+          <h2 className="kpi-value">{cashAvailable ? formatCurrency(currentCashBalance) : 'Needs source review'}</h2>
           <div className="kpi-change up">
-            <span>Cumulative cash flow in hand</span>
+            <span>Company-allocated receipts less expenditure and net payroll; ledger proxy</span>
           </div>
         </div>
 
@@ -792,13 +779,13 @@ const RunwayRoiTracker = ({ setActivePage }) => {
             <span className="kpi-icon"><Activity size={18} /></span>
           </div>
           <h2 className="kpi-value">
-            {formatCurrency(isSimulatedActive ? simNetBurnRate : movingAvgBurn)}
+            {burnAvailable ? formatCurrency(isSimulatedActive ? simNetBurnRate : movingAvgBurn) : 'Not available'}
           </h2>
           <div className="kpi-change down">
             <span>
-              {isSimulatedActive 
-                ? `Baseline: ${formatCurrency(movingAvgBurn)}` 
-                : '3-Month net cash outflow'
+              {isSimulatedActive
+                ? `Baseline: ${formatCurrency(movingAvgBurn)}`
+                : 'Last 3 closed months; net payroll basis'
               }
             </span>
           </div>
@@ -810,7 +797,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
               {isSimulatedActive ? 'Simulated Cash Runway' : 'Fintective Cash Runway'}
             </span>
             <span className="kpi-icon">
-              {isSimulatedActive 
+              {isSimulatedActive
                 ? (isSimCashExhaustionRisk ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />)
                 : (isCashExhaustionRisk ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />)
               }
@@ -818,42 +805,46 @@ const RunwayRoiTracker = ({ setActivePage }) => {
           </div>
           <h2 className="kpi-value">
             {(() => {
-              if (currentCashBalance <= 0 || allTimeInflow === 0) {
-                return 'Not enough data';
-              }
+              if (!cashAvailable || !burnAvailable) return 'Needs source review';
+              if (currentCashBalance <= 0) return 'No positive funds estimate';
               if (isSimulatedActive) {
-                return isSimCashExhaustionRisk 
+                return isSimCashExhaustionRisk
                   ? `${simRunwayMonths ? simRunwayMonths.toFixed(1) : 0} Months`
-                  : 'Self-sustaining';
+                  : 'No burn in recorded window';
               }
-              return isCashExhaustionRisk 
+              return isCashExhaustionRisk
                 ? `${runwayMonths ? runwayMonths.toFixed(1) : 0} Months`
-                : 'Self-sustaining';
+                : 'No burn in recorded window';
             })()}
           </h2>
           <div className={`kpi-change ${isSimulatedActive ? (isSimCashExhaustionRisk ? 'down' : 'up') : (isCashExhaustionRisk ? 'down' : 'up')}`}>
             <span>
               {isSimulatedActive ? (
-                `Baseline: ${currentCashBalance > 0 && allTimeInflow > 0 ? (runwayMonths ? `${runwayMonths.toFixed(1)} Months` : 'Self-sustaining') : 'Not enough data'}`
+                `Baseline: ${cashAvailable && burnAvailable && currentCashBalance > 0 ? (runwayMonths ? `${runwayMonths.toFixed(1)} Months` : 'No burn in recorded window') : 'Not enough data'}`
               ) : (
-                currentCashBalance <= 0 || allTimeInflow === 0 
-                  ? 'Historical cash records pending'
-                  : (isCashExhaustionRisk ? 'Burn rate exceeds inflows' : 'Cash flow positive (Inflows >= Burn)')
+                !cashAvailable || !burnAvailable
+                  ? 'Recorded source calculation unavailable'
+                  : currentCashBalance <= 0 ? 'Company-retained ledger estimate is non-positive'
+                    : (isCashExhaustionRisk ? 'Burn rate exceeds inflows' : 'Recorded proxy; future expenses can differ')
               )}
             </span>
           </div>
         </div>
       </section>
- 
+
+      {financeError && <p role="alert">{financeError}</p>}
+      {cashBreakdown?.cash_status === 'needs_payroll_reconciliation' && <p role="alert">Payroll source reconciliation is required before estimating available funds.</p>}
+      <FinanceActualsCard apiBaseUrl={API_BASE_URL} />
+
       {/* STATISTICAL SEASONAL FORECASTING ENGINE */}
       <ForecastChart apiBaseUrl={API_BASE_URL} />
 
       {/* 2. PROJECTION SVG CHART */}
-      <div className="dashboard-card" style={{ marginBottom: '24px' }}>
+      <div className="dashboard-card" style={{ marginBottom: '24px', display: cashAvailable && burnAvailable ? 'block' : 'none' }}>
         <div className="card-header-flex">
           <div>
-            <h3 className="card-title">Runway Projections (Historical vs Forecast)</h3>
-            <span className="flow-subtitle">Solid line = Historical Ledger • Dashed line = 3-Mo Moving Average Projection</span>
+            <h3 className="card-title">Recorded Cash Scenario (Historical vs Moving Average)</h3>
+            <span className="flow-subtitle">Company-allocated receipts and expenditure plus net salary • Dashed line = last 3 closed months average</span>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '0.8rem', fontWeight: 'bold' }}>
             <span style={{ color: '#10b981' }}>● Inflow (Baseline)</span>
@@ -920,7 +911,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
             {/* Area Fills under curves */}
             <path d={historicalInflowArea} fill="url(#inflow-grad)" />
             <path d={historicalOutflowArea} fill="url(#outflow-grad)" />
-            
+
             <path d={projectedInflowArea} fill="url(#inflow-grad)" opacity={isSimulatedActive ? 0.2 : 1} />
             <path d={projectedOutflowArea} fill="url(#outflow-grad)" opacity={isSimulatedActive ? 0.2 : 1} />
 
@@ -976,7 +967,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
             { id: 'mom-pivot', label: 'MoM Pivot Analysis' },
             { id: 'leakage', label: 'Revenue Recovery Command Center' }
           ].map(tab => (
-            <button 
+            <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`menu-item ${activeTab === tab.id ? 'active' : ''}`}
@@ -1209,22 +1200,22 @@ const RunwayRoiTracker = ({ setActivePage }) => {
                           </td>
                           <td className="text-center" style={{ verticalAlign: 'middle' }}>
                             <svg width="60" height="16" style={{ overflow: 'visible', display: 'inline-block' }}>
-                              <path 
-                                d={`M ${xPoints[0]},${yPoints[0]} L ${xPoints[1]},${yPoints[1]} L ${xPoints[2]},${yPoints[2]} L ${xPoints[3]},${yPoints[3]}`} 
-                                fill="none" 
-                                stroke={cat.type === 'income' ? '#10b981' : '#ef4444'} 
-                                strokeWidth="4.5" 
-                                strokeLinecap="round" 
-                                strokeLinejoin="round" 
+                              <path
+                                d={`M ${xPoints[0]},${yPoints[0]} L ${xPoints[1]},${yPoints[1]} L ${xPoints[2]},${yPoints[2]} L ${xPoints[3]},${yPoints[3]}`}
+                                fill="none"
+                                stroke={cat.type === 'income' ? '#10b981' : '#ef4444'}
+                                strokeWidth="4.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
                                 opacity="0.2"
                               />
-                              <path 
-                                d={`M ${xPoints[0]},${yPoints[0]} L ${xPoints[1]},${yPoints[1]} L ${xPoints[2]},${yPoints[2]} L ${xPoints[3]},${yPoints[3]}`} 
-                                fill="none" 
-                                stroke={cat.type === 'income' ? '#10b981' : '#ef4444'} 
-                                strokeWidth="2" 
-                                strokeLinecap="round" 
-                                strokeLinejoin="round" 
+                              <path
+                                d={`M ${xPoints[0]},${yPoints[0]} L ${xPoints[1]},${yPoints[1]} L ${xPoints[2]},${yPoints[2]} L ${xPoints[3]},${yPoints[3]}`}
+                                fill="none"
+                                stroke={cat.type === 'income' ? '#10b981' : '#ef4444'}
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
                               />
                               <circle cx={xPoints[3]} cy={yPoints[3]} r="2.5" fill={cat.type === 'income' ? '#10b981' : '#ef4444'} />
                             </svg>
@@ -1249,7 +1240,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
 
             {/* A. HIGH-CONTRAST HERO CARDS ROW */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px', marginBottom: '32px' }}>
-              
+
               {/* Card 1: Outstanding Leakage */}
               <div style={{
                 background: '#fff7ed',
@@ -1327,7 +1318,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
               <p style={{ fontSize: '0.825rem', color: '#475569', marginBottom: '16px' }}>
                 Upload raw recruitment database CSV sheets. Our sanitizer intercepts the upload, normalizes spelling, validates and deduplicates bill records, and flags leaks before inserting into database.
               </p>
-              
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{
                   border: '2px dashed #cbd5e1',
@@ -1339,8 +1330,8 @@ const RunwayRoiTracker = ({ setActivePage }) => {
                   position: 'relative',
                   transition: 'border-color 0.2s'
                 }}>
-                  <input 
-                    type="file" 
+                  <input
+                    type="file"
                     accept=".csv"
                     onChange={handleFileUpload}
                     style={{ position: 'absolute', left: 0, top: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }}
@@ -1375,7 +1366,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
                       <div style={{ color: '#c2410c', fontWeight: '700' }}>⚠️ <strong>Revenue Leakage Detected:</strong> {healthCheckReport.ghostDealsDetected} ghost placements</div>
                     </div>
                     <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
-                      <button 
+                      <button
                         onClick={publishSanitizedData}
                         style={{
                           backgroundColor: '#059669',
@@ -1389,7 +1380,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
                       >
                         Approve & Publish to CRM (Sync Database)
                       </button>
-                      <button 
+                      <button
                         onClick={() => { setUploadedFile(null); setUploaderStatus('idle'); }}
                         style={{
                           backgroundColor: '#ffffff',
@@ -1425,7 +1416,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
 
             {/* C. ACTION ITEMS RESOLUTION DECKS */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px', marginBottom: '32px' }}>
-              
+
               {/* DECK 1: GHOST DEALS CARDS */}
               <div>
                 <h5 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', color: '#0f172a', fontWeight: '800' }}>
@@ -1441,9 +1432,9 @@ const RunwayRoiTracker = ({ setActivePage }) => {
                       const priorityColor = deal.priority === 'High' ? '#b91c1c' : (deal.priority === 'Medium' ? '#c2410c' : '#a16207');
                       const priorityBg = deal.priority === 'High' ? '#fef2f2' : (deal.priority === 'Medium' ? '#fff7ed' : '#fefce8');
                       const priorityBorder = deal.priority === 'High' ? '#fca5a5' : (deal.priority === 'Medium' ? '#fed7aa' : '#fef08a');
-                      
+
                       return (
-                        <div 
+                        <div
                           key={deal.id}
                           style={{
                             background: '#ffffff',
@@ -1479,7 +1470,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
                             <div>BD: <strong>{deal.bd_member}</strong></div>
                             <div style={{ color: '#059669', fontWeight: 'bold' }}>Placement Fee: {formatCurrency(deal.service_charges)}</div>
                           </div>
-                          
+
                           {/* Date, Bill & Root Cause Form */}
                           <form onSubmit={(e) => {
                             e.preventDefault();
@@ -1489,7 +1480,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
                             if (!date) return alert("Please specify the Bill Date!");
                             handleResolveLeakage(deal.id, date, billNo, reasonCode);
                           }} style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
-                            <input 
+                            <input
                               type="date"
                               name="billDate"
                               defaultValue={deal.suggested_date || ''}
@@ -1505,7 +1496,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
                                 fontWeight: '600'
                               }}
                             />
-                            <input 
+                            <input
                               type="text"
                               name="billNo"
                               placeholder="Bill Number"
@@ -1540,7 +1531,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
                               <option value="duplicate_entry">Duplicate entry</option>
                               <option value="other">Other reason</option>
                             </select>
-                            <button 
+                            <button
                               type="submit"
                               style={{
                                 backgroundColor: '#ea580c',
@@ -1674,7 +1665,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
             <div className="dashboard-card" style={{ background: '#ffffff', padding: '20px', border: '1px solid var(--border-color)', marginBottom: '32px', boxShadow: 'var(--shadow-md)' }}>
               <h5 style={{ marginBottom: '16px', color: '#0f172a', fontWeight: '800' }}>Margin Reconciliation Warnings & Receivables Over 30 Days</h5>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
-                
+
                 {/* Outstanding Receivables list */}
                 <div>
                   <h6 style={{ color: '#2563eb', marginBottom: '10px', fontSize: '0.85rem', fontWeight: 'bold' }}>Unpaid Receivables (&gt;30 days) ({outstandingReceivables.length})</h6>
@@ -1728,7 +1719,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
 
             {/* AI WATCHLIST & LEAK LEADERBOARD GRID */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '24px', marginBottom: '32px' }}>
-              
+
               {/* AI Deal Copilot Watchlist */}
               <div className="dashboard-card" style={{ background: '#ffffff', padding: '24px', border: '1.5px solid #ddd6fe', boxShadow: 'var(--shadow-md)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -1770,7 +1761,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
                           const riskColor = pred.leakage_risk > 60 ? '#b91c1c' : (pred.leakage_risk > 30 ? '#c2410c' : '#047857');
                           const riskBg = pred.leakage_risk > 60 ? '#fef2f2' : (pred.leakage_risk > 30 ? '#fff7ed' : '#ecfdf5');
                           const riskBorder = pred.leakage_risk > 60 ? '#fca5a5' : (pred.leakage_risk > 30 ? '#fed7aa' : '#a7f3d0');
-                          
+
                           return (
                             <tr key={pred.id}>
                               <td>
@@ -1843,7 +1834,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
                         return paginatedLeakLeaderboard.map((item, idx) => {
                           const alertColor = item.open_leaks >= 2 ? '#ef4444' : (item.open_leaks === 1 ? '#f97316' : '#10b981');
                           const alertText = item.open_leaks >= 2 ? 'Action Required' : (item.open_leaks === 1 ? 'Needs Audit' : 'Good');
-                          
+
                           return (
                             <tr key={idx}>
                               <td className="font-bold">{item.bd_name}</td>
@@ -1904,7 +1895,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
                         <strong>{item.category}</strong> - {formatCurrency(item.amount)}
                         <span style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-muted)' }}>Deleted at {item.archivedAt}</span>
                       </div>
-                      <button 
+                      <button
                         onClick={() => handleUndoSoftDelete(item.id)}
                         style={{
                           border: 'none',
@@ -1952,7 +1943,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
               <span style={{ fontSize: '0.75rem', color: 'var(--color-link)', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold' }}>Recruiter Trust Layer</span>
               <h4 style={{ color: 'var(--text-main)', margin: '4px 0 0 0' }}>{selectedRecruiter}</h4>
             </div>
-            <button 
+            <button
               onClick={() => { setSelectedRecruiter(null); setRecruiterPage(1); }}
               style={{
                 background: 'var(--bg-main)',
@@ -2020,7 +2011,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
 
           {/* Footer Actions */}
           <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', display: 'flex', gap: '10px' }}>
-            <button 
+            <button
               onClick={() => {
                 const headers = 'Company Name,Invoice Number,Bill Date,Gross Revenue (INR),Net Share (INR),Franchisee Name\n';
                 const rows = recruiterDetails.map(r => `"${r.company_name}","${r.invoice_no}","${r.bill_date}",${r.gross_revenue},${r.net_revenue},"${r.franchise_name || 'None'}"`).join('\n');
@@ -2049,7 +2040,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
               <Download size={16} />
               Download CSV Audit Log
             </button>
-            <button 
+            <button
               onClick={() => setSelectedRecruiter(null)}
               style={{
                 backgroundColor: 'var(--bg-main)',
@@ -2088,7 +2079,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
             <span style={{ fontSize: '0.85rem', fontWeight: '500' }}>{toastMessage}</span>
           </div>
           {toastUndoId && (
-            <button 
+            <button
               onClick={() => handleUndoSoftDelete(toastUndoId)}
               style={{
                 backgroundColor: 'rgba(16,185,129,0.2)',

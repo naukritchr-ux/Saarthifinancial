@@ -2,8 +2,9 @@
 
 Historical company income is the invoice company share, excluding franchisee
 pass-through revenue. Cash collections are estimated using the historical gross
-collection ratio. Opening cash is derived from the live ledger at the cutoff
-and is a cash proxy rather than a verified bank balance.
+collection ratio. Opening funds are derived from company-allocated collections less recorded
+expenditure and net salary payable. Gross pass-through receipts and CTC are not
+misrepresented as available company cash or cash salary payments.
 Residual bands are approximate and do not claim calibrated 95% coverage.
 """
 
@@ -21,6 +22,7 @@ except ImportError:
 
 from db import get_db_connection
 from finance_rules import get_ist_today
+from accounting_service import load_financial_ledger, summarize_ledger, monthly_summaries, month_bounds
 
 
 # -------------------------------------------------------------------------
@@ -345,7 +347,7 @@ def fetch_revenue_history(conn, cutoff=None) -> Tuple[List[str], np.ndarray, flo
         SELECT 
             DATE_FORMAT(billDate, '%%Y-%%m') AS ym,
             COALESCE(SUM(ourShare), 0.0) AS billed_rev,
-            COALESCE(SUM(amountReceived), 0.0) AS collected_amt,
+            COALESCE(SUM(CASE WHEN COALESCE(DATE(dateReceived), DATE(billDate)) < %s THEN amountReceived ELSE 0 END), 0.0) AS collected_amt,
             COALESCE(SUM(totalBillAmt), 0.0) AS total_gross
         FROM v_invoice_clean
         WHERE is_revenue = 1
@@ -353,7 +355,7 @@ def fetch_revenue_history(conn, cutoff=None) -> Tuple[List[str], np.ndarray, flo
           AND billDate < %s
         GROUP BY ym
         ORDER BY ym ASC
-    """, [cutoff.isoformat()])
+    """, [cutoff.isoformat(), cutoff.isoformat()])
     rows = cursor.fetchall()
     if not rows:
         raise ValueError('No closed-month invoice history is available for forecasting')
@@ -371,100 +373,53 @@ def fetch_revenue_history(conn, cutoff=None) -> Tuple[List[str], np.ndarray, flo
     return expected_months, np.array(series, dtype=float), avg_collection_rate
 
 
-def fetch_expense_history(conn, cutoff=None) -> Tuple[List[str], np.ndarray]:
-    """
-    Fetches monthly expenses from expenditure (is_deleted = 0).
-    Uses complete months from April 2023 up to the supplied cutoff.
-    Returns (months_list, expense_array).
-    """
+def fetch_expense_history(conn, cutoff=None, ledger=None):
+    """Cash expenditure includes remittances; confirmed net-salary duplicates are separated."""
     cutoff = cutoff or get_ist_today().replace(day=1)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT 
-            DATE_FORMAT(billDate, '%%Y-%%m') AS ym,
-            COALESCE(SUM(amount), 0.0) AS total_exp
-        FROM expenditure
-        WHERE is_deleted = 0
-          AND billDate >= '2023-04-01'
-          AND billDate < %s
-        GROUP BY ym
-        ORDER BY ym ASC
-    """, [cutoff.isoformat()])
-    rows = cursor.fetchall()
-    if not rows:
+    ledger = ledger if ledger is not None else load_financial_ledger(conn, cutoff - datetime.timedelta(days=1))
+    months = generate_month_sequence('2023-04', (cutoff.year - 2023) * 12 + cutoff.month - 4)
+    summaries = monthly_summaries(ledger, months)
+    if not any(item['expense_rows'] for item in summaries.values()):
         raise ValueError('No closed-month expense history is available for forecasting')
-    
-    expected_months = generate_month_sequence('2023-04', (cutoff.year - 2023) * 12 + cutoff.month - 4)
-    exp_map = {r['ym']: float(r['total_exp']) for r in rows}
-    series = [exp_map.get(m, 0.0) for m in expected_months]
-    return expected_months, np.array(series, dtype=float)
+    return months, np.array([summaries[m]['expense_cash'] + summaries[m]['manual_expense'] for m in months])
 
 
-def fetch_scheduled_payroll(conn, forecast_months: List[str]) -> Dict[str, float]:
+def fetch_scheduled_payroll(conn, forecast_months, ledger=None, include_sources=False):
+    """Forecast net salary payable, never CTC plus duplicated remittances.
+
+    Future rows are planned inputs, not proof of payment. Missing months use the
+    average of observed payroll months in the preceding six closed months.
     """
-    Fetches future-dated scheduled payroll commitments from payroll_records.
-    Months without scheduled records use the last six closed months average.
-    """
-    cursor = conn.cursor()
-    start = forecast_months[0] + '-01'
-    end = generate_month_sequence(forecast_months[-1], 2)[-1] + '-01'
-    cursor.execute("""
-        SELECT DATE_FORMAT(date, '%%Y-%%m') AS ym,
-               COALESCE(SUM(ctc_amount), 0) AS monthly_payroll
-        FROM payroll_records WHERE date >= %s AND date < %s GROUP BY ym
-    """, [start, end])
-    scheduled_map = {r['ym']: float(r['monthly_payroll']) for r in cursor.fetchall()}
-    # Average the latest six closed calendar months, including months with no payroll.
-    first = datetime.date.fromisoformat(start)
+    ledger = ledger if ledger is not None else load_financial_ledger(conn, month_bounds(forecast_months[-1])[1])
+    first = datetime.date.fromisoformat(forecast_months[0] + '-01')
     serial = first.year * 12 + first.month - 1 - 6
-    baseline_start = f"{serial // 12:04d}-{serial % 12 + 1:02d}-01"
-    cursor.execute("""
-        SELECT COALESCE(SUM(ctc_amount), 0) / 6.0 AS avg_payroll
-        FROM payroll_records WHERE date >= %s AND date < %s
-    """, [baseline_start, start])
-    row = cursor.fetchone() or {}
-    baseline = float(row.get('avg_payroll') or 0)
-    return {m: scheduled_map.get(m, baseline) for m in forecast_months}
+    baseline_start = f"{serial // 12:04d}-{serial % 12 + 1:02d}"
+    history_months = generate_month_sequence(baseline_start, 6)
+    history = monthly_summaries(ledger, history_months)
+    observed = [item['net_salary_payable'] for item in history.values() if item['payroll_rows']]
+    baseline = float(np.mean(observed)) if observed else None
+    future = monthly_summaries(ledger, forecast_months)
+    values, sources = {}, {}
+    for month, item in future.items():
+        if item['audit']['missing_net_payable']:
+            raise ValueError(f'Net salary payable is missing for planned payroll in {month}')
+        if item['payroll_rows']:
+            values[month], sources[month] = item['net_salary_payable'], 'planned_payroll_records'
+        elif baseline is not None:
+            values[month], sources[month] = baseline, 'observed_net_payroll_average'
+        else:
+            raise ValueError(f'No net-payroll records or history are available for {month}; payroll cannot be assumed zero')
+    return (values, sources) if include_sources else values
 
 
-def fetch_current_cash_balance(conn, as_of=None) -> float:
-    """Calculate the dated live ledger balance; never substitute an invented value.
-
-    Uses the cash-balance endpoint's sources: invoice collections less expenditure
-    and completed franchise payouts, plus manual ledger entries. Undated records
-    cannot be assigned to a historical cutoff and are excluded. Invoice receipt
-    amounts are associated with invoice bill dates; this is not a historical bank
-    reconciliation or proof of when each payment actually arrived.
-    """
-    if as_of is None:
-        as_of = get_ist_today().replace(day=1) - datetime.timedelta(days=1)
-    elif isinstance(as_of, str):
-        as_of = datetime.date.fromisoformat(as_of)
-    # Exclusive next-day boundary includes all timestamps on the closing day.
-    end = (as_of + datetime.timedelta(days=1)).isoformat()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("""
-            SELECT
-              (SELECT COALESCE(SUM(amountReceived), 0)
-               FROM v_invoice_clean WHERE billDate < %s)
-              - (SELECT COALESCE(SUM(amount), 0)
-                 FROM expenditure WHERE billDate < %s AND is_deleted = 0)
-              - (SELECT COALESCE(SUM(payment_amount), 0)
-                 FROM franchisePayments WHERE payment_done = 'Yes' AND payment_date < %s)
-              + (SELECT COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END), 0)
-                 FROM manual_cash_entries WHERE date < %s)
-              AS cash_balance
-        """, [end, end, end, end])
-        row = cursor.fetchone()
-        if not row or row.get('cash_balance') is None:
-            raise ValueError('The live ledger did not return an opening cash balance')
-        value = float(row['cash_balance'])
-        if not math.isfinite(value):
-            raise ValueError('The live ledger returned a non-finite cash balance')
-        return value
-    finally:
-        cursor.close()
+def fetch_current_cash_balance(conn, as_of=None, ledger=None):
+    """Company-retained ledger proxy on the same basis as forecast collections."""
+    as_of = as_of or (get_ist_today().replace(day=1) - datetime.timedelta(days=1))
+    ledger = ledger if ledger is not None else load_financial_ledger(conn, as_of)
+    snapshot = summarize_ledger(ledger, as_of=as_of)
+    if snapshot['company_cash_movement_estimate'] is None:
+        raise ValueError('Opening company funds need payroll reconciliation; inspect /api/finance/actuals')
+    return snapshot['company_cash_movement_estimate']
 
 
 def cash_runway(opening_cash, net_flows):
@@ -505,11 +460,13 @@ def generate_full_forecast(
         # 1. Fetch clean historical training windows
         cutoff = get_ist_today().replace(day=1)
         opening_as_of = cutoff - datetime.timedelta(days=1)
-        cash_balance = fetch_current_cash_balance(conn, as_of=opening_as_of)
-        rev_months, rev_series, coll_ratio = fetch_revenue_history(conn, cutoff)
-        exp_months, exp_series = fetch_expense_history(conn, cutoff)
         forecast_months = generate_month_sequence(cutoff.strftime('%Y-%m'), horizon)
-        payroll_scheduled = fetch_scheduled_payroll(conn, forecast_months)
+        ledger = load_financial_ledger(conn, month_bounds(forecast_months[-1])[1])
+        opening_snapshot = summarize_ledger(ledger, as_of=opening_as_of)
+        cash_balance = fetch_current_cash_balance(conn, as_of=opening_as_of, ledger=ledger)
+        rev_months, rev_series, coll_ratio = fetch_revenue_history(conn, cutoff)
+        exp_months, exp_series = fetch_expense_history(conn, cutoff, ledger=ledger)
+        payroll_scheduled, payroll_sources = fetch_scheduled_payroll(conn, forecast_months, ledger=ledger, include_sources=True)
 
         # 2. Revenue Model: Backtest & Forecast
         rev_backtest = backtest_revenue_models(rev_series, test_len=6)
@@ -538,13 +495,8 @@ def generate_full_forecast(
             residual = exp_series[valid] - exp_fitted[valid]
             exp_se = float(np.sqrt(np.mean(residual ** 2))) if residual.size else 0.0
 
-        # Historical payroll makes historical operating results comparable to forecast costs.
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT DATE_FORMAT(date, '%%Y-%%m') AS ym, COALESCE(SUM(ctc_amount), 0) AS payroll
-            FROM payroll_records WHERE date >= %s AND date < %s GROUP BY ym
-        """, [rev_months[0] + '-01', cutoff.isoformat()])
-        historical_payroll = {r['ym']: float(r['payroll']) for r in cur.fetchall()}
+        history_details = monthly_summaries(ledger, rev_months)
+        historical_payroll = {m: details['net_salary_payable'] for m, details in history_details.items()}
         # 4. Construct the common historical timeline
         historical_points = []
         for ym in rev_months:
@@ -553,9 +505,12 @@ def generate_full_forecast(
             historical_points.append({
                 'month': ym,
                 'revenue': round(r_val, 2),
+                'company_collections_estimate': history_details[ym]['company_collections_estimate'],
+                'cash_inflow_estimate': round(history_details[ym]['company_collections_estimate'] + history_details[ym]['manual_income'], 2),
+                'total_outflow': round(e_val + historical_payroll.get(ym, 0.0), 2),
                 'expenses': round(e_val, 2),
                 'payroll': round(historical_payroll.get(ym, 0.0), 2),
-                'net': round(r_val - e_val - historical_payroll.get(ym, 0.0), 2)
+                'net': round(history_details[ym]['company_collections_estimate'] + history_details[ym]['manual_income'] - e_val - historical_payroll.get(ym, 0.0), 2)
             })
 
         # 5. Construct Forecast Timeline with Confidence Bands & Cash Trajectory
@@ -608,6 +563,8 @@ def generate_full_forecast(
                 },
                 'expected_collections': round(pred_rev * coll_ratio, 2),
                 'scheduled_payroll': round(pay_val, 2),
+                'payroll_basis': 'net_salary_payable',
+                'payroll_source': payroll_sources[ym],
                 'total_projected_outflow': round(total_outflow, 2),
                 'net_projected': round(net_proj, 2),
                 'net_lower': round(net_lower, 2),
@@ -623,7 +580,11 @@ def generate_full_forecast(
         return {
             'status': 'ok',
             'revenue_basis': 'Company share (ex-GST)',
-            'cash_assumption': 'Opening cash is a live ledger estimate at the last closed month, not a bank reconciliation. Historical collections are grouped by invoice date, so later receipts can revise this estimate. Cash scenario: company-share collections estimated using the historical gross invoice collection ratio. Excludes tax, collection timing, outstanding receivables and future one-off manual income. Historical net is accrual income less expenses and payroll.',
+            'cash_assumption': 'Company collections are estimated from company-share income. Cash outflows include net salary payable and recorded expenditure/remittances once; CTC provisions are excluded. Receipt dates are used where recorded; invoice-date fallback, aggregate instalments and payroll-payable dates limit cash timing. Unrecorded taxes and payments are outside this estimate; it is not a bank reconciliation.',
+            'opening_balance_breakdown': opening_snapshot,
+            'payroll_basis': 'net_salary_payable',
+            'forecast_assumptions': ['Future payroll rows are planned inputs, not confirmed bank payments.',
+                                     'Missing payroll months use an average of observed net-payroll months.'],
             'interval_method': 'Approximate residual bands; not calibrated 95% prediction intervals.',
             'as_of_month': (cutoff - datetime.timedelta(days=1)).strftime('%Y-%m'),
             'forecast_start_month': cutoff.strftime('%Y-%m'),
@@ -650,9 +611,9 @@ def generate_full_forecast(
             },
             'summary': {
                 'current_cash_balance': round(cash_balance, 2),
-                'cash_balance_source': 'live_ledger',
+                'cash_balance_source': 'company_retained_ledger',
                 'cash_balance_as_of': opening_as_of.isoformat(),
-                'cash_balance_label': 'Ledger-derived opening balance',
+                'cash_balance_label': 'Estimated company-retained funds',
                 'projected_total_net': round(total_projected_net, 2),
                 'projected_final_cash': round(running_cash, 2),
                 'runway_months': runway_months,

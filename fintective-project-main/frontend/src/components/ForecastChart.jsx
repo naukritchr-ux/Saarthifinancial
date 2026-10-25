@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatLakhs, formatCurrency } from '../utils/formatters';
-import {
-  TrendingUp,
-  TrendingDown,
-  Calendar,
-  ShieldCheck,
-  Zap,
-  HelpCircle,
-  ChevronRight,
+import { 
+  TrendingUp, 
+  TrendingDown, 
+  Calendar, 
+  ShieldCheck, 
+  Zap, 
+  HelpCircle, 
+  ChevronRight, 
   Activity,
   Layers,
   ArrowUpRight,
@@ -55,17 +55,17 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
   // Combine recent history (last 12 months) + forecast points for the chart
   const chartPoints = useMemo(() => {
     if (!forecastData) return [];
-
+    
     // Take last 12 historical months for clean seasonal context
     const hist = (forecastData.historical || []).slice(-12).map((pt, i) => ({
       month: pt.month,
       isForecast: false,
-      rev: pt.revenue,
-      revLower: pt.revenue,
-      revUpper: pt.revenue,
-      exp: pt.expenses,
-      expLower: pt.expenses,
-      expUpper: pt.expenses,
+      rev: pt.cash_inflow_estimate,
+      revLower: pt.cash_inflow_estimate,
+      revUpper: pt.cash_inflow_estimate,
+      exp: pt.total_outflow,
+      expLower: pt.total_outflow,
+      expUpper: pt.total_outflow,
       payroll: pt.payroll || 0,
       net: pt.net,
       cash: null
@@ -75,12 +75,12 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
     const fc = (forecastData.forecast || []).map((pt, i) => ({
       month: pt.month,
       isForecast: true,
-      rev: pt.revenue.predicted,
-      revLower: pt.revenue.lower,
-      revUpper: pt.revenue.upper,
-      exp: pt.operating_expenses.predicted,
-      expLower: pt.operating_expenses.lower,
-      expUpper: pt.operating_expenses.upper,
+      rev: pt.expected_collections,
+      revLower: pt.revenue.lower * forecastData.collection_ratio,
+      revUpper: pt.revenue.upper * forecastData.collection_ratio,
+      exp: pt.total_projected_outflow,
+      expLower: pt.operating_expenses.lower + pt.scheduled_payroll,
+      expUpper: pt.operating_expenses.upper + pt.scheduled_payroll,
       payroll: pt.scheduled_payroll,
       totalOutflow: pt.total_projected_outflow,
       net: pt.net_projected,
@@ -131,8 +131,9 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
     if (chartPoints.length === 0 || splitIndex === -1) return {};
 
     // 1. Historical Lines
-    const histPoints = chartPoints.slice(0, splitIndex + 1);
+    const histPoints = chartPoints.slice(0, splitIndex);
     const histRevPath = histPoints.map((p, i) => `${getX(i)},${getY(p.rev)}`).join(' L ');
+    const payrollPath = chartPoints.map((point, index) => `${getX(index)},${getY(point.payroll)}`).join(' L ');
     const histExpPath = histPoints.map((p, i) => `${getX(i)},${getY(p.exp)}`).join(' L ');
 
     // 2. Forecast Lines
@@ -156,16 +157,17 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
       }
     });
 
-    const revBandArea = upperRevPoints.length > 0
-      ? `M ${upperRevPoints.join(' L ')} L ${lowerRevPoints.join(' L ')} Z`
+    const revBandArea = upperRevPoints.length > 0 
+      ? `M ${upperRevPoints.join(' L ')} L ${lowerRevPoints.join(' L ')} Z` 
       : '';
-    const expBandArea = upperExpPoints.length > 0
-      ? `M ${upperExpPoints.join(' L ')} L ${lowerExpPoints.join(' L ')} Z`
+    const expBandArea = upperExpPoints.length > 0 
+      ? `M ${upperExpPoints.join(' L ')} L ${lowerExpPoints.join(' L ')} Z` 
       : '';
 
     return {
       histRevPath,
       histExpPath,
+      payrollPath,
       fcRevPath,
       fcExpPath,
       revBandArea,
@@ -211,7 +213,7 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
               Baseline Cutoff: <strong>{forecastData?.as_of_month}</strong> (Closed Months Only)
             </span>
           </div>
-          <h3 className="forecast-title">Company Income & Runway Forecast</h3>
+          <h3 className="forecast-title">Company Collections & Cash Scenario</h3>
           <p className="forecast-subtitle">
             Backtested income and expense models with scheduled payroll integration
           </p>
@@ -233,6 +235,26 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
       </div>
 
       <p className="forecast-subtitle">{forecastData?.cash_assumption} {forecastData?.interval_method}</p>
+      {forecastData?.opening_balance_breakdown && (
+        <details style={{ margin: '12px 0' }}>
+          <summary>Opening company funds at {summary.cash_balance_as_of}: {formatCurrency(summary.current_cash_balance)} — source breakdown</summary>
+          <table style={{ width: '100%', marginTop: 12 }}>
+            <tbody>
+              {[
+                ['Gross receipts recorded', 'invoice_receipts_gross'],
+                ['Company allocation of receipts (GST / franchise allocations excluded)', 'company_collections_estimate'],
+                ['Manual cash receipts', 'manual_income'],
+                ['Expenditure after confirmed salary duplicate removal', 'expense_cash'],
+                ['Historical net salary payable deducted', 'net_salary_payable'],
+                ['Manual cash expenses', 'manual_expense'],
+                ['CTC shown for reference, excluded from cash', 'payroll_ctc_cost'],
+                ['Full-ledger movement estimate after franchise payouts', 'ledger_cash_movement_estimate'],
+              ].map(([label, key]) => <tr key={key}><td style={{ padding: 6 }}>{label}</td><td style={{ textAlign: 'right', padding: 6 }}>{forecastData.opening_balance_breakdown[key] == null ? 'Needs source review' : formatCurrency(forecastData.opening_balance_breakdown[key])}</td></tr>)}
+            </tbody>
+          </table>
+          <p>The projected funds use the company allocation, not gross receipts. Separate franchise payouts are excluded from this allocation calculation to avoid deducting the franchise share twice.</p>
+        </details>
+      )}
       {/* Model Diagnostics Banner */}
       <div className="forecast-diagnostics-grid">
         <div className="diag-card rev-diag">
@@ -289,7 +311,7 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
 
         <div className="diag-card runway-diag">
           <div className="diag-header">
-            <span className="diag-title">Projected Runway</span>
+            <span className="diag-title">Scenario Runway</span>
             <span className="diag-badge runway-status-badge">
               {summary.runway_status}
             </span>
@@ -314,23 +336,23 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
         <div className="legend-items-group">
           <div className="legend-item">
             <span className="legend-swatch" style={{ background: '#10b981' }} />
-            <span>Company Income (Historical)</span>
+            <span>Estimated Collections (Recorded)</span>
           </div>
           <div className="legend-item">
             <span className="legend-swatch-dashed" style={{ borderColor: '#10b981' }} />
-            <span>Company Income (Projected ± Band)</span>
+            <span>Expected Collections (Projected ± Band)</span>
           </div>
           <div className="legend-item">
             <span className="legend-swatch" style={{ background: '#ef4444' }} />
-            <span>Opex (Historical)</span>
+            <span>Total Outflow (Recorded)</span>
           </div>
           <div className="legend-item">
             <span className="legend-swatch-dashed" style={{ borderColor: '#ef4444' }} />
-            <span>Opex (Projected ± Band)</span>
+            <span>Total Outflow (Projected ± Band)</span>
           </div>
           <div className="legend-item">
             <span className="legend-swatch" style={{ background: '#8b5cf6' }} />
-            <span>Scheduled Payroll</span>
+            <span>Net Salary Payable</span>
           </div>
         </div>
       </div>
@@ -421,6 +443,8 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
             <path d={`M ${paths.fcExpPath}`} fill="none" stroke="#ef4444" strokeWidth="2.5" strokeDasharray="5,5" strokeLinecap="round" />
           )}
 
+          {paths.payrollPath && <path d={`M ${paths.payrollPath}`} fill="none" stroke="#8b5cf6" strokeWidth="1.5" strokeDasharray="2,4" />}
+
           {/* Data Points and Hover Target Zones */}
           {chartPoints.map((pt, idx) => {
             const x = getX(idx);
@@ -429,7 +453,7 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
             const isHovered = hoveredIndex === idx;
 
             return (
-              <g
+              <g 
                 key={pt.month}
                 onMouseEnter={() => setHoveredIndex(idx)}
                 onMouseLeave={() => setHoveredIndex(null)}
@@ -493,7 +517,7 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
 
         {/* Dynamic Tooltip */}
         {hoveredIndex !== null && chartPoints[hoveredIndex] && (
-          <div
+          <div 
             className="forecast-tooltip"
             style={{
               left: `${(getX(hoveredIndex) / svgWidth) * 100}%`,
@@ -506,13 +530,13 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
                 {chartPoints[hoveredIndex].isForecast ? 'Model Forecast' : 'Historical'}
               </span>
             </div>
-
+            
             <div className="tooltip-row">
               <span className="tooltip-bullet rev-bullet" />
-              <span>Company Income:</span>
+              <span>Company Collections:</span>
               <strong>{formatLakhs(chartPoints[hoveredIndex].rev)}</strong>
             </div>
-
+            
             {chartPoints[hoveredIndex].isForecast && (
               <div className="tooltip-subrow">
                 <span>Approximate Residual:</span>
@@ -522,7 +546,7 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
 
             <div className="tooltip-row">
               <span className="tooltip-bullet exp-bullet" />
-              <span>Opex:</span>
+              <span>Total Outflow:</span>
               <strong>{formatLakhs(chartPoints[hoveredIndex].exp)}</strong>
             </div>
 
@@ -530,7 +554,7 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
               <>
                 <div className="tooltip-row">
                   <span className="tooltip-bullet pay-bullet" />
-                  <span>Scheduled Payroll:</span>
+                  <span>Net Salary (Included in Total):</span>
                   <strong>{formatLakhs(chartPoints[hoveredIndex].payroll)}</strong>
                 </div>
                 <div className="tooltip-row net-row">
@@ -540,7 +564,7 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
                   </strong>
                 </div>
                 <div className="tooltip-row cash-row">
-                  <span>Cumulative Cash:</span>
+                  <span>Estimated Company Funds:</span>
                   <strong>{formatLakhs(chartPoints[hoveredIndex].cash)}</strong>
                 </div>
               </>
@@ -559,12 +583,12 @@ export const ForecastChart = ({ apiBaseUrl = '/api' }) => {
                 <th>Month</th>
                 <th>Projected Company Income (ex-GST)</th>
                 <th>Approximate Income Band</th>
-                <th>Operating Expenses</th>
+                <th>Expenditure incl. Remittances</th>
                 <th>Expected Collections</th>
-                <th>Scheduled / Estimated Payroll</th>
+                <th>Net Salary Payable (Planned / Estimated)</th>
                 <th>Total Outflow</th>
                 <th>Net Monthly Inflow/Burn</th>
-                <th>Cumulative Cash Balance</th>
+                <th>Estimated Company Funds</th>
               </tr>
             </thead>
             <tbody>

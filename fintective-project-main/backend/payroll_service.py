@@ -8,6 +8,7 @@ try:
 except ImportError:
     requests = None
 from typing import Dict, List, Any, Optional
+from finance_rules import get_ist_today
 
 def _http_get_json(url: str, timeout: int = 15):
     if requests is not None:
@@ -357,6 +358,7 @@ def calculate_single_employee_payroll(emp: Dict[str, Any], record: Dict[str, Any
     }
 
 def get_payroll_transactions_for_fy(financial_year: str = '2026-2027', force_refresh: bool = False) -> List[Dict[str, Any]]:
+    transactions = []
     employees = fetch_employees_list(force_refresh=force_refresh)
     if not employees:
         return []
@@ -502,10 +504,13 @@ def get_all_payroll_transactions(force_refresh: bool = False) -> List[Dict[str, 
     # 3. Live API fallback / force_refresh path
     all_txs = []
     try:
-        fy_26_txs = get_payroll_transactions_for_fy('2026-2027', force_refresh=force_refresh)
-        all_txs.extend(fy_26_txs)
+        today = get_ist_today()
+        fy_start = today.year if today.month >= 4 else today.year - 1
+        current_fy = f'{fy_start}-{fy_start+1}'
+        current_txs = get_payroll_transactions_for_fy(current_fy, force_refresh=force_refresh)
+        all_txs.extend(current_txs)
     except Exception as e:
-        print("[Payroll Service] Note on FY 2026-2027:", e)
+        print("[Payroll Service] Current financial-year refresh note:", e)
     
     if all_txs:
         try:

@@ -8,6 +8,7 @@ import pytest
 
 from app import app
 import forecast_service as forecast
+from financial_fixtures import sample_ledger
 
 
 @pytest.fixture
@@ -18,30 +19,25 @@ def client():
 
 
 def test_zero_opening_cash_is_preserved():
-    conn = MagicMock()
-    conn.cursor.return_value.fetchone.return_value = {'cash_balance': 0}
-    assert forecast.fetch_current_cash_balance(conn) == 0
+    assert forecast.fetch_current_cash_balance(None, '2026-09-30', ledger=sample_ledger()) == 0
 
 
 @pytest.mark.parametrize('value', ['', 'nan', 'inf', 'invalid', '132648198'])
 def test_manual_environment_values_do_not_override_the_live_ledger(value):
-    conn = MagicMock()
-    conn.cursor.return_value.fetchone.return_value = {'cash_balance': 250}
+    data = sample_ledger()
+    data['manual'] = [{'date': '2026-09-01', 'type': 'income', 'amount': 250}]
     with patch.dict(os.environ, {'FORECAST_OPENING_CASH_BALANCE': value,
                                 'FORECAST_OPENING_CASH_AS_OF': 'wrong-date'}):
-        assert forecast.fetch_current_cash_balance(conn) == 250
+        assert forecast.fetch_current_cash_balance(None, '2026-09-30', ledger=data) == 250
 
 
 def test_live_ledger_query_uses_cutoff_on_every_source():
     conn = MagicMock()
-    conn.cursor.return_value.fetchone.return_value = {'cash_balance': -100}
+    # Earned invoices, receipts, expenses, payroll, franchise payouts, manual cash.
+    conn.cursor.return_value.fetchall.side_effect = [[], [], [], [], [],
+        [{'date': '2026-09-15', 'type': 'expense', 'amount': 100}]]
     assert forecast.fetch_current_cash_balance(conn, datetime.date(2026, 9, 30)) == -100
-    sql, params = conn.cursor.return_value.execute.call_args.args
-    assert params == ['2026-10-01'] * 4
-    assert 'FROM v_invoice_clean WHERE billDate < %s' in sql
-    assert 'is_deleted = 0' in sql
-    assert "payment_done = 'Yes'" in sql
-    assert 'FROM manual_cash_entries WHERE date < %s' in sql
+    assert all(call.args[1] == ['2026-10-01'] for call in conn.cursor.return_value.execute.call_args_list)
     conn.cursor.return_value.close.assert_called_once()
 
 
@@ -53,11 +49,11 @@ def test_live_ledger_cash_has_no_silent_database_failure_fallback():
     conn.cursor.return_value.close.assert_called_once()
 
 
-def test_live_ledger_cash_rejects_missing_result():
-    conn = MagicMock()
-    conn.cursor.return_value.fetchone.return_value = None
-    with pytest.raises(ValueError, match='did not return'):
-        forecast.fetch_current_cash_balance(conn)
+def test_live_ledger_cash_rejects_missing_net_payroll():
+    data = sample_ledger()
+    data['payroll'][0]['net_payable'] = None
+    with pytest.raises(ValueError, match='reconciliation'):
+        forecast.fetch_current_cash_balance(None, '2026-09-30', ledger=data)
 
 
 def test_zero_actual_mape_is_unavailable():
@@ -78,14 +74,13 @@ def test_runway_includes_profitable_months_and_order():
 
 
 def test_scheduled_small_or_zero_payroll_is_not_overwritten():
-    conn = MagicMock()
-    conn.cursor.return_value.fetchall.return_value = [
-        {'ym': '2026-10', 'monthly_payroll': 0},
-        {'ym': '2027-09', 'monthly_payroll': 5000}]
-    conn.cursor.return_value.fetchone.return_value = {'avg_payroll': 12345}
-    result = forecast.fetch_scheduled_payroll(conn, ['2026-10', '2026-11', '2027-09'])
+    data = sample_ledger()
+    data['payroll'] = [
+        {'date': '2026-09-28', 'net_payable': 12345, 'ctc_amount': 99999},
+        {'date': '2026-10-28', 'net_payable': 0, 'ctc_amount': 0},
+        {'date': '2027-09-28', 'net_payable': 5000, 'ctc_amount': 88888}]
+    result = forecast.fetch_scheduled_payroll(None, ['2026-10', '2026-11', '2027-09'], ledger=data)
     assert result == {'2026-10': 0, '2026-11': 12345, '2027-09': 5000}
-    assert conn.cursor.return_value.execute.call_args_list[0].args[1] == ['2026-10-01', '2027-10-01']
 
 
 def test_month_cutoff_and_company_share_query():
@@ -98,7 +93,7 @@ def test_month_cutoff_and_company_share_query():
     assert ratio == 0.5
     sql, params = conn.cursor.return_value.execute.call_args.args
     assert 'SUM(ourShare)' in sql
-    assert params == ['2026-11-01']
+    assert params == ['2026-11-01', '2026-11-01']
 
 
 def test_cash_scenario_and_runway_use_collections():
@@ -110,9 +105,10 @@ def test_cash_scenario_and_runway_use_collections():
          patch.object(forecast, 'get_ist_today', return_value=datetime.date(2026, 11, 8)), \
          patch.object(forecast, 'fetch_revenue_history', return_value=(months, np.ones(31) * 100, 0.5)), \
          patch.object(forecast, 'fetch_expense_history', return_value=(months, np.ones(31) * 70)), \
-         patch.object(forecast, 'fetch_scheduled_payroll', return_value={'2026-11': 10, '2026-12': 10}):
+         patch.object(forecast, 'load_financial_ledger', return_value={'invoices': [], 'expenses': [], 'payroll': [], 'payouts': [], 'manual': [{'date': '2026-10-01', 'type': 'income', 'amount': 100}]}), \
+         patch.object(forecast, 'fetch_scheduled_payroll', return_value=({'2026-11': 10, '2026-12': 10}, {'2026-11': 'test_planned', '2026-12': 'test_planned'})):
         result = forecast.generate_full_forecast(2, conn)
-    assert result['summary']['cash_balance_source'] == 'live_ledger'
+    assert result['summary']['cash_balance_source'] == 'company_retained_ledger'
     assert result['summary']['cash_balance_as_of'] == '2026-10-31'
     assert result['as_of_month'] == '2026-10'
     assert result['forecast_start_month'] == '2026-11'
@@ -158,14 +154,13 @@ def test_manual_income_can_be_deleted(client):
 
 
 def test_cash_balance_adds_manual_income(client):
-    conn = MagicMock()
-    conn.cursor.return_value.fetchone.return_value = {'cash_balance': 100}
-    with patch('app.get_db_connection', return_value=conn):
+    data = {'invoices': [], 'receipts': [], 'expenses': [], 'payroll': [], 'payouts': [],
+            'manual': [{'date': '2026-10-25', 'type': 'income', 'amount': 100}]}
+    with patch('app.get_db_connection'), patch('accounting_service.load_financial_ledger', return_value=data) as loader:
         response = client.get('/api/finance/cash-balance?as_of=2026-10-25')
     assert response.json['cash_balance'] == 100
-    sql, params = conn.cursor.return_value.execute.call_args.args
-    assert 'FROM manual_cash_entries' in sql
-    assert params == ['2026-10-25'] * 4
+    assert response.json['breakdown']['manual_income'] == 100
+    assert loader.call_args.args[1] == datetime.date(2026, 10, 25)
 
 
 def test_expense_selection_keeps_annual_payment_pattern():

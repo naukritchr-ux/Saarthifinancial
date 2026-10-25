@@ -1,11 +1,11 @@
 import React, { createContext, useState, useEffect, useMemo } from 'react';
-import { 
-  API_BASE_URL, 
-  API_KEY, 
-  isApiKeyConfigured, 
-  fetchWithApiKey, 
+import {
+  API_BASE_URL,
+  API_KEY,
+  isApiKeyConfigured,
+  fetchWithApiKey,
   fetchJsonWithApiKey,
-  logApiDiagnostic 
+  logApiDiagnostic
 } from '../utils/apiClient';
 
 export const FinanceContext = createContext();
@@ -99,7 +99,7 @@ export const getCurrentFY = () => {
 
 const DEFAULT_TRANSACTIONS = [];
 
-const TX_CACHE_VERSION = 'v2_payroll_included';
+const TX_CACHE_VERSION = 'v4_accounting_sources';
 
 export const FinanceProvider = ({ children }) => {
   const currentFY = getCurrentFY();
@@ -266,7 +266,7 @@ export const FinanceProvider = ({ children }) => {
     }
     return 'admin';
   });
-  
+
   // Module state
   const [activeModule, setActiveModule] = useState(() => {
     const saved = localStorage.getItem('saarthi_active_module');
@@ -408,7 +408,7 @@ export const FinanceProvider = ({ children }) => {
         setMlInsights(data);
         try {
           sessionStorage.setItem('fintective_ml_insights', JSON.stringify(data));
-        } catch (e) {}
+        } catch (e) { }
         return data;
       }
     } catch (err) {
@@ -560,13 +560,12 @@ export const FinanceProvider = ({ children }) => {
 
       if (health.ok) {
         // 3. Parallel async fetch of core endpoints with retry
-        const [txRes, franRes, bdRes, tlRes, budgetRes, summaryRes] = await Promise.allSettled([
+        const [txRes, franRes, bdRes, tlRes, budgetRes] = await Promise.allSettled([
           fetchWithRetry(`${API_BASE_URL}/transactions`),
           fetchWithRetry(`${API_BASE_URL}/franchisees`),
           fetchWithRetry(`${API_BASE_URL}/bd-agents`),
           fetchWithRetry(`${API_BASE_URL}/team-leaders`),
-          fetchWithRetry(`${API_BASE_URL}/budgets`),
-          fetchWithRetry(`${API_BASE_URL}/finance/summary?fy=2026-2027`)
+          fetchWithRetry(`${API_BASE_URL}/budgets`)
         ]);
 
         // Kick off heavy ML model insights asynchronously in background without delaying main dashboard
@@ -575,7 +574,7 @@ export const FinanceProvider = ({ children }) => {
         // Check for 401 Unauthorized across core endpoint responses
         const any401 = [txRes, franRes, bdRes, tlRes, budgetRes].some(
           r => (r.status === 'rejected' && (r.reason?.status === 401 || r.reason?.isAuthError)) ||
-               (r.status === 'fulfilled' && r.value?.status === 401)
+            (r.status === 'fulfilled' && r.value?.status === 401)
         );
 
         if (any401) {
@@ -591,7 +590,7 @@ export const FinanceProvider = ({ children }) => {
         // Check for HTML response (misrouted proxy / catch-all rewrite)
         const anyHtml = [txRes, franRes, bdRes, tlRes, budgetRes].some(
           r => (r.status === 'rejected' && r.reason?.isHtml) ||
-               (r.status === 'fulfilled' && (r.value?.headers?.get('content-type') || '').includes('text/html'))
+            (r.status === 'fulfilled' && (r.value?.headers?.get('content-type') || '').includes('text/html'))
         );
 
         if (anyHtml) {
@@ -624,7 +623,7 @@ export const FinanceProvider = ({ children }) => {
                 sessionStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
                 localStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
                 localStorage.setItem('fintective_tx_cache_version', TX_CACHE_VERSION);
-              } catch (e) {}
+              } catch (e) { }
             }
           } catch (jsonErr) {
             logApiDiagnostic('error', { url: `${API_BASE_URL}/transactions`, status: 200, isHtml: false, message: jsonErr.message });
@@ -645,7 +644,7 @@ export const FinanceProvider = ({ children }) => {
               try {
                 sessionStorage.setItem('fintective_cached_franchisees', JSON.stringify(franData));
                 localStorage.setItem('fintective_cached_franchisees', JSON.stringify(franData));
-              } catch (e) {}
+              } catch (e) { }
             }
           } catch (e) {
             setEndpointStatus(prev => ({ ...prev, franchisees: { status: 'failed', error: e.message } }));
@@ -661,7 +660,7 @@ export const FinanceProvider = ({ children }) => {
             if (Array.isArray(bdData)) {
               setBdAgents(bdData);
               setEndpointStatus(prev => ({ ...prev, bdAgents: { status: bdData.length > 0 ? 'ok' : 'empty', count: bdData.length, error: null } }));
-              try { sessionStorage.setItem('fintective_cached_bd', JSON.stringify(bdData)); } catch (e) {}
+              try { sessionStorage.setItem('fintective_cached_bd', JSON.stringify(bdData)); } catch (e) { }
             }
           } catch (e) {
             setEndpointStatus(prev => ({ ...prev, bdAgents: { status: 'failed', error: e.message } }));
@@ -677,7 +676,7 @@ export const FinanceProvider = ({ children }) => {
             if (Array.isArray(tlData)) {
               setTeamLeaders(tlData);
               setEndpointStatus(prev => ({ ...prev, teamLeaders: { status: tlData.length > 0 ? 'ok' : 'empty', count: tlData.length, error: null } }));
-              try { sessionStorage.setItem('fintective_cached_tl', JSON.stringify(tlData)); } catch (e) {}
+              try { sessionStorage.setItem('fintective_cached_tl', JSON.stringify(tlData)); } catch (e) { }
             }
           } catch (e) {
             setEndpointStatus(prev => ({ ...prev, teamLeaders: { status: 'failed', error: e.message } }));
@@ -693,7 +692,7 @@ export const FinanceProvider = ({ children }) => {
             if (budgetData && typeof budgetData === 'object') {
               setBudgets(budgetData);
               setEndpointStatus(prev => ({ ...prev, budgets: { status: 'ok', error: null } }));
-              try { sessionStorage.setItem('fintective_cached_budgets', JSON.stringify(budgetData)); } catch (e) {}
+              try { sessionStorage.setItem('fintective_cached_budgets', JSON.stringify(budgetData)); } catch (e) { }
             }
           } catch (e) {
             setEndpointStatus(prev => ({ ...prev, budgets: { status: 'failed', error: e.message } }));
@@ -702,15 +701,7 @@ export const FinanceProvider = ({ children }) => {
           setEndpointStatus(prev => ({ ...prev, budgets: { status: 'failed', error: budgetRes.reason?.message || 'Request failed' } }));
         }
 
-        // Process /finance/summary
-        if (summaryRes.status === 'fulfilled' && summaryRes.value.ok) {
-          try {
-            const summaryData = await summaryRes.value.json();
-            if (summaryData && typeof summaryData === 'object') {
-              setFinanceSummary(summaryData);
-            }
-          } catch (e) {}
-        }
+
       }
     } catch (err) {
       logApiDiagnostic('error', { url: `${API_BASE_URL}/*`, status: 0, isHtml: false, message: err.message });
@@ -725,7 +716,7 @@ export const FinanceProvider = ({ children }) => {
       try {
         sessionStorage.setItem('fintective_last_synced_at', nowFormatted);
         sessionStorage.setItem('fintective_last_synced_ts', String(now));
-      } catch (e) {}
+      } catch (e) { }
       setIsLoadingData(false);
       setIsBackgroundSyncing(false);
       return true;
@@ -748,7 +739,7 @@ export const FinanceProvider = ({ children }) => {
             return false;
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // 6. Resilient Fallback: Directly pull latest from Saarthi 360 CRM endpoints when backend is waking up / offline
@@ -810,7 +801,7 @@ export const FinanceProvider = ({ children }) => {
           const isRev = !['CN', 'LEGAL-CN', 'LEGAL', 'RV', 'C'].includes(infoType);
 
           // Calculate tenure-aware shares: 70-30 for >= 3 years, 75-25 for < 3 years
-          const matchedFran = currentFranList.find(f => 
+          const matchedFran = currentFranList.find(f =>
             (f.nameAsPerAgreement && f.nameAsPerAgreement.toLowerCase().trim() === franName.toLowerCase().trim()) ||
             (f.name && f.name.toLowerCase().trim() === franName.toLowerCase().trim())
           );
@@ -941,7 +932,7 @@ export const FinanceProvider = ({ children }) => {
         try {
           sessionStorage.setItem('fintective_cached_txs', JSON.stringify(combined));
           localStorage.setItem('fintective_cached_txs', JSON.stringify(combined));
-        } catch (e) {}
+        } catch (e) { }
       }
     } catch (crmErr) {
       console.error('[Fintective] Direct CRM live fallback note:', crmErr);
@@ -1093,7 +1084,7 @@ export const FinanceProvider = ({ children }) => {
 
     // Keep-alive ping every 8 minutes so Render never hits its 15-min inactivity sleep
     const keepAlive = setInterval(() => {
-      fetch(`${API_BASE_URL}/warmup`).catch(() => {});
+      fetch(`${API_BASE_URL}/warmup`).catch(() => { });
     }, 8 * 60 * 1000);
 
     return () => {
@@ -1126,53 +1117,72 @@ export const FinanceProvider = ({ children }) => {
     }
   }, [availableMonths, selectedMonth]);
 
-  const [currentCashBalance, setCurrentCashBalance] = useState(0);
-  const [movingAvgBurn, setMovingAvgBurn] = useState(0);
-
-  const getAsOfDate = (month, year) => {
-    let end = '2026-12-31';
-    if (month !== 'All Months') {
-      const parts = month.split(' ');
-      const mName = parts[0];
-      const yVal = parseInt(parts[1]);
-      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-      const mIdx = monthNames.indexOf(mName);
-      if (mIdx !== -1) {
-        const lastDay = new Date(yVal, mIdx + 1, 0).getDate();
-        end = `${yVal}-${String(mIdx + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  const [currentCashBalance, setCurrentCashBalance] = useState(null);
+  const [movingAvgBurn, setMovingAvgBurn] = useState(null);
+  const [cashLedgerHistory, setCashLedgerHistory] = useState([]);
+  const [cashBreakdown, setCashBreakdown] = useState(null);
+  const [financeError, setFinanceError] = useState(null);
+  const getFinancePeriod = () => {
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    if (selectedMonth !== 'All Months') {
+      const [name, rawYear] = selectedMonth.split(' ');
+      const month = names.indexOf(name);
+      const year = Number(rawYear);
+      if (month >= 0 && Number.isFinite(year)) {
+        const first = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+        const last = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
+        return { asOf: last < today ? last : today, query: `start=${first}&as_of=${last < today ? last : today}` };
       }
-    } else if (year !== 'All Years') {
-      const parts = year.split('-');
-      const yEnd = parts[1] ? parseInt(parts[1]) : parseInt(parts[0]);
-      end = `${yEnd}-03-31`;
     }
-    return end;
+    const match = String(selectedYear).match(/(\d{4})[-/](\d{2,4})/);
+    if (match) {
+      const endYear = Number(match[1]) + 1;
+      const end = `${endYear}-03-31`;
+      return { asOf: end < today ? end : today, query: `fy=${encodeURIComponent(selectedYear)}&as_of=${end < today ? end : today}` };
+    }
+    return { asOf: today, query: `period=all&as_of=${today}` };
   };
 
   useEffect(() => {
-    const asOf = getAsOfDate(selectedMonth, selectedYear);
-    fetchWithApiKey(`${API_BASE_URL}/finance/cash-balance?as_of=${asOf}`)
-      .then(res => { if (res.ok) return res.json(); })
-      .then(data => {
-        if (data && data.cash_balance != null) {
-          setCurrentCashBalance(data.cash_balance);
-        }
-      })
-      .catch(err => console.error("Failed to load cash balance:", err));
-  }, [selectedMonth, selectedYear, transactions.length]);
+    let active = true;
+    const period = getFinancePeriod();
+    setCurrentCashBalance(null);
+    setCashLedgerHistory([]);
+    setFinanceSummary(null);
+    setCashBreakdown(null);
+    setFinanceError(null);
+    const load = async () => {
+      try {
+        const [cashRes, summaryRes] = await Promise.all([
+          fetchWithApiKey(`${API_BASE_URL}/finance/cash-balance?as_of=${period.asOf}`),
+          fetchWithApiKey(`${API_BASE_URL}/finance/summary?${period.query}`)
+        ]);
+        const [cash, summary] = await Promise.all([cashRes.json(), summaryRes.json()]);
+        if (!cashRes.ok || !summaryRes.ok) throw new Error(cash.error || summary.error || 'Unable to load financial sources');
+        if (!active) return;
+        setCurrentCashBalance(cash.cash_balance ?? null);
+        setCashLedgerHistory(cash.history || []);
+        setCashBreakdown(cash.breakdown || null);
+        setFinanceSummary(summary);
+      } catch (err) {
+        if (active) setFinanceError(err.message);
+      }
+    };
+    load();
+    return () => { active = false; };
+  }, [selectedMonth, selectedYear, transactions]);
 
   useEffect(() => {
-    if (transactions.length === 0) return;
-    fetchWithApiKey(`${API_BASE_URL}/finance/moving-avg-burn`)
-      .then(res => { if (res.ok) return res.json(); })
-      .then(data => {
-        if (data && data.burn != null) {
-          setMovingAvgBurn(data.burn);
-        }
-      })
-      .catch(err => console.error("Failed to load moving average burn:", err));
-  }, [transactions.length]);
-
+    let active = true;
+    setMovingAvgBurn(null);
+    fetchWithApiKey(`${API_BASE_URL}/finance/moving-avg-burn?as_of=${getFinancePeriod().asOf}`)
+      .then(async res => { const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Burn calculation failed'); return data; })
+      .then(data => { if (active) setMovingAvgBurn(data.burn ?? null); })
+      .catch(err => { if (active) console.error('Recorded burn unavailable:', err.message); });
+    return () => { active = false; };
+  }, [transactions, selectedMonth, selectedYear]);
 
 
   // Derived filtered transactions based on active module (memoized for peak UI performance)
@@ -1195,31 +1205,19 @@ export const FinanceProvider = ({ children }) => {
 
   // Actions with optimistic updates, response verification, and automatic rollback on failure
   const addTransaction = async (transaction) => {
-    const newTx = {
-      ...transaction,
-      id: `t-${Date.now()}`,
-      amount: parseFloat(transaction.amount) || 0,
-      subCategory: transaction.subCategory || 'General',
-      paymentMode: transaction.paymentMode || 'Cash',
-      referenceId: transaction.referenceId || `TXN-${Date.now().toString().slice(-8).toUpperCase()}`
-    };
-    setTransactions((prev) => [newTx, ...prev]);
-
     try {
       const res = await fetchWithApiKey(`${API_BASE_URL}/transactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newTx)
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(transaction)
       });
-      if (!res.ok) {
-        setTransactions((prev) => prev.filter((tx) => tx.id !== newTx.id));
-        const errorData = await res.json().catch(() => ({}));
-        showToast(`Failed to save transaction: ${errorData.error || `Server responded with ${res.status}`}`, 'error');
-      }
+      const saved = await res.json();
+      if (!res.ok) throw new Error(saved.error || `Server responded with ${res.status}`);
+      // Use the persisted ID, so deletion works immediately without reloading.
+      setTransactions(prev => [{ ...transaction, ...saved }, ...prev]);
+      return saved;
     } catch (err) {
-      setTransactions((prev) => prev.filter((tx) => tx.id !== newTx.id));
-      showToast(`Network error saving transaction: ${err.message}`, 'error');
-      console.error('Failed to sync transaction with server:', err.message);
+      showToast(`Failed to save transaction: ${err.message}`, 'error');
+      throw err;
     }
   };
 
@@ -1412,6 +1410,9 @@ export const FinanceProvider = ({ children }) => {
     fetchAllData,
     currentCashBalance,
     movingAvgBurn,
+    cashLedgerHistory,
+    cashBreakdown,
+    financeError,
     financeSummary,
     setFinanceSummary,
     isSidebarOpen,
@@ -1450,6 +1451,9 @@ export const FinanceProvider = ({ children }) => {
     timeAgo,
     currentCashBalance,
     movingAvgBurn,
+    cashLedgerHistory,
+    cashBreakdown,
+    financeError,
     isSidebarOpen,
     isLoadingData,
     isBackgroundSyncing,
