@@ -1,1480 +1,267 @@
-import React, { useContext, useState, useEffect, useMemo, useRef } from 'react';
-import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
-import { fetchWithApiKey, fetchJsonWithApiKey } from '../utils/apiClient';
-import { formatCurrency, formatLakhs } from '../utils/formatters';
-import {
-  TrendingUp,
-  TrendingDown,
-  Target,
-  Sparkles,
-  Search,
-  Filter,
-  Check,
-  X,
-  Copy,
-  ChevronRight,
-  Layers,
-  ArrowRight,
-  ChevronDown
-} from 'lucide-react';
-import Pagination from '../components/Pagination';
-import GoalSetterModal from '../components/GoalSetterModal';
-import OutcomeRecorderModal from '../components/OutcomeRecorderModal';
-import AuditPanel from '../components/AuditPanel';
-import FinancialPerformanceCard from '../components/FinancialPerformanceCard';
-import ProfileGoalSetter from '../components/ProfileGoalSetter';
-import {
-  CumulativeTargetChart,
-  PlanAheadTrajectoryChart
-} from '../components/CustomCharts';
-import './GrowthTracking.css';
+import {useContext, useEffect, useMemo, useRef, useState} from 'react';
+import {FinanceContext, API_BASE_URL} from '../context/FinanceContext';
+import {fetchWithApiKey} from '../utils/apiClient';
+import {Target, RefreshCw, Plus, X, Download, AlertTriangle, TrendingUp, Users, Landmark, FileText, Settings2} from 'lucide-react';
+import GrowthAuditChart from '../components/GrowthAuditChart';
+import {auditCsv, financialYear, metricLabels, outlook, profileColors, scopeOf, stageLabels, todayInIndia, validateAudit, valueText} from '../utils/growthAudit.js';
+import './GrowthAudit.css';
 
-const GrowthTracking = () => {
-  const { franchisees, bdAgents, teamLeaders, userRole, currentUser } = useContext(FinanceContext);
-  const isAdminOrManager = userRole === 'admin' || userRole === 'manager' || currentUser?.role === 'admin' || currentUser?.role === 'manager';
+const plainScope = scope => Object.fromEntries(['bd','tl','franchise'].map(key=>[key,scope[key]]));
+const number = value => valueText(value,'deals');
+const dateLabel = value => value ? new Date(value+'T00:00:00Z').toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'}) : '—';
 
-  // URL-synced Selectors State: BD — FY — TL — Franchise
-  const getInitialUrlState = () => {
+function initialFilters() {
+  const defaults={bd:'All',tl:'All',franchise:'All',fy:financialYear(),as_of:todayInIndia(),tab:'overview'};
+  try {
+    const params=new URLSearchParams(window.location.search);
+    return Object.fromEntries(Object.entries(defaults).map(([key,value])=>[key,params.get(key)||value]));
+  } catch { return defaults; }
+}
+
+function ErrorBox({message, retry}) {
+  return <div className="ga-error" role="alert"><AlertTriangle size={19}/><div><strong>Profile data unavailable</strong><p>{message}</p></div>
+    {retry && <button className="ga-button" onClick={retry}>Retry loading</button>}</div>;
+}
+
+export function CompareTable({profiles,onCost,busy}) {
+  const rows=[
+    ['Companies',profile=>number(profile.totals.companies)],
+    ['Invoiced deals',profile=>number(profile.totals.deals)],
+    ['Revenue excluding GST',profile=>valueText(profile.totals.revenue)],
+    ['Billing including GST',profile=>valueText(profile.totals.gross_billed)],
+    ['Recorded company share',profile=>valueText(profile.totals.company_share)],
+    ['Payroll CTC for this period',profile=>valueText(profile.payroll.ctc)],
+    ['Fixed non-payroll expense',profile=>valueText(profile.fixed_expense.amount)],
+    ['Salary ÷ company share',profile=>profile.financial.salary_ratio === null ? '—' : `${profile.financial.salary_ratio.toFixed(1)}%`],
+    ['Contribution from recorded costs',profile=>valueText(profile.financial.contribution)],
+    ['Tax estimate (25% assumption)',profile=>valueText(profile.financial.tax_estimate)],
+    ['Surplus estimate',profile=>valueText(profile.financial.surplus_estimate)],
+    ['In-progress enquiries',profile=>number(profile.totals.in_progress)],
+    ['Cancelled enquiries',profile=>number(profile.totals.cancelled)],
+  ];
+  return <div className="ga-table-scroll"><table className="ga-comparison"><thead><tr><th>Financial performance & activity</th>
+    {profiles.map((profile,index)=><th key={profile.scope.key}><span className="ga-profile-dot" style={{background:profileColors[index]}}/>{profile.scope.label}
+      <small>{profile.scope.type === 'company' ? 'Company portfolio' : profile.scope.type.toUpperCase()}{profile.payroll.allocated ? ' · allocated payroll estimate' : ''}</small></th>)}</tr></thead>
+    <tbody>{rows.map(([title,display],index)=><tr key={title} className={[4,8,10].includes(index) ? 'ga-emphasis' : ''}><th>{title}</th>
+      {profiles.map(profile=><td key={profile.scope.key}>{display(profile)}
+        {index===5 && <small>{profile.payroll.months.length ? `${profile.payroll.months.join(', ')}` : 'No usable payroll match'}</small>}
+        {index===6 && <small>{profile.fixed_expense.basis === 'monthly' ? 'Monthly rate · prorated estimate' : profile.fixed_expense.amount !== null ? 'Confirmed total for displayed period' : 'Period needs confirmation'}</small>}
+        {index===8 && <small>{profile.financial.contribution === null ? 'Payroll and expense period required' : profile.financial.cost_coverage_complete ? (profile.financial.estimated ? 'Allocation estimate' : 'Recorded costs') : 'Partial cost coverage'}</small>}
+      </td>)}</tr>)}</tbody></table>
+    <p className="ga-note">Payroll comes from recorded CTC, not a saved manual salary. Net payable is shown in the payroll audit. Contribution excludes unrecorded costs and is not a bank balance.</p>
+    <button className="ga-button" disabled={busy} onClick={()=>onCost(profiles[0])}><Settings2 size={15}/>Set fixed expense for {profiles[0].scope.label}</button>
+  </div>;
+}
+
+export function CostModal({profile,period,onClose,onSave,busy,error}) {
+  const saved=profile.fixed_expense;
+  const [basis,setBasis]=useState(saved.basis || '');
+  const [amount,setAmount]=useState(saved.input_amount ?? saved.legacy_amount ?? '');
+  const [note,setNote]=useState(saved.note || '');
+  return <div className="ga-modal-shade"><section className="ga-modal" role="dialog" aria-modal="true" aria-labelledby="ga-cost-title">
+    <header><div><h2 id="ga-cost-title">Fixed expense allocation</h2><p>{profile.scope.label} · {dateLabel(period.start)}–{dateLabel(period.as_of)}</p></div>
+      <button className="ga-icon" aria-label="Close expense form" disabled={busy} onClick={onClose}><X/></button></header>
+    <form onSubmit={event=>{event.preventDefault();onSave({basis,amount,note});}}>
+      <p className="ga-note">Allocate non-payroll overhead for this portfolio. Payroll CTC is included separately; exclude costs already included in that CTC.</p>
+      {saved.legacy_amount !== null && !saved.basis && <div className="ga-notice">Earlier input: {valueText(saved.legacy_amount)}. Its period was never saved. Choose a basis before using it.</div>}
+      <label>Expense basis<select required value={basis} onChange={event=>setBasis(event.target.value)}>
+        <option value="">Choose the meaning of this amount</option><option value="period_total">Total for the displayed period</option><option value="monthly">Fixed monthly rate — estimate</option>
+      </select></label>
+      <label>{basis==='monthly' ? 'Monthly non-payroll amount (₹)' : 'Non-payroll total for this period (₹)'}
+        <input required type="number" min="0" step="0.01" value={amount} onChange={event=>setAmount(event.target.value)}/></label>
+      {basis==='monthly' && <p className="ga-note">The monthly rate is applied from the FY start. Partial months are prorated by calendar days and clearly marked as estimates.</p>}
+      {basis==='period_total' && <p className="ga-note">This total is valid for the dates above. A later reporting end date requires reviewing the total.</p>}
+      <label>Allocation note<textarea value={note} maxLength={2000} onChange={event=>setNote(event.target.value)} placeholder="Which overheads are included, and how were they allocated?"/></label>
+      {error && <p className="ga-inline-error" role="alert">{error}</p>}
+      <footer><button type="button" className="ga-button" disabled={busy} onClick={onClose}>Cancel</button><button className="ga-button ga-primary" disabled={busy}>{busy ? 'Saving…' : 'Save expense basis'}</button></footer>
+    </form>
+  </section></div>;
+}
+
+export function GoalModal({profile,period,onClose,onSave,busy,error}) {
+  const [metric,setMetric]=useState('company_share');
+  const [target,setTarget]=useState('');
+  const [due,setDue]=useState(period.fy_end);
+  const [note,setNote]=useState('');
+  const expected=outlook(profile,metric);
+  return <div className="ga-modal-shade"><section className="ga-modal" role="dialog" aria-modal="true" aria-labelledby="ga-goal-title">
+    <header><div><h2 id="ga-goal-title">Set a profile growth target</h2><p>{profile.scope.label} · FY {period.financial_year}</p></div><button className="ga-icon" aria-label="Close target form" disabled={busy} onClick={onClose}><X/></button></header>
+    <form onSubmit={event=>{event.preventDefault();onSave({metric,target,due_date:due,note});}}>
+      <label>Target metric<select value={metric} onChange={event=>{setMetric(event.target.value);setTarget('');}}>{Object.entries(metricLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
+      <div className="ga-two"><div className="ga-form-stat"><small>Recorded to date</small><strong>{valueText(profile.totals[metric],metric)}</strong></div><div className="ga-form-stat"><small>FY run-rate outlook</small><strong>{valueText(expected,metric)}</strong></div></div>
+      <label>Total FY target {metric==='deals' ? '(deals)' : '(₹)'}<input required type="number" min={metric==='deals' ? 1 : .01} step={metric==='deals' ? 1 : .01} value={target} onChange={event=>setTarget(event.target.value)}/></label>
+      <div className="ga-inline">{[10,20,30].map(percent=><button type="button" className="ga-button ga-small" disabled={expected===null} key={percent} onClick={()=>setTarget(metric==='deals' ? Math.ceil(expected*(1+percent/100)) : (expected*(1+percent/100)).toFixed(2))}>Outlook +{percent}%</button>)}</div>
+      <label>Due date<input required type="date" min={todayInIndia()} max={period.fy_end} value={due} onChange={event=>setDue(event.target.value)}/></label>
+      <label>Action plan<textarea value={note} maxLength={2000} onChange={event=>setNote(event.target.value)} placeholder="Accounts to pursue, pipeline actions, reviews and support needed"/></label>
+      <p className="ga-note">The target uses this profile, metric and FY. Progress follows recorded invoices; the baseline snapshot stays attached to the saved goal. A new goal replaces the active goal for the same metric and preserves its history.</p>
+      {error && <p className="ga-inline-error" role="alert">{error}</p>}
+      <footer><button type="button" className="ga-button" disabled={busy} onClick={onClose}>Cancel</button><button className="ga-button ga-primary" disabled={busy}>{busy ? 'Saving…' : 'Save growth target'}</button></footer>
+    </form>
+  </section></div>;
+}
+
+export function PayrollAudit({profile}) {
+  const payroll=profile.payroll;
+  return <section className="ga-panel"><header><div><h3>Payroll & expense audit</h3><p>Recorded cost sources for {profile.scope.label}</p></div><FileText size={19}/></header>
+    <p className="ga-note">{payroll.method}</p>
+    {profile.legacy_salary !== null && <div className="ga-notice">The old manual salary of {valueText(profile.legacy_salary)} is retained in storage but is not used in this audit.</div>}
+    {payroll.records.length ? <div className="ga-table-scroll"><table><thead><tr><th>Month</th><th>Employee</th><th>Allocation</th><th>CTC cost</th><th>Net payable</th></tr></thead><tbody>
+      {payroll.records.map((row,index)=><tr key={row.id+'-'+index}><td>{row.month}</td><td>{row.name}</td><td>{row.allocation_percent}%</td><td>{valueText(row.ctc)}</td><td>{valueText(row.net_payable)}</td></tr>)}
+    </tbody><tfoot><tr><th colSpan="3">Recorded total</th><th>{valueText(payroll.ctc)}</th><th>{valueText(payroll.net_payable)}</th></tr></tfoot></table></div> : <p className="ga-empty">Payroll has not been matched for this profile.</p>}
+    {Object.entries(payroll.missing_closed_months).map(([name,months])=><p key={name} className="ga-inline-error">No closed-month payroll row for {name}: {months.join(', ')}. Check employment dates and sync coverage.</p>)}
+    {payroll.current_month_unrecorded && <p className="ga-note">No matched payroll has been recorded for the reporting end month.</p>}
+    <p className="ga-note">Directly attributed expenditure: {profile.fixed_expense.ledger_available ? `${valueText(profile.fixed_expense.direct_ledger_total_raw)} across ${profile.fixed_expense.direct_ledger_rows} rows` : 'unavailable'}. {profile.fixed_expense.ledger_note}</p>
+  </section>;
+}
+
+export default function GrowthTracking() {
+  const finance=useContext(FinanceContext);
+  const role=String(finance.currentUser?.role || finance.userRole || '').toLowerCase();
+  const allowed=['admin','manager','head_office'].includes(role);
+  const [filters,setFilters]=useState(initialFilters);
+  const [pins,setPins]=useState(()=>{try { const stored=JSON.parse(localStorage.getItem('fintective_growth_pins_v2') || '[]'); return Array.isArray(stored) ? stored.slice(0,3).map(scopeOf) : []; } catch { return []; }});
+  const [options,setOptions]=useState({bds:[],tls:[],franchises:[],fys:[]});
+  const [optionsError,setOptionsError]=useState('');
+  const [payload,setPayload]=useState({key:null,status:'loading',data:null,error:null});
+  const [refreshToken,setRefreshToken]=useState(0);
+  const [metric,setMetric]=useState('company_share');
+  const [cumulative,setCumulative]=useState(false);
+  const [showProjection,setShowProjection]=useState(true);
+  const [search,setSearch]=useState('');
+  const [stage,setStage]=useState('all');
+  const [page,setPage]=useState(1);
+  const [editor,setEditor]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [saveError,setSaveError]=useState('');
+  const [notice,setNotice]=useState('');
+  const latestRequest=useRef(0), forceNext=useRef(false);
+  const current=useMemo(()=>scopeOf({bd:filters.bd,tl:filters.tl,franchise:filters.franchise}),[filters.bd,filters.tl,filters.franchise]);
+  const scopes=useMemo(()=>[current,...pins.filter(pin=>pin.key!==current.key)].slice(0,4),[current,pins]);
+  const signature=JSON.stringify([filters.fy,filters.as_of,scopes.map(scope=>scope.key),role]);
+  const requestKey=signature+'|'+refreshToken;
+  const data=payload.key===requestKey && payload.status==='ready' ? payload.data : null;
+  const loading=payload.key!==requestKey || payload.status==='loading';
+  const primary=data?.profiles[0];
+  const activeTab=['overview','plan_ahead','deals','targets'].includes(filters.tab) ? filters.tab : 'overview';
+  const refresh=()=>{forceNext.current=true;setRefreshToken(value=>value+1);};
+
+  useEffect(()=> {
+    if (!allowed) return;
+    const controller=new AbortController();
+    fetchWithApiKey(`${API_BASE_URL}/growth-targets/filter-options`,{signal:controller.signal})
+      .then(async response=>{if (!response.ok) throw new Error(`Profile list HTTP ${response.status}`);return response.json();})
+      .then(result=>{if (!controller.signal.aborted) {setOptions(result);setOptionsError('');}})
+      .catch(error=>{if (!controller.signal.aborted) setOptionsError(error.message);});
+    return ()=>controller.abort();
+  },[allowed,role]);
+
+  useEffect(()=> {
+    if (!allowed) return;
+    const id=++latestRequest.current, controller=new AbortController();
+    const params=new URLSearchParams({fy:filters.fy,as_of:filters.as_of,scopes:JSON.stringify(scopes.map(plainScope)),role});
+    if (forceNext.current) {params.set('refresh','1');forceNext.current=false;}
+    fetchWithApiKey(`${API_BASE_URL}/growth/profile-audit?${params}`,{signal:controller.signal})
+      .then(async response=>{const body=await response.json();if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);return validateAudit(body,scopes,filters.fy,filters.as_of);})
+      .then(result=>{if (!controller.signal.aborted && id===latestRequest.current) setPayload({key:requestKey,status:'ready',data:result,error:null});})
+      .catch(error=>{if (!controller.signal.aborted && id===latestRequest.current) setPayload({key:requestKey,status:'error',data:null,error:error.message});});
+    return ()=>controller.abort();
+  },[requestKey,allowed,filters.fy,filters.as_of,scopes,role]);
+
+  useEffect(()=>{try {localStorage.setItem('fintective_growth_pins_v2',JSON.stringify(pins.map(plainScope)));} catch { /* Comparison still works when browser storage is unavailable. */ }},[pins]);
+  useEffect(()=>{try {const params=new URLSearchParams(window.location.search);Object.entries(filters).forEach(([key,value])=>params.set(key,value));window.history.replaceState({},'',`${window.location.pathname}?${params}`);} catch { /* Embedded routes may not allow history updates. */ }},[filters]);
+
+  const selectedDeals=useMemo(()=>primary ? primary.deals.filter(row=>(stage==='all' || row.stage===stage) &&
+    `${row.company} ${row.position} ${row.bill}`.toLowerCase().includes(search.trim().toLowerCase())) : [],[primary,stage,search]);
+  const years=useMemo(()=> {
+    const start=Number(financialYear().match(/\d{4}/)[0]);
+    return [...new Set([filters.fy,...(options.fys || []),...Array.from({length:8},(_,i)=>`FY ${start-i}-${String(start-i+1).slice(-2)}`)])];
+  },[filters.fy,options.fys]);
+  const optionNames=(key,fromContext)=>[...new Set(['All',...(options[key] || []),...fromContext.filter(Boolean),filters[key==='bds'?'bd':key==='tls'?'tl':'franchise']])].sort((a,b)=>a==='All'?-1:b==='All'?1:a.localeCompare(b));
+  const update=(key,value)=> {
+    setPage(1);setEditor(null);setSaveError('');
+    setFilters(old=> key==='fy' ? {...old,fy:value,as_of:[todayInIndia(),`${Number(value.match(/\d{4}/)[0])+1}-03-31`].sort()[0]} : {...old,[key]:value});
+  };
+  const pin=()=> {
+    if (pins.some(item=>item.key===current.key)) return setNotice('This profile is already pinned. Select another profile to compare.');
+    if (pins.length>=3) return setNotice('Compare up to four profiles. Remove a pinned profile before adding another.');
+    setPins(old=>[...old,current]);setNotice('Profile pinned. Choose another BD, TL or franchise above to compare.');
+  };
+  const mutate=async (path,body)=> {
+    setSaving(true);setSaveError('');
     try {
-      const p = new URLSearchParams(window.location.search);
-      return {
-        bd: p.get('bd') || 'Komal Suresh Bhanushali',
-        fy: p.get('fy') || 'FY 2026-27',
-        tl: p.get('tl') || 'All',
-        franchise: p.get('franchise') || 'All',
-        tab: p.get('tab') || 'overview'
-      };
-    } catch {
-      return { bd: 'Komal Suresh Bhanushali', fy: 'FY 2026-27', tl: 'All', franchise: 'All', tab: 'overview' };
-    }
+      const response=await fetchWithApiKey(`${API_BASE_URL}/growth/${path}?role=${encodeURIComponent(role)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const result=await response.json();
+      if (!response.ok || result.success===false) throw new Error(result.error || `HTTP ${response.status}`);
+      setEditor(null);setNotice('Saved. Reloading the profile audit.');refresh();
+    } catch(error) {setSaveError(error.message);}
+    finally {setSaving(false);}
   };
-
-  const initialUrl = getInitialUrlState();
-  const [bdFilter, setBdFilter] = useState(initialUrl.bd);
-  const [selectedFy, setSelectedFy] = useState(initialUrl.fy);
-  const [tlFilter, setTlFilter] = useState(initialUrl.tl);
-  const [franchiseFilter, setFranchiseFilter] = useState(initialUrl.franchise);
-  const [activeTab, setActiveTab] = useState(initialUrl.tab); // 'overview' | 'plan_ahead' | 'deals' | 'targets'
-
-  // Combobox/Search dropdown state
-  const [bdSearchQuery, setBdSearchQuery] = useState('');
-  const [isBdDropdownOpen, setIsBdDropdownOpen] = useState(false);
-  const [fnSearchQuery, setFnSearchQuery] = useState('');
-  const [isFnDropdownOpen, setIsFnDropdownOpen] = useState(false);
-  const bdContainerRef = useRef(null);
-  const fnContainerRef = useRef(null);
-
-  // Filter options from backend
-  const [filterOptions, setFilterOptions] = useState({
-    bds: ['All', 'Komal Suresh Bhanushali'],
-    tls: ['All'],
-    franchises: ['All'],
-    fys: ['FY 2026-27', 'FY 2025-26', 'FY 2024-25', 'FY 2023-24']
-  });
-
-  useEffect(() => {
-    fetchWithApiKey(`${API_BASE_URL}/growth-targets/filter-options`)
-      .then(res => res && res.ok ? res.json() : null)
-      .then(data => {
-        if (data && data.bds) {
-          setFilterOptions(data);
-        }
-      })
-      .catch(err => console.error("Filter options fetch error:", err));
-  }, []);
-
-  // Close comboboxes when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (bdContainerRef.current && !bdContainerRef.current.contains(e.target)) {
-        setIsBdDropdownOpen(false);
-      }
-      if (fnContainerRef.current && !fnContainerRef.current.contains(e.target)) {
-        setIsFnDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Primary entity derivation
-  const primaryType = useMemo(() => {
-    if (bdFilter && bdFilter !== 'All') return 'bd_agent';
-    if (tlFilter && tlFilter !== 'All') return 'team_leader';
-    if (franchiseFilter && franchiseFilter !== 'All') return 'franchisee';
-    return 'company';
-  }, [bdFilter, tlFilter, franchiseFilter]);
-
-  const primaryName = useMemo(() => {
-    if (bdFilter && bdFilter !== 'All') return bdFilter;
-    if (tlFilter && tlFilter !== 'All') return tlFilter;
-    if (franchiseFilter && franchiseFilter !== 'All') return franchiseFilter;
-    return 'Overall Portfolio';
-  }, [bdFilter, tlFilter, franchiseFilter]);
-
-  // Step 3 Live Summary Data State
-  const [summaryData, setSummaryData] = useState(null);
-  const [summaryLoading, setSummaryLoading] = useState(false);
-  const [summaryError, setSummaryError] = useState(null);
-
-  // Tab 1 Overview Measure Toggle: 'deals' | 'revenue'
-  const [overviewMeasure, setOverviewMeasure] = useState('deals');
-
-  // Linked Scenario & Goal Setting state for Tab 1
-  const [scenarioMultiplier, setScenarioMultiplier] = useState(1.0);
-  const [previewTarget, setPreviewTarget] = useState(null);
-  const [previewLabel, setPreviewLabel] = useState('');
-
-  // Tab 2 Plan Ahead Growth Rate Preset State
-  const [growthRatePct, setGrowthRatePct] = useState(15);
-
-  // Tab 3 Deals State
-  const [dealTableFilter, setDealTableFilter] = useState('all'); // 'all' | 'invoiced' | 'progressed' | 'cancelled'
-  const [dealTableSearch, setDealTableSearch] = useState('');
-  const [dealTablePage, setDealTablePage] = useState(1);
-  const DEALS_PER_PAGE = 15;
-
-  // Tab 4 Targets State
-  const [targetsList, setTargetsList] = useState([]);
-  const [targetsLoading, setTargetsLoading] = useState(false);
-  const [targetsPage, setTargetsPage] = useState(1);
-  const TARGETS_PER_PAGE = 8;
-
-  // Modals & Letters State
-  const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
-  const [goalModalParams, setGoalModalParams] = useState(null);
-  const [activeOutcomeTarget, setActiveOutcomeTarget] = useState(null);
-  const [viewingLetter, setViewingLetter] = useState(null);
-  const [letterCopied, setLetterCopied] = useState(false);
-
-  // Audit Panel State
-  const [isAuditPanelOpen, setIsAuditPanelOpen] = useState(false);
-  const [auditTransactions, setAuditTransactions] = useState([]);
-  const [auditPanelTitle, setAuditPanelTitle] = useState('Deal Audit');
-  const [auditPanelSubtitle, setAuditPanelSubtitle] = useState('');
-
-  // Fetch Live Summary (authoritative single payload for whole page)
-  const fetchSummaryData = () => {
-    setSummaryLoading(true);
-    setSummaryError(null);
-
-    const queryParams = new URLSearchParams();
-    queryParams.set('bd', bdFilter || 'All');
-    queryParams.set('fy', selectedFy || 'FY 2026-27');
-    queryParams.set('tl', tlFilter || 'All');
-    queryParams.set('franchise', franchiseFilter || 'All');
-    queryParams.set('role', userRole || 'admin');
-
-    return fetchWithApiKey(`${API_BASE_URL}/growth-targets/summary?${queryParams.toString()}`)
-      .then(res => {
-        if (!res || !res.ok) throw new Error(`HTTP ${res?.status || 'Network Error'}`);
-        return res.json();
-      })
-      .then(data => {
-        setSummaryData(data);
-        setDealTablePage(1);
-        return data;
-      })
-      .catch(err => {
-        console.error("Summary fetch notice:", err);
-        setSummaryError(err.message || 'Could not load growth targets summary');
-      })
-      .finally(() => {
-        setSummaryLoading(false);
-      });
+  const saveContext={scope:plainScope(current),fy:filters.fy,as_of:filters.as_of,actor:finance.currentUser?.name || role};
+  const download=()=> {
+    const url=URL.createObjectURL(new Blob([auditCsv(selectedDeals)],{type:'text/csv;charset=utf-8'}));
+    const link=document.createElement('a');link.href=url;link.download=`growth_audit_${data.period.financial_year}_${data.period.as_of}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
-
-  useEffect(() => {
-    fetchSummaryData();
-  }, [bdFilter, selectedFy, tlFilter, franchiseFilter, userRole]);
-
-  // Fetch Target History for Tab 4
-  const fetchTargets = () => {
-    setTargetsLoading(true);
-    const query = new URLSearchParams();
-    if (primaryType !== 'company') {
-      query.set('entity_type', primaryType);
-      query.set('entity_name', primaryName);
-    }
-    fetchWithApiKey(`${API_BASE_URL}/growth-targets?${query.toString()}`)
-      .then(res => res && res.ok ? res.json() : [])
-      .then(data => {
-        setTargetsList(Array.isArray(data) ? data : (data?.targets || []));
-      })
-      .catch(err => console.error("Targets fetch notice:", err))
-      .finally(() => setTargetsLoading(false));
-  };
-
-  useEffect(() => {
-    fetchTargets();
-  }, [primaryType, primaryName]);
-
-  // Sync Selectors to URL
-  useEffect(() => {
-    try {
-      const p = new URLSearchParams(window.location.search);
-      if (bdFilter && bdFilter !== 'All') p.set('bd', bdFilter); else p.delete('bd');
-      if (selectedFy && selectedFy !== 'FY 2026-27') p.set('fy', selectedFy); else p.delete('fy');
-      if (tlFilter && tlFilter !== 'All') p.set('tl', tlFilter); else p.delete('tl');
-      if (franchiseFilter && franchiseFilter !== 'All') p.set('franchise', franchiseFilter); else p.delete('franchise');
-      if (activeTab && activeTab !== 'overview') p.set('tab', activeTab); else p.delete('tab');
-
-      const newQuery = p.toString();
-      const newUrl = newQuery ? `${window.location.pathname}?${newQuery}` : window.location.pathname;
-      window.history.replaceState({}, '', newUrl);
-    } catch (e) {
-      console.warn("Could not sync URL params:", e);
-    }
-  }, [bdFilter, selectedFy, tlFilter, franchiseFilter, activeTab]);
-
-  // Filter lists for comboboxes
-  const visibleBdOptions = useMemo(() => {
-    const list = filterOptions.bds || ['All', 'Komal Suresh Bhanushali'];
-    if (!bdSearchQuery) return list;
-    const q = bdSearchQuery.toLowerCase();
-    return list.filter(b => b.toLowerCase().includes(q));
-  }, [filterOptions.bds, bdSearchQuery]);
-
-  const visibleFnOptions = useMemo(() => {
-    const list = filterOptions.franchises || ['All'];
-    if (!fnSearchQuery) return list;
-    const q = fnSearchQuery.toLowerCase();
-    return list.filter(f => f.toLowerCase().includes(q));
-  }, [filterOptions.franchises, fnSearchQuery]);
-
-  // Tab 3 Deals Filtered List
-  const filteredDeals = useMemo(() => {
-    if (!summaryData || !summaryData.deals) return [];
-    let list = summaryData.deals;
-    if (dealTableFilter !== 'all') {
-      list = list.filter(d => d.status === dealTableFilter);
-    }
-    if (dealTableSearch.trim()) {
-      const q = dealTableSearch.toLowerCase();
-      list = list.filter(d =>
-        (d.companyName && d.companyName.toLowerCase().includes(q)) ||
-        (d.positionName && d.positionName.toLowerCase().includes(q)) ||
-        (d.candidateName && d.candidateName.toLowerCase().includes(q)) ||
-        (d.bdMemberName && d.bdMemberName.toLowerCase().includes(q)) ||
-        (d.teamLeaderName && d.teamLeaderName.toLowerCase().includes(q)) ||
-        (d.franchiseeName && d.franchiseeName.toLowerCase().includes(q)) ||
-        (d.referenceId && d.referenceId.toLowerCase().includes(q))
-      );
-    }
-    return list;
-  }, [summaryData, dealTableFilter, dealTableSearch]);
-
-  const paginatedDeals = useMemo(() => {
-    const start = (dealTablePage - 1) * DEALS_PER_PAGE;
-    return filteredDeals.slice(start, start + DEALS_PER_PAGE);
-  }, [filteredDeals, dealTablePage]);
-
-  // Tab 4 Targets Paginated
-  const paginatedTargets = useMemo(() => {
-    const start = (targetsPage - 1) * TARGETS_PER_PAGE;
-    return targetsList.slice(start, start + TARGETS_PER_PAGE);
-  }, [targetsList, targetsPage]);
-
-  // Tab 2 Plan Ahead 5-Row Projection Matrix
-  const planAheadRows = useMemo(() => {
-    const baseRev = Number(summaryData?.baseline?.revenue || 0);
-    const baseDeals = Number(summaryData?.baseline?.deals || 0);
-    const rate = (growthRatePct || 15) / 100.0;
-
-    const rows = [];
-    for (let t = 1; t <= 5; t++) {
-      const mult = Math.pow(1.0 + rate, t);
-      const projRev = Math.round(baseRev * mult);
-      const projDeals = Math.max(1, Math.round(baseDeals * mult));
-      const gain = projRev - baseRev;
-      rows.push({
-        yearLabel: `Year +${t}`,
-        deals: projDeals,
-        revenue: projRev,
-        gain: gain
-      });
-    }
-    return rows;
-  }, [summaryData, growthRatePct]);
-
-  // Drilldown audit trigger
-  const handleOpenDealAudit = (deal) => {
-    const tx = [{
-      billNumber: deal.bill_no || deal.referenceId,
-      billDate: deal.date,
-      companyName: deal.companyName,
-      candidateName: deal.candidateName,
-      totalBillAmt: deal.amount,
-      serviceCharges: deal.amount,
-      ourShare: deal.our_share,
-      franchiseeShare: deal.franchisee_share,
-      nameOfBd: deal.bdMemberName,
-      teamLeader: deal.teamLeaderName,
-      franchiseName: deal.franchiseeName,
-      info: deal.raw_status,
-      industry: deal.industry
-    }];
-    setAuditTransactions(tx);
-    setAuditPanelTitle(`Deal Financial Audit: ${deal.referenceId}`);
-    setAuditPanelSubtitle(`${deal.companyName} • ${deal.positionName || 'Mandate'}`);
-    setIsAuditPanelOpen(true);
-  };
-
-  const handleCopyLetter = (text) => {
-    navigator.clipboard.writeText(text);
-    setLetterCopied(true);
-    setTimeout(() => setLetterCopied(false), 2000);
-  };
-
-  return (
-    <div className="growth-tracking-page">
-      {/* =========================================================================
-          TOP BLOCK: HEADER & SELECTORS (PRESERVED AS REQUESTED)
-          ========================================================================= */}
-      <div style={{
-        background: 'var(--bg-card, #ffffff)',
-        border: '1px solid var(--border-color, #e2e8f0)',
-        borderRadius: '8px',
-        padding: '16px 20px',
-        marginBottom: '16px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '12px' }}>
-          <div>
-            <h1 style={{ fontSize: '1.25rem', fontWeight: '800', margin: 0, color: 'var(--text-main, #0f172a)' }}>
-              Growth Targets & Horizon
-            </h1>
-            <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted, #64748b)' }}>
-              Unified collections run-rate, forward trajectories, and verified placement milestones.
-            </p>
-          </div>
-
-          {/* EXACTLY ONE "Set goal" Call To Action in Header */}
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setIsGoalModalOpen(true)}
-            style={{
-              padding: '8px 18px',
-              borderRadius: '6px',
-              border: 'none',
-              backgroundColor: 'var(--accent-teal, #0F6E56)',
-              color: '#ffffff',
-              fontWeight: '700',
-              fontSize: '0.84rem',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              boxShadow: '0 2px 4px rgba(15, 110, 86, 0.25)'
-            }}
-          >
-            <Target size={15} />
-            Set goal
-          </button>
-        </div>
-
-        {/* 4-Selector Row: BD — FY — TL — Franchise */}
-        <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          {/* BD Combobox */}
-          <div style={{ flex: '1 1 200px', minWidth: '180px', position: 'relative' }} ref={bdContainerRef}>
-            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase' }}>
-              BD Specialist
-            </label>
-            <div
-              onClick={() => setIsBdDropdownOpen(!isBdDropdownOpen)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '7px 12px',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                background: 'var(--bg-main)',
-                cursor: 'pointer',
-                fontSize: '0.84rem',
-                fontWeight: '600'
-              }}
-            >
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bdFilter}</span>
-              <ChevronDown size={14} color="var(--text-muted)" />
-            </div>
-            {isBdDropdownOpen && (
-              <div style={{
-                position: 'absolute',
-                top: '100%',
-                left: 0,
-                right: 0,
-                background: '#ffffff',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                marginTop: '4px',
-                boxShadow: '0 6px 16px rgba(0,0,0,0.1)',
-                zIndex: 30,
-                maxHeight: '220px',
-                overflowY: 'auto',
-                padding: '6px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid var(--border-color)', marginBottom: '4px' }}>
-                  <Search size={13} color="var(--text-muted)" style={{ marginRight: '6px' }} />
-                  <input
-                    type="text"
-                    placeholder="Search BD..."
-                    value={bdSearchQuery}
-                    onChange={(e) => setBdSearchQuery(e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ border: 'none', outline: 'none', width: '100%', fontSize: '0.8rem', background: 'transparent' }}
-                  />
-                </div>
-                {visibleBdOptions.map(b => (
-                  <div
-                    key={b}
-                    onClick={() => {
-                      setBdFilter(b);
-                      setIsBdDropdownOpen(false);
-                    }}
-                    style={{
-                      padding: '7px 10px',
-                      borderRadius: '4px',
-                      fontSize: '0.82rem',
-                      cursor: 'pointer',
-                      fontWeight: bdFilter === b ? '700' : '400',
-                      background: bdFilter === b ? 'rgba(15, 110, 86, 0.08)' : 'transparent',
-                      color: bdFilter === b ? 'var(--accent-teal)' : 'var(--text-main)'
-                    }}
-                  >
-                    {b}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* FY Select */}
-          <div style={{ flex: '0 1 140px', minWidth: '130px' }}>
-            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase' }}>
-              Financial Year
-            </label>
-            <select
-              value={selectedFy}
-              onChange={(e) => setSelectedFy(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '7px 10px',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                background: 'var(--bg-main)',
-                fontSize: '0.84rem',
-                fontWeight: '600',
-                color: 'var(--text-main)',
-                cursor: 'pointer'
-              }}
-            >
-              {filterOptions.fys.map(f => (
-                <option key={f} value={f}>{f}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Team Leader Select */}
-          <div style={{ flex: '1 1 180px', minWidth: '160px' }}>
-            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase' }}>
-              Team Leader
-            </label>
-            <select
-              value={tlFilter}
-              onChange={(e) => setTlFilter(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '7px 10px',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                background: 'var(--bg-main)',
-                fontSize: '0.84rem',
-                fontWeight: '600',
-                color: 'var(--text-main)',
-                cursor: 'pointer'
-              }}
-            >
-              {filterOptions.tls.map(t => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Franchisee Combobox */}
-          <div style={{ flex: '1 1 200px', minWidth: '180px', position: 'relative' }} ref={fnContainerRef}>
-            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase' }}>
-              Franchise Partner
-            </label>
-            <div
-              onClick={() => setIsFnDropdownOpen(!isFnDropdownOpen)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '7px 12px',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                background: 'var(--bg-main)',
-                cursor: 'pointer',
-                fontSize: '0.84rem',
-                fontWeight: '600'
-              }}
-            >
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{franchiseFilter}</span>
-              <ChevronDown size={14} color="var(--text-muted)" />
-            </div>
-            {isFnDropdownOpen && (
-              <div style={{
-                position: 'absolute',
-                top: '100%',
-                left: 0,
-                right: 0,
-                background: '#ffffff',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                marginTop: '4px',
-                boxShadow: '0 6px 16px rgba(0,0,0,0.1)',
-                zIndex: 30,
-                maxHeight: '220px',
-                overflowY: 'auto',
-                padding: '6px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderBottom: '1px solid var(--border-color)', marginBottom: '4px' }}>
-                  <Search size={13} color="var(--text-muted)" style={{ marginRight: '6px' }} />
-                  <input
-                    type="text"
-                    placeholder="Search Franchise..."
-                    value={fnSearchQuery}
-                    onChange={(e) => setFnSearchQuery(e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ border: 'none', outline: 'none', width: '100%', fontSize: '0.8rem', background: 'transparent' }}
-                  />
-                </div>
-                {visibleFnOptions.map(f => (
-                  <div
-                    key={f}
-                    onClick={() => {
-                      setFranchiseFilter(f);
-                      setIsFnDropdownOpen(false);
-                    }}
-                    style={{
-                      padding: '7px 10px',
-                      borderRadius: '4px',
-                      fontSize: '0.82rem',
-                      cursor: 'pointer',
-                      fontWeight: franchiseFilter === f ? '700' : '400',
-                      background: franchiseFilter === f ? 'rgba(15, 110, 86, 0.08)' : 'transparent',
-                      color: franchiseFilter === f ? 'var(--accent-teal)' : 'var(--text-main)'
-                    }}
-                  >
-                    {f}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+  if (!allowed) return <div className="ga-workspace"><section className="ga-panel"><h2>Profile growth audits</h2><p>A manager or administrator role is required to view profile financials and manage targets.</p></section></div>;
+  return <div className="ga-workspace">
+    <section className="ga-panel ga-toolbar"><header><div><span className="ga-eyebrow">PROFILE AUDIT & GROWTH PLANNING</span><h2>Growth targets & profile direction</h2><p>Audit recorded performance, compare portfolios and set measurable commitments.</p></div>
+      <div className="ga-inline"><button className="ga-button" onClick={refresh} disabled={loading}><RefreshCw size={15} className={loading?'spinning':''}/>Refresh</button><button className="ga-button ga-primary" onClick={()=>{setSaveError('');setEditor('goal');}} disabled={saving || !primary || data.period.fy_end<todayInIndia()}><Target size={16}/>Set growth target</button></div></header>
+      <div className="ga-filters">
+        <label>BD specialist<select value={filters.bd} onChange={event=>update('bd',event.target.value)}>{optionNames('bds',(finance.bdAgents || []).map(row=>row.name)).map(name=><option key={name}>{name}</option>)}</select></label>
+        <label>Team leader<select value={filters.tl} onChange={event=>update('tl',event.target.value)}>{optionNames('tls',(finance.teamLeaders || []).map(row=>row.name || row.teamLeaderName)).map(name=><option key={name}>{name}</option>)}</select></label>
+        <label>Franchise partner<select value={filters.franchise} onChange={event=>update('franchise',event.target.value)}>{optionNames('franchises',(finance.franchisees || []).map(row=>row.nameAsPerAgreement || row.name)).map(name=><option key={name}>{name}</option>)}</select></label>
+        <label>Financial year<select value={filters.fy} onChange={event=>update('fy',event.target.value)}>{years.map(year=><option key={year}>{year}</option>)}</select></label>
+        <label>As of<input required type="date" min={`${filters.fy.match(/\d{4}/)?.[0]}-04-01`} max={[todayInIndia(),`${Number(filters.fy.match(/\d{4}/)?.[0])+1}-03-31`].sort()[0]} value={filters.as_of} onChange={event=>update('as_of',event.target.value)}/></label>
       </div>
-
-      {/* Financial Performance "Money Box" Card (Kept exactly as requested) */}
-      <FinancialPerformanceCard
-        selectedFy={selectedFy}
-        bdFilter={bdFilter}
-        tlFilter={tlFilter}
-        franchiseFilter={franchiseFilter}
-        primaryName={primaryName}
-        isAdminOrManager={isAdminOrManager}
-        userRole={userRole}
-      />
-
-      {/* =========================================================================
-          4-TAB WORKLIST NAVIGATION: OVERVIEW | PLAN AHEAD | DEALS | TARGETS
-          ========================================================================= */}
-      <div className="growth-tab-bar">
-        <button
-          type="button"
-          className={`growth-tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
-          onClick={() => setActiveTab('overview')}
-        >
-          Overview
-        </button>
-        <button
-          type="button"
-          className={`growth-tab-btn ${activeTab === 'plan_ahead' ? 'active' : ''}`}
-          onClick={() => setActiveTab('plan_ahead')}
-        >
-          Plan ahead
-        </button>
-        <button
-          type="button"
-          className={`growth-tab-btn ${activeTab === 'deals' ? 'active' : ''}`}
-          onClick={() => setActiveTab('deals')}
-        >
-          Deals
-          <span className="growth-tab-count">
-            {summaryData?.totals?.all?.count ?? '—'}
-          </span>
-        </button>
-        <button
-          type="button"
-          className={`growth-tab-btn ${activeTab === 'targets' ? 'active' : ''}`}
-          onClick={() => setActiveTab('targets')}
-        >
-          Targets
-          <span className="growth-tab-count">
-            {targetsList.length}
-          </span>
-        </button>
-      </div>
-
-      {/* Error Notice Banner */}
-      {summaryError && (
-        <div style={{ background: '#fef2f2', border: '1px solid #f87171', borderRadius: '6px', padding: '10px 16px', marginBottom: '16px', color: '#991b1b', fontSize: '0.82rem' }}>
-          Notice: {summaryError}
-        </div>
-      )}
-
-      {/* =========================================================================
-          TAB 1: OVERVIEW
-          ========================================================================= */}
-      {activeTab === 'overview' && (
-        <div>
-          {/* Plain-Language Pacing Sentence Banner */}
-          <div className="growth-pacing-banner">
-            <div className="growth-pacing-text">
-              <Sparkles size={16} color="var(--accent-teal)" />
-              <span>{summaryData?.pacing_sentence || "Calculating pacing metrics..."}</span>
-            </div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              FY Elapsed: {summaryData?.period?.months_elapsed || 7} months • Remaining: {summaryData?.period?.months_remaining || 5} months
-            </div>
-          </div>
-
-          {/* FY Progress Bar Card */}
-          <div className="fy-progress-card">
-            <div className="fy-progress-header">
-              <div>
-                <span style={{ fontSize: '0.86rem', fontWeight: '700', color: 'var(--text-main)' }}>
-                  FY {selectedFy} Progress Tracker
-                </span>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: '8px' }}>
-                  (Realized vs Projected Pace vs Company Quota)
-                </span>
-              </div>
-            </div>
-
-            {/* Visual Progress Bar */}
-            {(() => {
-              const realizedDeals = Number(summaryData?.pace?.closed_count || 0);
-              const projectedDeals = Number(summaryData?.pace?.projected_total_by_fy_end || realizedDeals);
-              const quotaDeals = Number(summaryData?.company_quota?.quota_deals || 100);
-              const pledgeDeals = Number(summaryData?.own_pledge?.target_deals || 0);
-
-              const maxTrack = Math.max(quotaDeals, projectedDeals, realizedDeals, pledgeDeals, 10) * 1.15;
-              const actualPct = Math.min(100, (realizedDeals / maxTrack) * 100);
-              const projectedPct = Math.min(100, (projectedDeals / maxTrack) * 100);
-              const quotaPos = Math.min(100, (quotaDeals / maxTrack) * 100);
-              const pledgePos = pledgeDeals > 0 ? Math.min(100, (pledgeDeals / maxTrack) * 100) : null;
-
-              return (
-                <div>
-                  <div className="fy-progress-track">
-                    {/* Actual YTD Fill */}
-                    <div className="fy-progress-fill-actual" style={{ width: `${actualPct}%` }} title={`Realized YTD: ${realizedDeals} deals`} />
-                    {/* Projected Pace Fill */}
-                    <div className="fy-progress-fill-projected" style={{ width: `${projectedPct}%` }} title={`Projected by March: ${projectedDeals} deals`} />
-
-                    {/* Quota Marker */}
-                    <div className="fy-progress-marker" style={{ left: `${quotaPos}%`, backgroundColor: '#94a3b8' }}>
-                      <span className="fy-progress-marker-tag" style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}>
-                        Quota: {quotaDeals}
-                      </span>
-                    </div>
-
-                    {/* Own Pledge Marker (if set) */}
-                    {pledgePos !== null && (
-                      <div className="fy-progress-marker" style={{ left: `${pledgePos}%`, backgroundColor: '#0F6E56' }}>
-                        <span className="fy-progress-marker-tag" style={{ background: 'rgba(15, 110, 86, 0.12)', color: '#0F6E56', border: '1px solid #0F6E56' }}>
-                          Pledge: {pledgeDeals}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Stat Grid */}
-                  <div className="fy-progress-stats-grid">
-                    <div className="fy-stat-box">
-                      <span className="fy-stat-label">Realized YTD</span>
-                      <span className="fy-stat-value" style={{ color: '#0F6E56' }}>
-                        {realizedDeals} deals
-                      </span>
-                      <span className="fy-stat-sub">
-                        {formatCurrency(summaryData?.pace?.closed_revenue || 0)} (rev_ex_gst)
-                      </span>
-                    </div>
-
-                    <div className="fy-stat-box">
-                      <span className="fy-stat-label">Projected at Pace</span>
-                      <span className="fy-stat-value" style={{ color: '#2563EB' }}>
-                        {projectedDeals} deals
-                      </span>
-                      <span className="fy-stat-sub">
-                        ~{summaryData?.pace?.current_monthly_pace || 0} deals/month
-                      </span>
-                    </div>
-
-                    <div className="fy-stat-box">
-                      <span className="fy-stat-label">Company Quota</span>
-                      <span className="fy-stat-value">
-                        {quotaDeals} deals
-                      </span>
-                      <span className="fy-stat-sub">
-                        {formatCurrency(summaryData?.company_quota?.quota_revenue || 0)}
-                      </span>
-                    </div>
-
-                    <div className="fy-stat-box">
-                      <span className="fy-stat-label">Own Pledge</span>
-                      <span className="fy-stat-value" style={{ color: pledgeDeals > 0 ? '#0F6E56' : 'var(--text-muted)' }}>
-                        {pledgeDeals > 0 ? `${pledgeDeals} deals` : '—'}
-                      </span>
-                      <span className="fy-stat-sub">
-                        {pledgeDeals > 0 ? formatCurrency(summaryData?.own_pledge?.target_revenue || 0) : 'No pledge recorded'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-
-          {/* Cumulative Trajectory Chart (Actual vs Projected vs Target with Monthly Bars) */}
-          <div style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '0.74rem', fontWeight: '600', color: 'var(--text-muted)' }}>Scenario Pace:</span>
-                <div style={{ display: 'inline-flex', background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '2px' }}>
-                  {[
-                    { label: '1x (Pace)', mult: 1.0 },
-                    { label: '1.5x', mult: 1.5 },
-                    { label: '2x', mult: 2.0 },
-                    { label: '3x', mult: 3.0 }
-                  ].map(sc => (
-                    <button
-                      key={sc.mult}
-                      type="button"
-                      onClick={() => setScenarioMultiplier(sc.mult)}
-                      style={{
-                        padding: '3px 8px',
-                        borderRadius: '4px',
-                        border: 'none',
-                        background: scenarioMultiplier === sc.mult ? 'var(--accent-teal)' : 'transparent',
-                        color: scenarioMultiplier === sc.mult ? '#ffffff' : 'var(--text-muted)',
-                        fontSize: '0.72rem',
-                        fontWeight: '700',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      {sc.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ display: 'inline-flex', background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '2px' }}>
-                <button
-                  type="button"
-                  onClick={() => setOverviewMeasure('deals')}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: '4px',
-                    border: 'none',
-                    background: overviewMeasure === 'deals' ? 'var(--accent-teal)' : 'transparent',
-                    color: overviewMeasure === 'deals' ? '#ffffff' : 'var(--text-muted)',
-                    fontSize: '0.74rem',
-                    fontWeight: '700',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Deals Count
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOverviewMeasure('revenue')}
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: '4px',
-                    border: 'none',
-                    background: overviewMeasure === 'revenue' ? 'var(--accent-teal)' : 'transparent',
-                    color: overviewMeasure === 'revenue' ? '#ffffff' : 'var(--text-muted)',
-                    fontSize: '0.74rem',
-                    fontWeight: '700',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Revenue (rev_ex_gst)
-                </button>
-              </div>
-            </div>
-
-            <CumulativeTargetChart
-              monthlySeries={summaryData?.monthly_series}
-              companyQuota={summaryData?.company_quota}
-              savedGoal={summaryData?.own_pledge}
-              previewTarget={previewTarget}
-              previewLabel={previewLabel}
-              monthsElapsed={summaryData?.period?.months_elapsed || 7}
-              projectedTotal={summaryData?.pace?.projected_total_by_fy_end}
-              measure={overviewMeasure}
-              height={220}
-            />
-          </div>
-
-          {/* Goal Setter for Selected BD Specialist / Profile */}
-          <ProfileGoalSetter
-            bdProfile={bdFilter}
-            selectedFy={selectedFy}
-            tlFilter={tlFilter}
-            franchiseFilter={franchiseFilter}
-            measure={overviewMeasure}
-            summaryData={summaryData}
-            scenarioMultiplier={scenarioMultiplier}
-            onScenarioChange={setScenarioMultiplier}
-            onPreviewChange={(val, label) => {
-              setPreviewTarget(val);
-              setPreviewLabel(label);
-            }}
-            onGoalSaved={() => {
-              fetchSummaryData();
-              fetchTargets();
-            }}
-            isAdminOrManager={isAdminOrManager}
-            currentUser={currentUser}
-            userRole={userRole}
-            isLoading={summaryLoading}
-          />
-
-          {/* Same-Period vs Prior Year vs Team Average Table */}
-          <div className="same-period-card">
-            <div style={{ marginBottom: '12px' }}>
-              <span style={{ fontSize: '0.86rem', fontWeight: '700', color: 'var(--text-main)' }}>
-                Same-Period Performance Benchmark
-              </span>
-              <p style={{ margin: '2px 0 0 0', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                Comparing same elapsed calendar slice (Apr to current date) vs prior FY and team averages. Excludes full-year distortion.
-              </p>
-            </div>
-
-            <div style={{ overflowX: 'auto' }}>
-              <table className="same-period-table">
-                <thead>
-                  <tr>
-                    <th>METRIC</th>
-                    <th>THIS PERIOD ({summaryData?.period?.months_elapsed || 7}M YTD)</th>
-                    <th>PRIOR FY (SAME PERIOD)</th>
-                    <th>YOY VARIANCE</th>
-                    <th>PRIOR FY (FULL YEAR)</th>
-                    <th>TEAM AVERAGE (SAME PERIOD)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td style={{ fontWeight: '700' }}>Invoiced Deals</td>
-                    <td style={{ fontWeight: '700', color: '#0F6E56' }}>
-                      {summaryData?.comparisons?.this_period?.closed_deals ?? 0}
-                    </td>
-                    <td>{summaryData?.comparisons?.prior_same_period?.closed_deals ?? 0}</td>
-                    <td>
-                      {(() => {
-                        const v = summaryData?.comparisons?.prior_same_period?.yoy_deals_pct;
-                        if (v === null || v === undefined) return '—';
-                        return (
-                          <span style={{ color: v >= 0 ? '#0F6E56' : '#dc2626', fontWeight: '700' }}>
-                            {v >= 0 ? '+' : ''}{v}%
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td style={{ color: 'var(--text-muted)' }}>
-                      {summaryData?.comparisons?.prior_full_year?.closed_deals ?? 0}
-                    </td>
-                    <td>{summaryData?.comparisons?.team_average?.closed_deals ?? 0}</td>
-                  </tr>
-
-                  <tr>
-                    <td style={{ fontWeight: '700' }}>Revenue (rev_ex_gst)</td>
-                    <td style={{ fontWeight: '700', color: '#0F6E56' }}>
-                      {formatCurrency(summaryData?.comparisons?.this_period?.revenue ?? 0)}
-                    </td>
-                    <td>{formatCurrency(summaryData?.comparisons?.prior_same_period?.revenue ?? 0)}</td>
-                    <td>
-                      {(() => {
-                        const v = summaryData?.comparisons?.prior_same_period?.yoy_revenue_pct;
-                        if (v === null || v === undefined) return '—';
-                        return (
-                          <span style={{ color: v >= 0 ? '#0F6E56' : '#dc2626', fontWeight: '700' }}>
-                            {v >= 0 ? '+' : ''}{v}%
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td style={{ color: 'var(--text-muted)' }}>
-                      {formatCurrency(summaryData?.comparisons?.prior_full_year?.revenue ?? 0)}
-                    </td>
-                    <td>{formatCurrency(summaryData?.comparisons?.team_average?.revenue ?? 0)}</td>
-                  </tr>
-
-                  <tr>
-                    <td style={{ fontWeight: '700' }}>Average Deal Size</td>
-                    <td style={{ fontWeight: '700' }}>
-                      {formatCurrency(summaryData?.comparisons?.this_period?.avg_deal ?? 0)}
-                    </td>
-                    <td>{formatCurrency(summaryData?.comparisons?.prior_same_period?.avg_deal ?? 0)}</td>
-                    <td>—</td>
-                    <td style={{ color: 'var(--text-muted)' }}>
-                      {formatCurrency(summaryData?.comparisons?.prior_full_year?.avg_deal ?? 0)}
-                    </td>
-                    <td>{formatCurrency(summaryData?.comparisons?.team_average?.avg_deal ?? 0)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* =========================================================================
-          TAB 2: PLAN AHEAD
-          ========================================================================= */}
-      {activeTab === 'plan_ahead' && (
-        <div>
-          {/* Single Growth Control Bar */}
-          <div className="growth-control-row">
-            <div>
-              <span style={{ fontSize: '0.86rem', fontWeight: '700', color: 'var(--text-main)' }}>
-                Compounded Growth Velocity
-              </span>
-              <p style={{ margin: '2px 0 0 0', fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                Simulate 5-year forward trajectory against the completed historical baseline.
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <div className="preset-chip-group">
-                {[10, 15, 25].map(p => (
-                  <button
-                    key={p}
-                    type="button"
-                    className={`preset-chip ${growthRatePct === p ? 'active' : ''}`}
-                    onClick={() => setGrowthRatePct(p)}
-                  >
-                    +{p}%
-                  </button>
-                ))}
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: '600' }}>Custom %:</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={growthRatePct}
-                  onChange={(e) => setGrowthRatePct(Math.max(1, Math.min(100, Number(e.target.value) || 15)))}
-                  style={{
-                    width: '64px',
-                    padding: '5px 8px',
-                    borderRadius: '4px',
-                    border: '1px solid var(--border-color)',
-                    fontSize: '0.82rem',
-                    fontWeight: '700',
-                    textAlign: 'center'
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Baseline Summary Pill */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '16px',
-            background: 'rgba(15, 110, 86, 0.04)',
-            border: '1px solid rgba(15, 110, 86, 0.15)',
-            borderRadius: '6px',
-            padding: '8px 14px',
-            marginBottom: '16px',
-            fontSize: '0.78rem',
-            flexWrap: 'wrap'
-          }}>
-            <div>
-              <strong style={{ color: 'var(--text-muted)' }}>Completed Baseline:</strong>{' '}
-              <span style={{ color: 'var(--text-main)', fontWeight: '700' }}>
-                {summaryData?.baseline?.period ? `${summaryData.baseline.period} (${summaryData.baseline.deals} deals • ${formatCurrency(summaryData.baseline.revenue)})` : '—'}
-              </span>
-            </div>
-            <div>
-              <strong style={{ color: 'var(--text-muted)' }}>Historical CAGR:</strong>{' '}
-              <span style={{ color: summaryData?.baseline?.historical_cagr !== null ? '#0F6E56' : 'var(--text-muted)', fontWeight: '700' }}>
-                {summaryData?.baseline?.historical_cagr !== null ? `${summaryData.baseline.historical_cagr_pct}%` : '— (Requires 2 completed FYs)'}
-              </span>
-            </div>
-          </div>
-
-          {/* Forward Trajectory Chart */}
-          <PlanAheadTrajectoryChart
-            historicalSeries={summaryData?.historical_series}
-            appliedRate={growthRatePct / 100.0}
-            historicalCagr={summaryData?.baseline?.historical_cagr}
-            height={220}
-          />
-
-          {/* 5-Row Projection Matrix Table */}
-          {summaryData?.baseline?.revenue > 0 ? (
-            <table className="plan-ahead-table">
-              <thead>
-                <tr>
-                  <th>HORIZON</th>
-                  <th>ANNUAL DEALS</th>
-                  <th>ANNUAL REVENUE (rev_ex_gst)</th>
-                  <th>INCREMENTAL GAIN VS BASE</th>
-                </tr>
-              </thead>
-              <tbody>
-                {planAheadRows.map((row, idx) => (
-                  <tr key={idx}>
-                    <td style={{ fontWeight: '700', color: 'var(--text-main)' }}>{row.yearLabel}</td>
-                    <td style={{ fontWeight: '700', color: '#2563EB' }}>{row.deals} deals</td>
-                    <td style={{ fontWeight: '700', color: '#0F6E56' }}>{formatCurrency(row.revenue)}</td>
-                    <td style={{ color: '#0F6E56', fontWeight: '600' }}>+{formatCurrency(row.gain)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)', fontSize: '0.84rem' }}>
-              — Not enough completed financial years to display forward plan ahead table.
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* =========================================================================
-          TAB 3: DEALS TABLE
-          ========================================================================= */}
-      {activeTab === 'deals' && (
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px' }}>
-          {/* Filter Chips & Search Bar */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={() => { setDealTableFilter('all'); setDealTablePage(1); }}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '20px',
-                  border: dealTableFilter === 'all' ? '2px solid var(--accent-teal)' : '1px solid var(--border-color)',
-                  background: dealTableFilter === 'all' ? 'rgba(15, 110, 86, 0.1)' : '#ffffff',
-                  color: dealTableFilter === 'all' ? 'var(--accent-teal)' : 'var(--text-main)',
-                  fontWeight: '700',
-                  fontSize: '0.78rem',
-                  cursor: 'pointer'
-                }}
-              >
-                All · {summaryData?.totals?.all?.count ?? 0}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setDealTableFilter('invoiced'); setDealTablePage(1); }}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '20px',
-                  border: dealTableFilter === 'invoiced' ? '2px solid #10B981' : '1px solid var(--border-color)',
-                  background: dealTableFilter === 'invoiced' ? 'rgba(16, 185, 129, 0.12)' : '#ffffff',
-                  color: dealTableFilter === 'invoiced' ? '#065F46' : 'var(--text-main)',
-                  fontWeight: '700',
-                  fontSize: '0.78rem',
-                  cursor: 'pointer'
-                }}
-              >
-                Invoices · {summaryData?.totals?.invoiced?.count ?? 0} ({formatCurrency(summaryData?.totals?.invoiced?.revenue ?? 0)})
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setDealTableFilter('progressed'); setDealTablePage(1); }}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '20px',
-                  border: dealTableFilter === 'progressed' ? '2px solid #2563EB' : '1px solid var(--border-color)',
-                  background: dealTableFilter === 'progressed' ? 'rgba(37, 99, 235, 0.12)' : '#ffffff',
-                  color: dealTableFilter === 'progressed' ? '#1E40AF' : 'var(--text-main)',
-                  fontWeight: '700',
-                  fontSize: '0.78rem',
-                  cursor: 'pointer'
-                }}
-              >
-                Progressed · {summaryData?.totals?.progressed?.count ?? 0}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setDealTableFilter('cancelled'); setDealTablePage(1); }}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '20px',
-                  border: dealTableFilter === 'cancelled' ? '2px solid #EF4444' : '1px solid var(--border-color)',
-                  background: dealTableFilter === 'cancelled' ? 'rgba(239, 68, 68, 0.12)' : '#ffffff',
-                  color: dealTableFilter === 'cancelled' ? '#991B1B' : 'var(--text-main)',
-                  fontWeight: '700',
-                  fontSize: '0.78rem',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancelled · {summaryData?.totals?.cancelled?.count ?? 0}
-              </button>
-            </div>
-
-            {/* Deals Search Input */}
-            <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-main)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '4px 10px', width: '220px' }}>
-              <Search size={13} color="var(--text-muted)" style={{ marginRight: '6px' }} />
-              <input
-                type="text"
-                placeholder="Search deals..."
-                value={dealTableSearch}
-                onChange={(e) => { setDealTableSearch(e.target.value); setDealTablePage(1); }}
-                style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: '0.78rem', width: '100%' }}
-              />
-            </div>
-          </div>
-
-          {/* Deals Table */}
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-              <thead>
-                <tr style={{ background: 'var(--bg-main)', borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)', fontSize: '0.74rem' }}>
-                  <th style={{ padding: '10px 12px' }}>BILL / REF</th>
-                  <th style={{ padding: '10px 12px' }}>CLIENT / COMPANY</th>
-                  <th style={{ padding: '10px 12px' }}>POSITION / CANDIDATE</th>
-                  <th style={{ padding: '10px 12px' }}>BD / TL / FRANCHISE</th>
-                  <th style={{ padding: '10px 12px' }}>DATE</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'right' }}>DEAL VALUE</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'center' }}>STATUS</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'right' }}>ACTION</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedDeals.map((deal, idx) => (
-                  <tr key={deal.id || idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--accent-teal)' }}>
-                      {deal.referenceId}
-                    </td>
-                    <td style={{ padding: '10px 12px', fontWeight: '600' }}>
-                      {deal.companyName}
-                    </td>
-                    <td style={{ padding: '10px 12px' }}>
-                      <div style={{ fontWeight: '600' }}>{deal.positionName}</div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{deal.candidateName}</div>
-                    </td>
-                    <td style={{ padding: '10px 12px', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                      <div>{deal.bdMemberName || '—'}</div>
-                      <div>{deal.teamLeaderName ? `TL: ${deal.teamLeaderName}` : ''}</div>
-                    </td>
-                    <td style={{ padding: '10px 12px', color: 'var(--text-muted)' }}>
-                      {deal.date}
-                    </td>
-                    <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700' }}>
-                      {formatCurrency(deal.amount)}
-                    </td>
-                    <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                      <span style={{
-                        padding: '2px 8px',
-                        borderRadius: '10px',
-                        fontSize: '0.7rem',
-                        fontWeight: '700',
-                        background: deal.status === 'invoiced' ? 'rgba(16, 185, 129, 0.12)' : (deal.status === 'progressed' ? 'rgba(37, 99, 235, 0.12)' : 'rgba(239, 68, 68, 0.12)'),
-                        color: deal.status === 'invoiced' ? '#065F46' : (deal.status === 'progressed' ? '#1E40AF' : '#991B1B')
-                      }}>
-                        {deal.status}
-                      </span>
-                    </td>
-                    <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenDealAudit(deal)}
-                        style={{
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          border: '1px solid var(--border-color)',
-                          background: 'var(--bg-main)',
-                          fontSize: '0.72rem',
-                          fontWeight: '600',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Audit
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {paginatedDeals.length === 0 && (
-                  <tr>
-                    <td colSpan="8" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
-                      No deals found for the selected filter criteria.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <Pagination
-            currentPage={dealTablePage}
-            totalItems={filteredDeals.length}
-            pageSize={DEALS_PER_PAGE}
-            onPageChange={setDealTablePage}
-            itemName="deals"
-          />
-        </div>
-      )}
-
-      {/* =========================================================================
-          TAB 4: TARGETS & MEMOS
-          ========================================================================= */}
-      {activeTab === 'targets' && (
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <span style={{ fontSize: '0.86rem', fontWeight: '700', color: 'var(--text-main)' }}>
-              Target Milestones & Memo Registry
-            </span>
-            <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-              {targetsList.length} recorded targets
-            </span>
-          </div>
-
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-              <thead>
-                <tr style={{ background: 'var(--bg-main)', borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)', fontSize: '0.74rem' }}>
-                  <th style={{ padding: '10px 12px' }}>ENTITY</th>
-                  <th style={{ padding: '10px 12px' }}>TARGET PERIOD</th>
-                  <th style={{ padding: '10px 12px' }}>GROWTH %</th>
-                  <th style={{ padding: '10px 12px' }}>TARGET PLACEMENTS</th>
-                  <th style={{ padding: '10px 12px' }}>TARGET REVENUE</th>
-                  <th style={{ padding: '10px 12px' }}>STATUS</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'right' }}>ACTIONS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedTargets.map((tgt) => (
-                  <tr key={tgt.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--text-main)' }}>
-                      {tgt.entity_name || tgt.entity_id}
-                    </td>
-                    <td style={{ padding: '10px 12px', color: 'var(--text-muted)' }}>
-                      {tgt.period_start} → {tgt.period_end}
-                    </td>
-                    <td style={{ padding: '10px 12px', fontWeight: '700', color: 'var(--accent-teal)' }}>
-                      +{Number(tgt.growth_pct_target || 0).toFixed(0)}%
-                    </td>
-                    <td style={{ padding: '10px 12px', fontWeight: '600' }}>
-                      {tgt.target_placements ? `${tgt.target_placements} deals` : '—'}
-                    </td>
-                    <td style={{ padding: '10px 12px', fontWeight: '600' }}>
-                      {tgt.target_revenue ? formatCurrency(tgt.target_revenue) : '—'}
-                    </td>
-                    <td style={{ padding: '10px 12px' }}>
-                      <span style={{
-                        padding: '2px 8px',
-                        borderRadius: '10px',
-                        fontSize: '0.7rem',
-                        fontWeight: '700',
-                        background: tgt.status === 'completed' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(15, 110, 86, 0.12)',
-                        color: tgt.status === 'completed' ? '#065F46' : 'var(--accent-teal)'
-                      }}>
-                        {tgt.status}
-                      </span>
-                    </td>
-                    <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: '6px' }}>
-                        {tgt.target_letter_text && (
-                          <button
-                            type="button"
-                            onClick={() => setViewingLetter({ title: `Target Memo: ${tgt.entity_name || tgt.entity_id}`, content: tgt.target_letter_text })}
-                            style={{
-                              padding: '4px 8px',
-                              borderRadius: '4px',
-                              border: '1px solid var(--border-color)',
-                              background: '#ffffff',
-                              fontSize: '0.72rem',
-                              fontWeight: '600',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Memo
-                          </button>
-                        )}
-                        {tgt.status !== 'completed' && (
-                          <button
-                            type="button"
-                            onClick={() => setActiveOutcomeTarget(tgt)}
-                            style={{
-                              padding: '4px 8px',
-                              borderRadius: '4px',
-                              border: 'none',
-                              background: 'var(--accent-teal)',
-                              color: '#ffffff',
-                              fontSize: '0.72rem',
-                              fontWeight: '600',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Record Outcome
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {paginatedTargets.length === 0 && (
-                  <tr>
-                    <td colSpan="7" style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
-                      No targets recorded yet. Use the "Set goal" button in the header to establish a target.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <Pagination
-            currentPage={targetsPage}
-            totalItems={targetsList.length}
-            pageSize={TARGETS_PER_PAGE}
-            onPageChange={setTargetsPage}
-            itemName="targets"
-          />
-        </div>
-      )}
-
-      {/* =========================================================================
-          MODALS & OVERLAYS
-          ========================================================================= */}
-      {isGoalModalOpen && (
-        <GoalSetterModal
-          isOpen={isGoalModalOpen}
-          onClose={() => {
-            setIsGoalModalOpen(false);
-            setGoalModalParams(null);
-          }}
-          entityType={primaryType}
-          entity={{ id: primaryName, name: primaryName }}
-          initialGrowthPct={goalModalParams?.growthPct || growthRatePct}
-          initialTargetPlacements={goalModalParams?.placements}
-          initialTargetRevenue={goalModalParams?.targetRevenue}
-          initialTargetAuthor={goalModalParams?.targetAuthor}
-          onTargetCreated={(newTarget) => {
-            setTargetsList(prev => [newTarget, ...prev.filter(t => t.id !== newTarget.id)]);
-            fetchTargets();
-            fetchSummaryData();
-          }}
-        />
-      )}
-
-      {activeOutcomeTarget && (
-        <OutcomeRecorderModal
-          isOpen={Boolean(activeOutcomeTarget)}
-          onClose={() => setActiveOutcomeTarget(null)}
-          target={activeOutcomeTarget}
-          onOutcomeRecorded={(updated) => {
-            setTargetsList(prev => prev.map(t => t.id === updated.id ? { ...t, ...updated } : t));
-            fetchTargets();
-            fetchSummaryData();
-          }}
-        />
-      )}
-
-      {viewingLetter && (
-        <div className="modal-backdrop" onClick={() => setViewingLetter(null)}>
-          <div
-            className="modal-content animate-slide-up"
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: '720px', width: '92%', maxHeight: '82vh', display: 'flex', flexDirection: 'column' }}
-          >
-            <div className="modal-header" style={{ padding: '14px 18px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h4 style={{ margin: 0, fontSize: '0.96rem', fontWeight: '700' }}>
-                {viewingLetter.title}
-              </h4>
-              <button className="close-btn" onClick={() => setViewingLetter(null)} aria-label="Close modal">
-                <X size={16} />
-              </button>
-            </div>
-            <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1, backgroundColor: 'var(--bg-main)' }}>
-              <pre style={{
-                background: '#ffffff',
-                padding: '16px',
-                borderRadius: '6px',
-                border: '1px solid var(--border-color)',
-                fontSize: '0.8rem',
-                fontFamily: 'Consolas, monospace',
-                whiteSpace: 'pre-wrap',
-                lineHeight: '1.5',
-                margin: 0
-              }}>
-                {viewingLetter.content}
-              </pre>
-            </div>
-            <div style={{ padding: '12px 18px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <button
-                type="button"
-                onClick={() => handleCopyLetter(viewingLetter.content)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--border-color)',
-                  background: letterCopied ? '#e6f4ea' : '#ffffff',
-                  color: letterCopied ? '#0F6E56' : 'var(--text-main)',
-                  fontSize: '0.78rem',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                {letterCopied ? <Check size={14} /> : <Copy size={14} />}
-                {letterCopied ? 'Copied!' : 'Copy Letter'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewingLetter(null)}
-                style={{ padding: '6px 16px', borderRadius: '6px', border: 'none', background: 'var(--accent-teal)', color: '#ffffff', fontWeight: '600', fontSize: '0.8rem', cursor: 'pointer' }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isAuditPanelOpen && (
-        <AuditPanel
-          isOpen={isAuditPanelOpen}
-          onClose={() => setIsAuditPanelOpen(false)}
-          title={auditPanelTitle}
-          subtitle={auditPanelSubtitle}
-          entityType={primaryType}
-          transactions={auditTransactions}
-          periodLabel={selectedFy}
-        />
-      )}
-    </div>
-  );
-};
-
-export default GrowthTracking;
+      {optionsError && <p className="ga-inline-error">Profile list: {optionsError}. Available saved/backend roster names are still selectable.</p>}
+      <div className="ga-pinbar"><strong>{current.label}</strong><button className="ga-button ga-small" onClick={pin}><Plus size={14}/>Pin for comparison</button>
+        {pins.map(item=><span className="ga-chip" key={item.key}>{item.label}<button aria-label={`Remove ${item.label} from comparison`} onClick={()=>setPins(old=>old.filter(pin=>pin.key!==item.key))}><X size={13}/></button></span>)}
+        {pins.length>0 && <button className="ga-link" onClick={()=>setPins([])}>Clear comparison</button>}</div>
+    </section>
+    {notice && <div className="ga-notice" role="status">{notice}<button aria-label="Dismiss message" className="ga-icon" onClick={()=>setNotice('')}><X size={14}/></button></div>}
+    {loading && <section className="ga-panel ga-empty" role="status"><RefreshCw className="spinning" size={24}/><h3>Loading profile audit…</h3><p>Fetching recorded invoices, payroll and target progress for this selection.</p></section>}
+    {!loading && payload.status==='error' && <ErrorBox message={payload.error} retry={refresh}/>}
+    {data && primary && <>
+      <div className="ga-period"><span><Landmark size={15}/><strong>{dateLabel(data.period.start)} – {dateLabel(data.period.as_of)}</strong> · FY {data.period.financial_year}</span><span>{data.profiles.length} profile{data.profiles.length>1?'s':''} · same reporting period</span></div>
+      <div className="ga-kpis">{[
+        ['Company share',valueText(primary.totals.company_share),'Recorded invoice income',Landmark],
+        ['Invoiced deals',number(primary.totals.deals),`${number(primary.totals.companies)} corporate companies`,FileText],
+        ['In progress',number(primary.totals.in_progress),'Current CRM pipeline snapshot',TrendingUp],
+        ['Cancelled',number(primary.totals.cancelled),'Enquiries, not booked financial loss',Users]
+      ].map(([title,value,caption,Icon])=><section className="ga-kpi" key={title}><div><span>{title}</span><Icon size={18}/></div><strong>{value}</strong><small>{caption}</small></section>)}</div>
+      {data.overlaps.length>0 && <div className="ga-notice"><AlertTriangle size={18}/><div><strong>Compared portfolios overlap. Do not add the columns.</strong>{data.overlaps.map((row,index)=><p key={index}>{row.a} / {row.b}: {row.shared_invoices} shared invoice rows, {row.shared_payroll_members} shared payroll members.</p>)}</div></div>}
+      <section className="ga-panel"><header><div><h3>Financial performance comparison</h3><p>Same period, the same definitions, and payroll from recorded sources.</p></div><span className="ga-badge">{primary.financial.cost_coverage_complete ? 'Recorded cost coverage' : 'Cost review needed'}</span></header>
+        <CompareTable profiles={data.profiles} busy={saving} onCost={()=>{setSaveError('');setEditor('cost');}}/></section>
+      <nav className="ga-tabs" aria-label="Growth workspace sections">{[['overview','Audit & overview'],['plan_ahead','Trend & projection'],['deals','Deal audit'],['targets','Targets & progress']].map(([key,label])=><button key={key} className={activeTab===key?'active':''} aria-current={activeTab===key?'page':undefined} onClick={()=>update('tab',key)}>{label}</button>)}</nav>
+      {(activeTab==='overview' || activeTab==='plan_ahead') && <section className="ga-panel"><header><div><h3>Where is the profile going?</h3><p>Compare recorded monthly performance with a transparent run-rate outlook.</p></div><div className="ga-inline"><select aria-label="Chart metric" value={metric} onChange={event=>setMetric(event.target.value)}>{Object.entries(metricLabels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select><label className="ga-check"><input type="checkbox" checked={cumulative} onChange={event=>setCumulative(event.target.checked)}/>Cumulative</label><label className="ga-check"><input type="checkbox" checked={showProjection} onChange={event=>setShowProjection(event.target.checked)}/>Projection</label></div></header>
+        <GrowthAuditChart profiles={data.profiles} metric={metric} cumulative={cumulative} period={data.period} showProjection={showProjection}/>
+        <div className="ga-outlooks">{data.profiles.map((profile,index)=><div key={profile.scope.key}><small style={{color:profileColors[index]}}>{profile.scope.label}</small><strong>{valueText(outlook(profile,metric),metric)}</strong><span>FY run-rate outlook</span><small>{profile.projection.trend_pct[metric]===null ? 'Three-vs-three-month change unavailable' : `${profile.projection.trend_pct[metric]>0?'+':''}${profile.projection.trend_pct[metric]}% · last 3 vs prior 3 complete months`}</small></div>)}</div>
+        {activeTab==='plan_ahead' && <div className="ga-table-scroll"><table><thead><tr><th>Month</th><th>Recorded {metricLabels[metric]}</th><th>Month-end outlook</th><th>In progress</th><th>Cancelled</th></tr></thead><tbody>{primary.monthly.map(row=><tr key={row.month}><td>{row.month}{row.partial?' · MTD':''}</td><td>{row.future?'—':valueText(row[metric],metric)}</td><td>{valueText(row[`projected_${metric}`],metric)}</td><td>{row.future?'—':row.in_progress}</td><td>{row.future?'—':row.cancelled}</td></tr>)}</tbody></table></div>}
+      </section>}
+      {activeTab==='overview' && <><section className="ga-panel"><header><div><h3>Audit notes & data coverage</h3><p>Missing data remains visible; it is not silently replaced with zero.</p></div></header>
+        {data.profiles.map(profile=><details key={profile.scope.key} open={profile.scope.key===primary.scope.key}><summary>{profile.scope.label} · {profile.warnings.length} review note{profile.warnings.length===1?'':'s'}</summary>{profile.warnings.length ? <ul>{profile.warnings.map((warning,index)=><li key={index}>{warning}</li>)}</ul> : <p className="ga-note">The selected sources are available. Recorded invoice shares are not independent bank or statutory verification.</p>}</details>)}
+        {primary.comparison && <p className="ga-note">Same-period prior FY: {valueText(primary.comparison.prior_revenue)} revenue; {valueText(primary.comparison.prior_company_share)} company share. Year-over-year company-share change: {primary.comparison.company_share_pct===null?'unavailable':`${primary.comparison.company_share_pct}%`}.</p>}
+      </section><PayrollAudit profile={primary}/></>}
+      {activeTab==='deals' && <section className="ga-panel"><header><div><h3>Source deal audit · {primary.scope.label}</h3><p>Invoices are separate from unbilled enquiries. Current enquiry stages are grouped by allocation date.</p></div><button className="ga-button" onClick={download} disabled={!selectedDeals.length}><Download size={15}/>Export filtered CSV</button></header>
+        <div className="ga-inline ga-deal-filters"><input type="search" aria-label="Search source deals" placeholder="Company, position or bill number" value={search} onChange={event=>{setSearch(event.target.value);setPage(1);}}/><select aria-label="Filter source deals by stage" value={stage} onChange={event=>{setStage(event.target.value);setPage(1);}}><option value="all">All source records</option>{Object.entries(stageLabels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select><span>{selectedDeals.length} matching records</span></div>
+        <div className="ga-table-scroll"><table><thead><tr><th>Date</th><th>Company / position</th><th>Stage</th><th>Bill</th><th>Revenue ex GST</th><th>Company share</th></tr></thead><tbody>
+          {selectedDeals.slice((page-1)*15,page*15).map(row=><tr key={row.id}><td>{row.date}</td><td>{row.company}<small>{row.position}</small></td><td><span className="ga-badge">{stageLabels[row.stage]}</span></td><td>{row.bill || '—'}</td><td>{valueText(row.revenue)}</td><td>{valueText(row.company_share)}</td></tr>)}
+          {!selectedDeals.length && <tr><td colSpan="6" className="ga-empty">No source records match this filter.</td></tr>}
+        </tbody></table></div><div className="ga-pagination"><button className="ga-button" disabled={page<=1} onClick={()=>setPage(value=>value-1)}>Previous</button><span>Page {page} of {Math.max(1,Math.ceil(selectedDeals.length/15))}</span><button className="ga-button" disabled={page*15>=selectedDeals.length} onClick={()=>setPage(value=>value+1)}>Next</button></div>
+      </section>}
+      {activeTab==='targets' && <section className="ga-panel"><header><div><h3>Targets & progress · {primary.scope.label}</h3><p>Each goal has an explicit metric, deadline and saved baseline.</p></div><button className="ga-button ga-primary" disabled={saving || data.period.fy_end<todayInIndia()} onClick={()=>{setSaveError('');setEditor('goal');}}><Plus size={15}/>Set target</button></header>
+        {saveError && <p role="alert" className="ga-inline-error">{saveError}</p>}
+        {!primary.goals.length && <p className="ga-empty">No targets saved for this profile and FY. Set a company-share, revenue or deals target.</p>}
+        <div className="ga-goals">{primary.goals.map(goal=><article key={goal.id} className="ga-goal"><header><div><span className="ga-eyebrow">{metricLabels[goal.metric]}</span><h3>{valueText(goal.target,goal.metric)} by {dateLabel(goal.due_date)}</h3></div><span className="ga-badge">{goal.status==='active'?goal.pace_status.replaceAll('_',' '):goal.status}</span></header>
+          <div className="ga-progress" role="progressbar" aria-label={`${metricLabels[goal.metric]} target progress`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.min(100,Math.max(0,goal.progress_percent || 0))}><span style={{width:`${Math.min(100,Math.max(0,goal.progress_percent || 0))}%`}}/></div>
+          <div className="ga-goal-stats"><div><small>Recorded by cutoff</small><strong>{valueText(goal.actual,goal.metric)}</strong></div><div><small>Remaining gap</small><strong>{valueText(goal.gap,goal.metric)}</strong></div><div><small>Required / remaining month</small><strong>{valueText(goal.required_per_month,goal.metric)}</strong></div><div><small>Run-rate at deadline</small><strong>{valueText(goal.projected_at_due,goal.metric)}</strong></div></div>
+          <p className="ga-note">Baseline {valueText(goal.baseline_value,goal.metric)} as of {String(goal.baseline_as_of).slice(0,10)} · actual results stop at the earlier of the report date and this deadline.</p>{goal.note && <p>{goal.note}</p>}
+          {goal.status==='active' && <button className="ga-button ga-small" disabled={saving} onClick={()=>mutate(`profile-goals/${goal.id}/archive`,{})}>Archive target</button>}
+        </article>)}</div>
+        {data.legacy_targets?.length>0 && <details><summary>Earlier target records ({data.legacy_targets.length})</summary><p className="ga-note">Earlier targets are preserved as history. New goals use explicit profile/metric keys and are shown above.</p><div className="ga-table-scroll"><table><thead><tr><th>Profile</th><th>Dates</th><th>Status</th><th>Earlier target</th></tr></thead><tbody>{data.legacy_targets.map(goal=><tr key={goal.id}><td>{goal.label}<small>{goal.type}</small></td><td>{goal.start} – {goal.end}</td><td>{goal.status}</td><td>{goal.target_deals!==null?`${goal.target_deals} deals`:valueText(goal.target_revenue)}{goal.letter && <details><summary>View saved memo</summary><pre className="ga-letter">{goal.letter}</pre></details>}</td></tr>)}</tbody></table></div></details>}
+      </section>}
+      <footer className="ga-footnotes">{data.notes.map(note=><span key={note}>{note}</span>)}</footer>
+      {editor==='cost' && <CostModal profile={primary} period={data.period} onClose={()=>setEditor(null)} busy={saving} error={saveError} onSave={body=>mutate('profile-costs',{...saveContext,...body})}/>}
+      {editor==='goal' && <GoalModal profile={primary} period={data.period} onClose={()=>setEditor(null)} busy={saving} error={saveError} onSave={body=>mutate('profile-goals',{...saveContext,...body})}/>}
+    </>}
+  </div>;
+}

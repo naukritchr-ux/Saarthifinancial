@@ -1,0 +1,117 @@
+{
+  "subject": "Komal Suresh Bhanushali",
+  "scope": "BD portfolio, not whole company",
+  "actual_period": {
+    "start": "2026-04-01",
+    "end": "2026-10-25"
+  },
+  "selected_fy_end": "2027-03-31",
+  "sources": {
+    "saved_manual_inputs": [
+      {
+        "fy": "FY 2026-27",
+        "salary": "75000.00",
+        "expense": "150000.00",
+        "updated_at": "2026-10-19T12:07:17"
+      }
+    ],
+    "stored_cost_period_columns": [],
+    "invoices_actual_period": [
+      {
+        "invoice_rows": 413,
+        "distinct_bills": 413,
+        "companies": 214,
+        "billed_including_gst": "26694332.00",
+        "revenue_excluding_gst": "22666223.89",
+        "recorded_company_share": "6451645.00",
+        "missing_company_share_rows": "0",
+        "first_invoice_date": "2026-04-01",
+        "last_invoice_date": "2026-10-23"
+      }
+    ],
+    "invoices_full_fy_used_by_old_card": [
+      {
+        "invoice_rows": 413,
+        "distinct_bills": 413,
+        "companies": 214,
+        "billed_including_gst": "26694332.00",
+        "revenue_excluding_gst": "22666223.89",
+        "recorded_company_share": "6451645.00",
+        "missing_company_share_rows": "0",
+        "first_invoice_date": "2026-04-01",
+        "last_invoice_date": "2026-10-23"
+      }
+    ],
+    "future_invoices_inside_fy": [
+      {
+        "invoice_rows": 0,
+        "distinct_bills": 0,
+        "companies": 0,
+        "billed_including_gst": "0.00",
+        "revenue_excluding_gst": "0.00",
+        "recorded_company_share": "0.00",
+        "missing_company_share_rows": null,
+        "first_invoice_date": null,
+        "last_invoice_date": null
+      }
+    ],
+    "matched_invoice_bd_names": [
+      {
+        "matched_bd_name": "komal suresh bhanushali"
+      }
+    ],
+    "recorded_payroll_by_month": [
+      {
+        "month": "2026-04",
+        "employee_name": "Komal Suresh Bhanushali",
+        "payroll_rows": 1,
+        "booked_ctc_cost": "80289.00",
+        "net_salary_payable": "74276.00"
+      },
+      {
+        "month": "2026-05",
+        "employee_name": "Komal Suresh Bhanushali",
+        "payroll_rows": 1,
+        "booked_ctc_cost": "80289.00",
+        "net_salary_payable": "74276.00"
+      },
+      {
+        "month": "2026-06",
+        "employee_name": "Komal Suresh Bhanushali",
+        "payroll_rows": 1,
+        "booked_ctc_cost": "80364.00",
+        "net_salary_payable": "74276.00"
+      },
+      {
+        "month": "2026-07",
+        "employee_name": "Komal Suresh Bhanushali",
+        "payroll_rows": 1,
+        "booked_ctc_cost": "80289.00",
+        "net_salary_payable": "74276.00"
+      },
+      {
+        "month": "2026-08",
+        "employee_name": "Komal Suresh Bhanushali",
+        "payroll_rows": 1,
+        "booked_ctc_cost": "92000.00",
+        "net_salary_payable": "85987.00"
+      }
+    ],
+    "configured_base_salary_not_period_payroll": [
+      {
+        "id": "bd-f8533c3a",
+        "name": "Komal Suresh Bhanushali",
+        "baseSalary": "28000.00"
+      }
+    ],
+    "recorded_monthly_bd_cost_inputs": [],
+    "directly_attributed_expenses_by_month_raw": []
+  },
+  "checks": [
+    "Legacy salary/expense fields alone do not establish monthly versus period-total meaning.",
+    "A stored company share is not independently audited merely because its invoice is counted.",
+    "Raw attributed expenses need category/overlap review before combining them with payroll. Unallocated overhead is not included."
+  ],
+  "profit": null,
+  "profit_reason": "No verified profit is calculated: manual input periods and cost completeness require reconciliation."
+}

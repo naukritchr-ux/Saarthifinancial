@@ -1,0 +1,1276 @@
+{
+  "legacy_targets": [],
+  "period": {
+    "financial_year": "2026-27",
+    "start": "2026-04-01",
+    "as_of": "2026-10-25",
+    "fy_end": "2027-03-31"
+  },
+  "loaded_at": "synthetic",
+  "profiles": [
+    {
+      "scope": {
+        "bd": "Example BD",
+        "tl": "All",
+        "franchise": "All",
+        "key": "[\"example bd\",\"all\",\"all\"]",
+        "type": "bd",
+        "label": "Example BD"
+      },
+      "totals": {
+        "companies": 7,
+        "deals": 7,
+        "revenue": 7800.0,
+        "company_share": 1950.0,
+        "gross_billed": 9204.0,
+        "recorded_share_rows": 7,
+        "missing_share_rows": 0,
+        "invoice_rows": 7,
+        "in_progress": 1,
+        "cancelled": 0,
+        "awaiting_invoice": 0,
+        "other": 0
+      },
+      "payroll": {
+        "available": true,
+        "ctc": 700.0,
+        "net_payable": 665.0,
+        "records": [
+          {
+            "id": "pay-4",
+            "name": "Example BD",
+            "date": "2026-04-15",
+            "month": "2026-04",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-5",
+            "name": "Example BD",
+            "date": "2026-05-15",
+            "month": "2026-05",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-6",
+            "name": "Example BD",
+            "date": "2026-06-15",
+            "month": "2026-06",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-7",
+            "name": "Example BD",
+            "date": "2026-07-15",
+            "month": "2026-07",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-8",
+            "name": "Example BD",
+            "date": "2026-08-15",
+            "month": "2026-08",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-9",
+            "name": "Example BD",
+            "date": "2026-09-15",
+            "month": "2026-09",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-10",
+            "name": "Example BD",
+            "date": "2026-10-15",
+            "month": "2026-10",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          }
+        ],
+        "months": [
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07",
+          "2026-08",
+          "2026-09",
+          "2026-10"
+        ],
+        "current_month_unrecorded": false,
+        "missing_closed_months": {},
+        "unmatched_members": [],
+        "unallocated_members": [],
+        "allocated": false,
+        "method": "Recorded payroll, matched by exact normalized employee name."
+      },
+      "fixed_expense": {
+        "amount": 150.0,
+        "basis": "period_total",
+        "estimated": false,
+        "note": "",
+        "legacy_amount": null,
+        "input_amount": 150.0,
+        "ledger_available": true,
+        "direct_ledger_rows": 0,
+        "direct_ledger_total_raw": 0.0,
+        "ledger_note": "Raw attributed expenditure is shown for reconciliation. It is not added to fixed expenses or payroll; overhead allocation and statutory overlap still need review."
+      },
+      "legacy_salary": null,
+      "financial": {
+        "salary_ratio": 35.9,
+        "contribution": 1100.0,
+        "tax_estimate": 275.0,
+        "surplus_estimate": 825.0,
+        "cost_coverage_complete": true,
+        "estimated": false,
+        "tax_rate_assumption": 0.25
+      },
+      "comparison": {
+        "prior_revenue": null,
+        "prior_company_share": null,
+        "company_share_pct": null
+      },
+      "monthly": [
+        {
+          "month": "2026-04",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-05",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-06",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-07",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-08",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-09",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-10",
+          "revenue": 600.0,
+          "company_share": 150.0,
+          "deals": 1,
+          "in_progress": 1,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": true,
+          "projected_revenue": 832.26,
+          "projected_company_share": 208.06,
+          "projected_deals": 1.19
+        },
+        {
+          "month": "2026-11",
+          "revenue": 0.0,
+          "company_share": 0.0,
+          "deals": 0,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": true,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1.0
+        },
+        {
+          "month": "2026-12",
+          "revenue": 0.0,
+          "company_share": 0.0,
+          "deals": 0,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": true,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1.0
+        },
+        {
+          "month": "2027-01",
+          "revenue": 0.0,
+          "company_share": 0.0,
+          "deals": 0,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": true,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1.0
+        },
+        {
+          "month": "2027-02",
+          "revenue": 0.0,
+          "company_share": 0.0,
+          "deals": 0,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": true,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1.0
+        },
+        {
+          "month": "2027-03",
+          "revenue": 0.0,
+          "company_share": 0.0,
+          "deals": 0,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": true,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1.0
+        }
+      ],
+      "deals": [
+        {
+          "id": "invoice-10",
+          "company": "Example 10",
+          "position": "Analyst",
+          "date": "2026-10-15",
+          "stage": "invoiced",
+          "bill": "DEMO-10",
+          "revenue": 600.0,
+          "company_share": 150.0
+        },
+        {
+          "id": "enquiry-101",
+          "company": "Pipeline example",
+          "position": "Analyst",
+          "date": "2026-10-10",
+          "stage": "in_progress",
+          "bill": "",
+          "revenue": null,
+          "company_share": null
+        },
+        {
+          "id": "invoice-9",
+          "company": "Example 9",
+          "position": "Analyst",
+          "date": "2026-09-15",
+          "stage": "invoiced",
+          "bill": "DEMO-9",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        },
+        {
+          "id": "invoice-8",
+          "company": "Example 8",
+          "position": "Analyst",
+          "date": "2026-08-15",
+          "stage": "invoiced",
+          "bill": "DEMO-8",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        },
+        {
+          "id": "invoice-7",
+          "company": "Example 7",
+          "position": "Analyst",
+          "date": "2026-07-15",
+          "stage": "invoiced",
+          "bill": "DEMO-7",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        },
+        {
+          "id": "invoice-6",
+          "company": "Example 6",
+          "position": "Analyst",
+          "date": "2026-06-15",
+          "stage": "invoiced",
+          "bill": "DEMO-6",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        },
+        {
+          "id": "invoice-5",
+          "company": "Example 5",
+          "position": "Analyst",
+          "date": "2026-05-15",
+          "stage": "invoiced",
+          "bill": "DEMO-5",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        },
+        {
+          "id": "invoice-4",
+          "company": "Example 4",
+          "position": "Analyst",
+          "date": "2026-04-15",
+          "stage": "invoiced",
+          "bill": "DEMO-4",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        }
+      ],
+      "warnings": [],
+      "projection": {
+        "method": "Trailing average of three complete invoiced months; remaining partial-month days are prorated.",
+        "rates": {
+          "company_share": 300.0,
+          "deals": 1.0,
+          "revenue": 1200.0
+        },
+        "trend_pct": {
+          "company_share": 0.0,
+          "deals": 0.0,
+          "revenue": 0.0
+        },
+        "complete_observations": 6
+      },
+      "goals": [
+        {
+          "id": "gp-test",
+          "metric": "company_share",
+          "target": 3000.0,
+          "actual": 1950.0,
+          "gap": 1050.0,
+          "progress_percent": 65.0,
+          "required_per_month": 202.17,
+          "planned_to_date": 1709.59,
+          "due_date": "2027-03-31",
+          "status": "active",
+          "pace_status": "on_plan",
+          "note": "Synthetic goal",
+          "created_at": "",
+          "projected_at_due": 3508.06,
+          "baseline_as_of": "2026-10-25",
+          "baseline_value": 1950.0
+        }
+      ]
+    },
+    {
+      "scope": {
+        "bd": "All",
+        "tl": "Example TL",
+        "franchise": "All",
+        "key": "[\"all\",\"example tl\",\"all\"]",
+        "type": "tl",
+        "label": "Example TL"
+      },
+      "totals": {
+        "companies": 7,
+        "deals": 7,
+        "revenue": 7800.0,
+        "company_share": 1950.0,
+        "gross_billed": 9204.0,
+        "recorded_share_rows": 7,
+        "missing_share_rows": 0,
+        "invoice_rows": 7,
+        "in_progress": 1,
+        "cancelled": 0,
+        "awaiting_invoice": 0,
+        "other": 0
+      },
+      "payroll": {
+        "available": true,
+        "ctc": 700.0,
+        "net_payable": 665.0,
+        "records": [
+          {
+            "id": "pay-4",
+            "name": "Example BD",
+            "date": "2026-04-15",
+            "month": "2026-04",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-5",
+            "name": "Example BD",
+            "date": "2026-05-15",
+            "month": "2026-05",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-6",
+            "name": "Example BD",
+            "date": "2026-06-15",
+            "month": "2026-06",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-7",
+            "name": "Example BD",
+            "date": "2026-07-15",
+            "month": "2026-07",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-8",
+            "name": "Example BD",
+            "date": "2026-08-15",
+            "month": "2026-08",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-9",
+            "name": "Example BD",
+            "date": "2026-09-15",
+            "month": "2026-09",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-10",
+            "name": "Example BD",
+            "date": "2026-10-15",
+            "month": "2026-10",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          }
+        ],
+        "months": [
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07",
+          "2026-08",
+          "2026-09",
+          "2026-10"
+        ],
+        "current_month_unrecorded": false,
+        "missing_closed_months": {},
+        "unmatched_members": [
+          "example tl"
+        ],
+        "unallocated_members": [],
+        "allocated": true,
+        "method": "Allocation estimate: each matched BD payroll cost is weighted by this portfolio's share of that BD's recorded company income in this period; the TL own payroll is included in full."
+      },
+      "fixed_expense": {
+        "amount": null,
+        "basis": null,
+        "estimated": false,
+        "note": "",
+        "legacy_amount": null,
+        "ledger_available": true,
+        "direct_ledger_rows": 0,
+        "direct_ledger_total_raw": 0.0,
+        "ledger_note": "Raw attributed expenditure is shown for reconciliation. It is not added to fixed expenses or payroll; overhead allocation and statutory overlap still need review."
+      },
+      "legacy_salary": null,
+      "financial": {
+        "salary_ratio": 35.9,
+        "contribution": null,
+        "tax_estimate": null,
+        "surplus_estimate": null,
+        "cost_coverage_complete": false,
+        "estimated": true,
+        "tax_rate_assumption": 0.25
+      },
+      "comparison": {
+        "prior_revenue": null,
+        "prior_company_share": null,
+        "company_share_pct": null
+      },
+      "monthly": [
+        {
+          "month": "2026-04",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-05",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-06",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-07",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-08",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-09",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-10",
+          "revenue": 600.0,
+          "company_share": 150.0,
+          "deals": 1,
+          "in_progress": 1,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": true,
+          "projected_revenue": 832.26,
+          "projected_company_share": 208.06,
+          "projected_deals": 1.19
+        },
+        {
+          "month": "2026-11",
+          "revenue": 0.0,
+          "company_share": 0.0,
+          "deals": 0,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": true,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1.0
+        },
+        {
+          "month": "2026-12",
+          "revenue": 0.0,
+          "company_share": 0.0,
+          "deals": 0,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": true,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1.0
+        },
+        {
+          "month": "2027-01",
+          "revenue": 0.0,
+          "company_share": 0.0,
+          "deals": 0,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": true,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1.0
+        },
+        {
+          "month": "2027-02",
+          "revenue": 0.0,
+          "company_share": 0.0,
+          "deals": 0,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": true,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1.0
+        },
+        {
+          "month": "2027-03",
+          "revenue": 0.0,
+          "company_share": 0.0,
+          "deals": 0,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": true,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1.0
+        }
+      ],
+      "deals": [
+        {
+          "id": "invoice-10",
+          "company": "Example 10",
+          "position": "Analyst",
+          "date": "2026-10-15",
+          "stage": "invoiced",
+          "bill": "DEMO-10",
+          "revenue": 600.0,
+          "company_share": 150.0
+        },
+        {
+          "id": "enquiry-101",
+          "company": "Pipeline example",
+          "position": "Analyst",
+          "date": "2026-10-10",
+          "stage": "in_progress",
+          "bill": "",
+          "revenue": null,
+          "company_share": null
+        },
+        {
+          "id": "invoice-9",
+          "company": "Example 9",
+          "position": "Analyst",
+          "date": "2026-09-15",
+          "stage": "invoiced",
+          "bill": "DEMO-9",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        },
+        {
+          "id": "invoice-8",
+          "company": "Example 8",
+          "position": "Analyst",
+          "date": "2026-08-15",
+          "stage": "invoiced",
+          "bill": "DEMO-8",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        },
+        {
+          "id": "invoice-7",
+          "company": "Example 7",
+          "position": "Analyst",
+          "date": "2026-07-15",
+          "stage": "invoiced",
+          "bill": "DEMO-7",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        },
+        {
+          "id": "invoice-6",
+          "company": "Example 6",
+          "position": "Analyst",
+          "date": "2026-06-15",
+          "stage": "invoiced",
+          "bill": "DEMO-6",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        },
+        {
+          "id": "invoice-5",
+          "company": "Example 5",
+          "position": "Analyst",
+          "date": "2026-05-15",
+          "stage": "invoiced",
+          "bill": "DEMO-5",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        },
+        {
+          "id": "invoice-4",
+          "company": "Example 4",
+          "position": "Analyst",
+          "date": "2026-04-15",
+          "stage": "invoiced",
+          "bill": "DEMO-4",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        }
+      ],
+      "warnings": [
+        "Confirm a fixed expense amount and its period before calculating contribution.",
+        "Some team members need a payroll identity match or a cost-allocation basis.",
+        "Team/franchise payroll is an allocation estimate; it is not a separate payroll payment for that portfolio."
+      ],
+      "projection": {
+        "method": "Trailing average of three complete invoiced months; remaining partial-month days are prorated.",
+        "rates": {
+          "company_share": 300.0,
+          "deals": 1.0,
+          "revenue": 1200.0
+        },
+        "trend_pct": {
+          "company_share": 0.0,
+          "deals": 0.0,
+          "revenue": 0.0
+        },
+        "complete_observations": 6
+      },
+      "goals": []
+    },
+    {
+      "scope": {
+        "bd": "All",
+        "tl": "All",
+        "franchise": "Example Partner",
+        "key": "[\"all\",\"all\",\"example partner\"]",
+        "type": "franchise",
+        "label": "Example Partner"
+      },
+      "totals": {
+        "companies": 7,
+        "deals": 7,
+        "revenue": 7800.0,
+        "company_share": 1950.0,
+        "gross_billed": 9204.0,
+        "recorded_share_rows": 7,
+        "missing_share_rows": 0,
+        "invoice_rows": 7,
+        "in_progress": 1,
+        "cancelled": 0,
+        "awaiting_invoice": 0,
+        "other": 0
+      },
+      "payroll": {
+        "available": true,
+        "ctc": 700.0,
+        "net_payable": 665.0,
+        "records": [
+          {
+            "id": "pay-4",
+            "name": "Example BD",
+            "date": "2026-04-15",
+            "month": "2026-04",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-5",
+            "name": "Example BD",
+            "date": "2026-05-15",
+            "month": "2026-05",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-6",
+            "name": "Example BD",
+            "date": "2026-06-15",
+            "month": "2026-06",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-7",
+            "name": "Example BD",
+            "date": "2026-07-15",
+            "month": "2026-07",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-8",
+            "name": "Example BD",
+            "date": "2026-08-15",
+            "month": "2026-08",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-9",
+            "name": "Example BD",
+            "date": "2026-09-15",
+            "month": "2026-09",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          },
+          {
+            "id": "pay-10",
+            "name": "Example BD",
+            "date": "2026-10-15",
+            "month": "2026-10",
+            "ctc": 100.0,
+            "net_payable": 95.0,
+            "allocation_percent": 100.0
+          }
+        ],
+        "months": [
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07",
+          "2026-08",
+          "2026-09",
+          "2026-10"
+        ],
+        "current_month_unrecorded": false,
+        "missing_closed_months": {},
+        "unmatched_members": [],
+        "unallocated_members": [],
+        "allocated": true,
+        "method": "Allocation estimate: each matched BD payroll cost is weighted by this portfolio's share of that BD's recorded company income in this period; the TL own payroll is included in full."
+      },
+      "fixed_expense": {
+        "amount": null,
+        "basis": null,
+        "estimated": false,
+        "note": "",
+        "legacy_amount": null,
+        "ledger_available": true,
+        "direct_ledger_rows": 0,
+        "direct_ledger_total_raw": 0.0,
+        "ledger_note": "Raw attributed expenditure is shown for reconciliation. It is not added to fixed expenses or payroll; overhead allocation and statutory overlap still need review."
+      },
+      "legacy_salary": null,
+      "financial": {
+        "salary_ratio": 35.9,
+        "contribution": null,
+        "tax_estimate": null,
+        "surplus_estimate": null,
+        "cost_coverage_complete": true,
+        "estimated": true,
+        "tax_rate_assumption": 0.25
+      },
+      "comparison": {
+        "prior_revenue": null,
+        "prior_company_share": null,
+        "company_share_pct": null
+      },
+      "monthly": [
+        {
+          "month": "2026-04",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-05",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-06",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-07",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-08",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-09",
+          "revenue": 1200.0,
+          "company_share": 300.0,
+          "deals": 1,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1
+        },
+        {
+          "month": "2026-10",
+          "revenue": 600.0,
+          "company_share": 150.0,
+          "deals": 1,
+          "in_progress": 1,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": false,
+          "partial": true,
+          "projected_revenue": 832.26,
+          "projected_company_share": 208.06,
+          "projected_deals": 1.19
+        },
+        {
+          "month": "2026-11",
+          "revenue": 0.0,
+          "company_share": 0.0,
+          "deals": 0,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": true,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1.0
+        },
+        {
+          "month": "2026-12",
+          "revenue": 0.0,
+          "company_share": 0.0,
+          "deals": 0,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": true,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1.0
+        },
+        {
+          "month": "2027-01",
+          "revenue": 0.0,
+          "company_share": 0.0,
+          "deals": 0,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": true,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1.0
+        },
+        {
+          "month": "2027-02",
+          "revenue": 0.0,
+          "company_share": 0.0,
+          "deals": 0,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": true,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1.0
+        },
+        {
+          "month": "2027-03",
+          "revenue": 0.0,
+          "company_share": 0.0,
+          "deals": 0,
+          "in_progress": 0,
+          "cancelled": 0,
+          "awaiting_invoice": 0,
+          "future": true,
+          "partial": false,
+          "projected_revenue": 1200.0,
+          "projected_company_share": 300.0,
+          "projected_deals": 1.0
+        }
+      ],
+      "deals": [
+        {
+          "id": "invoice-10",
+          "company": "Example 10",
+          "position": "Analyst",
+          "date": "2026-10-15",
+          "stage": "invoiced",
+          "bill": "DEMO-10",
+          "revenue": 600.0,
+          "company_share": 150.0
+        },
+        {
+          "id": "enquiry-101",
+          "company": "Pipeline example",
+          "position": "Analyst",
+          "date": "2026-10-10",
+          "stage": "in_progress",
+          "bill": "",
+          "revenue": null,
+          "company_share": null
+        },
+        {
+          "id": "invoice-9",
+          "company": "Example 9",
+          "position": "Analyst",
+          "date": "2026-09-15",
+          "stage": "invoiced",
+          "bill": "DEMO-9",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        },
+        {
+          "id": "invoice-8",
+          "company": "Example 8",
+          "position": "Analyst",
+          "date": "2026-08-15",
+          "stage": "invoiced",
+          "bill": "DEMO-8",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        },
+        {
+          "id": "invoice-7",
+          "company": "Example 7",
+          "position": "Analyst",
+          "date": "2026-07-15",
+          "stage": "invoiced",
+          "bill": "DEMO-7",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        },
+        {
+          "id": "invoice-6",
+          "company": "Example 6",
+          "position": "Analyst",
+          "date": "2026-06-15",
+          "stage": "invoiced",
+          "bill": "DEMO-6",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        },
+        {
+          "id": "invoice-5",
+          "company": "Example 5",
+          "position": "Analyst",
+          "date": "2026-05-15",
+          "stage": "invoiced",
+          "bill": "DEMO-5",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        },
+        {
+          "id": "invoice-4",
+          "company": "Example 4",
+          "position": "Analyst",
+          "date": "2026-04-15",
+          "stage": "invoiced",
+          "bill": "DEMO-4",
+          "revenue": 1200.0,
+          "company_share": 300.0
+        }
+      ],
+      "warnings": [
+        "Confirm a fixed expense amount and its period before calculating contribution.",
+        "Team/franchise payroll is an allocation estimate; it is not a separate payroll payment for that portfolio."
+      ],
+      "projection": {
+        "method": "Trailing average of three complete invoiced months; remaining partial-month days are prorated.",
+        "rates": {
+          "company_share": 300.0,
+          "deals": 1.0,
+          "revenue": 1200.0
+        },
+        "trend_pct": {
+          "company_share": 0.0,
+          "deals": 0.0,
+          "revenue": 0.0
+        },
+        "complete_observations": 6
+      },
+      "goals": []
+    }
+  ],
+  "overlaps": [
+    {
+      "a": "Example BD",
+      "b": "Example TL",
+      "shared_invoices": 7,
+      "shared_payroll_members": 1
+    },
+    {
+      "a": "Example BD",
+      "b": "Example Partner",
+      "shared_invoices": 7,
+      "shared_payroll_members": 1
+    },
+    {
+      "a": "Example TL",
+      "b": "Example Partner",
+      "shared_invoices": 7,
+      "shared_payroll_members": 1
+    }
+  ],
+  "notes": [
+    "Invoice revenue excludes GST; company share is recorded income, not bank cash.",
+    "Enquiry stages are the current CRM snapshot grouped by allocation month, not historical status-change events.",
+    "Compared portfolios can overlap. Do not add their totals.",
+    "Run-rate projections and the 25% tax estimate are model assumptions."
+  ]
+}

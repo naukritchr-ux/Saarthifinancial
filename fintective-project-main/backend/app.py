@@ -192,6 +192,8 @@ def invalidate_all_caches():
     try:
         from growth_tracking_controller import _clear_cache_prefix
         _clear_cache_prefix("")
+        from growth_audit_service import clear_cache as clear_growth_audit_cache
+        clear_growth_audit_cache()
     except Exception as e:
         print("[Cache Invalidation] growth cache clear note:", str(e))
     print("[Cache Invalidation] All backend pipeline, ML, and growth caches cleared.")
@@ -347,11 +349,13 @@ def handle_uncaught_exception(err):
 
 from invoice_controller import invoice_bp
 from growth_tracking_controller import growth_tracking_bp
+from growth_audit_controller import growth_audit_bp
 from cost_performance_controller import cost_performance_bp
 from enquiry_to_invoice_middleware import enquiry_to_invoice_after_request
 
 app.register_blueprint(invoice_bp)
 app.register_blueprint(growth_tracking_bp)
+app.register_blueprint(growth_audit_bp)
 app.register_blueprint(cost_performance_bp)
 app.after_request(enquiry_to_invoice_after_request)
 

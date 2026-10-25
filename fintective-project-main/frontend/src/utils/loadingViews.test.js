@@ -14,7 +14,7 @@ before(async () => {
       removeItem: key => values.delete(key)};
   }
   localStorage.setItem('saarthi_current_user', JSON.stringify({name: 'Synthetic Test User', role: 'admin'}));
-  server = await createServer({server: {middlewareMode: true}, appType: 'custom', logLevel: 'error'});
+  server = await createServer({server: {middlewareMode: true, hmr: false}, appType: 'custom', logLevel: 'error'});
   finance = await server.ssrLoadModule('/src/context/FinanceContext.jsx');
   ({FilterProvider} = await server.ssrLoadModule('/src/context/FilterContext.jsx'));
 });
