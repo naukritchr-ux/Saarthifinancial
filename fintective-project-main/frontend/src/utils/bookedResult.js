@@ -64,3 +64,16 @@ export function bookedCostFigures(summary,view) {
   const chartReady=[summary?.revenue,share,summary?.operating_expenses,summary?.salaries].every(Number.isFinite);
   return {result:raw,ratio,unreconciled,chartReady};
 }
+
+// The headline cards use the same invoice and posted-cost scope as the waterfall.
+// General ledger activity includes other bases (GST, payouts and accruals).
+export function bookedOverviewFigures(summary,view) {
+  const matches=['ready','needs_review'].includes(view.status);
+  const number=key=>matches && Number.isFinite(summary?.[key]) ? summary[key] : null;
+  const operatingExpenses=number('operating_expenses'),payroll=number('salaries');
+  return {
+    revenue:number('revenue'),companyShare:number('our_share'),operatingExpenses,payroll,
+    expenses:operatingExpenses!==null && payroll!==null ? operatingExpenses+payroll : null,
+    asOf:matches ? summary?.period?.end_date || summary?.as_of || null : null
+  };
+}

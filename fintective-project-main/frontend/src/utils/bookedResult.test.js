@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {bookedCostFigures,bookedResultView,recordedSpread,selectedFinanceStart} from './bookedResult.js';
+import {bookedCostFigures,bookedOverviewFigures,bookedResultView,recordedSpread,selectedFinanceStart} from './bookedResult.js';
 
 const selection={selectedYear:'2026-2027',selectedMonth:'All Months',userRole:'admin',activeModule:'franchise_bd'};
 const summary={period:{start_date:'2026-04-01',end_date:'2026-10-25'},accounting_status:'needs_payroll_reconciliation',net:null};
@@ -44,4 +44,21 @@ test('review status preserves recorded booked-cost numbers for the cards and wat
   assert.deepEqual(figures,{result:-120000,ratio:-120,unreconciled:true,chartReady:true});
   assert.equal(bookedCostFigures({...reported,cash_breakdown:{}},view).result,null);
   assert.equal(bookedCostFigures(reported,{status:'loading',value:null}).result,null);
+});
+
+test('headline revenue and costs use only a matching invoice summary and preserve actual zero',()=>{
+  const reported={...summary,revenue:52100000,our_share:14550000,operating_expenses:3000000,salaries:11000000};
+  const view=bookedResultView({...selection,summary:reported});
+  assert.deepEqual(bookedOverviewFigures(reported,view),{
+    revenue:52100000,companyShare:14550000,operatingExpenses:3000000,payroll:11000000,
+    expenses:14000000,asOf:'2026-10-25'
+  });
+  assert.equal(bookedOverviewFigures({...reported,operating_expenses:null},view).expenses,null);
+  assert.equal(bookedOverviewFigures({...reported,operating_expenses:0,salaries:0},view).expenses,0);
+  for (const status of ['loading','unavailable','not_applicable']) {
+    const figures=bookedOverviewFigures(reported,{status});
+    assert.equal(figures.revenue,null);
+    assert.equal(figures.expenses,null);
+    assert.equal(figures.companyShare,null);
+  }
 });

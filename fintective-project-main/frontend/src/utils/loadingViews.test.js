@@ -43,7 +43,7 @@ test('partial and offline banners render an accurate data state', async () => {
   }
 });
 
-test('top badge preserves the recorded ₹4.20 Cr spread without calling it profit', async () => {
+test('top badge shows the same recorded result as the waterfall instead of the gross transaction spread', async () => {
   const {default: Topbar} = await server.ssrLoadModule('/src/components/Topbar.jsx');
   const html = renderToString(React.createElement(finance.FinanceContext.Provider, {value: {
     selectedYear:'2026-2027',selectedMonth:'All Months',availableYears:['2026-2027'],availableMonths:['All Months'],
@@ -52,13 +52,15 @@ test('top badge preserves the recorded ₹4.20 Cr spread without calling it prof
       {type:'income',date:'2026-10-01',financialYear:'2026-2027',amount:62800000},
       {type:'expense',date:'2026-10-02',financialYear:'2026-2027',amount:20800000}
     ],
-    financeSummary:{period:{start_date:'2026-04-01'},accounting_status:'needs_payroll_reconciliation',net:null},
+    financeSummary:{period:{start_date:'2026-04-01'},accounting_status:'needs_payroll_reconciliation',net:null,
+      revenue:52100000,our_share:14550000,operating_expenses:3000000,salaries:11000000,
+      cash_breakdown:{unreconciled_cost_result:550000}},
     fetchAllData:()=>{},setSelectedYear:()=>{},setSelectedMonth:()=>{}
   }}, React.createElement(Topbar,{activePage:'dashboard'})));
-  assert.match(html,/Income − logged expenses .*FY 2026-2027/);
-  assert.match(html,/₹4\.20 Cr/);
-  assert.match(html,/profit pending payroll review/);
-  assert.doesNotMatch(html,/P&amp;L/);
+  assert.match(html,/Recorded operating difference.*FY 2026-2027/);
+  assert.match(html,/₹5\.50L/);
+  assert.match(html,/payroll reconciliation pending/);
+  assert.doesNotMatch(html,/₹4\.20 Cr|P&amp;L/);
 });
 
 test('unreconciled booked-cost waterfall renders a negative result without a net-profit label', async () => {
@@ -80,7 +82,10 @@ test('dashboard cards show the backend recorded difference and ratio while payro
     revenue:400000,our_share:100000,operating_expenses:200000,salaries:20000,net:null,
     cash_breakdown:{unreconciled_cost_result:-120000,sources:{payroll_records:{rows:1}}}};
   const html=renderToString(React.createElement(finance.FinanceContext.Provider,{value:{
-    moduleFilteredTransactions:[],selectedMonth:'All Months',selectedYear:'2026-2027',
+    moduleFilteredTransactions:[
+      {id:'synthetic-income',type:'income',date:'2026-10-01',financialYear:'2026-2027',amount:62800000},
+      {id:'synthetic-expense',type:'expense',date:'2026-10-02',financialYear:'2026-2027',amount:20800000}
+    ],selectedMonth:'All Months',selectedYear:'2026-2027',
     budgets:{},userRole:'admin',franchisees:[],bdAgents:[],activeModule:'franchise_bd',
     backendHealth:null,isLoadingData:false,financeSummary:summary
   }},React.createElement(Dashboard,{setActivePage:()=>{}})));
@@ -90,6 +95,16 @@ test('dashboard cards show the backend recorded difference and ratio while payro
   assert.match(html,/-120\.0%/);
   assert.match(html,/Recorded diff/);
   assert.match(html,/Payroll reconciliation pending/);
+  const cards=html.match(/<section class="dash-kpi-grid">([\s\S]*?)<\/section>/)?.[1];
+  assert.ok(cards);
+  assert.match(cards,/Invoice Revenue \(ex-GST\)/);
+  assert.match(cards,/₹4\.00L/);
+  assert.match(cards,/Booked Costs/);
+  assert.match(cards,/₹2\.20L/);
+  assert.doesNotMatch(cards,/₹6\.28 Cr|₹2\.08 Cr|₹4\.20 Cr/);
+  assert.match(html,/Ledger Income vs Expenses/);
+  assert.match(html,/Exclusion count unavailable/);
+  assert.doesNotMatch(html,/18 bills excluded|Ledger Verified/);
 });
 
 for (const name of ['Dashboard', 'Franchisees', 'BDPerformance', 'TLPerformance', 'JobPortalAnalytics',
