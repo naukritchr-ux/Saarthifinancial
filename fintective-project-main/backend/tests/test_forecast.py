@@ -84,12 +84,12 @@ class TestForecastApi(unittest.TestCase):
         months = generate_month_sequence('2024-04', 30)
         conn = MagicMock()
         conn.cursor.return_value.fetchall.return_value = []
+        conn.cursor.return_value.fetchone.return_value = {'cash_balance': 0}
         with patch('forecast_service.get_db_connection', return_value=conn), \
              patch('forecast_service.get_ist_today', return_value=datetime.date(2026, 10, 25)), \
              patch('forecast_service.fetch_revenue_history', return_value=(months, np.full(30, 1000.), 0.8)), \
              patch('forecast_service.fetch_expense_history', return_value=(months, np.full(30, 500.))), \
-             patch('forecast_service.fetch_scheduled_payroll', return_value={}), \
-             patch.dict('os.environ', {'FORECAST_OPENING_CASH_BALANCE': '0', 'FORECAST_OPENING_CASH_AS_OF': '2026-09-30'}):
+             patch('forecast_service.fetch_scheduled_payroll', return_value={}):
             resp = self.client.get('/api/finance/forecast?horizon=6', headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()

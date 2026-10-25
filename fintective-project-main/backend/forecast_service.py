@@ -2,12 +2,12 @@
 
 Historical company income is the invoice company share, excluding franchisee
 pass-through revenue. Cash collections are estimated using the historical gross
-collection ratio. Opening cash must be explicitly reconciled at the cutoff.
+collection ratio. Opening cash is derived from the live ledger at the cutoff
+and is a cash proxy rather than a verified bank balance.
 Residual bands are approximate and do not claim calibrated 95% coverage.
 """
 
 import math
-import os
 import datetime
 import numpy as np
 import pandas as pd
@@ -343,24 +343,44 @@ def fetch_scheduled_payroll(conn, forecast_months: List[str]) -> Dict[str, float
     return {m: scheduled_map.get(m, baseline) for m in forecast_months}
 
 
-class ForecastConfigurationError(ValueError):
-    pass
+def fetch_current_cash_balance(conn, as_of=None) -> float:
+    """Calculate the dated live ledger balance; never substitute an invented value.
 
-
-def fetch_current_cash_balance(conn) -> float:
-    """Explicit reconciled opening balance as of the forecast cutoff; never invent cash."""
-    raw = os.environ.get('FORECAST_OPENING_CASH_BALANCE')
-    if raw is None or not raw.strip():
-        raise ForecastConfigurationError(
-            "Set FORECAST_OPENING_CASH_BALANCE to the reconciled bank balance at "
-            "the end of the last closed month (zero is valid).")
+    Uses the cash-balance endpoint's sources: invoice collections less expenditure
+    and completed franchise payouts, plus manual ledger entries. Undated records
+    cannot be assigned to a historical cutoff and are excluded. Invoice receipt
+    amounts are associated with invoice bill dates; this is not a historical bank
+    reconciliation or proof of when each payment actually arrived.
+    """
+    if as_of is None:
+        as_of = get_ist_today().replace(day=1) - datetime.timedelta(days=1)
+    elif isinstance(as_of, str):
+        as_of = datetime.date.fromisoformat(as_of)
+    # Exclusive next-day boundary includes all timestamps on the closing day.
+    end = (as_of + datetime.timedelta(days=1)).isoformat()
+    cursor = conn.cursor()
     try:
-        value = float(raw)
-    except ValueError as exc:
-        raise ForecastConfigurationError("FORECAST_OPENING_CASH_BALANCE must be numeric") from exc
-    if not math.isfinite(value):
-        raise ForecastConfigurationError("Opening cash must be finite")
-    return value
+        cursor.execute("""
+            SELECT
+              (SELECT COALESCE(SUM(amountReceived), 0)
+               FROM v_invoice_clean WHERE billDate < %s)
+              - (SELECT COALESCE(SUM(amount), 0)
+                 FROM expenditure WHERE billDate < %s AND is_deleted = 0)
+              - (SELECT COALESCE(SUM(payment_amount), 0)
+                 FROM franchisePayments WHERE payment_done = 'Yes' AND payment_date < %s)
+              + (SELECT COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END), 0)
+                 FROM manual_cash_entries WHERE date < %s)
+              AS cash_balance
+        """, [end, end, end, end])
+        row = cursor.fetchone()
+        if not row or row.get('cash_balance') is None:
+            raise ValueError('The live ledger did not return an opening cash balance')
+        value = float(row['cash_balance'])
+        if not math.isfinite(value):
+            raise ValueError('The live ledger returned a non-finite cash balance')
+        return value
+    finally:
+        cursor.close()
 
 
 def cash_runway(opening_cash, net_flows):
@@ -400,10 +420,8 @@ def generate_full_forecast(
     try:
         # 1. Fetch clean historical training windows
         cutoff = get_ist_today().replace(day=1)
-        expected_as_of = (cutoff - datetime.timedelta(days=1)).isoformat()
-        if os.environ.get("FORECAST_OPENING_CASH_AS_OF") != expected_as_of:
-            raise ForecastConfigurationError(f"Set FORECAST_OPENING_CASH_AS_OF={expected_as_of} and reconcile the opening balance")
-        cash_balance = fetch_current_cash_balance(conn)
+        opening_as_of = cutoff - datetime.timedelta(days=1)
+        cash_balance = fetch_current_cash_balance(conn, as_of=opening_as_of)
         rev_months, rev_series, coll_ratio = fetch_revenue_history(conn, cutoff)
         exp_months, exp_series = fetch_expense_history(conn, cutoff)
         forecast_months = generate_month_sequence(cutoff.strftime('%Y-%m'), horizon)
@@ -532,7 +550,7 @@ def generate_full_forecast(
         return {
             'status': 'ok',
             'revenue_basis': 'Company share (ex-GST)',
-            'cash_assumption': 'Cash scenario: company-share collections estimated using the historical gross invoice collection ratio. Excludes tax, collection timing, outstanding receivables and future one-off manual income. Historical net is accrual income less expenses and payroll.',
+            'cash_assumption': 'Opening cash is a live ledger estimate at the last closed month, not a bank reconciliation. Historical collections are grouped by invoice date, so later receipts can revise this estimate. Cash scenario: company-share collections estimated using the historical gross invoice collection ratio. Excludes tax, collection timing, outstanding receivables and future one-off manual income. Historical net is accrual income less expenses and payroll.',
             'interval_method': 'Approximate residual bands; not calibrated 95% prediction intervals.',
             'as_of_month': (cutoff - datetime.timedelta(days=1)).strftime('%Y-%m'),
             'forecast_start_month': cutoff.strftime('%Y-%m'),
@@ -554,6 +572,9 @@ def generate_full_forecast(
             },
             'summary': {
                 'current_cash_balance': round(cash_balance, 2),
+                'cash_balance_source': 'live_ledger',
+                'cash_balance_as_of': opening_as_of.isoformat(),
+                'cash_balance_label': 'Ledger-derived opening balance',
                 'projected_total_net': round(total_projected_net, 2),
                 'projected_final_cash': round(running_cash, 2),
                 'runway_months': runway_months,

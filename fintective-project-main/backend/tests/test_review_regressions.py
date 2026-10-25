@@ -18,15 +18,46 @@ def client():
 
 
 def test_zero_opening_cash_is_preserved():
-    with patch.dict(os.environ, {'FORECAST_OPENING_CASH_BALANCE': '0'}):
-        assert forecast.fetch_current_cash_balance(None) == 0
+    conn = MagicMock()
+    conn.cursor.return_value.fetchone.return_value = {'cash_balance': 0}
+    assert forecast.fetch_current_cash_balance(conn) == 0
 
 
-@pytest.mark.parametrize('value', ['', 'nan', 'inf', 'invalid'])
-def test_invalid_cash_does_not_create_fake_money(value):
-    with patch.dict(os.environ, {'FORECAST_OPENING_CASH_BALANCE': value}):
-        with pytest.raises(forecast.ForecastConfigurationError):
-            forecast.fetch_current_cash_balance(None)
+@pytest.mark.parametrize('value', ['', 'nan', 'inf', 'invalid', '132648198'])
+def test_manual_environment_values_do_not_override_the_live_ledger(value):
+    conn = MagicMock()
+    conn.cursor.return_value.fetchone.return_value = {'cash_balance': 250}
+    with patch.dict(os.environ, {'FORECAST_OPENING_CASH_BALANCE': value,
+                                'FORECAST_OPENING_CASH_AS_OF': 'wrong-date'}):
+        assert forecast.fetch_current_cash_balance(conn) == 250
+
+
+def test_live_ledger_query_uses_cutoff_on_every_source():
+    conn = MagicMock()
+    conn.cursor.return_value.fetchone.return_value = {'cash_balance': -100}
+    assert forecast.fetch_current_cash_balance(conn, datetime.date(2026, 9, 30)) == -100
+    sql, params = conn.cursor.return_value.execute.call_args.args
+    assert params == ['2026-10-01'] * 4
+    assert 'FROM v_invoice_clean WHERE billDate < %s' in sql
+    assert 'is_deleted = 0' in sql
+    assert "payment_done = 'Yes'" in sql
+    assert 'FROM manual_cash_entries WHERE date < %s' in sql
+    conn.cursor.return_value.close.assert_called_once()
+
+
+def test_live_ledger_cash_has_no_silent_database_failure_fallback():
+    conn = MagicMock()
+    conn.cursor.return_value.execute.side_effect = RuntimeError('database unavailable')
+    with pytest.raises(RuntimeError, match='database unavailable'):
+        forecast.fetch_current_cash_balance(conn)
+    conn.cursor.return_value.close.assert_called_once()
+
+
+def test_live_ledger_cash_rejects_missing_result():
+    conn = MagicMock()
+    conn.cursor.return_value.fetchone.return_value = None
+    with pytest.raises(ValueError, match='did not return'):
+        forecast.fetch_current_cash_balance(conn)
 
 
 def test_zero_actual_mape_is_unavailable():
@@ -73,6 +104,7 @@ def test_month_cutoff_and_company_share_query():
 def test_cash_scenario_and_runway_use_collections():
     conn = MagicMock()
     conn.cursor.return_value.fetchall.return_value = []
+    conn.cursor.return_value.fetchone.return_value = {'cash_balance': 100}
     months = forecast.generate_month_sequence('2024-04', 31)
     with patch.dict(os.environ, {'FORECAST_OPENING_CASH_BALANCE': '100', 'FORECAST_OPENING_CASH_AS_OF': '2026-10-31'}), \
          patch.object(forecast, 'get_ist_today', return_value=datetime.date(2026, 11, 8)), \
@@ -80,6 +112,8 @@ def test_cash_scenario_and_runway_use_collections():
          patch.object(forecast, 'fetch_expense_history', return_value=(months, np.ones(31) * 70)), \
          patch.object(forecast, 'fetch_scheduled_payroll', return_value={'2026-11': 10, '2026-12': 10}):
         result = forecast.generate_full_forecast(2, conn)
+    assert result['summary']['cash_balance_source'] == 'live_ledger'
+    assert result['summary']['cash_balance_as_of'] == '2026-10-31'
     assert result['as_of_month'] == '2026-10'
     assert result['forecast_start_month'] == '2026-11'
     assert result['forecast'][0]['expected_collections'] == 50
