@@ -134,25 +134,28 @@ export const FinanceProvider = ({ children }) => {
   const [franchisees, setFranchisees] = useState(() => {
     try {
       const cached = localStorage.getItem('fintective_cached_franchisees') || sessionStorage.getItem('fintective_cached_franchisees');
-      return cached ? JSON.parse(cached) : [];
+      const parsed = cached ? JSON.parse(cached) : null;
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_FRANCHISEES;
     } catch {
-      return [];
+      return DEFAULT_FRANCHISEES;
     }
   });
   const [bdAgents, setBdAgents] = useState(() => {
     try {
       const cached = localStorage.getItem('fintective_cached_bd') || sessionStorage.getItem('fintective_cached_bd');
-      return cached ? JSON.parse(cached) : [];
+      const parsed = cached ? JSON.parse(cached) : null;
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_BD_AGENTS;
     } catch {
-      return [];
+      return DEFAULT_BD_AGENTS;
     }
   });
   const [teamLeaders, setTeamLeaders] = useState(() => {
     try {
       const cached = localStorage.getItem('fintective_cached_tl') || sessionStorage.getItem('fintective_cached_tl');
-      return cached ? JSON.parse(cached) : [];
+      const parsed = cached ? JSON.parse(cached) : null;
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_TEAM_LEADERS;
     } catch {
-      return [];
+      return DEFAULT_TEAM_LEADERS;
     }
   });
   const [budgets, setBudgets] = useState(() => {
@@ -460,13 +463,17 @@ export const FinanceProvider = ({ children }) => {
       try {
         const saved = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
         const cached = saved === null ? null : JSON.parse(saved);
-        if (Array.isArray(cached) && localStorage.getItem('fintective_tx_cache_version') === TX_CACHE_VERSION) {
+        if (Array.isArray(cached) && cached.length > 0) {
           setTransactions(cached);
           setDataSource('cached');
           setDataState('cached');
           return false;
         }
       } catch { /* Invalid browser cache is not a finance record source. */ }
+      if (transactions && transactions.length > 0) {
+        setDataState('cached');
+        return false;
+      }
       setDataSource('empty');
       setDataState('offline');
       return false;
