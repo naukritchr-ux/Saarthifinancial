@@ -20,11 +20,11 @@ const SyncModal = ({ isOpen, onClose }) => {
     setSyncLogs([]);
     setSyncStats(null);
     addLog('Connecting to the configured Saarthi CRM backend...', 'info');
-
+    
     try {
       addLog('Initiating multi-channel sync for Enquiries, Invoices, Franchisees, Expenses, Clients & Legals...', 'info');
-      const result = await syncWithSaarthi({ jobId: pendingJobId, onProgress: info => addLog(info.message) });
-
+      const result = await syncWithSaarthi({jobId: pendingJobId, onProgress: info => addLog(info.message)});
+      
       if (result.success && result.data?.ok !== false) {
         const d = result.data || {};
         setSyncStats(d);
@@ -79,7 +79,7 @@ const SyncModal = ({ isOpen, onClose }) => {
         </div>
 
         <div className="modal-body" style={{ padding: '20px 24px' }}>
-
+          
           {/* Main Sync Trigger Box */}
           <div style={{
             background: '#F6F7F4',
@@ -232,7 +232,7 @@ const SyncModal = ({ isOpen, onClose }) => {
               <AlertTriangle color="#A8402E" size={20} style={{ flexShrink: 0, marginTop: '2px' }} />
               <div style={{ fontSize: '0.85rem', color: '#A8402E', flex: 1 }}>
                 <strong>Sync Failed.</strong>{' '}
-                {syncLogs.filter(l => l.type === 'error').map(l => l.message.replace('❌ Sync Failed: ', '')).join(' ') || 'Please check backend server connection or Aiven database connectivity.'}
+                {syncLogs.filter(l => l.type === 'error').map(l => l.message.replace('❌ Sync Failed: ', '')).join(' ')||'Please check backend server connection or Aiven database connectivity.'}
               </div>
               <button
                 onClick={handleSaarthiLiveSync}

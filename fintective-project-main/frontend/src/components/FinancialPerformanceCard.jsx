@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Landmark, Save, Plus, X, AlertTriangle, Check, RotateCcw, ArrowRight } from 'lucide-react';
 import { API_BASE_URL } from '../context/FinanceContext';
 import { fetchWithApiKey } from '../utils/apiClient';
 import { formatCurrency } from '../utils/formatters';
+import { performanceSelectionKey, performanceInputKey, validatePerformanceData } from '../utils/performanceData.js';
 
 const DEFAULT_TAX_RATE = 0.25;
 
@@ -37,7 +38,9 @@ export default function FinancialPerformanceCard({
   // Pinned scopes for comparison (up to 4)
   const [pinnedScopes, setPinnedScopes] = useState([]);
   const [scopesData, setScopesData] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadedSelection, setLoadedSelection] = useState(null);
+  const latestRequest = useRef(0);
   const [error, setError] = useState(null);
   
   // Local editable manual inputs keyed by scope_key: { salary, expense, isDirty }
@@ -95,9 +98,13 @@ export default function FinancialPerformanceCard({
 
   const isComparisonMode = activeScopes.length >= 2;
 
+  const selectionKey = performanceSelectionKey(selectedFy, activeScopes);
+  const hasCurrentData = loadedSelection === selectionKey && !loading && !error;
+
   // Fetch comparison / single scope metrics from unified backend endpoint
-  const fetchCompareData = useCallback(async () => {
+  const fetchCompareData = useCallback(async ({signal} = {}) => {
     if (!isAdminOrManager) return;
+    const requestId = ++latestRequest.current;
     setLoading(true);
     setError(null);
 
@@ -113,6 +120,7 @@ export default function FinancialPerformanceCard({
     try {
       const res = await fetchWithApiKey(`${API_BASE_URL}/growth/compare?role=${encodeURIComponent(userRole || 'admin')}`, {
         method: 'POST',
+        signal, retries: 3, cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
@@ -122,14 +130,16 @@ export default function FinancialPerformanceCard({
         throw new Error(errJson.error || `HTTP ${res.status}`);
       }
 
-      const data = await res.json();
+      const data = validatePerformanceData(await res.json(), activeScopes);
+      if (requestId !== latestRequest.current || signal?.aborted) return;
       setScopesData(data);
+      setLoadedSelection(selectionKey);
 
       // Initialize local inputs from loaded server values if not already edited by user
       setLocalInputs(prev => {
         const next = { ...prev };
         data.forEach(item => {
-          const k = item.scope_key;
+          const k = performanceInputKey(selectedFy, item.scope_key);
           if (!next[k] || !next[k].isDirty) {
             next[k] = {
               salary: item.salary !== null && item.salary !== undefined ? item.salary : '',
@@ -142,15 +152,20 @@ export default function FinancialPerformanceCard({
         return next;
       });
     } catch (err) {
+      if (requestId !== latestRequest.current || signal?.aborted) return;
+      setScopesData([]);
+      setLoadedSelection(null);
       console.error("[FinancialPerformanceCard] fetch error:", err);
       setError(err.message || 'Could not load financial performance data');
     } finally {
-      setLoading(false);
+      if (requestId === latestRequest.current) setLoading(false);
     }
-  }, [selectedFy, activeScopes, isAdminOrManager, userRole]);
+  }, [selectedFy, activeScopes, isAdminOrManager, userRole, selectionKey]);
 
   useEffect(() => {
-    fetchCompareData();
+    const controller = new AbortController();
+    void fetchCompareData({signal: controller.signal});
+    return () => { controller.abort(); latestRequest.current++; };
   }, [fetchCompareData]);
 
   // Handle adding current scope to pinned comparison
@@ -192,6 +207,7 @@ export default function FinancialPerformanceCard({
 
   // Update input value with live recalculation
   const handleInputChange = (scopeKey, field, val) => {
+    scopeKey = performanceInputKey(selectedFy, scopeKey);
     setLocalInputs(prev => {
       const cur = prev[scopeKey] || { salary: '', expense: '', isDirty: false };
       return {
@@ -208,7 +224,12 @@ export default function FinancialPerformanceCard({
   // Save manual inputs for a specific scope
   const handleSaveInputs = async (scopeItem) => {
     const k = scopeItem.scope_key;
-    const userVals = localInputs[k] || {};
+    const editKey = performanceInputKey(selectedFy, k);
+    if (!hasCurrentData || !scopeItem.scope) {
+      setSaveStatus({type: 'error', message: 'Load the selected financial records before saving inputs.'});
+      return;
+    }
+    const userVals = localInputs[editKey] || {};
 
     const expNum = userVals.expense !== '' && userVals.expense !== null && userVals.expense !== undefined ? Number(userVals.expense) : null;
     const salNum = userVals.salary !== '' && userVals.salary !== null && userVals.salary !== undefined ? Number(userVals.salary) : null;
@@ -250,8 +271,8 @@ export default function FinancialPerformanceCard({
       // Mark clean
       setLocalInputs(prev => ({
         ...prev,
-        [k]: {
-          ...(prev[k] || {}),
+        [editKey]: {
+          ...(prev[editKey] || {}),
           salary: salNum !== null ? salNum : '',
           expense: expNum !== null ? expNum : '',
           salarySource: 'manual',
@@ -259,7 +280,7 @@ export default function FinancialPerformanceCard({
         }
       }));
 
-      setSaveStatus({ type: 'success', message: `Saved inputs for ${scopeItem.label}!` });
+      setSaveStatus({ type: 'success', message: `Saved inputs for ${scopeItem.label} (${selectedFy}).` });
       setTimeout(() => setSaveStatus(null), 3000);
     } catch (err) {
       setSaveStatus({ type: 'error', message: err.message || 'Error saving inputs' });
@@ -271,25 +292,10 @@ export default function FinancialPerformanceCard({
 
   // Compute live row values for each scope combining server data and client edits
   const computedColumns = useMemo(() => {
+    if (!hasCurrentData) return [];
     return activeScopes.map(sc => {
-      const serverData = scopesData.find(d => d.scope_key === sc.scope_key) || {
-        scope: sc,
-        scope_key: sc.scope_key,
-        label: sc.label,
-        type: sc.type,
-        companies: 0,
-        invoicedDeals: 0,
-        revenue: 0,
-        ourShare: 0,
-        verifiedCount: 0,
-        estimatedCount: 0,
-        salary: 0,
-        salarySource: 'manual',
-        expense: 0,
-        overlapsWith: []
-      };
-
-      const clientEntry = localInputs[sc.scope_key];
+      const serverData = scopesData.find(d => d.scope_key === sc.scope_key);
+      const clientEntry = localInputs[performanceInputKey(selectedFy, sc.scope_key)];
       const salary = clientEntry && clientEntry.salary !== '' && !isNaN(Number(clientEntry.salary))
         ? Number(clientEntry.salary)
         : (serverData.salary || 0);
@@ -327,7 +333,7 @@ export default function FinancialPerformanceCard({
         rawExpenseInput: clientEntry ? clientEntry.expense : (serverData.expense !== null ? serverData.expense : '')
       };
     });
-  }, [activeScopes, scopesData, localInputs]);
+  }, [activeScopes, scopesData, localInputs, hasCurrentData, selectedFy]);
 
   // Find best value per row if 3+ columns are compared
   const bestValues = useMemo(() => {
@@ -437,7 +443,7 @@ export default function FinancialPerformanceCard({
               )}
             </div>
             <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              {selectedFy} • Live CRM billed amounts, audited per-deal company shares, and payroll alignment
+              {selectedFy} • Invoice revenue excluding GST, company shares, and salary/expense inputs
             </span>
           </div>
         </div>
@@ -596,9 +602,15 @@ export default function FinancialPerformanceCard({
         </div>
       )}
 
-      {error && (
-        <div style={{ marginTop: '12px', padding: '10px 14px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '8px', color: '#B91C1C', fontSize: '0.82rem' }}>
-          {error}
+      {!hasCurrentData && (
+        <div role={error ? 'alert' : 'status'} style={{marginTop: '16px', padding: '18px', borderRadius: '8px',
+          background: error ? '#FEF2F2' : '#F8FAFC', color: error ? '#991B1B' : 'var(--text-muted)'}}>
+          <strong>{loading && !error ? 'Loading financial performance…' : 'Financial performance data unavailable'}</strong>
+          <p style={{margin: '8px 0'}}>{error || 'Fetching records for the selected financial year and people.'}</p>
+          <p style={{margin: '8px 0'}}>Revenue, costs and profit are shown after the selected records load successfully.</p>
+          {!loading && <button type="button" className="btn btn-primary" onClick={() => fetchCompareData()}>
+            <RotateCcw size={14} /> Retry loading
+          </button>}
         </div>
       )}
 
@@ -644,7 +656,7 @@ export default function FinancialPerformanceCard({
                   <td style={{ padding: '12px 8px', color: 'var(--text-main)', fontWeight: '700' }}>
                     Revenue
                     <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginLeft: '8px', fontWeight: '400' }}>
-                      (gross billed, live from DB)
+                      (invoice revenue, excluding GST)
                     </span>
                   </td>
                   <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: '800', fontSize: '1.05rem', color: 'var(--text-main)' }}>
@@ -749,7 +761,7 @@ export default function FinancialPerformanceCard({
                       background: c.salaryRatio > 50 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(15, 110, 86, 0.1)',
                       color: c.salaryRatio > 50 ? '#DC2626' : '#0F6E56'
                     }}>
-                      {c.ourShare > 0 ? `${c.salaryRatio.toFixed(1)}%` : '0.0%'}
+                      {c.ourShare > 0 ? `${c.salaryRatio.toFixed(1)}%` : '—'}
                     </span>
                   </td>
                 </tr>
@@ -827,7 +839,7 @@ export default function FinancialPerformanceCard({
       {/* ========================================================================= */}
       {/* VIEW B: SIDE-BY-SIDE COMPARISON VIEW (When 2+ scopes are compared)        */}
       {/* ========================================================================= */}
-      {isComparisonMode && (
+      {isComparisonMode && hasCurrentData && (
         <div style={{ marginTop: '16px', overflowX: 'auto' }}>
           <table style={{ width: '100%', minWidth: computedColumns.length >= 3 ? '780px' : '620px', borderCollapse: 'collapse', fontSize: '0.86rem' }}>
             <thead>
@@ -1057,7 +1069,7 @@ export default function FinancialPerformanceCard({
                         background: c.salaryRatio > 50 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(15, 110, 86, 0.1)',
                         color: c.salaryRatio > 50 ? '#DC2626' : '#0F6E56'
                       }}>
-                        {c.ourShare > 0 ? `${c.salaryRatio.toFixed(1)}%` : '0.0%'}
+                        {c.ourShare > 0 ? `${c.salaryRatio.toFixed(1)}%` : '—'}
                       </span>
                     </td>
                   );

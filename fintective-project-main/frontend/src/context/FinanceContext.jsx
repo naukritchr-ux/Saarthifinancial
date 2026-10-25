@@ -1,11 +1,10 @@
 import { runCrmSync } from '../utils/crmSync';
-import React, { createContext, useState, useEffect, useMemo } from 'react';
+import { loadFinanceCollections } from '../utils/financeDataLoader.js';
+import React, { createContext, useState, useEffect, useMemo, useRef } from 'react';
 import {
   API_BASE_URL,
-  API_KEY,
   isApiKeyConfigured,
   fetchWithApiKey,
-  fetchJsonWithApiKey,
   logApiDiagnostic
 } from '../utils/apiClient';
 
@@ -121,12 +120,6 @@ export const FinanceProvider = ({ children }) => {
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const hasSalaries = parsed.some(tx => tx.category === 'Salaries' || tx.is_payroll);
-          if (!hasSalaries) {
-            localStorage.removeItem('fintective_cached_txs');
-            sessionStorage.removeItem('fintective_cached_txs');
-            return [];
-          }
           return parsed.map(tx => ({
             ...tx,
             financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || currentFY
@@ -141,48 +134,32 @@ export const FinanceProvider = ({ children }) => {
   const [franchisees, setFranchisees] = useState(() => {
     try {
       const cached = localStorage.getItem('fintective_cached_franchisees') || sessionStorage.getItem('fintective_cached_franchisees');
-      return cached ? JSON.parse(cached) : DEFAULT_FRANCHISEES;
+      return cached ? JSON.parse(cached) : [];
     } catch {
-      return DEFAULT_FRANCHISEES;
+      return [];
     }
   });
   const [bdAgents, setBdAgents] = useState(() => {
     try {
       const cached = localStorage.getItem('fintective_cached_bd') || sessionStorage.getItem('fintective_cached_bd');
-      return cached ? JSON.parse(cached) : DEFAULT_BD_AGENTS;
+      return cached ? JSON.parse(cached) : [];
     } catch {
-      return DEFAULT_BD_AGENTS;
+      return [];
     }
   });
   const [teamLeaders, setTeamLeaders] = useState(() => {
     try {
       const cached = localStorage.getItem('fintective_cached_tl') || sessionStorage.getItem('fintective_cached_tl');
-      return cached ? JSON.parse(cached) : DEFAULT_TEAM_LEADERS;
+      return cached ? JSON.parse(cached) : [];
     } catch {
-      return DEFAULT_TEAM_LEADERS;
+      return [];
     }
   });
   const [budgets, setBudgets] = useState(() => {
     try {
       const cached = localStorage.getItem('fintective_cached_budgets') || sessionStorage.getItem('fintective_cached_budgets');
-      return cached ? JSON.parse(cached) : {
-        'Salaries': 800000,
-        'BD commissions': 120000,
-        'Marketing': 50000,
-        'Office & infra': 55000,
-        'Portal subscriptions': 85000,
-        'Other': 50000
-      };
-    } catch {
-      return {
-        'Salaries': 800000,
-        'BD commissions': 120000,
-        'Marketing': 50000,
-        'Office & infra': 55000,
-        'Portal subscriptions': 85000,
-        'Other': 50000
-      };
-    }
+      return cached ? JSON.parse(cached) : {};
+    } catch { return {}; }
   });
 
   const [lastSyncedAt, setLastSyncedAt] = useState(() => {
@@ -277,9 +254,9 @@ export const FinanceProvider = ({ children }) => {
   const [dataSource, setDataSource] = useState(() => {
     try {
       const cached = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
-      return cached ? 'cached' : 'sample';
+      return cached ? 'cached' : 'empty';
     } catch {
-      return 'sample';
+      return 'empty';
     }
   });
 
@@ -353,49 +330,11 @@ export const FinanceProvider = ({ children }) => {
     return () => clearInterval(interval);
   }, [lastSyncTimestamp]);
 
-  // Helper functions for matching stable IDs in fallback path (Phase 2)
-  const getStableStringHash = (str) => {
-    if (!str) return 0;
-    const clean = str.trim().toLowerCase();
-    let hash = 0;
-    for (let i = 0; i < clean.length; i++) {
-      hash = ((hash << 5) - hash) + clean.charCodeAt(i);
-      hash |= 0;
-    }
-    return Math.abs(hash) % 100000;
-  };
-
-  const matchFranchiseeId = (franName, franList = []) => {
-    if (!franName) return null;
-    const clean = franName.trim().toLowerCase();
-    if (!clean) return null;
-    const found = franList.find(f => {
-      const fn = (f.nameAsPerAgreement || f.name || '').trim().toLowerCase();
-      return fn === clean || (clean && fn.includes(clean)) || (fn && clean.includes(fn));
-    });
-    if (found && found.id) return found.id;
-    return `f-${getStableStringHash(clean)}`;
-  };
-
-  const matchBdAgentId = (bdName, bdList = []) => {
-    if (!bdName) return null;
-    const clean = bdName.trim().toLowerCase();
-    if (!clean) return null;
-    const found = bdList.find(b => {
-      const bn = (b.name || b.bd_name || b.bdMemberName || '').trim().toLowerCase();
-      return bn === clean || (clean && bn.includes(clean)) || (bn && clean.includes(bn));
-    });
-    if (found && found.id) return found.id;
-    return `bd-${getStableStringHash(clean)}`;
-  };
-
   const [mlInsights, setMlInsights] = useState(() => {
     try {
       const cached = sessionStorage.getItem('fintective_ml_insights');
       return cached ? JSON.parse(cached) : null;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   });
   const [isMlInsightsLoading, setIsMlInsightsLoading] = useState(false);
 
@@ -403,7 +342,7 @@ export const FinanceProvider = ({ children }) => {
   const fetchMlInsights = async (force = false) => {
     setIsMlInsightsLoading(true);
     try {
-      const res = await fetchWithApiKey(`${API_BASE_URL}/ml/insights${force ? '?force=true' : ''}`);
+      const res = await fetchWithApiKey(`${API_BASE_URL}/ml/insights${force ? '?force=true&refresh=1' : ''}`, { timeoutMs: 60000 });
       if (res.ok) {
         const data = await res.json();
         setMlInsights(data);
@@ -430,526 +369,128 @@ export const FinanceProvider = ({ children }) => {
   });
   const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
 
-  // Poll /api/health with backoff up to 40s for cold Render instance warm-up
-  const pollServerHealth = async (maxWaitSeconds = 40) => {
-    // 1. Fast path: try immediate health ping (resolves in ~300ms if server is already awake)
-    try {
-      const quickRes = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(3000) });
-      if (quickRes.ok) {
-        const json = await quickRes.json();
-        const isDbConnected = json.database?.status === 'connected';
-        setBackendHealth({
-          isDbConnected,
-          cacheWarm: Boolean(json.cache?.warm),
-          host: json.database?.host || '',
-          lastChecked: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          raw: json
-        });
-        setConnectionProgress({ isConnecting: false, elapsedSec: 0, message: 'Connected' });
-        return { ok: true, isDbConnected, data: json };
-      }
-    } catch {
-      // Cold-start detected, proceed to poll loop
-    }
-
-    const startTime = Date.now();
-    let delayMs = 1000;
-    while ((Date.now() - startTime) < maxWaitSeconds * 1000) {
-      const elapsedSec = Math.max(1, Math.round((Date.now() - startTime) / 1000));
-      setConnectionProgress({
-        isConnecting: true,
-        elapsedSec,
-        message: elapsedSec > 2 ? `Waking up backend server (${elapsedSec}s)...` : 'Connecting to server...'
-      });
-
-      try {
-        const res = await fetch(`${API_BASE_URL}/health`, {
-          signal: AbortSignal.timeout(6000)
-        });
-        if (res.ok) {
-          const json = await res.json();
-          const isDbConnected = json.database?.status === 'connected';
-          setBackendHealth({
-            isDbConnected,
-            cacheWarm: Boolean(json.cache?.warm),
-            host: json.database?.host || '',
-            lastChecked: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            raw: json
-          });
-          setConnectionProgress({ isConnecting: false, elapsedSec, message: 'Connected' });
-          return { ok: true, isDbConnected, data: json };
-        }
-      } catch {
-        // Cold start in progress or network delay, retry
-      }
-      await new Promise(r => setTimeout(r, delayMs));
-      delayMs = Math.min(delayMs * 1.3, 3000);
-    }
-
-    setConnectionProgress({ isConnecting: false, elapsedSec: maxWaitSeconds, message: 'Server unreachable' });
-    return { ok: false, error: `Connection timed out after ${maxWaitSeconds}s` };
+  const loadInFlight = useRef(null);
+  const storageKeys = {
+    transactions: 'fintective_cached_txs', franchisees: 'fintective_cached_franchisees',
+    bdAgents: 'fintective_cached_bd', teamLeaders: 'fintective_cached_tl', budgets: 'fintective_cached_budgets'
   };
 
-  // Helper with 60-second abort timeout — accounts for Render cold-start / heavy transactions endpoint
-  const fetchWithTimeout = async (url, options = {}, timeoutMs = 60000) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetchWithApiKey(url, { ...options, signal: controller.signal });
-      clearTimeout(timer);
-      return res;
-    } catch (e) {
-      clearTimeout(timer);
-      throw e;
-    }
-  };
-
-  // Retry wrapper: 3 attempts, 2s → 4s → 8s gaps.
-  // 4xx errors (especially 401 Unauthorized) or HTML responses are definitive: do NOT retry
-  // 429 Too Many Requests is retried with backoff to protect against Render burst throttling
-  const fetchWithRetry = async (url, options = {}, maxAttempts = 3, baseDelayMs = 2000) => {
-    let lastErr;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const res = await fetchWithTimeout(url, options);
-        if (res.ok) return res;
-        if (res.status === 429) {
-          const delay = baseDelayMs * Math.pow(2, attempt);
-          console.warn(`[Fetch] Rate limit 429 on ${url}. Retrying in ${delay}ms...`);
-          await new Promise(r => setTimeout(r, delay));
-          continue;
-        }
-        if (res.status < 500) return res;
-        lastErr = new Error(`HTTP ${res.status}`);
-      } catch (e) {
-        lastErr = e;
-        if (e.isAuthError || e.status === 401 || e.isHtml) {
-          throw e; // Definitive failure, do not retry
-        }
-      }
-      if (attempt < maxAttempts) {
-        const delay = baseDelayMs * Math.pow(2, attempt - 1);
-        console.warn(`[Fetch] Attempt ${attempt}/${maxAttempts} failed for ${url}. Retrying in ${delay}ms...`);
-        await new Promise(r => setTimeout(r, delay));
-      }
-    }
-    throw lastErr;
-  };
-
-  // Re-usable loader to fetch all data from backend with cold-start polling, auth checking, and resilient fallbacks
-  const fetchAllData = async (isManual = false) => {
+  const loadCoreData = async (isManual) => {
     setIsBackgroundSyncing(true);
-    let loadedFromBackend = false;
-
-    // 1. Verify API Key is configured in environment
-    if (!isApiKeyConfigured()) {
-      const errMsg = 'Missing VITE_API_KEY environment variable. Backend API requests require a valid key.';
-      logApiDiagnostic('error', { url: `${API_BASE_URL}/*`, status: 401, isHtml: false, message: errMsg });
-      setAuthError(errMsg);
-      setDataState('auth_error');
-      setIsBackgroundSyncing(false);
-      setIsLoadingData(false);
-      return false;
-    }
-
     setAuthError(null);
-    setDataState(prev => (prev === 'live' ? 'live' : 'connecting'));
-
+    setDataState(previous => ['live', 'cached', 'partial'].includes(previous) ? previous : 'connecting');
+    setConnectionProgress({ isConnecting: true, elapsedSec: 0, message: 'Loading finance data...' });
     try {
-      // 2. Poll server health first — wakes up Render cold-instance (up to 40s) with visible countdown
-      const health = await pollServerHealth(40);
-
-      if (health.ok) {
-        // 3. Parallel async fetch of core endpoints with retry
-        const [txRes, franRes, bdRes, tlRes, budgetRes] = await Promise.allSettled([
-          fetchWithRetry(`${API_BASE_URL}/transactions${isManual ? '?refresh=1' : ''}`, { cache: 'no-store' }),
-          fetchWithRetry(`${API_BASE_URL}/franchisees`, { cache: 'no-store' }),
-          fetchWithRetry(`${API_BASE_URL}/bd-agents`, { cache: 'no-store' }),
-          fetchWithRetry(`${API_BASE_URL}/team-leaders`, { cache: 'no-store' }),
-          fetchWithRetry(`${API_BASE_URL}/budgets`, { cache: 'no-store' })
-        ]);
-
-        // Kick off heavy ML model insights asynchronously in background without delaying main dashboard
-        fetchMlInsights();
-
-        // Check for 401 Unauthorized across core endpoint responses
-        const any401 = [txRes, franRes, bdRes, tlRes, budgetRes].some(
-          r => (r.status === 'rejected' && (r.reason?.status === 401 || r.reason?.isAuthError)) ||
-            (r.status === 'fulfilled' && r.value?.status === 401)
-        );
-
-        if (any401) {
-          const authMsg = 'Unauthorized (401): Backend rejected API key. Verify VITE_API_KEY matches the backend API_KEY.';
-          logApiDiagnostic('error', { url: `${API_BASE_URL}/transactions`, status: 401, isHtml: false, message: authMsg });
-          setAuthError(authMsg);
-          setDataState('auth_error');
-          setIsBackgroundSyncing(false);
-          setIsLoadingData(false);
-          return false;
-        }
-
-        // Check for HTML response (misrouted proxy / catch-all rewrite)
-        const anyHtml = [txRes, franRes, bdRes, tlRes, budgetRes].some(
-          r => (r.status === 'rejected' && r.reason?.isHtml) ||
-            (r.status === 'fulfilled' && (r.value?.headers?.get('content-type') || '').includes('text/html'))
-        );
-
-        if (anyHtml) {
-          const htmlMsg = 'API call returned HTML instead of JSON. Ensure VITE_API_URL points to the backend server and Vercel proxy rewrites are configured.';
-          setAuthError(htmlMsg);
-          setDataState('routing_error');
-          setIsBackgroundSyncing(false);
-          setIsLoadingData(false);
-          return false;
-        }
-
-        // Process /transactions (A valid empty array [] is a SUCCESSFUL empty result, NOT a failure)
-        if (txRes.status === 'fulfilled' && txRes.value.ok) {
-          try {
-            const txData = await txRes.value.json();
-            if (Array.isArray(txData)) {
-              const sanitized = txData.map(tx => ({
-                ...tx,
-                financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || currentFY
-              }));
-              setTransactions(sanitized);
-              loadedFromBackend = true;
-              setDataSource('backend');
-              setDataState('live');
-              setEndpointStatus(prev => ({
-                ...prev,
-                transactions: { status: sanitized.length > 0 ? 'ok' : 'empty', count: sanitized.length, error: null }
-              }));
-              try {
-                sessionStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
-                localStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
-                localStorage.setItem('fintective_tx_cache_version', TX_CACHE_VERSION);
-              } catch (e) { }
-            }
-          } catch (jsonErr) {
-            logApiDiagnostic('error', { url: `${API_BASE_URL}/transactions`, status: 200, isHtml: false, message: jsonErr.message });
-            setEndpointStatus(prev => ({ ...prev, transactions: { status: 'failed', count: 0, error: jsonErr.message } }));
-          }
-        } else {
-          const err = txRes.status === 'rejected' ? txRes.reason?.message : `HTTP ${txRes.value?.status}`;
-          setEndpointStatus(prev => ({ ...prev, transactions: { status: 'failed', count: 0, error: err } }));
-        }
-
-        // Process /franchisees
-        if (franRes.status === 'fulfilled' && franRes.value.ok) {
-          try {
-            const franData = await franRes.value.json();
-            if (Array.isArray(franData)) {
-              setFranchisees(franData);
-              setEndpointStatus(prev => ({ ...prev, franchisees: { status: franData.length > 0 ? 'ok' : 'empty', count: franData.length, error: null } }));
-              try {
-                sessionStorage.setItem('fintective_cached_franchisees', JSON.stringify(franData));
-                localStorage.setItem('fintective_cached_franchisees', JSON.stringify(franData));
-              } catch (e) { }
-            }
-          } catch (e) {
-            setEndpointStatus(prev => ({ ...prev, franchisees: { status: 'failed', error: e.message } }));
-          }
-        } else {
-          setEndpointStatus(prev => ({ ...prev, franchisees: { status: 'failed', error: franRes.reason?.message || 'Request failed' } }));
-        }
-
-        // Process /bd-agents
-        if (bdRes.status === 'fulfilled' && bdRes.value.ok) {
-          try {
-            const bdData = await bdRes.value.json();
-            if (Array.isArray(bdData)) {
-              setBdAgents(bdData);
-              setEndpointStatus(prev => ({ ...prev, bdAgents: { status: bdData.length > 0 ? 'ok' : 'empty', count: bdData.length, error: null } }));
-              try { sessionStorage.setItem('fintective_cached_bd', JSON.stringify(bdData)); } catch (e) { }
-            }
-          } catch (e) {
-            setEndpointStatus(prev => ({ ...prev, bdAgents: { status: 'failed', error: e.message } }));
-          }
-        } else {
-          setEndpointStatus(prev => ({ ...prev, bdAgents: { status: 'failed', error: bdRes.reason?.message || 'Request failed' } }));
-        }
-
-        // Process /team-leaders
-        if (tlRes.status === 'fulfilled' && tlRes.value.ok) {
-          try {
-            const tlData = await tlRes.value.json();
-            if (Array.isArray(tlData)) {
-              setTeamLeaders(tlData);
-              setEndpointStatus(prev => ({ ...prev, teamLeaders: { status: tlData.length > 0 ? 'ok' : 'empty', count: tlData.length, error: null } }));
-              try { sessionStorage.setItem('fintective_cached_tl', JSON.stringify(tlData)); } catch (e) { }
-            }
-          } catch (e) {
-            setEndpointStatus(prev => ({ ...prev, teamLeaders: { status: 'failed', error: e.message } }));
-          }
-        } else {
-          setEndpointStatus(prev => ({ ...prev, teamLeaders: { status: 'failed', error: tlRes.reason?.message || 'Request failed' } }));
-        }
-
-        // Process /budgets
-        if (budgetRes.status === 'fulfilled' && budgetRes.value.ok) {
-          try {
-            const budgetData = await budgetRes.value.json();
-            if (budgetData && typeof budgetData === 'object') {
-              setBudgets(budgetData);
-              setEndpointStatus(prev => ({ ...prev, budgets: { status: 'ok', error: null } }));
-              try { sessionStorage.setItem('fintective_cached_budgets', JSON.stringify(budgetData)); } catch (e) { }
-            }
-          } catch (e) {
-            setEndpointStatus(prev => ({ ...prev, budgets: { status: 'failed', error: e.message } }));
-          }
-        } else {
-          setEndpointStatus(prev => ({ ...prev, budgets: { status: 'failed', error: budgetRes.reason?.message || 'Request failed' } }));
-        }
-
-
+      if (!isApiKeyConfigured()) {
+        setAuthError('Finance API key is missing from the deployed frontend configuration.');
+        setDataState('auth_error');
+        return false;
       }
-    } catch (err) {
-      logApiDiagnostic('error', { url: `${API_BASE_URL}/*`, status: 0, isHtml: false, message: err.message });
-    }
+      // Health is informational and never delays real data requests.
+      fetchWithApiKey(`${API_BASE_URL}/health`, { retries: 1, timeoutMs: 5000 })
+        .then(response => response.ok ? response.json() : null)
+        .then(data => {
+          if (data) setBackendHealth({
+            isDbConnected: data.database?.status === 'connected',
+            cacheWarm: Boolean(data.cache?.warm), host: '', lastChecked: new Date().toLocaleTimeString(), raw: data
+          });
+        })
+        .catch(() => { });
 
-    // 4. If backend was reached and transactions were loaded:
-    if (loadedFromBackend) {
-      const now = Date.now();
-      setLastSyncTimestamp(now);
-      const nowFormatted = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      setLastSyncedAt(nowFormatted);
-      try {
-        sessionStorage.setItem('fintective_last_synced_at', nowFormatted);
-        sessionStorage.setItem('fintective_last_synced_ts', String(now));
-      } catch (e) { }
-      setIsLoadingData(false);
-      setIsBackgroundSyncing(false);
-      return true;
-    }
-
-    // 5. Backend offline or failed: check if valid cached transactions exist in sessionStorage
-    const cachedTxsStr = sessionStorage.getItem('fintective_cached_txs');
-    if (cachedTxsStr) {
-      try {
-        const cachedTxs = JSON.parse(cachedTxsStr);
-        if (Array.isArray(cachedTxs) && cachedTxs.length > 0) {
-          const hasSalaries = cachedTxs.some(tx => tx.category === 'Salaries' || tx.is_payroll);
-          if (hasSalaries) {
-            console.log('[Fintective Data State] Backend offline. Using cached transactions from sessionStorage.');
-            setTransactions(cachedTxs);
-            setDataSource('cached');
-            setDataState('cached');
+      const results = await loadFinanceCollections({
+        base: API_BASE_URL, request: fetchWithApiKey, refresh: isManual,
+        onData: (key, data) => {
+          const value = key === 'transactions' ? data.map(tx => ({
+            ...tx,
+            financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || currentFY
+          })) : data;
+          ({
+            transactions: setTransactions, franchisees: setFranchisees, bdAgents: setBdAgents,
+            teamLeaders: setTeamLeaders, budgets: setBudgets
+          })[key](value);
+          setEndpointStatus(previous => ({
+            ...previous, [key]: {
+              status: Array.isArray(value) && !value.length ? 'empty' : 'ok',
+              count: Array.isArray(value) ? value.length : undefined, error: null
+            }
+          }));
+          try {
+            const serialized = JSON.stringify(value);
+            sessionStorage.setItem(storageKeys[key], serialized);
+            localStorage.setItem(storageKeys[key], serialized);
+            if (key === 'transactions') localStorage.setItem('fintective_tx_cache_version', TX_CACHE_VERSION);
+          } catch { /* Storage limits must not discard a successful network result. */ }
+          if (key === 'transactions') {
+            setDataSource('backend');
+            setDataState('live');
             setIsLoadingData(false);
-            setIsBackgroundSyncing(false);
-            return false;
+            const timestamp = Date.now();
+            const label = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            setLastSyncTimestamp(timestamp);
+            setLastSyncedAt(label);
+            try {
+              sessionStorage.setItem('fintective_last_synced_at', label);
+              sessionStorage.setItem('fintective_last_synced_ts', String(timestamp));
+            } catch { /* The displayed data is still fresh without persistent storage. */ }
           }
-        }
-      } catch (e) { }
-    }
-
-    // 6. Resilient Fallback: Directly pull latest from Saarthi 360 CRM endpoints when backend is waking up / offline
-    let crmFallbackSuccess = false;
-    try {
-      console.log('[Fintective Data State] Backend waking up or offline. Connecting directly to Saarthi CRM API for live data...');
-      const [enqRes, invRes, franRes, expRes, expendRes] = await Promise.allSettled([
-        fetch('https://api.sarthi360.in/api/enquiries', { signal: AbortSignal.timeout(12000) }),
-        fetch('https://api.sarthi360.in/api/Invoice', { signal: AbortSignal.timeout(12000) }),
-        fetch('https://api.sarthi360.in/api/franchisees', { signal: AbortSignal.timeout(12000) }),
-        fetch('https://api.sarthi360.in/api/expenses', { signal: AbortSignal.timeout(12000) }),
-        fetch('https://api.sarthi360.in/api/expenditures/expenditures/all', { signal: AbortSignal.timeout(12000) }).catch(() => null)
-      ]);
-
-      let enquiries = [];
-      if (enqRes.status === 'fulfilled' && enqRes.value?.ok) {
-        const json = await enqRes.value.json();
-        enquiries = Array.isArray(json) ? json : (json.data || json.enquiries || []);
-      }
-
-      let invoices = [];
-      if (invRes.status === 'fulfilled' && invRes.value?.ok) {
-        const json = await invRes.value.json();
-        invoices = Array.isArray(json) ? json : (json.data || json.invoices || []);
-      }
-
-      let currentFranList = franchisees;
-      if (franRes.status === 'fulfilled' && franRes.value?.ok) {
-        const json = await franRes.value.json();
-        const fData = Array.isArray(json) ? json : (json.data || json.franchisees || []);
-        if (fData.length > 0) {
-          currentFranList = fData;
-          setFranchisees(fData);
-        }
-      }
-
-      let liveExp = [];
-      if (expRes.status === 'fulfilled' && expRes.value?.ok) {
-        const json = await expRes.value.json();
-        liveExp = Array.isArray(json) ? json : (json.data || json.expenses || []);
-      }
-
-      let liveExpenditures = [];
-      if (expendRes && expendRes.status === 'fulfilled' && expendRes.value?.ok) {
-        const json = await expendRes.value.json();
-        liveExpenditures = Array.isArray(json) ? json : (json.data || []);
-      }
-
-      const liveTxs = [];
-
-      invoices.forEach(inv => {
-        if (!inv.id) return;
-        const amt = parseFloat(inv.serviceCharges || inv.totalBillAmt || inv.amountReceived || 0);
-        const dateStr = (inv.billDate || inv.dateReceived || inv.createdAt || '').split('T')[0];
-        if (amt > 0 && dateStr) {
-          const franName = inv.franchiseName || '';
-          const bdName = inv.nameOfBd || '';
-          const infoType = (inv.info || '').toUpperCase();
-          const isRev = !['CN', 'LEGAL-CN', 'LEGAL', 'RV', 'C'].includes(infoType);
-
-          // Calculate tenure-aware shares: 70-30 for >= 3 years, 75-25 for < 3 years
-          const matchedFran = currentFranList.find(f =>
-            (f.nameAsPerAgreement && f.nameAsPerAgreement.toLowerCase().trim() === franName.toLowerCase().trim()) ||
-            (f.name && f.name.toLowerCase().trim() === franName.toLowerCase().trim())
-          );
-          let compRate = 0.25;
-          let franRate = 0.75;
-          if (matchedFran && matchedFran.onboardingDate) {
-            const onb = new Date(matchedFran.onboardingDate);
-            const bill = new Date(dateStr);
-            if (!isNaN(onb.getTime()) && !isNaN(bill.getTime())) {
-              const diffY = (bill - onb) / (365.25 * 24 * 3600 * 1000);
-              if (diffY >= 3) {
-                compRate = 0.30;
-                franRate = 0.70;
-              }
-            }
-          }
-
-          const rawOurShare = parseFloat(inv.ourShare);
-          const rawFranShare = parseFloat(inv.franchiseeShare);
-          const finalOurShare = (!isNaN(rawOurShare) && rawOurShare > 0) ? rawOurShare : (amt * compRate);
-          const finalFranShare = (!isNaN(rawFranShare) && rawFranShare > 0) ? rawFranShare : (amt * franRate);
-
-          liveTxs.push({
-            id: `inv-${inv.id}`,
-            title: `${inv.companyName || 'Client Placement'} - ${inv.postOfCandidate || 'Recruitment'}`,
-            amount: amt,
-            type: (!isRev || inv.enquiryStatus === 'credit_note') ? 'credit_note' : 'income',
-            category: 'Recruitment Fee',
-            subCategory: 'Placement Invoice',
-            date: dateStr,
-            companyName: inv.companyName || '',
-            bdAgentName: bdName,
-            teamLeaderName: inv.teamLeader || '',
-            franchiseeName: franName,
-            franchiseeId: matchFranchiseeId(franName, currentFranList),
-            bdAgentId: matchBdAgentId(bdName, bdAgents),
-            financialYear: normalizeFinancialYear(inv.financialYear, dateStr) || currentFY,
-            city: inv.companyCity || inv.city || 'Mumbai',
-            industry: inv.industry || 'Information Technology & Software',
-            ourShare: finalOurShare,
-            franchiseeShare: finalFranShare,
-            info: inv.info || 'R',
-            is_revenue: isRev
-          });
+        },
+        onError: (key, error) => {
+          setEndpointStatus(previous => ({ ...previous, [key]: { status: 'failed', error: error.message } }));
+          logApiDiagnostic('error', { url: `${API_BASE_URL}/${key}`, status: error.status, message: error.message });
         }
       });
-
-      enquiries.forEach(enq => {
-        if (!enq.id) return;
-        const amt = parseFloat(enq.bill_amount || enq.placementFees || 0);
-        const dateStr = (enq.bill_date || enq.dateOfAllocation || enq.created_at || '').split('T')[0];
-        if (amt > 0 && dateStr && !invoices.some(i => i.enquiry_id === enq.id)) {
-          const franName = enq.franchiseeName || '';
-          const bdName = enq.bdMemberName || '';
-          liveTxs.push({
-            id: `enq-${enq.id}`,
-            title: `${enq.companyName || 'Client Placement'} - ${enq.positionName || 'Role'}`,
-            amount: amt,
-            type: 'income',
-            category: 'Recruitment Fee',
-            subCategory: 'Placement',
-            date: dateStr,
-            companyName: enq.companyName || '',
-            bdAgentName: bdName,
-            teamLeaderName: enq.teamLeaderName || '',
-            franchiseeName: franName,
-            franchiseeId: matchFranchiseeId(franName, currentFranList),
-            bdAgentId: matchBdAgentId(bdName, bdAgents),
-            financialYear: normalizeFinancialYear(enq.financialYear, dateStr) || currentFY,
-            ourShare: amt * 0.25,
-            franchiseeShare: amt * 0.75,
-            is_revenue: true
-          });
-        }
-      });
-
-      const liveExpenseTxs = [];
-
-      // 1. Transactional Expenditures
-      if (liveExpenditures.length > 0) {
-        liveExpenditures.forEach(exp => {
-          const amt = parseFloat(exp.amount || exp.net || 0);
-          const dStr = (exp.billDate || exp.date || exp.createdAt || '').split('T')[0];
-          if (amt > 0 && dStr) {
-            liveExpenseTxs.push({
-              id: `expend-${exp.id || exp.srNo || Math.random()}`,
-              title: exp.particulars || exp.expenses || 'Operating Expense',
-              amount: amt,
-              type: 'expense',
-              category: mapCategory(exp.expenses || exp.expenseType || 'Operations', 'expense'),
-              subCategory: exp.expenseType || 'Operations',
-              date: dStr,
-              financialYear: normalizeFinancialYear(exp.financialYear, dStr) || currentFY,
-              companyName: 'Saarthi Corporate'
-            });
-          }
-        });
+      const failed = results.filter(result => !result.ok);
+      const fatal = failed.find(result => result.error.isAuthError || [401, 403].includes(result.error.status));
+      const routing = failed.find(result => result.error.isHtml || result.error.isConfigError || result.error.status === 404);
+      if (fatal || routing) {
+        setAuthError((fatal || routing).error.message);
+        setDataState(fatal ? 'auth_error' : 'routing_error');
+        return false;
       }
-
-      // 2. Monthly Expense Heads (multiplied by 1000 as per CRM format)
-      liveExp.forEach(exp => {
-        const franPart = parseFloat(exp.franchisee || 0);
-        const recPart = parseFloat(exp.recruitment || 0);
-        const total = (franPart + recPart) > 0 ? (franPart + recPart) * 1000 : parseFloat(exp.amount || 0);
-        const dStr = (exp.date || exp.billDate || '2026-08-01').split('T')[0];
-        if (total > 0) {
-          liveExpenseTxs.push({
-            id: `exp-api-${exp.id}`,
-            title: exp.head_component || exp.particulars || 'Operating Expense',
-            amount: total,
-            type: 'expense',
-            category: exp.head_component?.includes('Rent') ? 'Office & infra' : (exp.head_component?.includes('Software') ? 'Portal subscriptions' : 'Marketing'),
-            subCategory: exp.head_component || 'Operations',
-            date: dStr,
-            financialYear: normalizeFinancialYear(exp.financialYear, dStr) || currentFY,
-            companyName: 'Saarthi Corporate'
-          });
-        }
-      });
-
-      const combined = [...liveTxs, ...liveExpenseTxs];
-
-      if (combined.length > 0) {
-        setTransactions(combined);
-        crmFallbackSuccess = true;
-        setDataSource('crm_live_fallback');
-        setDataState('live');
-        try {
-          sessionStorage.setItem('fintective_cached_txs', JSON.stringify(combined));
-          localStorage.setItem('fintective_cached_txs', JSON.stringify(combined));
-        } catch (e) { }
+      if (results.find(result => result.key === 'transactions')?.ok) {
+        setDataState(failed.length ? 'partial' : 'live');
+        if (failed.length) setAuthError(failed.map(result => `${result.key}: ${result.error.message}`).join(' | '));
+        // ML work starts after publishing core data, never before the transaction view.
+        void fetchMlInsights(isManual);
+        return failed.length === 0;
       }
-    } catch (crmErr) {
-      console.error('[Fintective] Direct CRM live fallback note:', crmErr);
-    }
-
-    if (!crmFallbackSuccess) {
-      console.warn('[Fintective Data State] Backend offline and CRM fallback returned no rows.');
+      setAuthError(failed.map(result => `${result.key}: ${result.error.message}`).join(' | '));
+      // Keep previously fetched records with an explicit stale-data label. Never
+      // fabricate alternate financial totals by calling the CRM from the browser.
+      try {
+        const saved = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
+        const cached = saved === null ? null : JSON.parse(saved);
+        if (Array.isArray(cached) && localStorage.getItem('fintective_tx_cache_version') === TX_CACHE_VERSION) {
+          setTransactions(cached);
+          setDataSource('cached');
+          setDataState('cached');
+          return false;
+        }
+      } catch { /* Invalid browser cache is not a finance record source. */ }
       setDataSource('empty');
       setDataState('offline');
-      setTransactions([]);
+      return false;
+    } catch (error) {
+      setAuthError(error.message || 'Unable to load finance data.');
+      setDataState('offline');
+      return false;
+    } finally {
+      setIsLoadingData(false);
+      setIsBackgroundSyncing(false);
+      setConnectionProgress({ isConnecting: false, elapsedSec: 0, message: '' });
     }
+  };
 
-    // Always release loading and sync state
-    setIsLoadingData(false);
-    setIsBackgroundSyncing(false);
-    return false;
+  const fetchAllData = (isManual = false) => {
+    const current = loadInFlight.current;
+    if (current) {
+      // A post-sync manual refresh must run after any older background request.
+      if (isManual && !current.manual) return current.promise.then(() => fetchAllData(true));
+      return current.promise;
+    }
+    const promise = loadCoreData(isManual).finally(() => { loadInFlight.current = null; });
+    loadInFlight.current = { promise, manual: isManual };
+    return promise;
   };
 
   const syncWithSaarthi = async (options = {}) => runCrmSync({
@@ -959,9 +500,9 @@ export const FinanceProvider = ({ children }) => {
     ...options
   });
 
-  // Auto-poll on mount and every 90s; keep-alive every 8 min to prevent Render cold-sleep
+  // Refresh in the background; shared in-flight requests prevent overlapping loads.
   useEffect(() => {
-    // First attempt — server may be cold-starting, warmup fires inside fetchAllData
+    // Publish each collection immediately as it arrives.
     fetchAllData();
 
     // Periodic background refresh (90s — balanced between freshness and server load)

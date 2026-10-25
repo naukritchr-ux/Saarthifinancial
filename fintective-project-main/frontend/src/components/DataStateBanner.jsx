@@ -37,8 +37,8 @@ export const DataStateBanner = () => {
           border: '#f87171',
           text: '#991b1b',
           icon: <AlertTriangle size={18} color="#dc2626" />,
-          title: 'Configuration Error — API Returned HTML',
-          description: 'API endpoint returned HTML (SPA catch-all rewrite). Check Vercel rewrites and ensure VITE_API_URL points to the backend server.',
+          title: 'Finance connection needs attention',
+          description: authError || 'The finance data address is unavailable or returned a webpage. Please contact the application administrator.',
           actionText: 'Retry'
         };
 
@@ -49,7 +49,7 @@ export const DataStateBanner = () => {
           text: '#075985',
           icon: <RefreshCw size={18} color="#0284c7" className="animate-spin" />,
           title: 'Connecting to Backend Server...',
-          description: `Waking up Render backend (${connectionProgress?.elapsedSec || 0}s elapsed). Hosted instances spin down after inactivity and may take 30–50s to cold-start. Please wait...`,
+          description: 'Loading finance records. Each section will appear as its data becomes available.',
           actionText: null
         };
 
@@ -60,7 +60,7 @@ export const DataStateBanner = () => {
           text: '#92400e',
           icon: <Clock size={18} color="#d97706" />,
           title: 'Showing Saved Data (Backend Offline)',
-          description: `Backend is unreachable. Displaying saved data from ${lastSyncedAt || 'a previous sync'}. Live synchronization is paused.`,
+          description: `Showing saved records from ${lastSyncedAt || 'a previous sync'} while the connection is unavailable. These records may be out of date.`,
           actionText: 'Retry Connection'
         };
 
@@ -75,6 +75,16 @@ export const DataStateBanner = () => {
           actionText: 'Reconnect Backend'
         };
 
+      case 'partial':
+        return {
+          bg: '#fffbeb', border: '#fcd34d', text: '#92400e',
+          icon: <AlertTriangle size={18} color="#d97706" />,
+          title: 'Some finance sections could not refresh',
+          description: 'Available records are shown. Other sections may contain saved data or be unavailable; retry to refresh them.',
+          actionText: 'Retry Missing Data'
+        };
+
+      case 'offline':
       case 'sample':
       default:
         return {
@@ -82,8 +92,8 @@ export const DataStateBanner = () => {
           border: '#ef4444',
           text: '#991b1b',
           icon: <ServerOff size={18} color="#dc2626" />,
-          title: 'Sample Data. Not Real Numbers',
-          description: 'Both the backend server and live CRM APIs are unreachable. Displaying sample numbers for UI preview. DO NOT use these figures for business decisions.',
+          title: 'Finance data unavailable',
+          description: authError || 'The finance records could not be loaded. Empty figures are not verified zero balances. Please retry.',
           actionText: 'Retry Sync'
         };
     }

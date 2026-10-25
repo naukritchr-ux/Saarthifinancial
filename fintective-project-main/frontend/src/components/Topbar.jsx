@@ -199,6 +199,15 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
           tooltip: 'Authentication failed (401). Verify VITE_API_KEY. Click to retry.'
         };
 
+      case 'partial':
+        return {
+          bg: '#fffbeb', border: '1.5px solid #f59e0b', textColor: '#92400e',
+          icon: <AlertTriangle size={12} color="#d97706" />,
+          text: 'Some data unavailable', tooltip: 'Some sections did not refresh. Click to retry.'
+        };
+
+      case 'offline':
+      case 'routing_error':
       case 'sample':
       default:
         return {
@@ -206,8 +215,8 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
           border: '1.5px solid #dc2626',
           textColor: '#991b1b',
           icon: <ServerOff size={12} color="#dc2626" />,
-          text: 'Sample data. Not real numbers',
-          tooltip: 'Live servers unreachable. Viewing sample figures. Click to retry.'
+          text: 'Finance data unavailable',
+          tooltip: 'Records could not be loaded. Click to retry.'
         };
     }
   };

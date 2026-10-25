@@ -1,15 +1,23 @@
+import { createApiTransport, normalizeApiBase } from './apiTransport.js';
 // Fintective Secure, Zero-Crash API Client
-const rawApiKey = import.meta.env.VITE_API_KEY;
+const buildEnv = import.meta.env || {};
+const rawApiKey = buildEnv.VITE_API_KEY;
 
 // NEVER bundle a hardcoded secret in client assets
 export const API_KEY = rawApiKey ? rawApiKey.trim() : '';
 
 export const isApiKeyConfigured = () => Boolean(API_KEY);
 
-export const API_BASE_URL = (import.meta.env.VITE_API_URL || 
-  (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '0.0.0.0')
-    ? 'http://localhost:5000/api' 
-    : '/api')).replace(/\/+$/, '');
+let configurationError = null;
+export const API_BASE_URL = (() => {
+  try {
+    return normalizeApiBase(buildEnv.VITE_API_URL, typeof window !== 'undefined' ? window.location.hostname : '');
+  } catch (error) {
+    configurationError = error;
+    configurationError.isConfigError = true;
+    return '/api';
+  }
+})();
 
 /**
  * Log API calls and failures in one consistent, diagnose-friendly format
@@ -62,129 +70,35 @@ export const setCachedApiResponse = (url, data) => {
  * Fetch wrapper that attaches X-API-Key, validates against HTML responses,
  * and transparently retries on transient network/Render-cold-start errors.
  */
-export const fetchWithApiKey = async (url, options = {}) => {
-  const method = (options.method || 'GET').toUpperCase();
-  const maxRetries = options.retries !== undefined ? options.retries : (method === 'GET' ? 3 : 1);
-  const timeoutMs = options.timeoutMs || 45000; // 45s allows cold Render instance to finish boot
-  const baseDelayMs = options.retryDelayMs || 1500;
-
-  const headers = {
-    Accept: 'application/json, text/plain, */*',
-    ...(options.headers || {})
-  };
-
-  if (API_KEY) {
-    headers['X-API-Key'] = API_KEY;
-  }
-
-  let lastError;
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-    if (options.signal) {
-      options.signal.addEventListener('abort', () => controller.abort());
-    }
-
-    try {
-      const res = await fetch(url, { ...options, headers, signal: controller.signal });
-      clearTimeout(timer);
-
-      const contentType = res.headers.get('content-type') || '';
-      const isHtml = contentType.includes('text/html');
-
-      // 401 Unauthorized: fatal credential issue, do not retry
-      if (res.status === 401) {
-        const err = new Error('Unauthorized (401): Invalid or missing X-API-Key. Please verify VITE_API_KEY.');
-        err.status = 401;
-        err.isAuthError = true;
-        logApiDiagnostic('error', { url, status: 401, isHtml, message: err.message });
-        throw err;
-      }
-
-      // Vercel SPA index.html rewrite or misrouted endpoint
-      if (isHtml) {
-        const err = new Error(`API call returned HTML (status ${res.status}) instead of JSON. Ensure VITE_API_URL points to the backend server.`);
-        err.status = res.status;
-        err.isHtml = true;
-        logApiDiagnostic('error', { url, status: res.status, isHtml: true, message: err.message });
-        throw err;
-      }
-
-      // Success or non-recoverable 4xx client errors (e.g. 400 Bad Request, 404 Not Found)
-      if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429)) {
-        return res;
-      }
-
-      // 502 Bad Gateway / 503 Unavailable / 504 Gateway Timeout: Render is spinning up!
-      const errText = await res.text().catch(() => '');
-      lastError = new Error(`HTTP ${res.status}: ${errText.slice(0, 160)}`);
-      lastError.status = res.status;
-    } catch (netErr) {
-      clearTimeout(timer);
-      lastError = netErr;
-      if (netErr.isAuthError || netErr.isHtml) {
-        throw netErr;
-      }
-    }
-
-    // If retries remain and error was transient/recoverable, pause with backoff
-    if (attempt < maxRetries) {
-      const delay = baseDelayMs * Math.pow(2, attempt - 1);
-      console.warn(`[Fintective Resilient Client] Attempt ${attempt}/${maxRetries} failed for ${url} (${lastError.message}). Retrying in ${delay}ms...`);
-      await new Promise(r => setTimeout(r, delay));
-    }
-  }
-
-  logApiDiagnostic('error', {
-    url,
-    status: lastError.status || 0,
-    isHtml: Boolean(lastError.isHtml),
-    message: `All ${maxRetries} attempts failed: ${lastError.message}`
-  });
-
-  throw lastError;
-};
+const sharedTransport = createApiTransport({apiKey: API_KEY, diagnose: logApiDiagnostic});
+export const fetchWithApiKey = (url, options = {}) => configurationError
+  ? Promise.reject(configurationError) : sharedTransport(url, options);
 
 /**
  * Resilient JSON fetcher: parses JSON safely, saves to SWR cache,
  * and automatically returns cached baseline if network is temporarily unreachable.
  */
 export const fetchJsonWithApiKey = async (url, options = {}) => {
-  const method = (options.method || 'GET').toUpperCase();
-  const allowCached = method === 'GET' && options.allowCached !== false;
-
+  const allowCached = (options.method || 'GET').toUpperCase() === 'GET' && options.allowCached !== false;
   try {
     const res = await fetchWithApiKey(url, options);
-    const text = await res.text();
-    const trimmed = text.trim();
-
-    if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html') || trimmed.startsWith('<head')) {
-      const err = new Error(`Expected JSON but received HTML from ${url}. Check API routing configuration.`);
-      err.isHtml = true;
-      err.status = res.status;
-      logApiDiagnostic('error', { url, status: res.status, isHtml: true, message: err.message });
-      throw err;
+    const data = await res.json();
+    if (!res.ok || data?.success === false || data?.error) {
+      const error = new Error(data?.error || `HTTP ${res.status}`);
+      error.status = res.status;
+      throw error;
     }
-
-    const data = JSON.parse(text);
-    if (allowCached && data) {
-      setCachedApiResponse(url, data);
-    }
+    if (allowCached) setCachedApiResponse(url, data);
     return data;
-  } catch (err) {
-    if (allowCached) {
+  } catch (error) {
+    if (allowCached && !error.isAuthError && !error.isHtml && !error.isConfigError &&
+        (!error.status || error.status >= 500 || [408, 429].includes(error.status))) {
       const cached = getCachedApiResponse(url);
-      if (cached) {
-        console.warn(`[Fintective SWR] Offline/Delay on ${url}. Seamlessly rendering saved cache. Notice:`, err.message);
-        return {
-          ...cached,
-          _isStale: true,
-          _cachedAt: Date.now()
-        };
-      }
+      if (cached !== null) return Object.assign(Array.isArray(cached) ? [...cached] : {...cached}, {
+        _isStale: true
+      });
     }
-    throw err;
+    throw error;
   }
 };
 

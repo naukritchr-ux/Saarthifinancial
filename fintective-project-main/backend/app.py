@@ -150,6 +150,7 @@ def get_data_version(force=False):
         now = time.time()
         if not force and (now - _data_version_cache['time'] < 5.0) and _data_version_cache['as_of']:
             return _data_version_cache['version'], _data_version_cache['as_of']
+        conn = None
         try:
             conn = get_db_connection()
             with conn.cursor() as cur:
@@ -160,15 +161,18 @@ def get_data_version(force=False):
                     _data_version_cache['as_of'] = str(r.get('as_of') or '')[:19]
                 elif not _data_version_cache['as_of']:
                     _data_version_cache['as_of'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            conn.close()
         except Exception:
             if not _data_version_cache['as_of']:
                 _data_version_cache['as_of'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        finally:
+            if conn:
+                conn.close()
         _data_version_cache['time'] = now
         return _data_version_cache['version'], _data_version_cache['as_of']
 
 def invalidate_all_caches():
     global _tx_cache, _tx_cache_time, _ml_insights_cache, _ml_insights_cache_time, _clients_cache, _clients_cache_time
+    global _last_exclusions_refresh_time
     with _tx_cache_lock:
         _tx_cache = {}
         _tx_cache_time = 0
@@ -179,8 +183,12 @@ def invalidate_all_caches():
         _clients_cache = None
         _clients_cache_time = 0
     _clear_sync_debug_cache()
-    refresh_live_exclusions(force=True)
-    get_data_version(force=True)
+    # Invalidation clears memory only. Rebuilding all DB metadata synchronously
+    # here made unrelated tabs wait behind a full enquiry/invoice scan.
+    with _exclusions_lock:
+        _last_exclusions_refresh_time = 0
+    with _data_version_lock:
+        _data_version_cache['time'] = 0
     try:
         from growth_tracking_controller import _clear_cache_prefix
         _clear_cache_prefix("")
@@ -429,7 +437,7 @@ def refresh_synced_data_caches():
     # Test requests disable caching; the revision helper has dedicated tests.
     if os.environ.get('FLASK_TESTING', '').lower() in ('true', '1', 'yes'):
         return None
-    if request.method == 'GET' and request.path.startswith('/api/') and not request.path.startswith(('/api/sync', '/api/health', '/api/finance/sync')):
+    if request.method == 'GET' and request.path.startswith('/api/') and not request.path.startswith(('/api/sync', '/api/health', '/api/finance/sync', '/api/warmup')):
         _refresh_sync_cache_revision(force=request.args.get('refresh') == '1')
     return None
 
@@ -924,15 +932,9 @@ def get_transactions():
                                 'fixedGross': float(pr.get('fixed_gross') or 0),
                                 'paidDays': float(pr.get('paid_days') or 0)
                             })
-                    else:
-                        from payroll_service import get_all_payroll_transactions
-                        payroll_txs = get_all_payroll_transactions()
-                        for ptx in payroll_txs:
-                            p_copy = dict(ptx)
-                            emp_n = (p_copy.get('employeeName') or '').strip().lower()
-                            if emp_n and emp_n in bd_map:
-                                p_copy['bdAgentId'] = bd_map[emp_n]
-                            combined.append(p_copy)
+                    # Live payroll retrieval belongs to the background CRM job.
+                    # An empty payroll table must not launch external API requests
+                    # while a user waits for the transaction list.
                 except Exception as sal_err:
                     print('[Payroll] Error loading payroll transactions:', str(sal_err))
 
@@ -3893,58 +3895,17 @@ def get_franchisee_reactivation():
 
 @app.route('/api/warmup', methods=['GET'])
 def warmup():
+    """Wake the HTTP process without DB scans, model training or recursive requests.
+
+    Database readiness is reported by /api/health. Data and ML requests populate
+    their own caches when needed.
     """
-    Lightweight pre-warm endpoint. Hits the DB with a trivial query and primes
-    the exclusion cache so the first heavy /api/transactions call doesn't cold-start.
-    Returns in < 300 ms even from a cold Render instance.
-    """
-    t0 = time.time()
-    status = {'db': False, 'cache': False, 'exclusions': False}
-    try:
-        conn = get_db_connection()
-        with conn.cursor() as c:
-            c.execute('SELECT 1')
-        conn.close()
-        status['db'] = True
-    except Exception as e:
-        status['db_error'] = str(e)
-
-    try:
-        # Prime the TX cache if it's cold
-        with _tx_cache_lock:
-            cache_stale = (time.time() - _tx_cache_time) > TX_CACHE_TTL_SECONDS
-        if cache_stale:
-            # Run in background thread so warmup returns fast
-            import threading
-            def _prime():
-                try:
-                    import requests as req
-                    req.get(
-                        f"http://localhost:{os.environ.get('PORT', 5000)}/api/transactions",
-                        headers={'X-API-Key': os.environ.get('API_KEY', '')},
-                        timeout=30
-                    )
-                except Exception:
-                    pass
-            threading.Thread(target=_prime, daemon=True).start()
-            status['cache'] = 'priming_in_background'
-        else:
-            status['cache'] = 'already_warm'
-    except Exception as e:
-        status['cache_error'] = str(e)
-
-    try:
-        refresh_live_exclusions(force=False)
-        status['exclusions'] = True
-    except Exception as e:
-        status['exclusions_error'] = str(e)
-
-    elapsed = round((time.time() - t0) * 1000)
-    return jsonify({
-        'ok': True,
-        'status': status,
-        'elapsed_ms': elapsed
-    })
+    started = time.perf_counter()
+    with _tx_cache_lock:
+        cache_warm = bool(_tx_cache and (time.time() - _tx_cache_time < TX_CACHE_TTL_SECONDS))
+    return jsonify({'ok': True, 'status': {'db': None, 'exclusions': None,
+                    'cache': 'already_warm' if cache_warm else 'cold'},
+                    'elapsed_ms': round((time.perf_counter() - started) * 1000)})
 
 @app.route('/health', methods=['GET'])
 @app.route('/api/health', methods=['GET'])
@@ -4371,15 +4332,8 @@ def get_job_portal_summary():
 def start_background_sync_daemon():
     import threading
     import time
-    def warmup_ml():
-        try:
-            print("[ML Engine] Auto-warming ML Insights cache in background...")
-            compute_ml_insights(force=True)
-            print("[ML Engine] ML Insights cache warmed and ready!")
-        except Exception as e:
-            print("[ML Engine] Warmup note:", str(e))
-
-    threading.Thread(target=warmup_ml, daemon=True).start()
+    # Compute ML on demand after core data loads. Training on every worker's
+    # cold start competes with the first dashboard and tab requests.
 
     def render_keepalive():
         import urllib.request
