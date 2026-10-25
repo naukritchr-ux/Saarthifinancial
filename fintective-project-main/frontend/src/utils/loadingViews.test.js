@@ -43,6 +43,19 @@ test('partial and offline banners render an accurate data state', async () => {
   }
 });
 
+test('top badge follows booked-cost reconciliation instead of gross income minus expenditure', async () => {
+  const {default: Topbar} = await server.ssrLoadModule('/src/components/Topbar.jsx');
+  const html = renderToString(React.createElement(finance.FinanceContext.Provider, {value: {
+    selectedYear:'2026-2027',selectedMonth:'All Months',availableYears:['2026-2027'],availableMonths:['All Months'],
+    userRole:'admin',activeModule:'franchise_bd',dataState:'live',timeAgo:'just now',currentUser:{name:'Synthetic Manager'},
+    financeSummary:{period:{start_date:'2026-04-01'},accounting_status:'needs_payroll_reconciliation',net:null},
+    fetchAllData:()=>{},setSelectedYear:()=>{},setSelectedMonth:()=>{}
+  }}, React.createElement(Topbar,{activePage:'dashboard'})));
+  assert.match(html,/Operating result \(FY 2026-2027\)/);
+  assert.match(html,/Needs payroll review/);
+  assert.doesNotMatch(html,/P&amp;L|₹4\.20 Cr/);
+});
+
 for (const name of ['Dashboard', 'Franchisees', 'BDPerformance', 'TLPerformance', 'JobPortalAnalytics',
   'CashOutflow', 'Reports', 'RunwayRoiTracker', 'GrowthTracking', 'IndustryAnalysis', 'CostOfPerformance']) {
   test(`${name} renders with an empty initial cache`, async () => {

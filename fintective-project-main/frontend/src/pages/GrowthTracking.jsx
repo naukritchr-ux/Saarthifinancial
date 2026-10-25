@@ -100,6 +100,34 @@ export function GoalModal({profile,period,onClose,onSave,busy,error}) {
   </section></div>;
 }
 
+export function GoalSetter({profile,period,metric,onSave,busy,error}) {
+  const active=profile.goals.find(goal=>goal.status==='active' && goal.metric===metric);
+  const today=todayInIndia();
+  const [target,setTarget]=useState(active?.target ?? '');
+  const [due,setDue]=useState(active?.due_date >= today ? active.due_date : period.fy_end);
+  const [note,setNote]=useState(active?.note || '');
+  const expected=outlook(profile,metric);
+  const missingShare=metric==='company_share' && profile.totals.missing_share_rows>0;
+  const closed=period.fy_end<today;
+  return <div className="ga-goal-setter">
+    <div className="ga-goal-setter-heading"><div><span className="ga-eyebrow">GROWTH GOAL SETTER</span><h4>{profile.scope.label} · {metricLabels[metric]}</h4>
+      <p>Choose a measurable total and a deadline. The dotted line on the graph shows the saved goal's pace.</p></div>
+      {active && <span className="ga-badge">Current: {valueText(active.target,metric)} by {dateLabel(active.due_date)}</span>}
+    </div>
+    {active && <p className="ga-note">Recorded by deadline: {valueText(active.actual,metric)} · Remaining: {valueText(active.gap,metric)} · {active.pace_status.replaceAll('_',' ')}. Replacing this goal keeps the previous version in Targets & progress.</p>}
+    {closed ? <p className="ga-note">This financial year has ended. Select a current FY to save a new goal.</p> :
+      <form onSubmit={event=>{event.preventDefault();onSave({metric,target,due_date:due,note});}}>
+        <label>Goal target {metric==='deals'?'(deals)':'(₹)'}<input required type="number" min={metric==='deals'?1:.01} step={metric==='deals'?1:.01} value={target} onChange={event=>setTarget(event.target.value)}/></label>
+        <label>Deadline<input required type="date" min={today} max={period.fy_end} value={due} onChange={event=>setDue(event.target.value)}/></label>
+        <label>Action plan (optional)<input type="text" maxLength={2000} value={note} onChange={event=>setNote(event.target.value)} placeholder="What will help this profile reach the goal?"/></label>
+        <button className="ga-button ga-primary" disabled={busy || missingShare}><Target size={15}/>{busy?'Saving…':active?'Update goal':'Save goal'}</button>
+      </form>}
+    {expected!==null && !closed && <p className="ga-note">FY run-rate outlook for this metric: {valueText(expected,metric)}. Use it as a reference when choosing the goal.</p>}
+    {missingShare && <p role="alert" className="ga-inline-error">Some invoice company shares are missing. Reconcile them before saving a company-share goal, or select a different metric.</p>}
+    {error && <p role="alert" className="ga-inline-error">{error}</p>}
+  </div>;
+}
+
 export function PayrollAudit({profile}) {
   const payroll=profile.payroll;
   return <section className="ga-panel"><header><div><h3>Payroll & expense audit</h3><p>Recorded cost sources for {profile.scope.label}</p></div><FileText size={19}/></header>
@@ -233,6 +261,8 @@ export default function GrowthTracking() {
         <CompareTable profiles={data.profiles} busy={saving} onCost={()=>{setSaveError('');setEditor('cost');}}/></section>
       <nav className="ga-tabs" aria-label="Growth workspace sections">{[['overview','Audit & overview'],['plan_ahead','Trend & projection'],['deals','Deal audit'],['targets','Targets & progress']].map(([key,label])=><button key={key} className={activeTab===key?'active':''} aria-current={activeTab===key?'page':undefined} onClick={()=>update('tab',key)}>{label}</button>)}</nav>
       {(activeTab==='overview' || activeTab==='plan_ahead') && <section className="ga-panel"><header><div><h3>Where is the profile going?</h3><p>Compare recorded monthly performance with a transparent run-rate outlook.</p></div><div className="ga-inline"><select aria-label="Chart metric" value={metric} onChange={event=>setMetric(event.target.value)}>{Object.entries(metricLabels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select><label className="ga-check"><input type="checkbox" checked={cumulative} onChange={event=>setCumulative(event.target.checked)}/>Cumulative</label><label className="ga-check"><input type="checkbox" checked={showProjection} onChange={event=>setShowProjection(event.target.checked)}/>Projection</label></div></header>
+        {activeTab==='plan_ahead' && <GoalSetter key={`${primary.scope.key}|${filters.fy}|${data.period.as_of}|${metric}|${primary.goals.find(goal=>goal.status==='active' && goal.metric===metric)?.id || ''}`}
+          profile={primary} period={data.period} metric={metric} busy={saving} error={saveError} onSave={body=>mutate('profile-goals',{...saveContext,...body})}/>}
         <GrowthAuditChart profiles={data.profiles} metric={metric} cumulative={cumulative} period={data.period} showProjection={showProjection}/>
         <div className="ga-outlooks">{data.profiles.map((profile,index)=><div key={profile.scope.key}><small style={{color:profileColors[index]}}>{profile.scope.label}</small><strong>{valueText(outlook(profile,metric),metric)}</strong><span>FY run-rate outlook</span><small>{profile.projection.trend_pct[metric]===null ? 'Three-vs-three-month change unavailable' : `${profile.projection.trend_pct[metric]>0?'+':''}${profile.projection.trend_pct[metric]}% · last 3 vs prior 3 complete months`}</small></div>)}</div>
         {activeTab==='plan_ahead' && <div className="ga-table-scroll"><table><thead><tr><th>Month</th><th>Recorded {metricLabels[metric]}</th><th>Month-end outlook</th><th>In progress</th><th>Cancelled</th></tr></thead><tbody>{primary.monthly.map(row=><tr key={row.month}><td>{row.month}{row.partial?' · MTD':''}</td><td>{row.future?'—':valueText(row[metric],metric)}</td><td>{valueText(row[`projected_${metric}`],metric)}</td><td>{row.future?'—':row.in_progress}</td><td>{row.future?'—':row.cancelled}</td></tr>)}</tbody></table></div>}

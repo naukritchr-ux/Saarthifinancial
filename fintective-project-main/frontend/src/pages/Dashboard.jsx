@@ -2,6 +2,7 @@ import React, { useContext, useState, useMemo } from 'react';
 import { FinanceContext } from '../context/FinanceContext';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { getTransactionShares } from '../config/financeConfig';
+import { bookedResultView } from '../utils/bookedResult.js';
 import { DonutChart, Sparkline, WaterfallChart, MonthlyTrendBarChart } from '../components/CustomCharts';
 import {
   ArrowUpRight,
@@ -39,7 +40,8 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
     activeModule,
     backendHealth,
     isLoadingData,
-    financeSummary
+    financeSummary,
+    financeError
   } = useContext(FinanceContext);
 
   // Local Modal & View States
@@ -152,18 +154,17 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
     };
   }, [displayTxs]);
 
-  const hasReviewedCostEstimate = (userRole === 'admin' || userRole === 'manager') && activeModule !== 'job_portal' &&
-    financeSummary?.accounting_status === 'provisional_booked_costs' && Number.isFinite(financeSummary?.net);
-  const bookedResult = hasReviewedCostEstimate ? financeSummary.net : null;
+  const result = bookedResultView({ summary: financeSummary, selectedMonth, selectedYear, userRole, activeModule, error: financeError });
+  const hasReviewedCostEstimate = result.status === 'ready';
+  const bookedResult = result.value;
   const bookedMargin = hasReviewedCostEstimate && financeSummary.our_share > 0 ? bookedResult / financeSummary.our_share * 100 : null;
+  const resultStatusText = result.status === 'needs_review' ? 'Needs payroll review' : result.status === 'loading' ? 'Loading result…' : 'Result unavailable';
 
   // Previous period comparison metrics
-  const { prevMonthLabel, prevRevenue, prevExpenses, prevProfit, prevMargin } = useMemo(() => {
+  const { prevMonthLabel, prevRevenue, prevExpenses } = useMemo(() => {
     let pLabel = '';
     let pRev = 0;
     let pExp = 0;
-    let pProf = 0;
-    let pMarg = 0;
 
     if (selectedMonth !== 'All Months') {
       const parts = selectedMonth.split(' ');
@@ -187,15 +188,9 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
 
       pRev = prevTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
       pExp = prevTxs.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
-      const pOurShare = prevTxs.filter(t => t.type === 'income').reduce((sum, t) => {
-        const shares = getTransactionShares(t);
-        return sum + (shares.rShare || 0);
-      }, 0);
-      pProf = pOurShare - pExp;
-      pMarg = pOurShare > 0 ? (pProf / pOurShare) * 100 : 0;
     }
 
-    return { prevMonthLabel: pLabel, prevRevenue: pRev, prevExpenses: pExp, prevProfit: pProf, prevMargin: pMarg };
+    return { prevMonthLabel: pLabel, prevRevenue: pRev, prevExpenses: pExp };
   }, [roleTxs, selectedMonth]);
 
   const getChange = (curr, prev) => {
@@ -209,25 +204,11 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
     };
   };
 
-  const getMarginChange = (curr, prev) => {
-    if (prev === 0) return { val: 0, text: 'No prior data', positive: true };
-    const diff = curr - prev;
-    const isPositive = diff >= 0;
-    return {
-      val: Math.abs(diff).toFixed(1),
-      text: `${isPositive ? '↑' : '↓'} ${Math.abs(diff).toFixed(1)}pp vs ${prevMonthLabel.split(' ')[0]}`,
-      positive: isPositive
-    };
-  };
-
   const revenueChange = getChange(revenue, prevRevenue);
   const expenseChange = getChange(expenses, prevExpenses);
-  const profitChange = getChange(profit, prevProfit);
-  const marginChange = getMarginChange(margin, prevMargin);
 
-  // Sparkline data points: 6-month trailing trajectory for KPI cards
-  const { revSparkPoints, expSparkPoints, profSparkPoints, marginSparkPoints } = useMemo(() => {
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  // Revenue and expense sparklines use the same posted transaction basis as their cards.
+  const { revSparkPoints, expSparkPoints } = useMemo(() => {
     // Group all role transactions by year-month
     const monthlyMap = {};
     roleTxs.forEach(tx => {
@@ -236,12 +217,10 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
       if (isNaN(d.getTime())) return;
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       if (!monthlyMap[key]) {
-        monthlyMap[key] = { rev: 0, exp: 0, ourShare: 0 };
+        monthlyMap[key] = { rev: 0, exp: 0 };
       }
       if (tx.type === 'income') {
         monthlyMap[key].rev += (tx.amount || 0);
-        const shares = getTransactionShares(tx);
-        monthlyMap[key].ourShare += (shares.rShare || 0);
       } else if (tx.type === 'expense') {
         monthlyMap[key].exp += (tx.amount || 0);
       }
@@ -252,20 +231,11 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
 
     const rPts = last6Keys.map(k => monthlyMap[k].rev);
     const ePts = last6Keys.map(k => monthlyMap[k].exp);
-    const pPts = last6Keys.map(k => monthlyMap[k].ourShare - monthlyMap[k].exp);
-    const mPts = last6Keys.map(k => {
-      const share = monthlyMap[k].ourShare;
-      const net = share - monthlyMap[k].exp;
-      return share > 0 ? (net / share) * 100 : 0;
-    });
-
     return {
       revSparkPoints: rPts.length >= 2 ? rPts : [0, revenue],
-      expSparkPoints: ePts.length >= 2 ? ePts : [0, expenses],
-      profSparkPoints: pPts.length >= 2 ? pPts : [0, profit],
-      marginSparkPoints: mPts.length >= 2 ? mPts : [0, margin]
+      expSparkPoints: ePts.length >= 2 ? ePts : [0, expenses]
     };
-  }, [roleTxs, revenue, expenses, profit, margin]);
+  }, [roleTxs, revenue, expenses]);
 
   // Monthly FY Trend Series (Row 2 Left)
   const fyMonthlySeries = useMemo(() => {
@@ -735,10 +705,10 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
             <span className="kpi-icon-pill"><TrendingUp size={16} /></span>
           </div>
 
-          <div className="kpi-main-metric" style={{ color: profit >= 0 ? '#0f6e56' : '#a8402e' }}>
-            {bookedResult == null ? 'Needs payroll review' : formatLakhs(bookedResult)}
+          <div className="kpi-main-metric" style={{ color: bookedResult == null ? '#a8402e' : bookedResult >= 0 ? '#0f6e56' : '#a8402e' }}>
+            {bookedResult == null ? resultStatusText : formatLakhs(bookedResult)}
           </div>
-          <p className="kpi-sub-note">{financeSummary?.accounting_status === 'needs_payroll_reconciliation' ? 'Payroll-related expense components need reconciliation. See recorded source breakdown in Runway & ROI.' : 'Provisional posted-period estimate. Salary obligations may still be unposted.'}</p>
+          <p className="kpi-sub-note">{result.status === 'needs_review' ? 'Payroll-related expense components need reconciliation. See recorded source breakdown in Runway & ROI.' : result.status === 'ready' ? 'Provisional posted-period estimate. Salary obligations may still be unposted.' : 'A matching booked-cost summary is not available for this selection.'}</p>
 
           {/* Dynamic Payroll Status Badge from API Numeric Fields */}
           {(() => {
@@ -764,13 +734,9 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
           })()}
 
           <div className="kpi-bottom-row">
-            <span className={`kpi-delta-tag ${profitChange.positive ? 'positive' : 'negative'}`}>
-              {profitChange.positive ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
+            <span className="kpi-delta-tag">
               <span>{bookedResult == null ? 'Awaiting reconciled costs' : 'Company-wide selected-period estimate'}</span>
             </span>
-            <div className="kpi-sparkline-wrap">
-              {bookedResult != null && <Sparkline points={profSparkPoints} width={80} height={24} positive={bookedResult >= 0} />}
-            </div>
           </div>
         </div>
 
@@ -784,16 +750,12 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
             <span className="kpi-icon-pill"><Percent size={16} /></span>
           </div>
 
-          <div className="kpi-main-metric">{bookedMargin == null ? 'Needs payroll review' : `${bookedMargin.toFixed(1)}%`}</div>
+          <div className="kpi-main-metric">{bookedMargin == null ? resultStatusText : `${bookedMargin.toFixed(1)}%`}</div>
 
           <div className="kpi-bottom-row">
-            <span className={`kpi-delta-tag ${marginChange.positive ? 'positive' : 'negative'}`}>
-              {marginChange.positive ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-              <span>{selectedMonth === 'All Months' ? 'Pool Retained' : marginChange.text}</span>
+            <span className="kpi-delta-tag">
+              <span>{bookedMargin == null ? 'Awaiting reconciled costs' : 'Provisional booked-cost ratio'}</span>
             </span>
-            <div className="kpi-sparkline-wrap">
-              <Sparkline points={marginSparkPoints} width={80} height={24} positive={margin >= 0} />
-            </div>
           </div>
         </div>
       </section>
@@ -861,7 +823,7 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
 
             <div className="waterfall-summary-pill">
               <span className="waterfall-summary-label">Company Net Retained Conversion:</span>
-              <span className="waterfall-summary-val" style={{ color: profit >= 0 ? '#0f6e56' : '#a8402e' }}>
+              <span className="waterfall-summary-val" style={{ color: bookedMargin == null ? '#a8402e' : bookedMargin >= 0 ? '#0f6e56' : '#a8402e' }}>
                 {bookedMargin == null ? 'Not yet reconciled' : `${bookedMargin.toFixed(1)}% of company income`}
               </span>
             </div>

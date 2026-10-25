@@ -1,16 +1,17 @@
-import React, { useContext, useState, useMemo } from 'react';
+import React, { useContext, useState } from 'react';
 import { FinanceContext } from '../context/FinanceContext';
 import { formatLakhs } from '../utils/formatters';
-import { 
-  CloudDownload, 
-  RefreshCw, 
-  AlertTriangle, 
-  AlertCircle, 
-  Clock, 
-  ServerOff, 
-  KeyRound, 
-  Info, 
-  CheckCircle2, 
+import { bookedResultView } from '../utils/bookedResult.js';
+import {
+  CloudDownload,
+  RefreshCw,
+  AlertTriangle,
+  AlertCircle,
+  Clock,
+  ServerOff,
+  KeyRound,
+  Info,
+  CheckCircle2,
   X,
   Database,
   Activity,
@@ -19,10 +20,9 @@ import {
 import SyncModal from './SyncModal';
 
 const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
-  const { 
-    moduleFilteredTransactions, 
-    selectedMonth, 
-    setSelectedMonth, 
+  const {
+    selectedMonth,
+    setSelectedMonth,
     availableMonths,
     selectedYear,
     setSelectedYear,
@@ -40,56 +40,15 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
     connectionProgress,
     endpointStatus,
     timeAgo,
-    currentCashBalance
+    currentCashBalance,
+    financeSummary,
+    financeError
   } = useContext(FinanceContext);
 
   const [isSyncOpen, setIsSyncOpen] = useState(false);
   const [showHealthModal, setShowHealthModal] = useState(false);
 
-  // Calculate quick metrics for the top badge using module-filtered data (memoized)
-  const roleFilteredTxs = useMemo(() => {
-    if (!Array.isArray(moduleFilteredTransactions)) return [];
-    return moduleFilteredTransactions.filter(tx => {
-      if (!tx) return false;
-      if (userRole === 'admin') return true;
-      if (userRole.startsWith('franchise_')) {
-        const fId = userRole.split('_')[1];
-        return tx.franchiseeId === fId;
-      }
-      if (userRole.startsWith('bd_')) {
-        const bdId = userRole.split('_')[1];
-        return tx.bdAgentId === bdId;
-      }
-      return true;
-    });
-  }, [moduleFilteredTransactions, userRole]);
-
-  // Clearly scoped P&L calculation (strictly scoped to selectedYear, or All Time if selected)
-  const { periodLabel, periodNet } = useMemo(() => {
-    let txsToUse = roleFilteredTxs;
-    if (selectedYear !== 'All Years') {
-      txsToUse = roleFilteredTxs.filter(tx => {
-        if (tx.financialYear && tx.financialYear !== 'N/A') {
-          return tx.financialYear === selectedYear;
-        }
-        const d = new Date(tx.date);
-        if (!isNaN(d.getTime())) {
-          const y = d.getFullYear();
-          const m = d.getMonth();
-          const fy = m >= 3 ? `${y}-${y+1}` : `${y-1}-${y}`;
-          return fy === selectedYear;
-        }
-        return false;
-      });
-    }
-
-    const inc = txsToUse.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.amount || 0), 0);
-    const exp = txsToUse.filter(t => t.type === 'expense').reduce((sum, t) => sum + (t.amount || 0), 0);
-    const net = inc - exp;
-
-    const label = selectedYear !== 'All Years' ? `P&L (${selectedYear}):` : 'P&L (All Time):';
-    return { periodLabel: label, periodNet: net };
-  }, [roleFilteredTxs, selectedYear]);
+  const result = bookedResultView({ summary: financeSummary, selectedMonth, selectedYear, userRole, activeModule, error: financeError });
 
   const getPageTitle = () => {
     switch (activePage) {
@@ -110,29 +69,29 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
 
   const getPageSubtitle = () => {
     switch (activePage) {
-      case 'dashboard': 
+      case 'dashboard':
         return `Financial overview • ${selectedMonth} (${activeModule === 'job_portal' ? 'Job Portal' : 'Franchise & BD'})`;
       case 'cost-performance':
         return 'Team productivity, commissions, and performance costs';
-      case 'franchisees': 
+      case 'franchisees':
         return 'Franchise profitability and recruitment conversions';
-      case 'bd-performance': 
+      case 'bd-performance':
         return 'Sales commission and conversions by BD agents';
-      case 'tl-performance': 
+      case 'tl-performance':
         return 'Team leader revenue targets and payouts';
-      case 'portal-analytics': 
+      case 'portal-analytics':
         return 'Job portal sales conversion, recruiter accounts and packages';
-      case 'cash-outflow': 
+      case 'cash-outflow':
         return 'Detailed expense distribution analysis';
-      case 'reports': 
+      case 'reports':
         return 'Filter and audit transaction ledger logs';
-      case 'roi-tracker': 
+      case 'roi-tracker':
         return 'Analyze company profitability, BD sales commission ROI, and cash runway projections';
-      case 'growth-tracking': 
+      case 'growth-tracking':
         return 'Growth scenarios and financial targets';
-      case 'industry-analysis': 
+      case 'industry-analysis':
         return 'Sector breakdown and expansion potential';
-      default: 
+      default:
         return '';
     }
   };
@@ -229,10 +188,10 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
       <div className="topbar-header-info">
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <h1 style={{ margin: 0 }}>{getPageTitle()}</h1>
-          
+
           {/* Module Header Badge */}
           <div style={{ display: 'flex', background: activeModule === 'job_portal' ? 'rgba(234, 88, 12, 0.1)' : 'rgba(13, 148, 136, 0.1)', padding: '3px 12px', borderRadius: '10px', border: activeModule === 'job_portal' ? '1px solid rgba(234, 88, 12, 0.25)' : '1px solid rgba(13, 148, 136, 0.25)' }}>
-            <span 
+            <span
               style={{ color: activeModule === 'job_portal' ? '#c2410c' : '#0f766e', fontSize: '11px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase' }}
             >
               Finance App
@@ -318,12 +277,12 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
           </button>
         </div>
 
-        <div className="topbar-badge" style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <span className="badge-label" style={{ color: '#475569', fontWeight: '600' }}>{periodLabel}</span>
-          <span className={`badge-value ${periodNet >= 0 ? 'positive' : 'negative'}`} style={{ fontWeight: '800' }}>
-            {formatLakhs(periodNet)}
+        {result.status !== 'not_applicable' && <div className="topbar-badge" style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <span className="badge-label" style={{ color: '#475569', fontWeight: '600' }}>{result.label}</span>
+          <span className={`badge-value ${result.status === 'ready' ? (result.value >= 0 ? 'positive' : 'negative') : ''}`} style={{ fontWeight: '800' }}>
+            {result.status === 'ready' ? formatLakhs(result.value) : result.status === 'needs_review' ? 'Needs payroll review' : result.status === 'loading' ? 'Loading result…' : 'Result unavailable'}
           </span>
-        </div>
+        </div>}
 
         {currentUser && (
           <div className="topbar-badge" style={{ background: '#ffffff', border: `1.5px solid ${accentColor}`, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
@@ -336,13 +295,13 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
 
         {/* Global Year and Month Filter Dropdowns */}
         <div className="filter-dropdown-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <select 
+          <select
             id="topbar-year-select"
             value={selectedYear}
             onChange={(e) => setSelectedYear(e.target.value)}
             className="month-select"
             aria-label="Filter by Financial Year"
-            style={{ 
+            style={{
               height: '32px',
               padding: '2px 10px',
               borderRadius: '8px',
@@ -360,13 +319,13 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
             ))}
           </select>
 
-          <select 
+          <select
             id="topbar-month-select"
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
             className="month-select"
             aria-label="Filter by Month"
-            style={{ 
+            style={{
               height: '32px',
               padding: '2px 10px',
               borderRadius: '8px',
@@ -391,7 +350,7 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
 
       {/* Health Diagnostic Popover / Modal */}
       {showHealthModal && (
-        <div 
+        <div
           style={{
             position: 'fixed',
             top: 0,
@@ -424,7 +383,7 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
                 <Activity size={18} color="#0f766e" />
                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#0f172a' }}>Live System Diagnostics</h3>
               </div>
-              <button 
+              <button
                 onClick={() => setShowHealthModal(false)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
               >

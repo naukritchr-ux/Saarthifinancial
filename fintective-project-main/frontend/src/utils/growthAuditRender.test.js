@@ -36,3 +36,11 @@ test('growth goal source form includes metric, deadline, baseline and action pla
   const html=renderToString(React.createElement(components.GoalModal,{profile:fixture.profiles[0],period:fixture.period,onClose:()=>{},onSave:()=>{}}));
   assert.match(html,/Company share/);assert.match(html,/Due date/);assert.match(html,/Action plan/);assert.match(html,/Save growth target/);
 });
+test('trend graph has a directly editable goal for its selected metric',()=>{
+  const profile=fixture.profiles[0];
+  const existing=renderToString(React.createElement(components.GoalSetter,{profile,period:fixture.period,metric:'company_share',onSave:()=>{}}));
+  assert.match(existing,/GROWTH GOAL SETTER/);assert.match(existing,/Current:.*₹3,000/);
+  assert.match(existing,/Update goal/);assert.match(existing,/Action plan/);
+  const newMetric=renderToString(React.createElement(components.GoalSetter,{profile,period:fixture.period,metric:'revenue',onSave:()=>{}}));
+  assert.match(newMetric,/Revenue excluding GST/);assert.match(newMetric,/Save goal/);
+});
