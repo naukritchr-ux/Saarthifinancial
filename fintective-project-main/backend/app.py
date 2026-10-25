@@ -265,16 +265,26 @@ def safe_date_diff_days(d1, d2):
 
 app = Flask(__name__)
 
-# Configure CORS to permit all valid origins including Vercel frontend domains
+# Restrict CORS when frontend origins are configured on the backend. Until then,
+# preserve the existing bearer/API-key integration for deployed frontends.
+# Example: CORS_ORIGINS=https://app.example.com,https://preview.example.com
+_configured_cors_origins = [
+    origin.strip().rstrip('/')
+    for origin in os.environ.get('CORS_ORIGINS', '').split(',')
+    if origin.strip()
+]
+CORS_ORIGINS = _configured_cors_origins or '*'
 CORS(
     app,
-    resources={r"/*": {"origins": "*"}},
+    resources={r"/*": {"origins": CORS_ORIGINS}},
     allow_headers=["Content-Type", "X-API-Key", "Authorization", "Accept", "Origin", "X-User-Role"],
     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     supports_credentials=False
 )
 
 is_prod = os.environ.get('FLASK_ENV') == 'production' or not app.debug
+if is_prod and CORS_ORIGINS == '*':
+    print('[WARN] CORS_ORIGINS is unset; browser responses are available to any origin subject to API authentication. Set the deployed frontend origin(s) on the backend.')
 API_KEY = os.environ.get('API_KEY')
 ENFORCE_API_KEY = os.environ.get('ENFORCE_API_KEY', 'true').lower() in ('true', '1', 'yes')
 if not API_KEY and is_prod and ENFORCE_API_KEY:
@@ -285,11 +295,7 @@ def handle_preflight_and_api_key():
     g.start_time = time.time()
     # Always allow preflight OPTIONS requests immediately
     if request.method == 'OPTIONS':
-        res = app.make_default_options_response()
-        res.headers['Access-Control-Allow-Origin'] = '*'
-        res.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
-        res.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-API-Key, Authorization, Accept, Origin, X-User-Role'
-        return res
+        return app.make_default_options_response()  # Flask-CORS adds the headers
 
     # Allow health diagnostic and warmup endpoints without auth
     if request.path in ['/health', '/api/health', '/api/warmup']:
@@ -305,10 +311,6 @@ def handle_preflight_and_api_key():
 
 @app.after_request
 def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-API-Key, Authorization, Accept, Origin, X-User-Role'
-    
     # Server-side request timing header and diagnostic logging
     duration_ms = round((time.time() - getattr(g, 'start_time', time.time())) * 1000)
     response.headers['X-Response-Time-Ms'] = str(duration_ms)

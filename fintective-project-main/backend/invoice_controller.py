@@ -9,7 +9,13 @@ JWT_SECRET = os.getenv("JWT_SECRET")
 if not JWT_SECRET:
     if os.getenv("FLASK_ENV") == "production" or os.getenv("ENV") == "production":
         raise RuntimeError("FATAL: JWT_SECRET environment variable must be configured in production.")
-    JWT_SECRET = "fallback_secret"
+    # Fail closed: never fall back to a guessable, shared secret. A random
+    # per-process secret means no externally issued token can verify, so every
+    # request is treated as unauthenticated until JWT_SECRET is configured.
+    import secrets
+    JWT_SECRET = secrets.token_hex(32)
+    print("[WARN] JWT_SECRET is not set; Bearer tokens will not verify. "
+          "Set JWT_SECRET to the host app's signing secret.")
 
 invoice_bp = Blueprint("invoice", __name__)
 

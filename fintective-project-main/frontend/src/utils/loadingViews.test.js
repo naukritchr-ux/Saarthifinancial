@@ -43,17 +43,53 @@ test('partial and offline banners render an accurate data state', async () => {
   }
 });
 
-test('top badge follows booked-cost reconciliation instead of gross income minus expenditure', async () => {
+test('top badge preserves the recorded ₹4.20 Cr spread without calling it profit', async () => {
   const {default: Topbar} = await server.ssrLoadModule('/src/components/Topbar.jsx');
   const html = renderToString(React.createElement(finance.FinanceContext.Provider, {value: {
     selectedYear:'2026-2027',selectedMonth:'All Months',availableYears:['2026-2027'],availableMonths:['All Months'],
     userRole:'admin',activeModule:'franchise_bd',dataState:'live',timeAgo:'just now',currentUser:{name:'Synthetic Manager'},
+    moduleFilteredTransactions:[
+      {type:'income',date:'2026-10-01',financialYear:'2026-2027',amount:62800000},
+      {type:'expense',date:'2026-10-02',financialYear:'2026-2027',amount:20800000}
+    ],
     financeSummary:{period:{start_date:'2026-04-01'},accounting_status:'needs_payroll_reconciliation',net:null},
     fetchAllData:()=>{},setSelectedYear:()=>{},setSelectedMonth:()=>{}
   }}, React.createElement(Topbar,{activePage:'dashboard'})));
-  assert.match(html,/Operating result \(FY 2026-2027\)/);
-  assert.match(html,/Needs payroll review/);
-  assert.doesNotMatch(html,/P&amp;L|₹4\.20 Cr/);
+  assert.match(html,/Income − logged expenses .*FY 2026-2027/);
+  assert.match(html,/₹4\.20 Cr/);
+  assert.match(html,/profit pending payroll review/);
+  assert.doesNotMatch(html,/P&amp;L/);
+});
+
+test('unreconciled booked-cost waterfall renders a negative result without a net-profit label', async () => {
+  const {WaterfallChart} = await server.ssrLoadModule('/src/components/CustomCharts.jsx');
+  const html=renderToString(React.createElement(WaterfallChart,{
+    grossRevenue:400000,companyShare:100000,operatingExpenses:200000,payroll:20000,netProfit:-120000,
+    resultLabel:'Recorded diff',resultDetail:'Unreconciled booked-cost difference; not verified profit',
+    payrollRows:1,unreconciled:true,height:200
+  }));
+  assert.match(html,/Recorded diff/);
+  assert.match(html,/Unreconciled booked-cost difference/);
+  assert.match(html,/₹1\.2 L/);
+  assert.doesNotMatch(html,/Net Profit|NaN|Infinity/);
+});
+
+test('dashboard cards show the backend recorded difference and ratio while payroll is under review', async () => {
+  const {default: Dashboard}=await server.ssrLoadModule('/src/pages/Dashboard.jsx');
+  const summary={period:{start_date:'2026-04-01',end_date:'2026-10-25'},accounting_status:'needs_payroll_reconciliation',
+    revenue:400000,our_share:100000,operating_expenses:200000,salaries:20000,net:null,
+    cash_breakdown:{unreconciled_cost_result:-120000,sources:{payroll_records:{rows:1}}}};
+  const html=renderToString(React.createElement(finance.FinanceContext.Provider,{value:{
+    moduleFilteredTransactions:[],selectedMonth:'All Months',selectedYear:'2026-2027',
+    budgets:{},userRole:'admin',franchisees:[],bdAgents:[],activeModule:'franchise_bd',
+    backendHealth:null,isLoadingData:false,financeSummary:summary
+  }},React.createElement(Dashboard,{setActivePage:()=>{}})));
+  assert.match(html,/Operating Result \(Booked Costs\)/);
+  assert.match(html,/Estimated Operating Margin/);
+  assert.match(html,/-₹1\.20L/);
+  assert.match(html,/-120\.0%/);
+  assert.match(html,/Recorded diff/);
+  assert.match(html,/Payroll reconciliation pending/);
 });
 
 for (const name of ['Dashboard', 'Franchisees', 'BDPerformance', 'TLPerformance', 'JobPortalAnalytics',

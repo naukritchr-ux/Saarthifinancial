@@ -957,6 +957,10 @@ export const WaterfallChart = ({
   operatingExpenses = 0,
   payroll = 0,
   netProfit = 0,
+  resultLabel = 'Booked result',
+  resultDetail = 'Provisional booked-cost result',
+  unreconciled = false,
+  payrollRows = null,
   periodLabel = '',
   onConfigurePayroll = null,
   height = 210
@@ -969,10 +973,9 @@ export const WaterfallChart = ({
     return `₹${num.toFixed(0)}`;
   };
 
-  const isPayrollMissing = !payroll || Number(payroll) <= 0;
+  const isPayrollMissing = Number.isFinite(payrollRows) ? payrollRows <= 0 : !payroll || Number(payroll) <= 0;
 
   // Scale calculations
-  const maxVal = Math.max(grossRevenue, companyShare, 100000) * 1.15;
   const width = 560;
   const padL = 40;
   const padR = 24;
@@ -980,7 +983,11 @@ export const WaterfallChart = ({
   const padB = 40;
   const plotW = width - padL - padR;
   const plotH = height - padT - padB;
-  const baselineY = padT + plotH;
+  const upper = Math.max(grossRevenue, companyShare, 100000);
+  const lower = Math.max(0, operatingExpenses + payroll - companyShare, -netProfit);
+  const scale = plotH / ((upper + lower) * 1.1);
+  const baselineY = padT + upper * scale;
+  const axisLabelY = height - padB;
 
   const barWidth = 48;
   const colCount = 5;
@@ -989,30 +996,30 @@ export const WaterfallChart = ({
   // Calculate coordinates for 5 columns
   // Col 0: Gross Revenue (from 0 up to grossRevenue)
   const x0 = padL + colSpacing * 0 + (colSpacing - barWidth) / 2;
-  const h0 = Math.max(4, (grossRevenue / maxVal) * plotH);
+  const h0 = Math.max(4, grossRevenue * scale);
   const y0 = baselineY - h0;
 
   // Col 1: Company Share (starts at 0 up to companyShare)
   const x1 = padL + colSpacing * 1 + (colSpacing - barWidth) / 2;
-  const h1 = Math.max(4, (companyShare / maxVal) * plotH);
+  const h1 = Math.max(4, companyShare * scale);
   const y1 = baselineY - h1;
 
   // Col 2: Operating Expenses (steps down from companyShare)
   const x2 = padL + colSpacing * 2 + (colSpacing - barWidth) / 2;
-  const h2 = Math.max(4, (operatingExpenses / maxVal) * plotH);
+  const h2 = Math.max(4, operatingExpenses * scale);
   const y2 = y1; // top of operating expenses sits at top of company share
   const y2_bottom = y2 + h2; // steps down
 
   // Col 3: Payroll CTC (steps down from operating expenses bottom)
   const x3 = padL + colSpacing * 3 + (colSpacing - barWidth) / 2;
-  const h3 = isPayrollMissing ? 20 : Math.max(4, (payroll / maxVal) * plotH);
+  const h3 = isPayrollMissing ? 20 : Math.max(4, payroll * scale);
   const y3 = y2_bottom;
   const y3_bottom = isPayrollMissing ? y3 : y3 + h3;
 
   // Col 4: Corporate Net Profit (from baseline to netProfit)
   const x4 = padL + colSpacing * 4 + (colSpacing - barWidth) / 2;
   const isNetPos = netProfit >= 0;
-  const h4 = Math.max(4, (Math.abs(netProfit) / maxVal) * plotH);
+  const h4 = Math.max(4, Math.abs(netProfit) * scale);
   const y4 = isNetPos ? baselineY - h4 : baselineY;
 
   return (
@@ -1042,10 +1049,10 @@ export const WaterfallChart = ({
         <text x={x0 + barWidth / 2} y={Math.max(12, y0 - 6)} textAnchor="middle" fill="#1e293b" fontSize="9.5" fontWeight="700">
           {formatVal(grossRevenue)}
         </text>
-        <text x={x0 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
+        <text x={x0 + barWidth / 2} y={axisLabelY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
           Gross Rev
         </text>
-        <text x={x0 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill="#64748b" fontSize="7.5">
+        <text x={x0 + barWidth / 2} y={axisLabelY + 28} textAnchor="middle" fill="#64748b" fontSize="7.5">
           100% Billing
         </text>
 
@@ -1056,10 +1063,10 @@ export const WaterfallChart = ({
         <text x={x1 + barWidth / 2} y={Math.max(12, y1 - 6)} textAnchor="middle" fill="#0f6e56" fontSize="9.5" fontWeight="700">
           {formatVal(companyShare)}
         </text>
-        <text x={x1 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
+        <text x={x1 + barWidth / 2} y={axisLabelY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
           Co. Share
         </text>
-        <text x={x1 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill="#0f766e" fontSize="7.5" fontWeight="600">
+        <text x={x1 + barWidth / 2} y={axisLabelY + 28} textAnchor="middle" fill="#0f766e" fontSize="7.5" fontWeight="600">
           ~25% Pool
         </text>
 
@@ -1070,10 +1077,10 @@ export const WaterfallChart = ({
         <text x={x2 + barWidth / 2} y={Math.max(12, y2 - 6)} textAnchor="middle" fill="#a8402e" fontSize="9.5" fontWeight="700">
           -{formatVal(operatingExpenses)}
         </text>
-        <text x={x2 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
+        <text x={x2 + barWidth / 2} y={axisLabelY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
           Opex & Comm
         </text>
-        <text x={x2 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill="#64748b" fontSize="7.5">
+        <text x={x2 + barWidth / 2} y={axisLabelY + 28} textAnchor="middle" fill="#64748b" fontSize="7.5">
           Office/Tools
         </text>
 
@@ -1082,13 +1089,13 @@ export const WaterfallChart = ({
           <g style={{ cursor: onConfigurePayroll ? 'pointer' : 'default' }} onClick={() => onConfigurePayroll && onConfigurePayroll()}>
             <rect x={x3} y={y3} width={barWidth} height={20} fill="#f1f5f9" stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" rx={4} />
             <text x={x3 + barWidth / 2} y={y3 + 13} textAnchor="middle" fill="#64748b" fontSize="7" fontWeight="600">
-              Not configured
+              No payroll row
             </text>
-            <text x={x3 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#64748b" fontSize="8.5" fontWeight="600">
+            <text x={x3 + barWidth / 2} y={axisLabelY + 16} textAnchor="middle" fill="#64748b" fontSize="8.5" fontWeight="600">
               Payroll
             </text>
-            <text x={x3 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill="#2563eb" fontSize="7.5" fontWeight="600">
-              [Set Budget]
+            <text x={x3 + barWidth / 2} y={axisLabelY + 28} textAnchor="middle" fill="#2563eb" fontSize="7.5" fontWeight="600">
+              Review source
             </text>
           </g>
         ) : (
@@ -1099,27 +1106,27 @@ export const WaterfallChart = ({
             <text x={x3 + barWidth / 2} y={Math.max(12, y3 - 6)} textAnchor="middle" fill="#7c3aed" fontSize="9.5" fontWeight="700">
               -{formatVal(payroll)}
             </text>
-            <text x={x3 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
+            <text x={x3 + barWidth / 2} y={axisLabelY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
               Payroll
             </text>
-            <text x={x3 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill="#64748b" fontSize="7.5">
+            <text x={x3 + barWidth / 2} y={axisLabelY + 28} textAnchor="middle" fill="#64748b" fontSize="7.5">
               CTC Salaries
             </text>
           </g>
         )}
 
-        {/* Bar 4: Net Corporate Profit */}
-        <rect x={x4} y={y4} width={barWidth} height={h4} fill={isNetPos ? '#10b981' : '#ef4444'} rx={4}>
-          <title>{`Corporate Net Profit: ${isNetPos ? '' : '-'}${formatVal(netProfit)}`}</title>
+        {/* Bar 4: booked-cost arithmetic with its reconciliation status */}
+        <rect x={x4} y={y4} width={barWidth} height={h4} fill={unreconciled ? '#d97706' : isNetPos ? '#10b981' : '#ef4444'} rx={4}>
+          <title>{`${resultDetail}: ${isNetPos ? '' : '-'}${formatVal(netProfit)}`}</title>
         </rect>
-        <text x={x4 + barWidth / 2} y={isNetPos ? Math.max(12, y4 - 6) : y4 + h4 + 12} textAnchor="middle" fill={isNetPos ? '#059669' : '#dc2626'} fontSize="9.5" fontWeight="800">
+        <text x={x4 + barWidth / 2} y={isNetPos ? Math.max(12, y4 - 6) : y4 + h4 + 12} textAnchor="middle" fill={unreconciled ? '#a35d0b' : isNetPos ? '#059669' : '#dc2626'} fontSize="9.5" fontWeight="800">
           {isNetPos ? '+' : '-'}{formatVal(netProfit)}
         </text>
-        <text x={x4 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#0f172a" fontSize="8.5" fontWeight="700">
-          Net Profit
+        <text x={x4 + barWidth / 2} y={axisLabelY + 16} textAnchor="middle" fill="#0f172a" fontSize="8.5" fontWeight="700">
+          {resultLabel}
         </text>
-        <text x={x4 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill={isNetPos ? '#059669' : '#dc2626'} fontSize="7.5" fontWeight="700">
-          Bottom Line
+        <text x={x4 + barWidth / 2} y={axisLabelY + 28} textAnchor="middle" fill={unreconciled ? '#a35d0b' : isNetPos ? '#059669' : '#dc2626'} fontSize="7.5" fontWeight="700">
+          {unreconciled ? 'Needs review' : 'Posted costs'}
         </text>
       </svg>
     </div>

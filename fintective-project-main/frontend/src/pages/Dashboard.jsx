@@ -2,7 +2,7 @@ import React, { useContext, useState, useMemo } from 'react';
 import { FinanceContext } from '../context/FinanceContext';
 import { formatCurrency, formatLakhs, formatDate } from '../utils/formatters';
 import { getTransactionShares } from '../config/financeConfig';
-import { bookedResultView } from '../utils/bookedResult.js';
+import { bookedCostFigures, bookedResultView } from '../utils/bookedResult.js';
 import { DonutChart, Sparkline, WaterfallChart, MonthlyTrendBarChart } from '../components/CustomCharts';
 import {
   ArrowUpRight,
@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import './Dashboard.css';
 
-const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
+const Dashboard = ({ setActivePage }) => {
   const {
     moduleFilteredTransactions: transactions,
     selectedMonth,
@@ -154,10 +154,10 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
     };
   }, [displayTxs]);
 
-  const result = bookedResultView({ summary: financeSummary, selectedMonth, selectedYear, userRole, activeModule, error: financeError });
-  const hasReviewedCostEstimate = result.status === 'ready';
-  const bookedResult = result.value;
-  const bookedMargin = hasReviewedCostEstimate && financeSummary.our_share > 0 ? bookedResult / financeSummary.our_share * 100 : null;
+  const result = bookedResultView({summary:financeSummary,selectedMonth,selectedYear,userRole,activeModule,error:financeError});
+  const figures = bookedCostFigures(financeSummary,result);
+  const bookedResult = figures.result;
+  const bookedMargin = figures.ratio;
   const resultStatusText = result.status === 'needs_review' ? 'Needs payroll review' : result.status === 'loading' ? 'Loading result…' : 'Result unavailable';
 
   // Previous period comparison metrics
@@ -699,7 +699,7 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
         <div className="dash-kpi-card kpi-profit">
           <div className="kpi-top-row">
             <div className="kpi-label-group">
-              <span className="kpi-metric-title">Operating Result (Booked Costs)</span>
+              <span className="kpi-metric-title">Operating Result (Booked Costs){figures.unreconciled ? ' · Unreconciled' : ''}</span>
               <span className="kpi-period-badge">{periodBasisLabel}</span>
             </div>
             <span className="kpi-icon-pill"><TrendingUp size={16} /></span>
@@ -708,7 +708,7 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
           <div className="kpi-main-metric" style={{ color: bookedResult == null ? '#a8402e' : bookedResult >= 0 ? '#0f6e56' : '#a8402e' }}>
             {bookedResult == null ? resultStatusText : formatLakhs(bookedResult)}
           </div>
-          <p className="kpi-sub-note">{result.status === 'needs_review' ? 'Payroll-related expense components need reconciliation. See recorded source breakdown in Runway & ROI.' : result.status === 'ready' ? 'Provisional posted-period estimate. Salary obligations may still be unposted.' : 'A matching booked-cost summary is not available for this selection.'}</p>
+          <p className="kpi-sub-note">{figures.unreconciled ? 'Company share − logged expenditure − posted payroll CTC. Payroll-related overlap may be counted twice; unposted salary months are excluded. This is not verified profit.' : result.status === 'ready' ? 'Provisional posted-period estimate. Salary obligations may still be unposted.' : 'A matching booked-cost summary is not available for this selection.'}</p>
 
           {/* Dynamic Payroll Status Badge from API Numeric Fields */}
           {(() => {
@@ -735,7 +735,7 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
 
           <div className="kpi-bottom-row">
             <span className="kpi-delta-tag">
-              <span>{bookedResult == null ? 'Awaiting reconciled costs' : 'Company-wide selected-period estimate'}</span>
+              <span>{bookedResult == null ? 'Awaiting recorded costs' : figures.unreconciled ? 'Payroll reconciliation pending' : 'Company-wide selected-period estimate'}</span>
             </span>
           </div>
         </div>
@@ -744,17 +744,18 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
         <div className="dash-kpi-card kpi-margin">
           <div className="kpi-top-row">
             <div className="kpi-label-group">
-              <span className="kpi-metric-title">Estimated Operating Margin</span>
+              <span className="kpi-metric-title">Estimated Operating Margin{figures.unreconciled ? ' · Unreconciled' : ''}</span>
               <span className="kpi-period-badge">{periodBasisLabel}</span>
             </div>
             <span className="kpi-icon-pill"><Percent size={16} /></span>
           </div>
 
           <div className="kpi-main-metric">{bookedMargin == null ? resultStatusText : `${bookedMargin.toFixed(1)}%`}</div>
+          {figures.unreconciled && <p className="kpi-sub-note">Based on the recorded cost difference divided by company share. Payroll overlap and missing months still need review.</p>}
 
           <div className="kpi-bottom-row">
             <span className="kpi-delta-tag">
-              <span>{bookedMargin == null ? 'Awaiting reconciled costs' : 'Provisional booked-cost ratio'}</span>
+              <span>{bookedMargin == null ? 'Awaiting recorded costs' : figures.unreconciled ? 'Not a verified margin' : 'Provisional booked-cost ratio'}</span>
             </span>
           </div>
         </div>
@@ -804,27 +805,32 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
             <div className="dash-card-title-group">
               <h3 className="dash-card-title">Booked-Cost Waterfall</h3>
               <p className="dash-card-subtitle">
-                Billed Income → Company Share → Operating Costs → Payroll CTC → Provisional Result ({periodBasisLabel})
+                Billed Income → Company Share → Operating Costs → Payroll CTC → {figures.unreconciled ? 'Unreconciled difference' : 'Provisional Result'} ({periodBasisLabel})
               </p>
             </div>
           </div>
 
           <div className="dash-card-body">
-            {hasReviewedCostEstimate ? <WaterfallChart
+            {figures.chartReady ? <WaterfallChart
               grossRevenue={financeSummary.revenue}
               companyShare={financeSummary.our_share}
               operatingExpenses={financeSummary.operating_expenses}
               payroll={financeSummary.salaries}
               netProfit={bookedResult}
+              resultLabel={figures.unreconciled ? 'Recorded diff' : 'Booked result'}
+              resultDetail={figures.unreconciled ? 'Unreconciled booked-cost difference; not verified profit' : 'Provisional booked-cost result'}
+              unreconciled={figures.unreconciled}
+              payrollRows={financeSummary.cash_breakdown?.sources?.payroll_records?.rows}
               periodLabel={periodBasisLabel}
-              onConfigurePayroll={() => setIsSettingsOpen && setIsSettingsOpen(true)}
               height={200}
-            /> : <p>Cost reconciliation is required before presenting a company profit/loss waterfall. Recorded cash estimates and source totals are available in Runway & ROI.</p>}
+            /> : <p>A matching booked-cost summary is unavailable for this period. Recorded cash estimates and source totals are available in Runway & ROI.</p>}
+
+            {figures.unreconciled && figures.chartReady && <p className="kpi-sub-note">The final bar is arithmetic from posted costs. Statutory overlap and unposted payroll are not resolved; use Runway & ROI to audit the sources.</p>}
 
             <div className="waterfall-summary-pill">
-              <span className="waterfall-summary-label">Company Net Retained Conversion:</span>
+              <span className="waterfall-summary-label">{figures.unreconciled ? 'Recorded difference ÷ company share:' : 'Company Net Retained Conversion:'}</span>
               <span className="waterfall-summary-val" style={{ color: bookedMargin == null ? '#a8402e' : bookedMargin >= 0 ? '#0f6e56' : '#a8402e' }}>
-                {bookedMargin == null ? 'Not yet reconciled' : `${bookedMargin.toFixed(1)}% of company income`}
+                {bookedMargin == null ? 'Unavailable' : `${bookedMargin.toFixed(1)}%${figures.unreconciled ? ' (unreconciled)' : ' of company income'}`}
               </span>
             </div>
           </div>

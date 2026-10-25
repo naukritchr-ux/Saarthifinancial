@@ -1,17 +1,17 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
 import { FinanceContext } from '../context/FinanceContext';
 import { formatLakhs } from '../utils/formatters';
-import { bookedResultView } from '../utils/bookedResult.js';
-import {
-  CloudDownload,
-  RefreshCw,
-  AlertTriangle,
-  AlertCircle,
-  Clock,
-  ServerOff,
-  KeyRound,
-  Info,
-  CheckCircle2,
+import { bookedResultView, recordedSpread } from '../utils/bookedResult.js';
+import { 
+  CloudDownload, 
+  RefreshCw, 
+  AlertTriangle, 
+  AlertCircle, 
+  Clock, 
+  ServerOff, 
+  KeyRound, 
+  Info, 
+  CheckCircle2, 
   X,
   Database,
   Activity,
@@ -20,9 +20,10 @@ import {
 import SyncModal from './SyncModal';
 
 const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
-  const {
-    selectedMonth,
-    setSelectedMonth,
+  const { 
+    moduleFilteredTransactions,
+    selectedMonth, 
+    setSelectedMonth, 
     availableMonths,
     selectedYear,
     setSelectedYear,
@@ -48,7 +49,11 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
   const [isSyncOpen, setIsSyncOpen] = useState(false);
   const [showHealthModal, setShowHealthModal] = useState(false);
 
-  const result = bookedResultView({ summary: financeSummary, selectedMonth, selectedYear, userRole, activeModule, error: financeError });
+  const result = bookedResultView({summary:financeSummary,selectedMonth,selectedYear,userRole,activeModule,error:financeError});
+  const spread = useMemo(() => recordedSpread(moduleFilteredTransactions,selectedMonth,selectedYear),
+    [moduleFilteredTransactions,selectedMonth,selectedYear]);
+  const spreadPeriod = selectedMonth !== 'All Months' ? selectedMonth : selectedYear === 'All Years' ? 'All time' : `FY ${selectedYear}`;
+  const showSpread = spread !== null && ['live','cached'].includes(dataState);
 
   const getPageTitle = () => {
     switch (activePage) {
@@ -69,29 +74,29 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
 
   const getPageSubtitle = () => {
     switch (activePage) {
-      case 'dashboard':
+      case 'dashboard': 
         return `Financial overview • ${selectedMonth} (${activeModule === 'job_portal' ? 'Job Portal' : 'Franchise & BD'})`;
       case 'cost-performance':
         return 'Team productivity, commissions, and performance costs';
-      case 'franchisees':
+      case 'franchisees': 
         return 'Franchise profitability and recruitment conversions';
-      case 'bd-performance':
+      case 'bd-performance': 
         return 'Sales commission and conversions by BD agents';
-      case 'tl-performance':
+      case 'tl-performance': 
         return 'Team leader revenue targets and payouts';
-      case 'portal-analytics':
+      case 'portal-analytics': 
         return 'Job portal sales conversion, recruiter accounts and packages';
-      case 'cash-outflow':
+      case 'cash-outflow': 
         return 'Detailed expense distribution analysis';
-      case 'reports':
+      case 'reports': 
         return 'Filter and audit transaction ledger logs';
-      case 'roi-tracker':
+      case 'roi-tracker': 
         return 'Analyze company profitability, BD sales commission ROI, and cash runway projections';
-      case 'growth-tracking':
+      case 'growth-tracking': 
         return 'Growth scenarios and financial targets';
-      case 'industry-analysis':
+      case 'industry-analysis': 
         return 'Sector breakdown and expansion potential';
-      default:
+      default: 
         return '';
     }
   };
@@ -188,10 +193,10 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
       <div className="topbar-header-info">
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <h1 style={{ margin: 0 }}>{getPageTitle()}</h1>
-
+          
           {/* Module Header Badge */}
           <div style={{ display: 'flex', background: activeModule === 'job_portal' ? 'rgba(234, 88, 12, 0.1)' : 'rgba(13, 148, 136, 0.1)', padding: '3px 12px', borderRadius: '10px', border: activeModule === 'job_portal' ? '1px solid rgba(234, 88, 12, 0.25)' : '1px solid rgba(13, 148, 136, 0.25)' }}>
-            <span
+            <span 
               style={{ color: activeModule === 'job_portal' ? '#c2410c' : '#0f766e', fontSize: '11px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase' }}
             >
               Finance App
@@ -277,11 +282,13 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
           </button>
         </div>
 
-        {result.status !== 'not_applicable' && <div className="topbar-badge" style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <span className="badge-label" style={{ color: '#475569', fontWeight: '600' }}>{result.label}</span>
-          <span className={`badge-value ${result.status === 'ready' ? (result.value >= 0 ? 'positive' : 'negative') : ''}`} style={{ fontWeight: '800' }}>
-            {result.status === 'ready' ? formatLakhs(result.value) : result.status === 'needs_review' ? 'Needs payroll review' : result.status === 'loading' ? 'Loading result…' : 'Result unavailable'}
-          </span>
+        {result.status !== 'not_applicable' && <div className="topbar-badge" style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
+          title="Recorded transaction income minus logged expense for this selection; this is not verified profit or cash.">
+          <span className="badge-label" style={{ color: '#475569', fontWeight: '600' }}>Income − logged expenses ({spreadPeriod}):</span>
+          <span className="badge-value" style={{ color: '#254638', fontWeight: '800' }}>{showSpread ? formatLakhs(spread.difference) : 'Data unavailable'}</span>
+          <small style={{ color: '#a8402e', fontSize: '10px', fontWeight: '700' }}>
+            {result.status === 'ready' ? 'booked-cost estimate in dashboard' : result.status === 'needs_review' ? 'profit pending payroll review' : 'profit result unavailable'}
+          </small>
         </div>}
 
         {currentUser && (
@@ -295,13 +302,13 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
 
         {/* Global Year and Month Filter Dropdowns */}
         <div className="filter-dropdown-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <select
+          <select 
             id="topbar-year-select"
             value={selectedYear}
             onChange={(e) => setSelectedYear(e.target.value)}
             className="month-select"
             aria-label="Filter by Financial Year"
-            style={{
+            style={{ 
               height: '32px',
               padding: '2px 10px',
               borderRadius: '8px',
@@ -319,13 +326,13 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
             ))}
           </select>
 
-          <select
+          <select 
             id="topbar-month-select"
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
             className="month-select"
             aria-label="Filter by Month"
-            style={{
+            style={{ 
               height: '32px',
               padding: '2px 10px',
               borderRadius: '8px',
@@ -350,7 +357,7 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
 
       {/* Health Diagnostic Popover / Modal */}
       {showHealthModal && (
-        <div
+        <div 
           style={{
             position: 'fixed',
             top: 0,
@@ -383,7 +390,7 @@ const Topbar = ({ activePage, setActivePage, setIsGlossaryOpen }) => {
                 <Activity size={18} color="#0f766e" />
                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#0f172a' }}>Live System Diagnostics</h3>
               </div>
-              <button
+              <button 
                 onClick={() => setShowHealthModal(false)}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
               >
