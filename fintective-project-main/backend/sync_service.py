@@ -3,6 +3,9 @@ import re
 import json
 import datetime
 import threading
+import time
+import socket
+import urllib.parse
 import urllib.request
 import urllib.error
 from db import get_db_connection, ensure_tables_exist
@@ -56,109 +59,127 @@ def parse_float(val, default=0.0):
     except (ValueError, TypeError):
         return default
 
-def fetch_saarthi_endpoint(endpoint_path, timeout=12):
-    """
-    Tries verified Saarthi CRM endpoints with error capturing and pagination support.
-    Supports SAARTHI_API_TOKEN Bearer auth, records status/body snippets for failures,
-    and falls back to empty response only if all candidate endpoints fail.
-    """
-    clean_path = endpoint_path.lstrip('/')
-    base_url_env = os.environ.get('SAARTHI_API_BASE_URL', '').rstrip('/')
-    candidates = [
-        f"{base_url_env}/api/{clean_path}" if base_url_env else None,
-        f"{base_url_env}/{clean_path}" if base_url_env else None,
-        f"https://api.sarthi360.in/api/{clean_path}",
-        f"https://sarthi360.in/api/{clean_path}",
-        f"https://api.sarthi360.in/{clean_path}",
-        f"https://sarthi360.in/{clean_path}"
-    ]
-    candidates = [c for c in candidates if c]
+def _candidate_urls(endpoint_path):
+    path = endpoint_path.lstrip('/')
+    base = os.environ.get('SAARTHI_API_BASE_URL', '').strip().rstrip('/')
+    if base:
+        # A configured CRM is authoritative: do not send its token to other hosts.
+        urls = [f"{base}/{path}", f"{base[:-4]}/{path}"] if base.endswith('/api') else [f"{base}/api/{path}", f"{base}/{path}"]
+    else:
+        urls = [f"https://api.sarthi360.in/api/{path}", f"https://sarthi360.in/api/{path}",
+                f"https://api.sarthi360.in/{path}", f"https://sarthi360.in/{path}"]
+    # Employees is mounted at /employees in the existing CRM, outside /api.
+    # Try its known route first rather than stopping at an unrelated API auth wall.
+    if path.partition('?')[0] == 'employees':
+        urls.sort(key=lambda url: urllib.parse.urlsplit(url).path.endswith('/api/employees'))
+    return list(dict.fromkeys(urls))
 
-    headers = dict(HTTP_HEADERS)
-    api_token = (os.environ.get('SAARTHI_API_TOKEN') or '').strip()
-    if api_token:
-        headers['Authorization'] = f"Bearer {api_token}"
 
-    attempt_errors = []
-    empty_fallback = None
-
-    for url in candidates:
+def _request_json(url, headers, timeout, attempts=3):
+    """Bounded retries for transient failures; permanent auth/path errors stay visible."""
+    transient = {408, 429, 500, 502, 503, 504}
+    for attempt in range(attempts):
         try:
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=timeout) as response:
-                status_code = getattr(response, 'status', 200)
-                raw_data = response.read().decode('utf-8', errors='replace')
-                
-                if status_code != 200:
-                    snippet = raw_data[:150].strip()
-                    attempt_errors.append(f"{url} -> HTTP {status_code}: non-200 status {f'({snippet})' if snippet else ''}".strip())
-                    continue
+                status = getattr(response, 'status', 200)
+                if status != 200:
+                    raise urllib.error.HTTPError(url, status, 'Unexpected CRM status', {}, None)
+                return json.loads(response.read().decode('utf-8', errors='replace'))
+        except urllib.error.HTTPError as exc:
+            if exc.code not in transient or attempt == attempts - 1:
+                raise
+            delay = min(4, 2 ** attempt)
+            retry_after = (exc.headers or {}).get('Retry-After')
+            if retry_after and str(retry_after).isdigit():
+                delay = min(5, int(retry_after))
+            time.sleep(delay)
+        except (urllib.error.URLError, TimeoutError, socket.timeout, ConnectionError):
+            if attempt == attempts - 1:
+                raise
+            time.sleep(min(4, 2 ** attempt))
 
-                try:
-                    parsed = json.loads(raw_data)
-                except Exception as json_err:
-                    snippet = raw_data[:150].strip()
-                    attempt_errors.append(f"{url} -> HTTP 200: Non-JSON body ({snippet})")
-                    continue
 
-                if isinstance(parsed, list):
-                    if len(parsed) > 0:
-                        return {"ok": True, "data": parsed, "url": url}
-                    else:
-                        if empty_fallback is None:
-                            empty_fallback = {"ok": True, "data": [], "url": url}
-                        attempt_errors.append(f"{url} -> HTTP 200: returned empty list []")
-                        continue
-                elif isinstance(parsed, dict):
-                    data_arr = parsed.get("data") or parsed.get("enquiries") or parsed.get("invoices") or parsed.get("expenses") or parsed.get("franchisees") or []
-                    if isinstance(data_arr, list):
-                        if len(data_arr) == 0:
-                            if empty_fallback is None:
-                                empty_fallback = {"ok": True, "data": [], "url": url}
-                            attempt_errors.append(f"{url} -> HTTP 200: empty data array in response object")
-                            continue
+def _response_rows(payload):
+    if isinstance(payload, list):
+        if not all(isinstance(row, dict) for row in payload):
+            raise ValueError('CRM returned a list containing invalid records')
+        return payload
+    if not isinstance(payload, dict):
+        raise ValueError('CRM response is not a record list')
+    if payload.get('success') is False or payload.get('ok') is False or payload.get('error'):
+        raise ValueError(str(payload.get('message') or payload.get('error') or 'CRM rejected the request'))
+    # Recognize documented-style collection envelopes, including nested data.
+    keys = ('data', 'enquiries', 'invoices', 'Invoice', 'expenses', 'expenditures',
+            'franchisees', 'clients', 'legals', 'payments', 'records', 'results', 'items',
+            'employees', 'attendance', 'expenditure', 'clients_info', 'legals_info', 'franchisePayments')
+    for key in keys:
+        if key in payload and isinstance(payload[key], (list, dict)):
+            return _response_rows(payload[key])
+    raise ValueError(str(payload.get('message') or 'CRM returned JSON without a recognized record collection'))
 
-                        # Check for pagination metadata
-                        total_pages = parsed.get("totalPages") or parsed.get("last_page") or (parsed.get("pagination") or {}).get("totalPages")
-                        if total_pages and int(total_pages) > 1:
-                            page_limit = min(int(total_pages), 50)
-                            for p in range(2, page_limit + 1):
-                                sep = "&" if "?" in url else "?"
-                                p_url = f"{url}{sep}page={p}"
-                                try:
-                                    p_req = urllib.request.Request(p_url, headers=headers)
-                                    with urllib.request.urlopen(p_req, timeout=timeout) as p_res:
-                                        if getattr(p_res, 'status', 200) == 200:
-                                            p_data = json.loads(p_res.read().decode('utf-8', errors='replace'))
-                                            p_items = p_data if isinstance(p_data, list) else (p_data.get("data") or [])
-                                            data_arr.extend(p_items)
-                                except Exception as p_err:
-                                    print(f"[SYNC PAGINATION WARN] Page {p} on {url}: {p_err}")
-                                    break
-                        return {"ok": True, "data": data_arr, "url": url}
-                    return {"ok": True, "data": [parsed], "url": url}
-                else:
-                    attempt_errors.append(f"{url} -> HTTP 200: unexpected JSON type ({type(parsed).__name__})")
-                    continue
 
-        except urllib.error.HTTPError as he:
-            body_snippet = ""
-            try:
-                body_snippet = he.read().decode('utf-8', errors='ignore')[:150].strip()
-            except Exception:
-                pass
-            attempt_errors.append(f"{url} -> HTTP {he.code}: {he.reason} {f'({body_snippet})' if body_snippet else ''}".strip())
-        except urllib.error.URLError as ue:
-            attempt_errors.append(f"{url} -> URL Error: {ue.reason}")
-        except Exception as err:
-            attempt_errors.append(f"{url} -> Error: {str(err)}")
-            continue
+def _page_metadata(payload):
+    if not isinstance(payload, dict):
+        return None
+    for obj in (payload, payload.get('pagination'), payload.get('meta'), payload.get('data')):
+        if isinstance(obj, dict):
+            pages = obj.get('totalPages') or obj.get('last_page') or obj.get('lastPage')
+            if pages is not None:
+                pages = int(pages)
+                if pages < 1:
+                    raise ValueError('Invalid CRM pagination metadata')
+                return pages
+    return None
 
-    if empty_fallback is not None:
-        return empty_fallback
 
-    err_summary = "; ".join(attempt_errors) if attempt_errors else f"Failed to fetch {endpoint_path}"
-    return {"ok": False, "data": [], "error": f"Failed to fetch {endpoint_path}: {err_summary}", "url": candidates[0] if candidates else endpoint_path}
+def fetch_saarthi_endpoint(endpoint_path, timeout=12):
+    """Return a complete, validated collection or an explicit failure, never half a page set."""
+    headers = dict(HTTP_HEADERS)
+    token = os.environ.get('SAARTHI_API_TOKEN', '').strip()
+    if token:
+        headers['Authorization'] = token if token.lower().startswith('bearer ') else f'Bearer {token}'
+    errors = []
+    candidates = _candidate_urls(endpoint_path)
+    for url in candidates:
+        pages = 1
+        try:
+            payload = _request_json(url, headers, timeout)
+            rows = list(_response_rows(payload))
+            pages = _page_metadata(payload) or 1
+            if pages > 1000:
+                raise ValueError(f'CRM reports {pages} pages; refusing a truncated sync')
+            first_ids = {str(row['id']) for row in rows if row.get('id') is not None}
+            seen_rows = {json.dumps(row, sort_keys=True, default=str) for row in rows}
+            for page in range(2, pages + 1):
+                parts = urllib.parse.urlsplit(url)
+                query = dict(urllib.parse.parse_qsl(parts.query, keep_blank_values=True))
+                query['page'] = str(page)
+                page_url = urllib.parse.urlunsplit(parts._replace(query=urllib.parse.urlencode(query)))
+                next_payload = _request_json(page_url, headers, timeout)
+                next_rows = _response_rows(next_payload)
+                if not next_rows:
+                    raise ValueError(f'CRM page {page}/{pages} was empty; sync is incomplete')
+                ids = {str(row['id']) for row in next_rows if row.get('id') is not None}
+                signatures = {json.dumps(row, sort_keys=True, default=str) for row in next_rows}
+                if (ids and ids <= first_ids) or signatures <= seen_rows:
+                    raise ValueError(f'CRM repeated an earlier page at page {page}; sync is incomplete')
+                first_ids.update(ids)
+                seen_rows.update(signatures)
+                rows.extend(next_rows)
+            return {'ok': True, 'data': rows, 'url': url, 'complete': True, 'pages': pages}
+        except Exception as exc:
+            detail = str(exc)
+            if token:
+                detail = detail.replace(token, '[redacted]')
+            errors.append(f'{endpoint_path}: {detail}')
+            if isinstance(exc, urllib.error.HTTPError) and exc.code in (401, 403):
+                break
+            # A page failure must not be replaced with a different URL's partial snapshot.
+            if 'pages' in locals() and pages > 1:
+                break
+    return {'ok': False, 'data': [], 'complete': False, 'url': candidates[0] if candidates else endpoint_path,
+            'error': ' | '.join(errors) or f'Unable to fetch {endpoint_path}'}
 
 # --------------------------------------------------------------------------
 # Expense sync + reconciliation helpers
@@ -172,6 +193,40 @@ EXPENSE_ENDPOINT = (os.environ.get("SAARTHI_EXPENSE_ENDPOINT") or "expenditures/
 # Cross-process lock name (the in-process threading lock does not cover several
 # gunicorn workers, each of which starts its own sync daemon).
 DB_SYNC_LOCK_NAME = "fintective_crm_sync"
+SYNC_START_LOCK_NAME = "fintective_crm_sync_start"
+PENDING_SYNC_SECONDS = 180
+
+
+def active_sync_job(cur, strict_owner=True):
+    """A live MySQL lock owner is never declared stale based on elapsed time."""
+    cur.execute("SELECT IS_USED_LOCK(%s) AS owner", (DB_SYNC_LOCK_NAME,))
+    owner = (cur.fetchone() or {}).get('owner')
+    active_query = """
+        SELECT id, started_at, TIMESTAMPDIFF(SECOND, started_at, NOW()) AS age_sec
+        FROM crm_sync_logs WHERE status = 'in_progress' ORDER BY id DESC LIMIT 1
+    """
+    try:
+        cur.execute(active_query)
+    except Exception as exc:
+        # Preserve first-install recovery without running schema DDL on every POST.
+        if not exc.args or exc.args[0] != 1146:
+            raise
+        if not ensure_tables_exist():
+            raise RuntimeError('CRM sync log schema could not be initialized') from exc
+        cur.execute(active_query)
+    row = cur.fetchone()
+    if row and (owner is not None or (row.get('age_sec') or 0) < PENDING_SYNC_SECONDS):
+        return row
+    if owner is not None and strict_owner:
+        raise RuntimeError('A CRM worker is still finalizing; retry shortly')
+    if row:
+        cur.execute("""
+            UPDATE crm_sync_logs SET status = 'failed', completed_at = NOW(),
+                message = 'Previous sync worker was interrupted; retry sync.'
+            WHERE status = 'in_progress' AND started_at < DATE_SUB(NOW(), INTERVAL %s SECOND)
+        """, (PENDING_SYNC_SECONDS,))
+    return None
+
 
 # Rows that exist locally but are no longer returned by the CRM ("ghost" rows)
 # are only REPORTED for enquiries/invoices by default, because Fintective can
@@ -435,6 +490,16 @@ def sync_saarthi_all(existing_log_id=None):
     to avoid concurrent execution.
     """
     if not sync_lock.acquire(blocking=False):
+        if existing_log_id:
+            try:
+                rejected = get_db_connection()
+                try:
+                    with rejected.cursor() as cur:
+                        cur.execute("UPDATE crm_sync_logs SET status = 'failed', completed_at = NOW(), message = 'Another local sync worker is active; retry shortly' WHERE id = %s", (existing_log_id,))
+                finally:
+                    rejected.close()
+            except Exception:
+                pass
         return {
             "ok": False,
             "status": "locked",
@@ -445,88 +510,48 @@ def sync_saarthi_all(existing_log_id=None):
     start_time = datetime.datetime.now()
     log_id = existing_log_id
     db_lock_held = False
-    lock_busy = False
+
+    stats = {
+        "ok": True,
+        "enquiries": 0,
+        "invoices": 0,
+        "franchisees": 0,
+        "expenses": 0,
+        "clients": 0,
+        "legals": 0,
+        "payroll": 0,
+        "errors": [],
+        "notes": [],
+        "ghost_rows": {}
+    }
 
     try:
         conn = get_db_connection()
-
-        # Step 1: Create in_progress row BEFORE ensure_tables_exist() if not already provided
-        if not log_id:
+        with conn.cursor() as cur:
+            registration_lock = False
             try:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        INSERT INTO crm_sync_logs (sync_type, status, started_at)
-                        VALUES ('all', 'in_progress', NOW())
-                    """)
+                if not log_id:
+                    cur.execute("SELECT GET_LOCK(%s, 2) AS got", (SYNC_START_LOCK_NAME,))
+                    registration_lock = (cur.fetchone() or {}).get('got') == 1
+                    if not registration_lock:
+                        return {'ok': False, 'status': 'locked', 'error': 'Another sync is being registered'}
+                    running = active_sync_job(cur)
+                    if running:
+                        return {'ok': False, 'status': 'locked', 'log_id': running['id'], 'error': 'A sync is already running'}
+                cur.execute("SELECT GET_LOCK(%s, 0) AS got", (DB_SYNC_LOCK_NAME,))
+                db_lock_held = (cur.fetchone() or {}).get('got') == 1
+                if not db_lock_held:
+                    raise RuntimeError('Another worker owns the CRM sync lock')
+                if not log_id:
+                    cur.execute("INSERT INTO crm_sync_logs (sync_type, status, started_at) VALUES ('all', 'in_progress', NOW())")
                     log_id = cur.lastrowid
-            except Exception as e:
-                print("Early log insert notice:", str(e))
+                if not log_id:
+                    raise RuntimeError('Unable to create a durable CRM sync job')
+            finally:
+                if registration_lock:
+                    cur.execute("SELECT RELEASE_LOCK(%s)", (SYNC_START_LOCK_NAME,))
 
-        # Step 2: Ensure schema tables exist
         ensure_tables_exist()
-
-        try:
-            # Cross-process lock: another gunicorn worker may already be syncing.
-            try:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT GET_LOCK(%s, 0) AS got", (DB_SYNC_LOCK_NAME,))
-                    got = (cur.fetchone() or {}).get("got")
-                if got == 0:
-                    # Check if the existing in_progress run is stale (> 3 minutes)
-                    with conn.cursor() as cur:
-                        cur.execute("""
-                            SELECT id, TIMESTAMPDIFF(MINUTE, started_at, NOW()) AS age_minutes 
-                            FROM crm_sync_logs 
-                            WHERE status = 'in_progress' AND id != %s
-                            ORDER BY id DESC LIMIT 1
-                        """, (log_id or 0,))
-                        stale_row = cur.fetchone()
-                        if stale_row and stale_row.get("age_minutes", 0) > 3:
-                            print(f"[SYNC] Detected stale in_progress sync log ID {stale_row['id']} ({stale_row['age_minutes']}m old). Auto-recovering lock...")
-                            cur.execute("SELECT RELEASE_LOCK(%s)", (DB_SYNC_LOCK_NAME,))
-                            cur.execute("UPDATE crm_sync_logs SET status = 'failed', completed_at = NOW(), message = 'Auto-recovered from stale lock' WHERE status = 'in_progress' AND id != %s", (log_id or 0,))
-                            conn.commit()
-                            cur.execute("SELECT GET_LOCK(%s, 0) AS got", (DB_SYNC_LOCK_NAME,))
-                            got = (cur.fetchone() or {}).get("got")
-                            db_lock_held = (got == 1)
-                            lock_busy = (got == 0)
-                        else:
-                            lock_busy = True
-                else:
-                    db_lock_held = (got == 1)
-            except Exception as lock_err:
-                print("DB sync-lock notice (continuing without it):", str(lock_err))
-
-        except Exception as e:
-            print("Sync initialization notice:", str(e))
-
-        if lock_busy:
-            try:
-                if log_id:
-                    with conn.cursor() as cur:
-                        cur.execute("UPDATE crm_sync_logs SET status = 'failed', completed_at = NOW(), message = 'Sync locked by concurrent worker' WHERE id = %s", (log_id,))
-                conn.close()
-            except Exception:
-                pass
-            return {
-                "ok": False,
-                "status": "locked",
-                "error": "A Saarthi sync process is already running. Please wait for it to complete."
-            }
-
-        stats = {
-            "ok": True,
-            "enquiries": 0,
-            "invoices": 0,
-            "franchisees": 0,
-            "expenses": 0,
-            "clients": 0,
-            "legals": 0,
-            "payroll": 0,
-            "errors": [],
-            "notes": [],
-            "ghost_rows": {}
-        }
 
         try:
             # Helper for batching
@@ -563,397 +588,517 @@ def sync_saarthi_all(existing_log_id=None):
             if not fetched_results.get("invoices", {}).get("ok") or not fetched_results.get("invoices", {}).get("data"):
                 fetched_results["invoices"] = fetch_saarthi_endpoint("invoice")
 
-            # 1. Sync Franchisees
-            print("[SYNC] Writing Franchisees to DB...")
-            f_res = fetched_results.get("franchisees", {"ok": False, "data": []})
-            if f_res["ok"] and f_res["data"]:
-                fran_rows = []
-                form_rows = []
-                for f in f_res["data"]:
-                    name = str(f.get("nameAsPerAgreement") or f.get("franchiseName") or f.get("name") or "").strip()
-                    tl = str(f.get("teamLeaderName") or f.get("teamLeader") or "").strip()
-                    onboard = normalize_date(f.get("onboardingDate") or f.get("dateOfAgreement") or f.get("createdAt"))
-                    st = str(f.get("status") or "active").strip().lower()
-                    if name:
-                        fran_rows.append((name, tl, onboard, st))
-                        form_rows.append((name, tl))
+            # Independent franchisees stream
+            notes_start = len(stats['notes'])
+            try:
+                conn.begin()
+                # 1. Sync Franchisees
+                print("[SYNC] Writing Franchisees to DB...")
+                f_res = fetched_results.get("franchisees", {"ok": False, "data": []})
+                if f_res["ok"] and f_res["data"]:
+                    fran_rows = []
+                    form_rows = []
+                    for f in f_res["data"]:
+                        name = str(f.get("nameAsPerAgreement") or f.get("franchiseName") or f.get("name") or "").strip()
+                        tl = str(f.get("teamLeaderName") or f.get("teamLeader") or "").strip()
+                        onboard = normalize_date(f.get("onboardingDate") or f.get("dateOfAgreement") or f.get("createdAt"))
+                        st = str(f.get("status") or "active").strip().lower()
+                        if name:
+                            fran_rows.append((name, tl, onboard, st))
+                            form_rows.append((name, tl))
 
-                with conn.cursor() as cur:
-                    for batch in chunked(fran_rows, 500):
-                        cur.executemany("""
-                            INSERT INTO franchisees (nameAsPerAgreement, teamLeaderName, onboardingDate, status)
-                            VALUES (%s, %s, %s, %s)
-                            ON DUPLICATE KEY UPDATE
-                                teamLeaderName = VALUES(teamLeaderName),
-                                onboardingDate = COALESCE(VALUES(onboardingDate), onboardingDate),
-                                status = VALUES(status)
-                        """, batch)
-                    for batch in chunked(form_rows, 500):
-                        cur.executemany("""
-                            INSERT INTO franchisees_forms (nameAsPerAgreement, teamLeaderName)
-                            VALUES (%s, %s)
-                            ON DUPLICATE KEY UPDATE teamLeaderName = VALUES(teamLeaderName)
-                        """, batch)
-                stats["franchisees"] = len(fran_rows)
-                print(f"[SYNC OK] Synced {stats['franchisees']} Franchisees.")
-            else:
-                stats["errors"].append(f"Franchisees: {f_res.get('error', 'No data')}")
-
-            # 2. Sync Enquiries
-            print("[SYNC] Writing Enquiries to DB...")
-            enq_res = fetched_results.get("enquiries", {"ok": False, "data": []})
-            if enq_res["ok"] and enq_res["data"]:
-                enq_rows = []
-                for enq in enq_res["data"]:
-                    enq_id = enq.get("id")
-                    if not enq_id:
-                        continue
-                    company = str(enq.get("companyName") or "").strip()
-                    bd = str(enq.get("bdMemberName") or enq.get("bdName") or "").strip()
-                    tl = str(enq.get("teamLeaderName") or enq.get("tlName") or "").strip()
-                    fran = str(enq.get("franchiseeName") or enq.get("franchiseName") or "").strip()
-                    pos = str(enq.get("positionName") or "").strip()
-                    ind = str(enq.get("industry") or "").strip()
-                    st = str(enq.get("enquiryStatus") or "inprogress").strip().lower()
-                    fees = parse_float(enq.get("placementFees"))
-                    f_val = parse_float(enq.get("from"))
-                    t_val = parse_float(enq.get("to"))
-                    b_amt = parse_float(enq.get("bill_amount"))
-                    b_no = str(enq.get("bill_no") or "").strip() or None
-                    b_date = normalize_date(enq.get("bill_date"))
-                    alloc_d = normalize_date(enq.get("dateOfAllocation"))
-                    acq_d = normalize_date(enq.get("dateClientAcquired"))
-                    realloc_d = normalize_date(enq.get("dateOfReallocation"))
-                    info = str(enq.get("info") or "").strip() or None
-                    c_at = normalize_date(enq.get("created_at"))
-
-                    enq_rows.append((
-                        enq_id, company, bd, tl, fran, fees, pos, ind, f_val, t_val, st,
-                        alloc_d, acq_d, realloc_d, b_no, b_date, b_amt, info, c_at
-                    ))
-
-                with conn.cursor() as cur:
-                    for batch in chunked(enq_rows, 500):
-                        cur.executemany("""
-                            INSERT INTO enquiries (
-                                id, companyName, bdMemberName, teamLeaderName, franchiseeName,
-                                placementFees, positionName, industry, `from`, `to`, enquiryStatus,
-                                dateOfAllocation, dateClientAcquired, dateOfReallocation,
-                                bill_no, bill_date, bill_amount, info, created_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            ON DUPLICATE KEY UPDATE
-                                companyName = VALUES(companyName),
-                                bdMemberName = VALUES(bdMemberName),
-                                teamLeaderName = VALUES(teamLeaderName),
-                                franchiseeName = VALUES(franchiseeName),
-                                placementFees = VALUES(placementFees),
-                                positionName = VALUES(positionName),
-                                industry = VALUES(industry),
-                                `from` = VALUES(`from`),
-                                `to` = VALUES(`to`),
-                                enquiryStatus = VALUES(enquiryStatus),
-                                dateOfAllocation = VALUES(dateOfAllocation),
-                                dateClientAcquired = VALUES(dateClientAcquired),
-                                dateOfReallocation = VALUES(dateOfReallocation),
-                                bill_no = VALUES(bill_no),
-                                bill_date = VALUES(bill_date),
-                                bill_amount = VALUES(bill_amount),
-                                info = VALUES(info)
-                        """, batch)
-                stats["enquiries"] = len(enq_rows)
-                print(f"[SYNC OK] Synced {stats['enquiries']} Enquiries.")
-
-                # Rows deleted in the CRM are never removed by an upsert: count them.
-                try:
+                    if not fran_rows:
+                        raise ValueError('CRM franchisees returned no usable names')
                     with conn.cursor() as cur:
-                        ghosts = reconcile_missing_ids(cur, "enquiries", {r[0] for r in enq_rows}, PRUNE_MISSING)
-                    stats["ghost_rows"]["enquiries"] = ghosts
-                    if ghosts:
-                        stats["notes"].append(f"{ghosts} enquiries not in CRM" + (" (pruned)" if PRUNE_MISSING else " (kept)"))
-                except Exception as rec_err:
-                    print("[SYNC WARN] Enquiry reconcile failed:", str(rec_err))
-            else:
-                stats["errors"].append(f"Enquiries: {enq_res.get('error', 'No data')}")
-
-            # 3. Sync Invoices
-            print("[SYNC] Writing Invoices to DB...")
-            inv_res = fetched_results.get("invoices", {"ok": False, "data": []})
-                
-            if inv_res["ok"] and inv_res["data"]:
-                inv_rows = []
-                for inv in inv_res["data"]:
-                    inv_id = inv.get("id")
-                    if not inv_id:
-                        continue
-                    enq_id = inv.get("enquiry_id") or None
-                    b_num = str(inv.get("billNumber") or inv.get("bill_no") or "").strip() or None
-                    b_date = normalize_date(inv.get("billDate") or inv.get("bill_date"))
-                    # Fix A2: serviceCharges only mapped from serviceCharges (never fallback to rate serviceCharge)
-                    raw_sc = inv.get("serviceCharges")
-                    svc_chg = parse_float(raw_sc, default=0.0) if (raw_sc is not None and str(raw_sc).strip() != '') else 0.0
-                    svc_rate = parse_float(inv.get("serviceCharge"), default=0.0)
-                    gst = parse_float(inv.get("totalGST") or inv.get("gst"), default=0.0)
-                    tot_bill = parse_float(inv.get("totalBillAmt") or inv.get("bill_amount"), default=0.0)
-
-                    # Fix A1: Keep None when missing/blank in CRM. Never 'x or fallback' on shares.
-                    raw_f_share = inv.get("franchiseeShare")
-                    if raw_f_share is None or str(raw_f_share).strip() == '':
-                        raw_f_share = inv.get("franchiseShare")
-                    f_share = parse_float(raw_f_share, default=None) if (raw_f_share is not None and str(raw_f_share).strip() != '') else None
-
-                    f_gst = parse_float(inv.get("franchiseeGST"), default=0.0)
-
-                    raw_our_share = inv.get("ourShare")
-                    our_sh = parse_float(raw_our_share, default=None) if (raw_our_share is not None and str(raw_our_share).strip() != '') else None
-                    amt_rec = parse_float(inv.get("amountReceived"))
-                    amt_due = parse_float(inv.get("amountDue"))
-                    tds_val = parse_float(inv.get("tds") or inv.get("tdsAmount"))
-                    tds_ff = parse_float(inv.get("tdsFF"))
-                    d_rec = normalize_date(inv.get("dateReceived"))
-                    d_paid = normalize_date(inv.get("paidOnDate"))
-                    pay_mode = str(inv.get("payment_mode") or "").strip() or None
-                    uid_tx = str(inv.get("uid_transaction_id") or "").strip() or None
-                    bd_name = str(inv.get("nameOfBd") or inv.get("bdMemberName") or "").strip() or None
-                    tl_name = str(inv.get("teamLeader") or inv.get("teamLeaderName") or "").strip() or None
-                    fran_name = str(inv.get("franchiseName") or inv.get("franchiseeName") or "").strip() or None
-                    fy_val = str(inv.get("financialYear") or calculate_fy(b_date)).strip()
-                    cand_name = str(inv.get("candidateName") or "").strip() or None
-                    comp_name = str(inv.get("companyName") or "").strip() or None
-                    post_name = str(inv.get("postOfCandidate") or inv.get("positionName") or "").strip() or None
-                    sal_offered = parse_float(inv.get("annualSalaryOffered") or inv.get("salary"))
-                    info_st = str(inv.get("info") or "").strip() or None
-                    status_st = str(inv.get("status") or "active").strip()
-
-                    inv_rows.append((
-                        inv_id, enq_id, b_num, b_date, svc_chg, svc_rate, gst, tot_bill,
-                        f_share, f_gst, our_sh, amt_rec, amt_due, tds_val, tds_ff, d_rec, d_paid,
-                        pay_mode, uid_tx, bd_name, tl_name, fran_name, fy_val, cand_name, comp_name,
-                        post_name, sal_offered, info_st, status_st
-                    ))
-
-                with conn.cursor() as cur:
-                    for batch in chunked(inv_rows, 500):
-                        cur.executemany("""
-                            INSERT INTO invoice (
-                                id, enquiry_id, billNumber, billDate, serviceCharges, serviceCharge,
-                                totalGST, totalBillAmt, franchiseeShare, franchiseeGST, ourShare,
-                                amountReceived, amountDue, tds, tdsFF, dateReceived, paidOnDate,
-                                payment_mode, uid_transaction_id, nameOfBd, teamLeader, franchiseName,
-                                financialYear, candidateName, companyName, postOfCandidate,
-                                annualSalaryOffered, info, status
-                            ) VALUES (
-                                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                            )
-                            ON DUPLICATE KEY UPDATE
-                                enquiry_id = VALUES(enquiry_id),
-                                billNumber = VALUES(billNumber),
-                                billDate = VALUES(billDate),
-                                serviceCharges = VALUES(serviceCharges),
-                                serviceCharge = VALUES(serviceCharge),
-                                totalGST = VALUES(totalGST),
-                                totalBillAmt = VALUES(totalBillAmt),
-                                franchiseeShare = VALUES(franchiseeShare),
-                                franchiseeGST = VALUES(franchiseeGST),
-                                ourShare = VALUES(ourShare),
-                                amountReceived = VALUES(amountReceived),
-                                amountDue = VALUES(amountDue),
-                                tds = VALUES(tds),
-                                tdsFF = VALUES(tdsFF),
-                                dateReceived = VALUES(dateReceived),
-                                paidOnDate = VALUES(paidOnDate),
-                                payment_mode = VALUES(payment_mode),
-                                uid_transaction_id = VALUES(uid_transaction_id),
-                                nameOfBd = VALUES(nameOfBd),
-                                teamLeader = VALUES(teamLeader),
-                                franchiseName = VALUES(franchiseName),
-                                financialYear = VALUES(financialYear),
-                                candidateName = VALUES(candidateName),
-                                companyName = VALUES(companyName),
-                                postOfCandidate = VALUES(postOfCandidate),
-                                annualSalaryOffered = VALUES(annualSalaryOffered),
-                                info = VALUES(info),
-                                status = VALUES(status)
-                        """, batch)
-                stats["invoices"] = len(inv_rows)
-                print(f"[SYNC OK] Synced {stats['invoices']} Invoices.")
-
-                try:
-                    with conn.cursor() as cur:
-                        ghosts = reconcile_missing_ids(cur, "invoice", {r[0] for r in inv_rows}, PRUNE_MISSING)
-                    stats["ghost_rows"]["invoices"] = ghosts
-                    if ghosts:
-                        stats["notes"].append(f"{ghosts} invoices not in CRM" + (" (pruned)" if PRUNE_MISSING else " (kept)"))
-                except Exception as rec_err:
-                    print("[SYNC WARN] Invoice reconcile failed:", str(rec_err))
-            else:
-                stats["errors"].append(f"Invoices: {inv_res.get('error', 'No data')}")
-
-            # 4. Sync Expenses (real transactions from the CRM expenditure router).
-            # Every failure path below is reported in stats["errors"]; a wrong or empty
-            # endpoint must never look like a successful sync with 0 rows.
-            print(f"[SYNC] Writing Expenses to DB ({EXPENSE_ENDPOINT})...")
-            exp_res = fetched_results.get("expenses", {"ok": False, "data": []})
-            if not exp_res["ok"]:
-                stats["errors"].append(f"Expenses: {exp_res.get('error', 'fetch failed')}")
-            elif not exp_res["data"]:
-                stats["errors"].append(f"Expenses: endpoint '{EXPENSE_ENDPOINT}' returned 0 rows")
-            else:
-                exp_rows = None
-                exp_skipped = 0
-                try:
-                    exp_rows, exp_skipped = build_expense_rows(exp_res["data"])
-                except ValueError as shape_err:
-                    stats["errors"].append(f"Expenses: {shape_err}")
-
-                if exp_rows is not None:
-                    with conn.cursor() as cur:
-                        linked = adopt_legacy_expense_rows(cur, exp_rows)
-                        for batch in chunked(exp_rows, 500):
+                        for batch in chunked(fran_rows, 500):
                             cur.executemany("""
-                                INSERT INTO expenditure (
-                                    crm_id, srNo, billDate, particulars, expenses, amount, net, expenseType, is_deleted
-                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0)
+                                INSERT INTO franchisees (nameAsPerAgreement, teamLeaderName, onboardingDate, status)
+                                VALUES (%s, %s, %s, %s)
                                 ON DUPLICATE KEY UPDATE
-                                    srNo = VALUES(srNo),
-                                    billDate = VALUES(billDate),
-                                    particulars = VALUES(particulars),
-                                    expenses = VALUES(expenses),
-                                    amount = VALUES(amount),
-                                    net = VALUES(net),
-                                    expenseType = VALUES(expenseType),
-                                    is_deleted = 0
+                                    teamLeaderName = VALUES(teamLeaderName),
+                                    onboardingDate = COALESCE(VALUES(onboardingDate), onboardingDate),
+                                    status = VALUES(status)
                             """, batch)
-                        missing_from_crm, legacy_retired = retire_missing_expenses(cur, {r[0] for r in exp_rows})
-                    stats["expenses"] = len(exp_rows)
-                    latest = max((r[2] for r in exp_rows if r[2]), default=None)
-                    stats["notes"].append(
-                        f"expenses: {len(exp_rows)} synced (latest {latest}), {linked} linked to old rows, "
-                        f"{missing_from_crm} removed in CRM, {legacy_retired} unmatched old rows retired, {exp_skipped} skipped"
-                    )
-                    print(f"[SYNC OK] Synced {stats['expenses']} Expenses (latest billDate: {latest}).")
+                        for batch in chunked(form_rows, 500):
+                            cur.executemany("""
+                                INSERT INTO franchisees_forms (nameAsPerAgreement, teamLeaderName)
+                                VALUES (%s, %s)
+                                ON DUPLICATE KEY UPDATE teamLeaderName = VALUES(teamLeaderName)
+                            """, batch)
+                    stats["franchisees"] = len(fran_rows)
+                    print(f"[SYNC OK] Synced {stats['franchisees']} Franchisees.")
+                else:
+                    stats["errors"].append(f"Franchisees: {f_res.get('error', 'No data')}")
 
-            # 5. Sync Clients Info
-            print("[SYNC] Writing Clients Info to DB...")
-            c_res = fetched_results.get("clients", {"ok": False, "data": []})
-            if c_res["ok"] and c_res["data"]:
-                c_rows = []
-                for c in c_res["data"]:
-                    c_id = c.get("id")
-                    if not c_id:
-                        continue
-                    c_name = str(c.get("companyName") or "").strip()
-                    cp_name = str(c.get("contactPersonName") or c.get("contactPerson") or "").strip() or None
-                    desig = str(c.get("designation") or "").strip() or None
-                    phone = str(c.get("phoneNumber") or c.get("contactPhone") or c.get("mobileNo") or "").strip() or None
-                    email = str(c.get("emailId") or c.get("contactEmail") or "").strip() or None
-                    tl = str(c.get("teamLeader") or "").strip() or None
-                    gst = str(c.get("gstNumber") or c.get("gstNo") or "").strip() or None
-                    pan = str(c.get("panNumber") or c.get("panNo") or "").strip() or None
-                    tan = str(c.get("tanNumber") or c.get("tanNo") or "").strip() or None
-                    st = str(c.get("status") or "active").strip().lower()
-                    amt = parse_float(c.get("amount") or c.get("grossAmount"))
-                    tds = parse_float(c.get("tdsAmount") or c.get("tds"))
+                conn.commit()
+            except Exception as stream_error:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                stats['franchisees'] = 0
+                del stats['notes'][notes_start:]
+                stats['errors'].append(f'franchisees: database/write failure: {stream_error}')
 
-                    c_rows.append((c_id, c_name, cp_name, desig, phone, email, tl, gst, pan, tan, st, amt, tds))
+            # Independent enquiries stream
+            notes_start = len(stats['notes'])
+            try:
+                conn.begin()
+                # 2. Sync Enquiries
+                print("[SYNC] Writing Enquiries to DB...")
+                enq_res = fetched_results.get("enquiries", {"ok": False, "data": []})
+                if enq_res["ok"] and enq_res["data"]:
+                    enq_rows = []
+                    for enq in enq_res["data"]:
+                        enq_id = enq.get("id")
+                        if not enq_id:
+                            continue
+                        company = str(enq.get("companyName") or "").strip()
+                        bd = str(enq.get("bdMemberName") or enq.get("bdName") or "").strip()
+                        tl = str(enq.get("teamLeaderName") or enq.get("tlName") or "").strip()
+                        fran = str(enq.get("franchiseeName") or enq.get("franchiseName") or "").strip()
+                        pos = str(enq.get("positionName") or "").strip()
+                        ind = str(enq.get("industry") or "").strip()
+                        st = str(enq.get("enquiryStatus") or "inprogress").strip().lower()
+                        fees = parse_float(enq.get("placementFees"))
+                        f_val = parse_float(enq.get("from"))
+                        t_val = parse_float(enq.get("to"))
+                        b_amt = parse_float(enq.get("bill_amount"))
+                        b_no = str(enq.get("bill_no") or "").strip() or None
+                        b_date = normalize_date(enq.get("bill_date"))
+                        alloc_d = normalize_date(enq.get("dateOfAllocation"))
+                        acq_d = normalize_date(enq.get("dateClientAcquired"))
+                        realloc_d = normalize_date(enq.get("dateOfReallocation"))
+                        info = str(enq.get("info") or "").strip() or None
+                        c_at = normalize_date(enq.get("created_at"))
 
-                with conn.cursor() as cur:
-                    for batch in chunked(c_rows, 500):
-                        cur.executemany("""
-                            INSERT INTO clients_info (
-                                id, companyName, contactPersonName, designation, phoneNumber,
-                                emailId, teamLeader, gstNumber, panNumber, tanNumber, status, amount, tdsAmount
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            ON DUPLICATE KEY UPDATE
-                                companyName = VALUES(companyName),
-                                contactPersonName = VALUES(contactPersonName),
-                                designation = VALUES(designation),
-                                phoneNumber = VALUES(phoneNumber),
-                                emailId = VALUES(emailId),
-                                teamLeader = VALUES(teamLeader),
-                                gstNumber = VALUES(gstNumber),
-                                panNumber = VALUES(panNumber),
-                                tanNumber = VALUES(tanNumber),
-                                status = VALUES(status),
-                                amount = VALUES(amount),
-                                tdsAmount = VALUES(tdsAmount)
-                        """, batch)
-                stats["clients"] = len(c_rows)
-                print(f"[SYNC OK] Synced {stats['clients']} Clients.")
+                        enq_rows.append((
+                            enq_id, company, bd, tl, fran, fees, pos, ind, f_val, t_val, st,
+                            alloc_d, acq_d, realloc_d, b_no, b_date, b_amt, info, c_at
+                        ))
 
-            # 6. Sync Legals Info
-            print("[SYNC] Writing Legals Info to DB...")
-            l_res = fetched_results.get("legals", {"ok": False, "data": []})
-            if l_res["ok"] and l_res["data"]:
-                l_rows = []
-                for l in l_res["data"]:
-                    l_id = l.get("id") or l.get("legal_id")
-                    c_name = str(l.get("companyName") or "").strip() or None
-                    p_name = str(l.get("partyName") or "").strip() or None
-                    gst = str(l.get("gstNo") or l.get("gstNumber") or "").strip() or None
-                    pan = str(l.get("panNo") or l.get("panNumber") or "").strip() or None
-                    tan = str(l.get("tanNo") or l.get("tanNumber") or "").strip() or None
-                    fy = str(l.get("financialYear") or l.get("fy") or "").strip() or None
-                    v_date = normalize_date(l.get("voucherDate") or l.get("invoiceDate"))
-                    l_amt = parse_float(l.get("legal_amount") or l.get("amount"))
-                    tds = parse_float(l.get("tdsAmount") or l.get("tds"))
+                    if not enq_rows:
+                        raise ValueError('CRM enquiries returned no usable IDs')
+                    if len(enq_rows) != len(enq_res['data']):
+                        raise ValueError('CRM enquiries contains records without IDs; previous snapshot kept')
+                    with conn.cursor() as cur:
+                        for batch in chunked(enq_rows, 500):
+                            cur.executemany("""
+                                INSERT INTO enquiries (
+                                    id, companyName, bdMemberName, teamLeaderName, franchiseeName,
+                                    placementFees, positionName, industry, `from`, `to`, enquiryStatus,
+                                    dateOfAllocation, dateClientAcquired, dateOfReallocation,
+                                    bill_no, bill_date, bill_amount, info, created_at
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                ON DUPLICATE KEY UPDATE
+                                    companyName = VALUES(companyName),
+                                    bdMemberName = VALUES(bdMemberName),
+                                    teamLeaderName = VALUES(teamLeaderName),
+                                    franchiseeName = VALUES(franchiseeName),
+                                    placementFees = VALUES(placementFees),
+                                    positionName = VALUES(positionName),
+                                    industry = VALUES(industry),
+                                    `from` = VALUES(`from`),
+                                    `to` = VALUES(`to`),
+                                    enquiryStatus = VALUES(enquiryStatus),
+                                    dateOfAllocation = VALUES(dateOfAllocation),
+                                    dateClientAcquired = VALUES(dateClientAcquired),
+                                    dateOfReallocation = VALUES(dateOfReallocation),
+                                    bill_no = VALUES(bill_no),
+                                    bill_date = VALUES(bill_date),
+                                    bill_amount = VALUES(bill_amount),
+                                    info = VALUES(info)
+                            """, batch)
+                    stats["enquiries"] = len(enq_rows)
+                    print(f"[SYNC OK] Synced {stats['enquiries']} Enquiries.")
 
-                    l_rows.append((l_id, c_name, p_name, gst, pan, tan, fy, v_date, l_amt, tds))
+                    # Rows deleted in the CRM are never removed by an upsert: count them.
+                    try:
+                        with conn.cursor() as cur:
+                            ghosts = reconcile_missing_ids(cur, "enquiries", {r[0] for r in enq_rows}, PRUNE_MISSING)
+                        stats["ghost_rows"]["enquiries"] = ghosts
+                        if ghosts:
+                            stats["notes"].append(f"{ghosts} enquiries not in CRM" + (" (pruned)" if PRUNE_MISSING else " (kept)"))
+                    except Exception as rec_err:
+                        raise RuntimeError(f'Enquiry reconciliation failed: {rec_err}') from rec_err
+                else:
+                    stats["errors"].append(f"Enquiries: {enq_res.get('error', 'No data')}")
 
-                with conn.cursor() as cur:
-                    for batch in chunked(l_rows, 500):
-                        cur.executemany("""
-                            INSERT INTO legals_info (
-                                legal_id, companyName, partyName, gstNo, panNo, tanNo,
-                                financialYear, voucherDate, legal_amount, tdsAmount
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            ON DUPLICATE KEY UPDATE
-                                companyName = VALUES(companyName),
-                                partyName = VALUES(partyName),
-                                gstNo = VALUES(gstNo),
-                                panNo = VALUES(panNo),
-                                tanNo = VALUES(tanNo),
-                                financialYear = VALUES(financialYear),
-                                voucherDate = VALUES(voucherDate),
-                                legal_amount = VALUES(legal_amount),
-                                tdsAmount = VALUES(tdsAmount)
-                        """, batch)
-                stats["legals"] = len(l_rows)
-                print(f"[SYNC OK] Synced {stats['legals']} Legals.")
+                conn.commit()
+            except Exception as stream_error:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                stats['enquiries'] = 0
+                del stats['notes'][notes_start:]
+                stats['errors'].append(f'enquiries: database/write failure: {stream_error}')
 
-            # 6.5 Sync Franchise Payments to MySQL
-            print("[SYNC] Writing Franchise Payments to DB...")
-            fp_res = fetched_results.get("franchise_payments", {"ok": False, "data": []})
-            if fp_res.get("ok") and fp_res.get("data"):
-                fp_rows = []
-                for fp in fp_res["data"]:
-                    fp_id = fp.get("id")
-                    if not fp_id:
-                        continue
-                    p_amt = parse_float(fp.get("AMOUNT PAID") or fp.get("AMOUNT DUE") or fp.get("FRANCHISE SHARE") or fp.get("payment_amount"))
-                    p_done = 'Yes' if p_amt > 0 else 'No'
-                    p_date = normalize_date(fp.get("DATE RECEIVED") or fp.get("BILL DATE") or fp.get("payment_date"))
-                    p_mode = str(fp.get("STATUS") or fp.get("payment_mode") or "").strip() or None
-                    b_no = str(fp.get("BILL NO.") or fp.get("bill_no") or "").strip() or None
+            # Independent invoices stream
+            notes_start = len(stats['notes'])
+            try:
+                conn.begin()
+                # 3. Sync Invoices
+                print("[SYNC] Writing Invoices to DB...")
+                inv_res = fetched_results.get("invoices", {"ok": False, "data": []})
+                
+                if inv_res["ok"] and inv_res["data"]:
+                    inv_rows = []
+                    for inv in inv_res["data"]:
+                        inv_id = inv.get("id")
+                        if not inv_id:
+                            continue
+                        enq_id = inv.get("enquiry_id") or None
+                        b_num = str(inv.get("billNumber") or inv.get("bill_no") or "").strip() or None
+                        b_date = normalize_date(inv.get("billDate") or inv.get("bill_date"))
+                        # Fix A2: serviceCharges only mapped from serviceCharges (never fallback to rate serviceCharge)
+                        raw_sc = inv.get("serviceCharges")
+                        svc_chg = parse_float(raw_sc, default=0.0) if (raw_sc is not None and str(raw_sc).strip() != '') else 0.0
+                        svc_rate = parse_float(inv.get("serviceCharge"), default=0.0)
+                        gst = parse_float(inv.get("totalGST") or inv.get("gst"), default=0.0)
+                        tot_bill = parse_float(inv.get("totalBillAmt") or inv.get("bill_amount"), default=0.0)
 
-                    fp_rows.append((fp_id, None, p_done, p_date, p_mode, b_no, p_amt))
+                        # Fix A1: Keep None when missing/blank in CRM. Never 'x or fallback' on shares.
+                        raw_f_share = inv.get("franchiseeShare")
+                        if raw_f_share is None or str(raw_f_share).strip() == '':
+                            raw_f_share = inv.get("franchiseShare")
+                        f_share = parse_float(raw_f_share, default=None) if (raw_f_share is not None and str(raw_f_share).strip() != '') else None
 
-                with conn.cursor() as cur:
-                    for batch in chunked(fp_rows, 500):
-                        cur.executemany("""
-                            INSERT INTO franchisePayments (
-                                franchisePayment_id, invoice_id, payment_done, payment_date,
-                                payment_mode, uid_transaction_id, payment_amount
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                            ON DUPLICATE KEY UPDATE
-                                payment_done = VALUES(payment_done),
-                                payment_date = VALUES(payment_date),
-                                payment_mode = VALUES(payment_mode),
-                                uid_transaction_id = VALUES(uid_transaction_id),
-                                payment_amount = VALUES(payment_amount)
-                        """, batch)
-                stats["franchise_payments"] = len(fp_rows)
-                print(f"[SYNC OK] Synced {stats['franchise_payments']} Franchise Payments.")
+                        f_gst = parse_float(inv.get("franchiseeGST"), default=0.0)
+
+                        raw_our_share = inv.get("ourShare")
+                        our_sh = parse_float(raw_our_share, default=None) if (raw_our_share is not None and str(raw_our_share).strip() != '') else None
+                        amt_rec = parse_float(inv.get("amountReceived"))
+                        amt_due = parse_float(inv.get("amountDue"))
+                        tds_val = parse_float(inv.get("tds") or inv.get("tdsAmount"))
+                        tds_ff = parse_float(inv.get("tdsFF"))
+                        d_rec = normalize_date(inv.get("dateReceived"))
+                        d_paid = normalize_date(inv.get("paidOnDate"))
+                        pay_mode = str(inv.get("payment_mode") or "").strip() or None
+                        uid_tx = str(inv.get("uid_transaction_id") or "").strip() or None
+                        bd_name = str(inv.get("nameOfBd") or inv.get("bdMemberName") or "").strip() or None
+                        tl_name = str(inv.get("teamLeader") or inv.get("teamLeaderName") or "").strip() or None
+                        fran_name = str(inv.get("franchiseName") or inv.get("franchiseeName") or "").strip() or None
+                        fy_val = str(inv.get("financialYear") or calculate_fy(b_date)).strip()
+                        cand_name = str(inv.get("candidateName") or "").strip() or None
+                        comp_name = str(inv.get("companyName") or "").strip() or None
+                        post_name = str(inv.get("postOfCandidate") or inv.get("positionName") or "").strip() or None
+                        sal_offered = parse_float(inv.get("annualSalaryOffered") or inv.get("salary"))
+                        info_st = str(inv.get("info") or "").strip() or None
+                        status_st = str(inv.get("status") or "active").strip()
+
+                        inv_rows.append((
+                            inv_id, enq_id, b_num, b_date, svc_chg, svc_rate, gst, tot_bill,
+                            f_share, f_gst, our_sh, amt_rec, amt_due, tds_val, tds_ff, d_rec, d_paid,
+                            pay_mode, uid_tx, bd_name, tl_name, fran_name, fy_val, cand_name, comp_name,
+                            post_name, sal_offered, info_st, status_st
+                        ))
+
+                    if not inv_rows:
+                        raise ValueError('CRM invoices returned no usable IDs')
+                    if len(inv_rows) != len(inv_res['data']):
+                        raise ValueError('CRM invoices contains records without IDs; previous snapshot kept')
+                    with conn.cursor() as cur:
+                        for batch in chunked(inv_rows, 500):
+                            cur.executemany("""
+                                INSERT INTO invoice (
+                                    id, enquiry_id, billNumber, billDate, serviceCharges, serviceCharge,
+                                    totalGST, totalBillAmt, franchiseeShare, franchiseeGST, ourShare,
+                                    amountReceived, amountDue, tds, tdsFF, dateReceived, paidOnDate,
+                                    payment_mode, uid_transaction_id, nameOfBd, teamLeader, franchiseName,
+                                    financialYear, candidateName, companyName, postOfCandidate,
+                                    annualSalaryOffered, info, status
+                                ) VALUES (
+                                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                                )
+                                ON DUPLICATE KEY UPDATE
+                                    enquiry_id = VALUES(enquiry_id),
+                                    billNumber = VALUES(billNumber),
+                                    billDate = VALUES(billDate),
+                                    serviceCharges = VALUES(serviceCharges),
+                                    serviceCharge = VALUES(serviceCharge),
+                                    totalGST = VALUES(totalGST),
+                                    totalBillAmt = VALUES(totalBillAmt),
+                                    franchiseeShare = VALUES(franchiseeShare),
+                                    franchiseeGST = VALUES(franchiseeGST),
+                                    ourShare = VALUES(ourShare),
+                                    amountReceived = VALUES(amountReceived),
+                                    amountDue = VALUES(amountDue),
+                                    tds = VALUES(tds),
+                                    tdsFF = VALUES(tdsFF),
+                                    dateReceived = VALUES(dateReceived),
+                                    paidOnDate = VALUES(paidOnDate),
+                                    payment_mode = VALUES(payment_mode),
+                                    uid_transaction_id = VALUES(uid_transaction_id),
+                                    nameOfBd = VALUES(nameOfBd),
+                                    teamLeader = VALUES(teamLeader),
+                                    franchiseName = VALUES(franchiseName),
+                                    financialYear = VALUES(financialYear),
+                                    candidateName = VALUES(candidateName),
+                                    companyName = VALUES(companyName),
+                                    postOfCandidate = VALUES(postOfCandidate),
+                                    annualSalaryOffered = VALUES(annualSalaryOffered),
+                                    info = VALUES(info),
+                                    status = VALUES(status)
+                            """, batch)
+                    stats["invoices"] = len(inv_rows)
+                    print(f"[SYNC OK] Synced {stats['invoices']} Invoices.")
+
+                    try:
+                        with conn.cursor() as cur:
+                            ghosts = reconcile_missing_ids(cur, "invoice", {r[0] for r in inv_rows}, PRUNE_MISSING)
+                        stats["ghost_rows"]["invoices"] = ghosts
+                        if ghosts:
+                            stats["notes"].append(f"{ghosts} invoices not in CRM" + (" (pruned)" if PRUNE_MISSING else " (kept)"))
+                    except Exception as rec_err:
+                        raise RuntimeError(f'Invoice reconciliation failed: {rec_err}') from rec_err
+                else:
+                    stats["errors"].append(f"Invoices: {inv_res.get('error', 'No data')}")
+
+                conn.commit()
+            except Exception as stream_error:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                stats['invoices'] = 0
+                del stats['notes'][notes_start:]
+                stats['errors'].append(f'invoices: database/write failure: {stream_error}')
+
+            # Independent expenses stream
+            notes_start = len(stats['notes'])
+            try:
+                conn.begin()
+                # 4. Sync Expenses (real transactions from the CRM expenditure router).
+                # Every failure path below is reported in stats["errors"]; a wrong or empty
+                # endpoint must never look like a successful sync with 0 rows.
+                print(f"[SYNC] Writing Expenses to DB ({EXPENSE_ENDPOINT})...")
+                exp_res = fetched_results.get("expenses", {"ok": False, "data": []})
+                if not exp_res["ok"]:
+                    stats["errors"].append(f"Expenses: {exp_res.get('error', 'fetch failed')}")
+                elif not exp_res["data"]:
+                    stats["errors"].append(f"Expenses: endpoint '{EXPENSE_ENDPOINT}' returned 0 rows")
+                else:
+                    exp_rows = None
+                    exp_skipped = 0
+                    try:
+                        exp_rows, exp_skipped = build_expense_rows(exp_res["data"])
+                    except ValueError as shape_err:
+                        stats["errors"].append(f"Expenses: {shape_err}")
+
+                    if exp_rows is not None and not exp_rows:
+                        raise ValueError('CRM expenditure returned no usable transaction rows')
+                    if exp_rows is not None:
+                        with conn.cursor() as cur:
+                            linked = adopt_legacy_expense_rows(cur, exp_rows)
+                            for batch in chunked(exp_rows, 500):
+                                cur.executemany("""
+                                    INSERT INTO expenditure (
+                                        crm_id, srNo, billDate, particulars, expenses, amount, net, expenseType, is_deleted
+                                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0)
+                                    ON DUPLICATE KEY UPDATE
+                                        srNo = VALUES(srNo),
+                                        billDate = VALUES(billDate),
+                                        particulars = VALUES(particulars),
+                                        expenses = VALUES(expenses),
+                                        amount = VALUES(amount),
+                                        net = VALUES(net),
+                                        expenseType = VALUES(expenseType),
+                                        is_deleted = 0
+                                """, batch)
+                            if exp_skipped:
+                                missing_from_crm, legacy_retired = 0, 0
+                                stats['errors'].append(f'Expenses: {exp_skipped} unusable records skipped; removal reconciliation deferred')
+                            else:
+                                missing_from_crm, legacy_retired = retire_missing_expenses(cur, {r[0] for r in exp_rows})
+                        stats["expenses"] = len(exp_rows)
+                        latest = max((r[2] for r in exp_rows if r[2]), default=None)
+                        stats["notes"].append(
+                            f"expenses: {len(exp_rows)} synced (latest {latest}), {linked} linked to old rows, "
+                            f"{missing_from_crm} removed in CRM, {legacy_retired} unmatched old rows retired, {exp_skipped} skipped"
+                        )
+                        print(f"[SYNC OK] Synced {stats['expenses']} Expenses (latest billDate: {latest}).")
+
+                conn.commit()
+            except Exception as stream_error:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                stats['expenses'] = 0
+                del stats['notes'][notes_start:]
+                stats['errors'].append(f'expenses: database/write failure: {stream_error}')
+
+            # Independent clients stream
+            notes_start = len(stats['notes'])
+            try:
+                conn.begin()
+                # 5. Sync Clients Info
+                print("[SYNC] Writing Clients Info to DB...")
+                c_res = fetched_results.get("clients", {"ok": False, "data": []})
+                if not c_res.get("ok"):
+                    stats["errors"].append(f"Clients: {c_res.get('error', 'fetch failed')}")
+                if c_res["ok"] and c_res["data"]:
+                    c_rows = []
+                    for c in c_res["data"]:
+                        c_id = c.get("id")
+                        if not c_id:
+                            continue
+                        c_name = str(c.get("companyName") or "").strip()
+                        cp_name = str(c.get("contactPersonName") or c.get("contactPerson") or "").strip() or None
+                        desig = str(c.get("designation") or "").strip() or None
+                        phone = str(c.get("phoneNumber") or c.get("contactPhone") or c.get("mobileNo") or "").strip() or None
+                        email = str(c.get("emailId") or c.get("contactEmail") or "").strip() or None
+                        tl = str(c.get("teamLeader") or "").strip() or None
+                        gst = str(c.get("gstNumber") or c.get("gstNo") or "").strip() or None
+                        pan = str(c.get("panNumber") or c.get("panNo") or "").strip() or None
+                        tan = str(c.get("tanNumber") or c.get("tanNo") or "").strip() or None
+                        st = str(c.get("status") or "active").strip().lower()
+                        amt = parse_float(c.get("amount") or c.get("grossAmount"))
+                        tds = parse_float(c.get("tdsAmount") or c.get("tds"))
+
+                        c_rows.append((c_id, c_name, cp_name, desig, phone, email, tl, gst, pan, tan, st, amt, tds))
+
+                    with conn.cursor() as cur:
+                        for batch in chunked(c_rows, 500):
+                            cur.executemany("""
+                                INSERT INTO clients_info (
+                                    id, companyName, contactPersonName, designation, phoneNumber,
+                                    emailId, teamLeader, gstNumber, panNumber, tanNumber, status, amount, tdsAmount
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                ON DUPLICATE KEY UPDATE
+                                    companyName = VALUES(companyName),
+                                    contactPersonName = VALUES(contactPersonName),
+                                    designation = VALUES(designation),
+                                    phoneNumber = VALUES(phoneNumber),
+                                    emailId = VALUES(emailId),
+                                    teamLeader = VALUES(teamLeader),
+                                    gstNumber = VALUES(gstNumber),
+                                    panNumber = VALUES(panNumber),
+                                    tanNumber = VALUES(tanNumber),
+                                    status = VALUES(status),
+                                    amount = VALUES(amount),
+                                    tdsAmount = VALUES(tdsAmount)
+                            """, batch)
+                    stats["clients"] = len(c_rows)
+                    print(f"[SYNC OK] Synced {stats['clients']} Clients.")
+
+                conn.commit()
+            except Exception as stream_error:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                stats['clients'] = 0
+                del stats['notes'][notes_start:]
+                stats['errors'].append(f'clients: database/write failure: {stream_error}')
+
+            # Independent legals stream
+            notes_start = len(stats['notes'])
+            try:
+                conn.begin()
+                # 6. Sync Legals Info
+                print("[SYNC] Writing Legals Info to DB...")
+                l_res = fetched_results.get("legals", {"ok": False, "data": []})
+                if not l_res.get("ok"):
+                    stats["errors"].append(f"Legals: {l_res.get('error', 'fetch failed')}")
+                if l_res["ok"] and l_res["data"]:
+                    l_rows = []
+                    for l in l_res["data"]:
+                        l_id = l.get("id") or l.get("legal_id")
+                        c_name = str(l.get("companyName") or "").strip() or None
+                        p_name = str(l.get("partyName") or "").strip() or None
+                        gst = str(l.get("gstNo") or l.get("gstNumber") or "").strip() or None
+                        pan = str(l.get("panNo") or l.get("panNumber") or "").strip() or None
+                        tan = str(l.get("tanNo") or l.get("tanNumber") or "").strip() or None
+                        fy = str(l.get("financialYear") or l.get("fy") or "").strip() or None
+                        v_date = normalize_date(l.get("voucherDate") or l.get("invoiceDate"))
+                        l_amt = parse_float(l.get("legal_amount") or l.get("amount"))
+                        tds = parse_float(l.get("tdsAmount") or l.get("tds"))
+
+                        l_rows.append((l_id, c_name, p_name, gst, pan, tan, fy, v_date, l_amt, tds))
+
+                    with conn.cursor() as cur:
+                        for batch in chunked(l_rows, 500):
+                            cur.executemany("""
+                                INSERT INTO legals_info (
+                                    legal_id, companyName, partyName, gstNo, panNo, tanNo,
+                                    financialYear, voucherDate, legal_amount, tdsAmount
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                ON DUPLICATE KEY UPDATE
+                                    companyName = VALUES(companyName),
+                                    partyName = VALUES(partyName),
+                                    gstNo = VALUES(gstNo),
+                                    panNo = VALUES(panNo),
+                                    tanNo = VALUES(tanNo),
+                                    financialYear = VALUES(financialYear),
+                                    voucherDate = VALUES(voucherDate),
+                                    legal_amount = VALUES(legal_amount),
+                                    tdsAmount = VALUES(tdsAmount)
+                            """, batch)
+                    stats["legals"] = len(l_rows)
+                    print(f"[SYNC OK] Synced {stats['legals']} Legals.")
+
+                conn.commit()
+            except Exception as stream_error:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                stats['legals'] = 0
+                del stats['notes'][notes_start:]
+                stats['errors'].append(f'legals: database/write failure: {stream_error}')
+
+            # Independent franchise payments stream
+            notes_start = len(stats['notes'])
+            try:
+                conn.begin()
+                # 6.5 Sync Franchise Payments to MySQL
+                print("[SYNC] Writing Franchise Payments to DB...")
+                fp_res = fetched_results.get("franchise_payments", {"ok": False, "data": []})
+                if not fp_res.get("ok"):
+                    stats["errors"].append(f"Franchise payments: {fp_res.get('error', 'fetch failed')}")
+                if fp_res.get("ok") and fp_res.get("data"):
+                    fp_rows = []
+                    for fp in fp_res["data"]:
+                        fp_id = fp.get("id")
+                        if not fp_id:
+                            continue
+                        p_amt = parse_float(fp.get("AMOUNT PAID") or fp.get("AMOUNT DUE") or fp.get("FRANCHISE SHARE") or fp.get("payment_amount"))
+                        p_done = 'Yes' if p_amt > 0 else 'No'
+                        p_date = normalize_date(fp.get("DATE RECEIVED") or fp.get("BILL DATE") or fp.get("payment_date"))
+                        p_mode = str(fp.get("STATUS") or fp.get("payment_mode") or "").strip() or None
+                        b_no = str(fp.get("BILL NO.") or fp.get("bill_no") or "").strip() or None
+
+                        fp_rows.append((fp_id, None, p_done, p_date, p_mode, b_no, p_amt))
+
+                    with conn.cursor() as cur:
+                        for batch in chunked(fp_rows, 500):
+                            cur.executemany("""
+                                INSERT INTO franchisePayments (
+                                    franchisePayment_id, invoice_id, payment_done, payment_date,
+                                    payment_mode, uid_transaction_id, payment_amount
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                ON DUPLICATE KEY UPDATE
+                                    payment_done = VALUES(payment_done),
+                                    payment_date = VALUES(payment_date),
+                                    payment_mode = VALUES(payment_mode),
+                                    uid_transaction_id = VALUES(uid_transaction_id),
+                                    payment_amount = VALUES(payment_amount)
+                            """, batch)
+                    stats["franchise_payments"] = len(fp_rows)
+                    print(f"[SYNC OK] Synced {stats['franchise_payments']} Franchise Payments.")
+
+                conn.commit()
+            except Exception as stream_error:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                stats['franchise_payments'] = 0
+                del stats['notes'][notes_start:]
+                stats['errors'].append(f'franchise payments: database/write failure: {stream_error}')
 
             # 7. Sync Corporate Payroll Records to MySQL
             print("[SYNC] Syncing Payroll Records from Saarthi API to MySQL (force refresh)...")
@@ -980,6 +1125,7 @@ def sync_saarthi_all(existing_log_id=None):
                             t.get('referenceId') or '',
                             t.get('description') or ''
                         ))
+                    conn.begin()
                     with conn.cursor() as cur:
                         cur.executemany("""
                             INSERT INTO payroll_records (
@@ -1002,9 +1148,14 @@ def sync_saarthi_all(existing_log_id=None):
                                 reference_id = VALUES(reference_id),
                                 description = VALUES(description);
                         """, p_rows)
+                    conn.commit()
                     stats["payroll"] = len(p_rows)
                     print(f"[SYNC OK] Synced {stats['payroll']} Payroll Records into MySQL.")
             except Exception as p_err:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
                 print("[SYNC WARN] Payroll sync warning:", str(p_err))
                 stats["notes"].append(f"Payroll sync warning: {p_err}")
                 stats["errors"].append(f"Payroll sync failed: {p_err}")
@@ -1031,6 +1182,8 @@ def sync_saarthi_all(existing_log_id=None):
                 final_message += " | " + " | ".join(stats["notes"])
             final_message = final_message[:4000]
 
+            stats['status'] = final_status
+            stats['log_id'] = log_id
             if log_id:
                 with conn.cursor() as cur:
                     cur.execute("""
@@ -1067,17 +1220,7 @@ def sync_saarthi_all(existing_log_id=None):
                 except Exception:
                     pass
         finally:
-            if conn:
-                if db_lock_held:
-                    try:
-                        with conn.cursor() as cur:
-                            cur.execute("SELECT RELEASE_LOCK(%s)", (DB_SYNC_LOCK_NAME,))
-                    except Exception:
-                        pass
-                try:
-                    conn.close()
-                except Exception:
-                    pass
+            pass  # The outer finally releases the job lock and connection.
 
         # Requirement 6: Resolve invalidate_all_caches via sys.modules to prevent duplicate app instances
         try:
@@ -1098,7 +1241,33 @@ def sync_saarthi_all(existing_log_id=None):
         stats["duration_seconds"] = (datetime.datetime.now() - start_time).total_seconds()
         stats["timestamp"] = datetime.datetime.now().isoformat()
         return stats
+    except Exception as exc:
+        message = f'CRM sync initialization failed: {exc}'
+        stats['ok'] = False
+        stats['errors'].append(message)
+        if log_id:
+            try:
+                recovery = get_db_connection()
+                try:
+                    with recovery.cursor() as cur:
+                        cur.execute("UPDATE crm_sync_logs SET status = 'failed', message = %s, completed_at = NOW() WHERE id = %s", (message, log_id))
+                finally:
+                    recovery.close()
+            except Exception:
+                pass  # Status polling can recover the orphan after the DB returns.
+        return stats
     finally:
+        if conn:
+            try:
+                if db_lock_held:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT RELEASE_LOCK(%s)", (DB_SYNC_LOCK_NAME,))
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
         sync_lock.release()
 
 if __name__ == "__main__":

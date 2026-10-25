@@ -1,3 +1,4 @@
+import { runCrmSync } from '../utils/crmSync';
 import React, { createContext, useState, useEffect, useMemo } from 'react';
 import {
   API_BASE_URL,
@@ -561,11 +562,11 @@ export const FinanceProvider = ({ children }) => {
       if (health.ok) {
         // 3. Parallel async fetch of core endpoints with retry
         const [txRes, franRes, bdRes, tlRes, budgetRes] = await Promise.allSettled([
-          fetchWithRetry(`${API_BASE_URL}/transactions`),
-          fetchWithRetry(`${API_BASE_URL}/franchisees`),
-          fetchWithRetry(`${API_BASE_URL}/bd-agents`),
-          fetchWithRetry(`${API_BASE_URL}/team-leaders`),
-          fetchWithRetry(`${API_BASE_URL}/budgets`)
+          fetchWithRetry(`${API_BASE_URL}/transactions${isManual ? '?refresh=1' : ''}`, { cache: 'no-store' }),
+          fetchWithRetry(`${API_BASE_URL}/franchisees`, { cache: 'no-store' }),
+          fetchWithRetry(`${API_BASE_URL}/bd-agents`, { cache: 'no-store' }),
+          fetchWithRetry(`${API_BASE_URL}/team-leaders`, { cache: 'no-store' }),
+          fetchWithRetry(`${API_BASE_URL}/budgets`, { cache: 'no-store' })
         ]);
 
         // Kick off heavy ML model insights asynchronously in background without delaying main dashboard
@@ -951,126 +952,12 @@ export const FinanceProvider = ({ children }) => {
     return false;
   };
 
-  const syncWithSaarthi = async () => {
-    try {
-      // 1. Capture baselineLogId before the POST request
-      let baselineLogId = null;
-      try {
-        const initStatusRes = await fetchWithApiKey(`${API_BASE_URL}/sync/status`, { timeoutMs: 10000 });
-        if (initStatusRes && initStatusRes.ok) {
-          const initData = await initStatusRes.json();
-          const latestInit = initData.latest || (initData.logs && initData.logs[0]);
-          if (latestInit?.id) {
-            baselineLogId = latestInit.id;
-          }
-        }
-      } catch (e) {
-        console.warn('[Sync] Baseline log fetch notice:', e);
-      }
-
-      const response = await fetchWithApiKey(`${API_BASE_URL}/finance/sync-saarthi`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        timeoutMs: 60000
-      });
-      if (response && response.ok) {
-        const data = await response.json();
-        console.log('[Sync] Raw backend response:', data);
-
-        // If backend started asynchronous sync or reports one in progress, poll /sync/status
-        if (data && (data.status === 'started' || data.status === 'in_progress' || data.is_running)) {
-          const maxPolls = 60; // 60 * 2.5s = 150 seconds max
-          for (let i = 0; i < maxPolls; i++) {
-            await new Promise((r) => setTimeout(r, 2500));
-            try {
-              const statusRes = await fetchWithApiKey(`${API_BASE_URL}/sync/status`, { timeoutMs: 15000 });
-              if (statusRes && statusRes.ok) {
-                const sData = await statusRes.json();
-
-                // Treat trigger_error as a failure immediately
-                if (sData.trigger_error) {
-                  return { success: false, error: sData.trigger_error };
-                }
-
-                const latest = sData.latest || (sData.logs && sData.logs[0]);
-                if (latest) {
-                  // In the poll loop, ignore any log whose id equals baselineLogId unless trigger_error is set
-                  if (baselineLogId && latest.id === baselineLogId && !sData.trigger_error) {
-                    continue;
-                  }
-
-                  // If still running, keep waiting
-                  if (latest.status === 'in_progress') {
-                    continue;
-                  }
-
-                  if (latest.status === 'completed' || latest.status === 'completed_with_warnings') {
-                    const totalCounts = (latest.enquiries_count || 0) + (latest.invoices_count || 0);
-                    const isZeroCountWarning = latest.status === 'completed_with_warnings' && totalCounts === 0;
-
-                    if (isZeroCountWarning) {
-                      // Treat 'completed_with_warnings' as a warning/failure when counts are 0, passing message through as errors[]
-                      return {
-                        success: false,
-                        error: latest.message || 'Sync completed with warnings (0 records synced)',
-                        data: {
-                          ok: false,
-                          franchisees: latest.franchisees_count || 0,
-                          enquiries: latest.enquiries_count || 0,
-                          invoices: latest.invoices_count || 0,
-                          expenses: latest.expenses_count || 0,
-                          clients: latest.clients_count || 0,
-                          legals: latest.legals_count || 0,
-                          duration_seconds: latest.duration_seconds || 0,
-                          errors: latest.message ? [latest.message] : ['Completed with warnings: 0 records synced']
-                        }
-                      };
-                    }
-
-                    await fetchAllData();
-                    return {
-                      success: true,
-                      data: {
-                        ok: true,
-                        franchisees: latest.franchisees_count || 0,
-                        enquiries: latest.enquiries_count || 0,
-                        invoices: latest.invoices_count || 0,
-                        expenses: latest.expenses_count || 0,
-                        clients: latest.clients_count || 0,
-                        legals: latest.legals_count || 0,
-                        duration_seconds: latest.duration_seconds || 0,
-                        notes: latest.message ? [latest.message] : [],
-                        errors: latest.status === 'completed_with_warnings' && latest.message ? [latest.message] : []
-                      }
-                    };
-                  }
-                  if (latest.status === 'failed') {
-                    return { success: false, error: latest.message || 'Saarthi CRM sync failed on backend.' };
-                  }
-                }
-              }
-            } catch (pollErr) {
-              console.warn('[Sync] Poll attempt error:', pollErr);
-            }
-          }
-          return { success: false, error: 'Live sync timed out waiting for backend worker.' };
-        }
-
-        // Direct synchronous response fallback
-        if (data && data.success) {
-          await fetchAllData();
-          return { success: true, data: data.data || data };
-        }
-      } else if (response) {
-        const errJson = await response.json().catch(() => ({}));
-        return { success: false, error: errJson.error || errJson.message || `HTTP ${response.status} error from server.` };
-      }
-    } catch (backendErr) {
-      console.error('[Sync] Backend sync endpoint unreachable:', backendErr);
-      return { success: false, error: backendErr.message || 'Backend sync endpoint unreachable. Please verify backend server is running.' };
-    }
-    return { success: false, error: 'Sync failed on server.' };
-  };
+  const syncWithSaarthi = async (options = {}) => runCrmSync({
+    apiBaseUrl: API_BASE_URL,
+    request: fetchWithApiKey,
+    onRefresh: () => fetchAllData(true),
+    ...options
+  });
 
   // Auto-poll on mount and every 90s; keep-alive every 8 min to prevent Render cold-sleep
   useEffect(() => {

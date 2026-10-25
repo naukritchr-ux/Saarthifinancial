@@ -2,7 +2,7 @@
 backend/tests/test_crm_sync.py
 Unit tests verifying:
 1. sync_saarthi_all() with mocked fetch_saarthi_endpoint (all failing -> status='failed', ok=False; all succeeding -> status='completed', ok=True)
-2. Frontend polling logic (baselineLogId filtering, trigger_error immediate failure, 0-count warning handling).
+Frontend orchestration is tested against the actual JavaScript module in frontend/src/utils/crmSync.test.js.
 """
 
 import unittest
@@ -27,6 +27,7 @@ class TestCrmSyncService(unittest.TestCase):
         mock_cur = MagicMock()
         mock_conn.cursor.return_value.__enter__.return_value = mock_cur
         mock_get_db.return_value = mock_conn
+        mock_cur.fetchone.return_value = {'got': 1}
         mock_cur.lastrowid = 101
 
         # All endpoints fail
@@ -71,6 +72,7 @@ class TestCrmSyncService(unittest.TestCase):
         mock_cur.fetchall.return_value = []
         mock_conn.cursor.return_value.__enter__.return_value = mock_cur
         mock_get_db.return_value = mock_conn
+        mock_cur.fetchone.return_value = {'got': 1}
         mock_cur.lastrowid = 202
 
         def fetch_side_effect(endpoint_path, timeout=12):
@@ -114,80 +116,6 @@ class TestCrmSyncService(unittest.TestCase):
         self.assertEqual(final_status, "completed")
         self.assertIn("Sync completed successfully", final_message)
         self.assertIn("Payroll: 1", final_message)
-
-
-class TestFrontendPollingLogic(unittest.TestCase):
-    """
-    Simulates the polling logic in FinanceContext.jsx syncWithSaarthi()
-    """
-
-    def poll_sync(self, baseline_log_id, responses):
-        """Helper that implements the frontend polling loop logic."""
-        for sData in responses:
-            if sData.get("trigger_error"):
-                return {"success": False, "error": sData["trigger_error"]}
-            
-            latest = sData.get("latest")
-            if latest:
-                if baseline_log_id and latest.get("id") == baseline_log_id and not sData.get("trigger_error"):
-                    continue
-                if latest.get("status") == "in_progress":
-                    continue
-                if latest.get("status") in ("completed", "completed_with_warnings"):
-                    total_counts = (latest.get("enquiries_count") or 0) + (latest.get("invoices_count") or 0)
-                    is_zero_warning = latest.get("status") == "completed_with_warnings" and total_counts == 0
-                    if is_zero_warning:
-                        return {
-                            "success": False,
-                            "error": latest.get("message") or "Sync completed with warnings (0 records synced)",
-                            "data": {
-                                "ok": False,
-                                "errors": [latest.get("message")] if latest.get("message") else ["0 records synced"]
-                            }
-                        }
-                    return {"success": True, "data": {"ok": True, "notes": [latest.get("message")]}}
-                if latest.get("status") == "failed":
-                    return {"success": False, "error": latest.get("message") or "Sync failed on backend"}
-        return {"success": False, "error": "Timeout"}
-
-    def test_ignores_baseline_log(self):
-        """Poll loop must ignore logs matching baselineLogId until a new log appears."""
-        baseline_id = 99
-        responses = [
-            {"latest": {"id": 99, "status": "completed", "message": "Old sync"}},  # should be ignored
-            {"latest": {"id": 100, "status": "completed", "message": "New sync", "enquiries_count": 5, "invoices_count": 5}}
-        ]
-        result = self.poll_sync(baseline_id, responses)
-        self.assertTrue(result["success"])
-        self.assertEqual(result["data"]["notes"], ["New sync"])
-
-    def test_immediate_failure_on_trigger_error(self):
-        """Poll loop must abort immediately with failure when trigger_error is present."""
-        baseline_id = 99
-        responses = [
-            {"trigger_error": "DB connection timeout during background spawn", "latest": {"id": 99, "status": "completed"}}
-        ]
-        result = self.poll_sync(baseline_id, responses)
-        self.assertFalse(result["success"])
-        self.assertEqual(result["error"], "DB connection timeout during background spawn")
-
-    def test_completed_with_warnings_zero_count_treated_as_warning(self):
-        """When completed_with_warnings has 0 enquiries and 0 invoices, treat as error/warning and pass message in errors[]."""
-        baseline_id = 99
-        responses = [
-            {
-                "latest": {
-                    "id": 101,
-                    "status": "completed_with_warnings",
-                    "enquiries_count": 0,
-                    "invoices_count": 0,
-                    "message": "Expenses failed with 502"
-                }
-            }
-        ]
-        result = self.poll_sync(baseline_id, responses)
-        self.assertFalse(result["success"])
-        self.assertIn("Expenses failed with 502", result["data"]["errors"][0])
 
 
 if __name__ == '__main__':

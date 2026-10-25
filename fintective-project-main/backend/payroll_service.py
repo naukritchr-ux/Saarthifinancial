@@ -11,19 +11,19 @@ from typing import Dict, List, Any, Optional
 from finance_rules import get_ist_today
 
 def _http_get_json(url: str, timeout: int = 15):
-    if requests is not None:
-        try:
-            r = requests.get(url, timeout=timeout)
-            if r.status_code == 200:
-                return r.json()
-        except Exception:
-            pass
-    # Fallback to standard library urllib
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        if resp.status == 200:
-            return json.loads(resp.read().decode('utf-8'))
-    return None
+    # Reuse CRM URL configuration, service-token auth, retries and response parsing.
+    from urllib.parse import urlsplit
+    from sync_service import fetch_saarthi_endpoint
+    parts = urlsplit(url)
+    path = parts.path.lstrip('/')
+    if path.startswith('api/'):
+        path = path[4:]
+    if parts.query:
+        path += '?' + parts.query
+    result = fetch_saarthi_endpoint(path, timeout=timeout)
+    if not result.get('ok'):
+        raise RuntimeError(result.get('error') or 'Unable to fetch live payroll records')
+    return result['data']
 
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cache')
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -147,7 +147,7 @@ def fetch_employees_list(force_refresh: bool = False) -> List[Dict[str, Any]]:
 
     try:
         data = _http_get_json('https://api.sarthi360.in/employees', timeout=20)
-        if data:
+        if data is not None:
             _employees_cache = data
             try:
                 with open(cache_file, 'w', encoding='utf-8') as f:
@@ -157,8 +157,10 @@ def fetch_employees_list(force_refresh: bool = False) -> List[Dict[str, Any]]:
             return _employees_cache
     except Exception as e:
         print('[Payroll Service] Error fetching employees from API:', e)
-    
-    # If forced refresh failed from network, fall back to disk cache if available
+        if force_refresh:
+            raise
+
+    # Ordinary reads may fall back to disk; a forced live sync raises above.
     if os.path.exists(cache_file):
         try:
             with open(cache_file, 'r', encoding='utf-8') as f:
@@ -196,8 +198,10 @@ def fetch_monthly_attendance(financial_year: str, month_idx: int, force_refresh:
             return data
     except Exception as e:
         print(f"[Payroll Service] Error fetching attendance for {financial_year} month {month_idx}:", e)
-    
-    # If forced refresh failed from network, fall back to disk cache if available
+        if force_refresh:
+            raise
+
+    # Ordinary reads may fall back to disk; a forced live sync raises above.
     if os.path.exists(cache_file):
         try:
             with open(cache_file, 'r', encoding='utf-8') as f:
@@ -363,7 +367,9 @@ def get_payroll_transactions_for_fy(financial_year: str = '2026-2027', force_ref
     if not employees:
         return []
     
-    emp_map = {e['id']: e for e in employees if 'id' in e}
+    emp_map = {str(e['id']).strip(): e for e in employees if isinstance(e, dict) and e.get('id') is not None}
+    if not emp_map:
+        raise ValueError('CRM employee response contains no usable employee IDs')
 
     # Month names mapping
     months_names = [
@@ -393,7 +399,7 @@ def get_payroll_transactions_for_fy(financial_year: str = '2026-2027', force_ref
 
         for record in att_records:
             emp_id = record.get('EmployeeID')
-            emp = emp_map.get(emp_id)
+            emp = emp_map.get(str(emp_id).strip()) if emp_id is not None else None
             if not emp:
                 continue
 
@@ -511,6 +517,8 @@ def get_all_payroll_transactions(force_refresh: bool = False) -> List[Dict[str, 
         all_txs.extend(current_txs)
     except Exception as e:
         print("[Payroll Service] Current financial-year refresh note:", e)
+        if force_refresh:
+            raise
     
     if all_txs:
         try:

@@ -3,10 +3,11 @@ import { FinanceContext, API_BASE_URL } from '../context/FinanceContext';
 import { X, RefreshCw, Globe, CheckCircle2, AlertTriangle, Play, Database, Server, Check } from 'lucide-react';
 
 const SyncModal = ({ isOpen, onClose }) => {
-  const { syncWithSaarthi, fetchAllData } = useContext(FinanceContext);
+  const { syncWithSaarthi } = useContext(FinanceContext);
   const [syncLogs, setSyncLogs] = useState([]);
   const [status, setStatus] = useState('idle'); // idle, loading, success, error
   const [syncStats, setSyncStats] = useState(null);
+  const [pendingJobId, setPendingJobId] = useState(null);
 
   if (!isOpen) return null;
 
@@ -18,12 +19,12 @@ const SyncModal = ({ isOpen, onClose }) => {
     setStatus('loading');
     setSyncLogs([]);
     setSyncStats(null);
-    addLog('Connecting to Saarthi Live CRM endpoints (api.sarthi360.in)...', 'info');
-    
+    addLog('Connecting to the configured Saarthi CRM backend...', 'info');
+
     try {
       addLog('Initiating multi-channel sync for Enquiries, Invoices, Franchisees, Expenses, Clients & Legals...', 'info');
-      const result = await syncWithSaarthi();
-      
+      const result = await syncWithSaarthi({ jobId: pendingJobId, onProgress: info => addLog(info.message) });
+
       if (result.success && result.data?.ok !== false) {
         const d = result.data || {};
         setSyncStats(d);
@@ -39,11 +40,16 @@ const SyncModal = ({ isOpen, onClose }) => {
         if (d.errors && d.errors.length > 0) {
           d.errors.forEach(err => addLog(`⚠️ Notice: ${err}`, 'warning'));
         }
-        addLog(`🎉 All Saarthi CRM records written to MySQL (crm_db) in ${(d.duration_seconds || 0).toFixed(2)}s!`, 'success');
-        setStatus('success');
-        // Refresh dashboard data after successful sync
-        fetchAllData();
+        const hasWarnings = result.warning || d.errors?.length > 0;
+        addLog(`CRM job ${result.log_id} finished in ${(d.duration_seconds || 0).toFixed(2)}s${hasWarnings ? ' with warnings; review the notices above.' : '.'}`, hasWarnings ? 'warning' : 'success');
+        setPendingJobId(null);
+        setStatus(hasWarnings ? 'warning' : 'success');
+      } else if (result.pending) {
+        setPendingJobId(result.log_id);
+        addLog(result.error, 'warning');
+        setStatus('pending');
       } else {
+        setPendingJobId(null);
         const errMsg = result.error || result.data?.error || (result.data?.errors && result.data.errors.join(', ')) || 'Live sync failed or was rejected by backend.';
         addLog(`❌ Sync Failed: ${errMsg}`, 'error');
         setStatus('error');
@@ -67,13 +73,13 @@ const SyncModal = ({ isOpen, onClose }) => {
               Synchronize live recruitment, invoice, client, and expense streams directly into Aiven MySQL
             </span>
           </div>
-          <button className="modal-close-btn" onClick={onClose} disabled={status === 'loading'} style={{ background: '#F1F3F0', border: 'none', color: '#1B2321', cursor: 'pointer', borderRadius: '6px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button className="modal-close-btn" onClick={onClose} style={{ background: '#F1F3F0', border: 'none', color: '#1B2321', cursor: 'pointer', borderRadius: '6px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <X size={16} />
           </button>
         </div>
 
         <div className="modal-body" style={{ padding: '20px 24px' }}>
-          
+
           {/* Main Sync Trigger Box */}
           <div style={{
             background: '#F6F7F4',
@@ -92,7 +98,7 @@ const SyncModal = ({ isOpen, onClose }) => {
                 <span>Sync All Saarthi CRM Endpoints</span>
               </div>
               <div style={{ fontSize: '0.78rem', color: '#6B7268', marginTop: '3px' }}>
-                Fetches Enquiries, Invoices, Franchisees, Expenses, Clients & Legals directly from <code>api.sarthi360.in</code>
+                Fetches Enquiries, Invoices, Franchisees, Expenses, Clients & Legals through the configured CRM connection
               </div>
             </div>
 
@@ -117,7 +123,7 @@ const SyncModal = ({ isOpen, onClose }) => {
               }}
             >
               <RefreshCw className={status === 'loading' ? 'spinning' : ''} size={15} />
-              {status === 'loading' ? 'Syncing...' : 'Start Live Sync'}
+              {status === 'loading' ? 'Syncing...' : pendingJobId ? 'Resume Monitoring' : 'Start Live Sync'}
             </button>
           </div>
 
@@ -210,6 +216,8 @@ const SyncModal = ({ isOpen, onClose }) => {
             </div>
           )}
 
+          {(status === 'warning' || status === 'pending') && <p role="status" style={{ color: '#92400e' }}>{status === 'pending' ? 'The backend job may still be running. Resume monitoring to check the same job.' : 'Sync finished with warnings. Some sources or the dashboard refresh need attention; review the log above.'}</p>}
+
           {status === 'error' && (
             <div style={{
               display: 'flex',
@@ -224,7 +232,7 @@ const SyncModal = ({ isOpen, onClose }) => {
               <AlertTriangle color="#A8402E" size={20} style={{ flexShrink: 0, marginTop: '2px' }} />
               <div style={{ fontSize: '0.85rem', color: '#A8402E', flex: 1 }}>
                 <strong>Sync Failed.</strong>{' '}
-                {syncLogs.filter(l => l.type === 'error').map(l => l.message.replace('❌ Sync Failed: ', '')).join(' ')||'Please check backend server connection or Aiven database connectivity.'}
+                {syncLogs.filter(l => l.type === 'error').map(l => l.message.replace('❌ Sync Failed: ', '')).join(' ') || 'Please check backend server connection or Aiven database connectivity.'}
               </div>
               <button
                 onClick={handleSaarthiLiveSync}
@@ -237,7 +245,7 @@ const SyncModal = ({ isOpen, onClose }) => {
         </div>
 
         <div className="modal-footer" style={{ padding: '14px 24px', background: '#F8F9FA', borderTop: '1px solid #E3E5E0', display: 'flex', justifyContent: 'flex-end' }}>
-          <button className="btn btn-secondary" onClick={onClose} disabled={status === 'loading'} style={{ backgroundColor: '#FFFFFF', border: '1px solid #D1D5DB', color: '#374151', padding: '8px 16px', borderRadius: '8px', fontWeight: '500', cursor: 'pointer' }}>
+          <button className="btn btn-secondary" onClick={onClose} style={{ backgroundColor: '#FFFFFF', border: '1px solid #D1D5DB', color: '#374151', padding: '8px 16px', borderRadius: '8px', fontWeight: '500', cursor: 'pointer' }}>
             Close
           </button>
         </div>

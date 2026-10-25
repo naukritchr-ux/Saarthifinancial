@@ -153,10 +153,10 @@ def get_data_version(force=False):
         try:
             conn = get_db_connection()
             with conn.cursor() as cur:
-                cur.execute("SELECT id, COALESCE(completed_at, started_at) as as_of FROM crm_sync_logs WHERE status IN ('completed', 'completed_with_warnings') ORDER BY id DESC LIMIT 1")
+                cur.execute("SELECT COALESCE(SUM(id), 0) AS revision, MAX(COALESCE(completed_at, started_at)) AS as_of FROM crm_sync_logs WHERE status IN ('completed', 'completed_with_warnings', 'failed')")
                 r = cur.fetchone()
-                if r and r.get('id'):
-                    _data_version_cache['version'] = int(r['id'])
+                if r and r.get('revision'):
+                    _data_version_cache['version'] = int(r['revision'])
                     _data_version_cache['as_of'] = str(r.get('as_of') or '')[:19]
                 elif not _data_version_cache['as_of']:
                     _data_version_cache['as_of'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -410,6 +410,36 @@ def map_category(crm_category, tx_type):
     return 'Other'
 
 # API Routes
+
+_sync_cache_revision = None
+_sync_cache_revision_lock = threading.Lock()
+
+
+def _refresh_sync_cache_revision(force=False):
+    global _sync_cache_revision
+    version, _ = get_data_version(force=force)
+    with _sync_cache_revision_lock:
+        if force or version != _sync_cache_revision:
+            invalidate_all_caches()
+            _sync_cache_revision = version
+
+
+@app.before_request
+def refresh_synced_data_caches():
+    # Test requests disable caching; the revision helper has dedicated tests.
+    if os.environ.get('FLASK_TESTING', '').lower() in ('true', '1', 'yes'):
+        return None
+    if request.method == 'GET' and request.path.startswith('/api/') and not request.path.startswith(('/api/sync', '/api/health', '/api/finance/sync')):
+        _refresh_sync_cache_revision(force=request.args.get('refresh') == '1')
+    return None
+
+
+@app.after_request
+def prevent_stale_api_http_cache(response):
+    if request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-store'
+    return response
+
 
 @app.route('/api/transactions', methods=['GET'])
 def get_transactions():
@@ -3951,112 +3981,107 @@ LAST_TRIGGER_ERROR = None
 @app.route('/api/finance/sync-saarthi', methods=['POST'])
 @app.route('/api/sync', methods=['POST'])
 def sync_saarthi_endpoint():
-    global LAST_TRIGGER_ERROR
-    import threading
-    from sync_service import sync_saarthi_all
-    
-    # Check if a sync is already running in MySQL
-    conn = get_db_connection()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT id, started_at, TIMESTAMPDIFF(SECOND, started_at, NOW()) AS age_sec
-                FROM crm_sync_logs
-                WHERE status = 'in_progress'
-                ORDER BY id DESC LIMIT 1
-            """)
-            running = cur.fetchone()
-            if running and (running.get('age_sec') or 0) < 180:
-                return jsonify({
-                    'success': True,
-                    'status': 'in_progress',
-                    'is_running': True,
-                    'message': f"A Saarthi CRM sync is already in progress (started {running.get('age_sec')}s ago).",
-                    'log_id': running['id'],
-                    'poll_url': '/api/sync/status'
-                }), 200
-    except Exception as check_err:
-        print('[SYNC CHECK NOTICE]', check_err)
-    finally:
-        conn.close()
-
-    # Synchronously create in_progress row in crm_sync_logs before background worker starts
+    from sync_service import sync_saarthi_all, active_sync_job, SYNC_START_LOCK_NAME
+    conn = None
+    registration_lock = False
     log_id = None
-    LAST_TRIGGER_ERROR = None
     try:
-        ensure_tables_exist()
         conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO crm_sync_logs (sync_type, status, started_at)
-                VALUES ('manual', 'in_progress', NOW())
-            """)
+            cur.execute("SELECT GET_LOCK(%s, 2) AS got", (SYNC_START_LOCK_NAME,))
+            registration_lock = (cur.fetchone() or {}).get('got') == 1
+            if not registration_lock:
+                return jsonify({'success': False, 'error': 'Another sync request is being registered. Retry shortly.'}), 503
+            running = active_sync_job(cur)
+            if running:
+                return jsonify({'success': True, 'status': 'in_progress', 'is_running': True,
+                                'log_id': running['id'], 'poll_url': f"/api/sync/status?log_id={running['id']}"})
+            cur.execute("INSERT INTO crm_sync_logs (sync_type, status, started_at) VALUES ('manual', 'in_progress', NOW())")
             log_id = cur.lastrowid
-        conn.close()
-    except Exception as insert_err:
-        print('[SYNC LOG INSERT NOTICE]', insert_err)
+            if not log_id:
+                raise RuntimeError('No durable sync job ID was created')
+    except Exception as exc:
+        print('[SYNC START ERROR]', str(exc))
+        return jsonify({'success': False, 'error': 'Unable to register CRM sync. Check backend database/schema and Render logs.'}), 503
+    finally:
+        if conn:
+            if registration_lock:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT RELEASE_LOCK(%s)", (SYNC_START_LOCK_NAME,))
+                except Exception:
+                    pass
+            conn.close()
 
-    # Launch background thread to execute sync without HTTP gateway timeout
-    def bg_sync_worker(target_log_id):
-        global LAST_TRIGGER_ERROR
+    def worker():
         try:
-            print(f'[BG SYNC] Started background sync_saarthi_all (log_id={target_log_id})...')
-            res = sync_saarthi_all(existing_log_id=target_log_id)
-            invalidate_all_caches()
-            if not res.get('ok') and res.get('errors'):
-                LAST_TRIGGER_ERROR = " | ".join(res.get('errors'))
-            print('[BG SYNC] Completed background sync_saarthi_all:', res.get('ok'))
-        except Exception as bg_err:
-            LAST_TRIGGER_ERROR = str(bg_err)
-            print('[BG SYNC ERROR]', bg_err)
+            result = sync_saarthi_all(existing_log_id=log_id)
+            if not result.get('ok'):
+                _fail_sync_job(log_id, ' | '.join(result.get('errors') or [result.get('error') or 'CRM sync failed']))
+            print('[CRM SYNC JOB]', log_id, result.get('status'), result.get('errors', []))
+        except Exception as exc:
+            # Durable errors are shared by every Gunicorn worker and browser poll.
+            print('[CRM SYNC WORKER ERROR]', log_id, str(exc))
+            _fail_sync_job(log_id, str(exc))
 
-    t = threading.Thread(target=bg_sync_worker, args=(log_id,), daemon=True)
-    t.start()
+    try:
+        threading.Thread(target=worker, daemon=True).start()
+    except Exception as exc:
+        _fail_sync_job(log_id, f'Unable to start background worker: {exc}')
+        return jsonify({'success': False, 'log_id': log_id, 'error': 'Unable to start CRM sync worker'}), 503
+    return jsonify({'success': True, 'status': 'started', 'is_running': True,
+                    'log_id': log_id, 'poll_url': f'/api/sync/status?log_id={log_id}'})
 
-    return jsonify({
-        'success': True,
-        'status': 'started',
-        'is_running': True,
-        'log_id': log_id,
-        'message': 'Saarthi Live CRM sync initiated in background.',
-        'poll_url': '/api/sync/status'
-    }), 200
+
+def _fail_sync_job(log_id, message):
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute("UPDATE crm_sync_logs SET status = 'failed', message = %s, completed_at = NOW() WHERE id = %s AND status = 'in_progress'", (message[:4000], log_id))
+    except Exception as exc:
+        print('[SYNC JOB STATUS ERROR]', log_id, str(exc))
+    finally:
+        if conn:
+            conn.close()
+
 
 @app.route('/api/finance/sync-status', methods=['GET'])
 @app.route('/api/sync/status', methods=['GET'])
 def get_sync_status():
-    global LAST_TRIGGER_ERROR
-    conn = get_db_connection()
+    from sync_service import active_sync_job
+    raw_id = request.args.get('log_id')
+    if raw_id is not None and (not raw_id.isdigit() or int(raw_id) <= 0):
+        return jsonify({'success': False, 'error': 'A positive log_id is required'}), 400
+    conn = None
     try:
+        conn = get_db_connection()
         with conn.cursor() as cur:
-            cur.execute("""
+            active_sync_job(cur, strict_owner=False)  # Recovers orphan rows only when no live lock owner exists.
+            where = 'WHERE id = %s' if raw_id is not None else ''
+            cur.execute(f"""
                 SELECT id, sync_type, status, enquiries_count, invoices_count,
                        franchisees_count, expenses_count, clients_count, legals_count,
                        message, started_at, completed_at,
                        TIMESTAMPDIFF(SECOND, started_at, COALESCE(completed_at, NOW())) AS duration_seconds
-                FROM crm_sync_logs
-                ORDER BY id DESC
-                LIMIT 5
-            """)
+                FROM crm_sync_logs {where} ORDER BY id DESC LIMIT 5
+            """, [int(raw_id)] if raw_id is not None else None)
             logs = cur.fetchall()
-            for l in logs:
-                if l.get('started_at'):
-                    l['started_at'] = str(l['started_at'])
-                if l.get('completed_at'):
-                    l['completed_at'] = str(l['completed_at'])
-            latest = logs[0] if logs else None
-            is_running = bool(latest and latest.get('status') == 'in_progress')
-            return jsonify({
-                'success': True,
-                'is_running': is_running,
-                'trigger_error': LAST_TRIGGER_ERROR,
-                'latest': latest,
-                'logs': logs
-            })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        for row in logs:
+            for key in ('started_at', 'completed_at'):
+                if row.get(key):
+                    row[key] = str(row[key])
+        latest = logs[0] if logs else None
+        if raw_id is not None and latest is None:
+            return jsonify({'success': False, 'error': 'Sync job was not found', 'log_id': int(raw_id)}), 404
+        return jsonify({'success': True, 'is_running': bool(latest and latest.get('status') == 'in_progress'),
+                        'trigger_error': None, 'latest': latest, 'logs': logs})
+    except Exception as exc:
+        print('[SYNC STATUS ERROR]', str(exc))
+        return jsonify({'success': False, 'error': 'Unable to read CRM sync status'}), 503
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 # ----------------------------------------------------
 # SYNC DEBUG DIAGNOSTIC ENDPOINT
