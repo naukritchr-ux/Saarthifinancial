@@ -316,7 +316,7 @@ def select_expense_model(history, horizon=6):
             comparison.append({'model': name, 'mae': round(mae, 2),
                                'mape': round(mape, 2) if mape is not None else None,
                                'wape': round(wape, 2) if wape is not None else None})
-            if mae < best_mae:
+            if round(mae, 4) < round(best_mae, 4):
                 best_mae, selected, errors = mae, name, residual
         if not comparison:
             raise ValueError('No expense model could be validated on the available history')
