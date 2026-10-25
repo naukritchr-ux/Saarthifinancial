@@ -4,6 +4,7 @@ import { FinanceContext } from '../context/FinanceContext';
 const LogTransaction = ({ type = 'income', setActivePage }) => {
   const { addTransaction, franchisees, bdAgents, transactions, activeModule } = useContext(FinanceContext);
 
+  const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -58,15 +59,16 @@ const LogTransaction = ({ type = 'income', setActivePage }) => {
 
   // Real-time duplicate entry validation
   const isDuplicate = transactions.some(t => {
-    return t.date === date && 
-           t.category === category && 
-           parseFloat(t.amount) === parseFloat(amount) &&
-           t.type === type;
+    return t.date === date &&
+      t.category === category &&
+      parseFloat(t.amount) === parseFloat(amount) &&
+      t.type === type;
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    
+    if (saving) return;
+
     // Inline validation checks
     const errors = {};
     if (!title.trim()) {
@@ -118,9 +120,16 @@ const LogTransaction = ({ type = 'income', setActivePage }) => {
       ...(bdAgentId && { bdAgentId })
     };
 
-    addTransaction(transactionData);
-    alert(`Successfully logged ${type} entry: "${title}" (Amount: ₹${parseFloat(amount).toLocaleString()})`);
-    setActivePage('dashboard');
+    setSaving(true);
+    try {
+      await addTransaction(transactionData);
+      alert(`Successfully logged ${type} entry: "${title}" (Amount: ₹${parseFloat(amount).toLocaleString()})`);
+      setActivePage('dashboard');
+    } catch (err) {
+      setValidationErrors({ submit: err.message });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -129,8 +138,9 @@ const LogTransaction = ({ type = 'income', setActivePage }) => {
         <h2 className="form-card-title">
           {type === 'income' ? 'Log Income Entry' : 'Log Expense Entry'}
         </h2>
-        
+
         <form onSubmit={handleSubmit} className="transaction-form">
+          {validationErrors.submit && <p role="alert">{validationErrors.submit}</p>}
           <div className="form-group">
             <label htmlFor="tx-title">Transaction Item Title *</label>
             <input
@@ -266,8 +276,8 @@ const LogTransaction = ({ type = 'income', setActivePage }) => {
             <div className="form-group flex-1">
               <label htmlFor="tx-franchisee">
                 Link to Franchisee Hub {
-                  (type === 'income' && category === 'Franchisee fee') || 
-                  (type === 'expense' && category === 'Marketing' && !bdAgentId) ? '*' : '(Optional)'
+                  (type === 'income' && category === 'Franchisee fee') ||
+                    (type === 'expense' && category === 'Marketing' && !bdAgentId) ? '*' : '(Optional)'
                 }
               </label>
               <select
@@ -294,9 +304,9 @@ const LogTransaction = ({ type = 'income', setActivePage }) => {
             <div className="form-group flex-1">
               <label htmlFor="tx-bd">
                 Link to BD Agent Payout {
-                  (type === 'expense' && category === 'BD commissions') || 
-                  (type === 'income' && category === 'Recruitment') || 
-                  (type === 'expense' && category === 'Marketing' && !franchiseeId) ? '*' : '(Optional)'
+                  (type === 'expense' && category === 'BD commissions') ||
+                    (type === 'income' && category === 'Recruitment') ||
+                    (type === 'expense' && category === 'Marketing' && !franchiseeId) ? '*' : '(Optional)'
                 }
               </label>
               <select
@@ -345,15 +355,15 @@ const LogTransaction = ({ type = 'income', setActivePage }) => {
           )}
 
           <div className="form-actions">
-            <button 
-              type="button" 
+            <button
+              type="button"
               className="btn btn-secondary"
               onClick={() => setActivePage('dashboard')}
             >
               Cancel
             </button>
-            <button 
-              type="submit" 
+            <button
+              type="submit" disabled={saving}
               className={`btn ${type === 'income' ? 'btn-primary' : 'btn-danger'}`}
             >
               Save Entry

@@ -40,7 +40,8 @@ export default function LedgerTable({
     if (!tx || !tx.id) return false;
     const sId = String(tx.id);
     const sRef = String(tx.referenceId || '');
-    return sId.startsWith('t-') || sRef.startsWith('TXN-');
+    return sId.startsWith('manual-') || sId.startsWith('t-') ||
+      (sId.startsWith('exp-') && sRef === 'TX') || sRef.startsWith('TXN-');
   };
 
   const renderSortIndicator = (key) => {

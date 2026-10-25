@@ -108,7 +108,8 @@ def ensure_exclusions_fresh():
         refresh_live_exclusions(force=True)
 
 # Initial dynamic load on startup
-refresh_live_exclusions(force=True)
+if os.environ.get("FLASK_TESTING", "").lower() not in ("true", "1", "yes"):
+    refresh_live_exclusions(force=True)
 
 import gzip
 
@@ -489,9 +490,9 @@ def get_transactions():
                         CONCAT('fran-pay-', franchisePayment_id) AS id,
                         CONCAT('Franchise royalty - Invoice #', invoice_id) AS title,
                         payment_amount AS amount,
-                        'income' AS type,
-                        'Franchisee fee' AS category,
-                        'Monthly Royalty' AS subCategory,
+                        'expense' AS type,
+                        'Franchisee payout' AS category,
+                        'Royalty payout' AS subCategory,
                         DATE_FORMAT(payment_date, '%Y-%m-%d') AS date,
                         payment_mode AS paymentMode,
                         uid_transaction_id AS referenceId,
@@ -950,6 +951,14 @@ def get_transactions():
             except Exception as err:
                 print('expenditure/commissions query bypassed:', str(err))
 
+            # Manual income is its own ledger; never attach it to a random CRM invoice.
+            cursor.execute("SELECT * FROM manual_cash_entries")
+            for row in cursor.fetchall():
+                entry = serialize_row(row)
+                entry['amount'] = float(row['amount'])
+                entry['is_manual_cash'] = True
+                combined.append(entry)
+
             # Standardize financialYear across all combined transaction entries
             for tx in combined:
                 raw_fy = tx.get('financialYear')
@@ -1030,7 +1039,7 @@ def log_audit(table_name, record_id, field_changed, old_value, new_value, change
 
 @app.route('/api/finance/cash-balance', methods=['GET'])
 def get_cash_balance():
-    as_of = request.args.get('as_of', '2026-12-31')
+    as_of = request.args.get('as_of') or get_ist_today().isoformat()
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -1040,8 +1049,10 @@ def get_cash_balance():
               (SELECT COALESCE(SUM(amountReceived), 0) FROM v_invoice_clean WHERE (billDate <= %s OR billDate IS NULL))
               - (SELECT COALESCE(SUM(amount), 0) FROM expenditure WHERE (billDate <= %s OR billDate IS NULL) AND is_deleted = 0)
               - (SELECT COALESCE(SUM(payment_amount), 0) FROM franchisePayments WHERE payment_done = 'Yes' AND (payment_date <= %s OR payment_date IS NULL))
+            + (SELECT COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END), 0)
+               FROM manual_cash_entries WHERE date <= %s)
             AS cash_balance
-        """, [as_of, as_of, as_of])
+        """, [as_of, as_of, as_of, as_of])
         row = cursor.fetchone() or {}
         cash_balance = float(row.get('cash_balance') or 0.0)
         return jsonify({ 'cash_balance': cash_balance })
@@ -1108,6 +1119,8 @@ def get_finance_forecast():
         from forecast_service import generate_full_forecast
         data = generate_full_forecast(horizon=horizon_int)
         return jsonify(data), 200
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 422
     except Exception as e:
         print("[get_finance_forecast error]:", str(e))
         return jsonify({"status": "error", "message": "Failed to generate forecast"}), 500
@@ -1330,15 +1343,28 @@ def post_sync_prune():
 
 @app.route('/api/transactions', methods=['POST'])
 def add_transaction():
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify({'error': 'A JSON object is required.'}), 400
+    import math
+    import uuid
+    try:
+        amount = float(data.get('amount'))
+        valid_date = datetime.date.fromisoformat(data.get('date') or get_ist_today().isoformat())
+    except (TypeError, ValueError):
+        return jsonify({'error': 'A valid amount and YYYY-MM-DD date are required.'}), 400
+    if not math.isfinite(amount) or round(amount, 2) <= 0 or data.get('type') not in ('income', 'expense'):
+        return jsonify({'error': 'Amount must be positive and finite; type must be income or expense.'}), 400
+    if not isinstance(data.get('title'), str) or not data['title'].strip():
+        return jsonify({'error': 'Transaction title is required.'}), 400
     tx = {
-        'id': f"t-{int(datetime.datetime.now().timestamp() * 1000)}",
+        'id': f"manual-{uuid.uuid4().hex}",
         'title': data.get('title'),
-        'amount': float(data.get('amount') or 0),
+        'amount': round(amount, 2),
         'type': 'income' if data.get('type') == 'income' else 'expense',
         'category': data.get('category', 'Other'),
         'subCategory': data.get('subCategory', 'General'),
-        'date': data.get('date') or datetime.date.today().isoformat(),
+        'date': valid_date.isoformat(),
         'paymentMode': data.get('paymentMode', 'Net Banking'),
         'referenceId': data.get('referenceId') or f"TXN-{str(int(datetime.datetime.now().timestamp() * 1000))[-8:].upper()}",
         'description': data.get('description', ''),
@@ -1373,17 +1399,13 @@ def add_transaction():
                 # Log audit
                 log_audit('expenditure', tx['id'], 'CREATE', None, json.dumps(tx))
             else:
-                import random
-                invoice_id = random.randint(1, 1000)
-                cursor.execute("""
-                    INSERT INTO franchisePayments (invoice_id, payment_done, payment_date, payment_mode, uid_transaction_id, payment_amount)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, [invoice_id, 'Yes', tx['date'], tx['paymentMode'], tx['referenceId'], tx['amount']])
+                columns = list(tx)
+                cursor.execute(
+                    "INSERT INTO manual_cash_entries (" + ",".join(columns) + ") VALUES (" +
+                    ",".join(["%s"] * len(columns)) + ")", [tx[key] for key in columns])
                 conn.commit()
-                tx['id'] = f"fran-pay-{cursor.lastrowid}"
-                
-                # Log audit
-                log_audit('franchisePayments', tx['id'], 'CREATE', None, json.dumps(tx))
+                log_audit('manual_cash_entries', tx['id'], 'CREATE', None, json.dumps(tx))
+            invalidate_all_caches()
             return jsonify(tx), 201
     except Exception as e:
         return jsonify({ 'error': str(e) }), 500
@@ -1409,6 +1431,17 @@ def delete_transaction(id):
             return jsonify({ 'success': True, 'deleted': serialize_row(row) })
         else:
             import re
+            if re.fullmatch(r'manual-[0-9a-f]{32}', id):
+                cursor.execute("SELECT * FROM manual_cash_entries WHERE id = %s", [id])
+                row = cursor.fetchone()
+                if not row:
+                    return jsonify({'error': 'Not found'}), 404
+                cursor.execute("DELETE FROM manual_cash_entries WHERE id = %s", [id])
+                conn.commit()
+                log_audit('manual_cash_entries', id, 'DELETE', json.dumps(serialize_row(row)), None)
+                invalidate_all_caches()
+                return jsonify({'success': True, 'deleted': {'id': id}})
+
             exp_match = re.match(r'^exp-(\d+)$', id)
             fran_match = re.match(r'^fran-pay-(\d+)$', id)
 
@@ -1427,6 +1460,7 @@ def delete_transaction(id):
                 
                 # Log audit
                 log_audit('expenditure', id, 'DELETE', row_str, None)
+                invalidate_all_caches()
                 return jsonify({ 'success': True, 'deleted': { 'id': id } })
             elif fran_match:
                 raw_id = fran_match.group(1)
@@ -1443,6 +1477,7 @@ def delete_transaction(id):
                 
                 # Log audit
                 log_audit('franchisePayments', id, 'DELETE', row_str, None)
+                invalidate_all_caches()
                 return jsonify({ 'success': True, 'deleted': { 'id': id } })
             else:
                 return jsonify({ 'error': 'Invalid transaction ID format for CRM tables.' }), 400

@@ -1,23 +1,13 @@
-"""
-forecast_service.py
--------------------
-Predictive financial forecasting service for Fintective.
-Provides seasonal time-series forecasting for revenue and operating expenses,
-incorporates deterministic scheduled payroll commitments, and projects net
-cash position and runway.
+"""Closed-month company-income, operating expense and cash scenario forecast.
 
-Models:
-- Expenses (42 months: Apr 2023 - Sep 2026): Holt-Winters with additive seasonality (period=12).
-- Revenue (30 months: Apr 2024 - Sep 2026): Evaluates Holt-Winters with damped trend vs.
-  Seasonal-Naive with YoY growth via backtesting (Apr-Sep 2026 test window) and automatically
-  selects the model with lower MAPE error.
-- Payroll: Ingests future-dated scheduled commitments from `payroll_records` (runs through Feb 2027)
-  as deterministic fixed cost inputs rather than statistical estimates.
-- Current month cutoff: Oct 2026 is strictly excluded from training (partial month) to prevent
-  false negative cliff drops.
+Historical company income is the invoice company share, excluding franchisee
+pass-through revenue. Cash collections are estimated using the historical gross
+collection ratio. Opening cash must be explicitly reconciled at the cutoff.
+Residual bands are approximate and do not claim calibrated 95% coverage.
 """
 
 import math
+import os
 import datetime
 import numpy as np
 import pandas as pd
@@ -30,21 +20,23 @@ except ImportError:
     HAS_STATSMODELS = False
 
 from db import get_db_connection
+from finance_rules import get_ist_today
 
 
 # -------------------------------------------------------------------------
 # Helper Functions: Date & Metrics
 # -------------------------------------------------------------------------
 
-def calculate_mape(actual: np.ndarray, predicted: np.ndarray) -> float:
+def calculate_mape(actual: np.ndarray, predicted: np.ndarray) -> Optional[float]:
     """Calculate Mean Absolute Percentage Error (MAPE)."""
     actual = np.asarray(actual, dtype=float)
     predicted = np.asarray(predicted, dtype=float)
-    # Avoid zero division
-    mask = actual > 1e-6
-    if not np.any(mask):
-        return 0.0
-    return float(np.mean(np.abs((actual[mask] - predicted[mask]) / actual[mask])) * 100.0)
+    if actual.shape != predicted.shape or not np.all(np.isfinite(actual)) or not np.all(np.isfinite(predicted)):
+        raise ValueError("MAPE requires equally sized finite arrays")
+    # MAPE is undefined when any actual is zero; do not hide zero months.
+    if actual.size == 0 or np.any(np.abs(actual) <= 1e-6):
+        return None
+    return float(np.mean(np.abs((actual - predicted) / actual)) * 100.0)
 
 
 def generate_month_sequence(start_ym: str, count: int) -> List[str]:
@@ -70,6 +62,8 @@ def seasonal_naive_forecast(history: np.ndarray, horizon: int, seasonal_period: 
     Returns (forecast_array, in_sample_fitted).
     """
     n = len(history)
+    if n < seasonal_period:
+        raise ValueError("Seasonal forecast requires at least 12 complete months")
     fitted = np.full(n, np.nan)
     
     # Calculate trailing 12-month YoY growth factor
@@ -87,7 +81,13 @@ def seasonal_naive_forecast(history: np.ndarray, horizon: int, seasonal_period: 
 
     # In-sample fitted values
     for t in range(seasonal_period, n):
-        fitted[t] = history[t - seasonal_period] * (1.0 + yoy_growth * 0.5)
+        # Only information available before t may enter its fitted prediction.
+        growth = 0.0
+        if t >= 2 * seasonal_period:
+            prior = float(np.sum(history[t-2*seasonal_period:t-seasonal_period]))
+            if prior > 1e-4:
+                growth = max(-0.30, min(0.50, float(np.sum(history[t-seasonal_period:t])) / prior - 1.0))
+        fitted[t] = history[t - seasonal_period] * (1.0 + growth)
 
     # Out-of-sample forecast
     forecast = np.zeros(horizon)
@@ -133,8 +133,7 @@ def numpy_holt_winters(
     levels = [level]
     trends = [trend]
     fitted = np.zeros(n)
-    for i in range(min(seasonal_period, n)):
-        fitted[i] = level + seasonals[i]
+    fitted[:seasonal_period] = np.nan
 
     for t in range(seasonal_period, n):
         val = float(series[t])
@@ -211,9 +210,9 @@ def backtest_revenue_models(history: np.ndarray, test_len: int = 6) -> Dict[str,
     if n < test_len + 12:
         return {
             'selected': 'Seasonal-Naive',
-            'mape': 8.5,
-            'hw_mape': 8.5,
-            'naive_mape': 8.5,
+            'mape': None,
+            'hw_mape': None,
+            'naive_mape': None,
             'damped_used': True
         }
 
@@ -229,7 +228,9 @@ def backtest_revenue_models(history: np.ndarray, test_len: int = 6) -> Dict[str,
     hw_mape = calculate_mape(test, hw_pred) if hw_ok else 999.0
 
     # Select model with lower test error
-    if hw_ok and hw_mape <= naive_mape:
+    if hw_ok and ((hw_mape is not None and naive_mape is not None and hw_mape <= naive_mape)
+                  or (hw_mape is None and naive_mape is None
+                      and np.mean(np.abs(test - hw_pred)) <= np.mean(np.abs(test - naive_pred)))):
         selected_model = "Holt-Winters (Damped Trend)"
         selected_mape = hw_mape
     else:
@@ -238,9 +239,9 @@ def backtest_revenue_models(history: np.ndarray, test_len: int = 6) -> Dict[str,
 
     return {
         'selected': selected_model,
-        'mape': round(selected_mape, 2),
-        'hw_mape': round(hw_mape, 2) if hw_ok else None,
-        'naive_mape': round(naive_mape, 2),
+        'mape': round(selected_mape, 2) if selected_mape is not None else None,
+        'hw_mape': round(hw_mape, 2) if hw_ok and hw_mape is not None else None,
+        'naive_mape': round(naive_mape, 2) if naive_mape is not None else None,
         'damped_used': True
     }
 
@@ -249,63 +250,67 @@ def backtest_revenue_models(history: np.ndarray, test_len: int = 6) -> Dict[str,
 # Data Layer: Historical Ingestion
 # -------------------------------------------------------------------------
 
-def fetch_revenue_history(conn) -> Tuple[List[str], np.ndarray, float]:
+def fetch_revenue_history(conn, cutoff=None) -> Tuple[List[str], np.ndarray, float]:
     """
-    Fetches monthly revenue from v_invoice_clean (is_revenue = 1).
-    Training window: 2024-04 to 2026-09 (30 complete months).
-    October 2026 is strictly excluded.
+    Fetches monthly company share from revenue invoices, through the last closed month.
     Returns (months_list, revenue_array, avg_collection_rate).
     """
+    cutoff = cutoff or get_ist_today().replace(day=1)
     cursor = conn.cursor()
     cursor.execute("""
         SELECT 
-            DATE_FORMAT(billDate, '%Y-%m') AS ym,
-            COALESCE(SUM(rev_ex_gst), 0.0) AS billed_rev,
+            DATE_FORMAT(billDate, '%%Y-%%m') AS ym,
+            COALESCE(SUM(ourShare), 0.0) AS billed_rev,
             COALESCE(SUM(amountReceived), 0.0) AS collected_amt,
             COALESCE(SUM(totalBillAmt), 0.0) AS total_gross
         FROM v_invoice_clean
         WHERE is_revenue = 1
           AND billDate >= '2024-04-01'
-          AND billDate <= '2026-09-30'
+          AND billDate < %s
         GROUP BY ym
         ORDER BY ym ASC
-    """)
+    """, [cutoff.isoformat()])
     rows = cursor.fetchall()
+    if not rows:
+        raise ValueError('No closed-month invoice history is available for forecasting')
     
-    # Generate expected continuous 30 months sequence
-    expected_months = generate_month_sequence('2024-04', 30)
+    # Generate a continuous sequence up to the last closed month
+    expected_months = generate_month_sequence('2024-04', (cutoff.year - 2024) * 12 + cutoff.month - 4)
     rev_map = {r['ym']: float(r['billed_rev']) for r in rows}
     
     total_billed = sum(float(r['total_gross'] or 0.0) for r in rows)
     total_collected = sum(float(r['collected_amt'] or 0.0) for r in rows)
-    avg_collection_rate = (total_collected / total_billed) if total_billed > 0 else 0.82
+    avg_collection_rate = min(1.0, max(0.0, total_collected / total_billed)) if total_billed > 0 else 0.0
 
     # Fill continuous series (fallback to zero or interpolation if missing)
     series = [rev_map.get(m, 0.0) for m in expected_months]
     return expected_months, np.array(series, dtype=float), avg_collection_rate
 
 
-def fetch_expense_history(conn) -> Tuple[List[str], np.ndarray]:
+def fetch_expense_history(conn, cutoff=None) -> Tuple[List[str], np.ndarray]:
     """
     Fetches monthly expenses from expenditure (is_deleted = 0).
-    Training window: 2023-04 to 2026-09 (42 months).
+    Uses complete months from April 2023 up to the supplied cutoff.
     Returns (months_list, expense_array).
     """
+    cutoff = cutoff or get_ist_today().replace(day=1)
     cursor = conn.cursor()
     cursor.execute("""
         SELECT 
-            DATE_FORMAT(billDate, '%Y-%m') AS ym,
+            DATE_FORMAT(billDate, '%%Y-%%m') AS ym,
             COALESCE(SUM(amount), 0.0) AS total_exp
         FROM expenditure
         WHERE is_deleted = 0
           AND billDate >= '2023-04-01'
-          AND billDate <= '2026-09-30'
+          AND billDate < %s
         GROUP BY ym
         ORDER BY ym ASC
-    """)
+    """, [cutoff.isoformat()])
     rows = cursor.fetchall()
+    if not rows:
+        raise ValueError('No closed-month expense history is available for forecasting')
     
-    expected_months = generate_month_sequence('2023-04', 42)
+    expected_months = generate_month_sequence('2023-04', (cutoff.year - 2023) * 12 + cutoff.month - 4)
     exp_map = {r['ym']: float(r['total_exp']) for r in rows}
     series = [exp_map.get(m, 0.0) for m in expected_months]
     return expected_months, np.array(series, dtype=float)
@@ -314,53 +319,60 @@ def fetch_expense_history(conn) -> Tuple[List[str], np.ndarray]:
 def fetch_scheduled_payroll(conn, forecast_months: List[str]) -> Dict[str, float]:
     """
     Fetches future-dated scheduled payroll commitments from payroll_records.
-    For any forecast month without scheduled records, uses the recent average (~23L).
+    Months without scheduled records use the last six closed months average.
     """
     cursor = conn.cursor()
+    start = forecast_months[0] + '-01'
+    end = generate_month_sequence(forecast_months[-1], 2)[-1] + '-01'
     cursor.execute("""
-        SELECT 
-            DATE_FORMAT(date, '%Y-%m') AS ym,
-            COALESCE(SUM(ctc_amount), 0.0) AS monthly_payroll
-        FROM payroll_records
-        WHERE date >= '2026-10-01'
-          AND date <= '2027-04-30'
-        GROUP BY ym
-    """)
-    rows = cursor.fetchall()
-    scheduled_map = {r['ym']: float(r['monthly_payroll']) for r in rows}
-
-    # Query recent 5 months baseline average for fallback
+        SELECT DATE_FORMAT(date, '%%Y-%%m') AS ym,
+               COALESCE(SUM(ctc_amount), 0) AS monthly_payroll
+        FROM payroll_records WHERE date >= %s AND date < %s GROUP BY ym
+    """, [start, end])
+    scheduled_map = {r['ym']: float(r['monthly_payroll']) for r in cursor.fetchall()}
+    # Average the latest six closed calendar months, including months with no payroll.
+    first = datetime.date.fromisoformat(start)
+    serial = first.year * 12 + first.month - 1 - 6
+    baseline_start = f"{serial // 12:04d}-{serial % 12 + 1:02d}-01"
     cursor.execute("""
-        SELECT COALESCE(AVG(monthly_payroll), 2300000.0) AS avg_payroll
-        FROM (
-            SELECT SUM(ctc_amount) AS monthly_payroll
-            FROM payroll_records
-            WHERE date >= '2026-04-01' AND date <= '2026-08-31'
-            GROUP BY DATE_FORMAT(date, '%Y-%m')
-        ) sub
-    """)
-    avg_row = cursor.fetchone() or {}
-    baseline_payroll = float(avg_row.get('avg_payroll') or 2300000.0)
+        SELECT COALESCE(SUM(ctc_amount), 0) / 6.0 AS avg_payroll
+        FROM payroll_records WHERE date >= %s AND date < %s
+    """, [baseline_start, start])
+    row = cursor.fetchone() or {}
+    baseline = float(row.get('avg_payroll') or 0)
+    return {m: scheduled_map.get(m, baseline) for m in forecast_months}
 
-    # Assign scheduled or fallback baseline
-    result = {}
-    for m in forecast_months:
-        val = scheduled_map.get(m, 0.0)
-        result[m] = val if val > 10000.0 else baseline_payroll
-    return result
+
+class ForecastConfigurationError(ValueError):
+    pass
 
 
 def fetch_current_cash_balance(conn) -> float:
-    """Fetch current cash balance or fallback to default."""
+    """Explicit reconciled opening balance as of the forecast cutoff; never invent cash."""
+    raw = os.environ.get('FORECAST_OPENING_CASH_BALANCE')
+    if raw is None or not raw.strip():
+        raise ForecastConfigurationError(
+            "Set FORECAST_OPENING_CASH_BALANCE to the reconciled bank balance at "
+            "the end of the last closed month (zero is valid).")
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT balance FROM bank_balance ORDER BY as_of_date DESC LIMIT 1")
-        row = cursor.fetchone()
-        if row and row.get('balance'):
-            return float(row['balance'])
-    except Exception:
-        pass
-    return 12000000.0  # ₹1.2 Cr baseline
+        value = float(raw)
+    except ValueError as exc:
+        raise ForecastConfigurationError("FORECAST_OPENING_CASH_BALANCE must be numeric") from exc
+    if not math.isfinite(value):
+        raise ForecastConfigurationError("Opening cash must be finite")
+    return value
+
+
+def cash_runway(opening_cash, net_flows):
+    """First monthly cash depletion, interpolated within the depletion month."""
+    if opening_cash <= 0:
+        return 0.0
+    cash = opening_cash
+    for index, net in enumerate(net_flows):
+        if cash + net <= 0:
+            return round(index + cash / -net, 1)
+        cash += net
+    return None
 
 
 # -------------------------------------------------------------------------
@@ -373,7 +385,7 @@ def generate_full_forecast(
 ) -> Dict[str, Any]:
     """
     Main orchestration entrypoint:
-    1. Fetches historical data (30m revenue, 42m expenses through Sep 2026).
+    1. Fetches company income and operating expense data through the last closed month.
     2. Backtests revenue models and fits selected model.
     3. Fits Holt-Winters additive model for expenses.
     4. Gathers scheduled payroll commitments.
@@ -387,11 +399,15 @@ def generate_full_forecast(
 
     try:
         # 1. Fetch clean historical training windows
-        rev_months, rev_series, coll_ratio = fetch_revenue_history(conn)
-        exp_months, exp_series = fetch_expense_history(conn)
-        forecast_months = generate_month_sequence('2026-10', horizon)
-        payroll_scheduled = fetch_scheduled_payroll(conn, forecast_months)
+        cutoff = get_ist_today().replace(day=1)
+        expected_as_of = (cutoff - datetime.timedelta(days=1)).isoformat()
+        if os.environ.get("FORECAST_OPENING_CASH_AS_OF") != expected_as_of:
+            raise ForecastConfigurationError(f"Set FORECAST_OPENING_CASH_AS_OF={expected_as_of} and reconcile the opening balance")
         cash_balance = fetch_current_cash_balance(conn)
+        rev_months, rev_series, coll_ratio = fetch_revenue_history(conn, cutoff)
+        exp_months, exp_series = fetch_expense_history(conn, cutoff)
+        forecast_months = generate_month_sequence(cutoff.strftime('%Y-%m'), horizon)
+        payroll_scheduled = fetch_scheduled_payroll(conn, forecast_months)
 
         # 2. Revenue Model: Backtest & Forecast
         rev_backtest = backtest_revenue_models(rev_series, test_len=6)
@@ -418,9 +434,10 @@ def generate_full_forecast(
             e_train = exp_series[:-exp_test_len]
             e_test = exp_series[-exp_test_len:]
             e_pred, _, _ = holt_winters_forecast(e_train, horizon=exp_test_len, damped=False, seasonal_period=12)
-            exp_mape = round(calculate_mape(e_test, e_pred), 2)
+            exp_error = calculate_mape(e_test, e_pred)
+            exp_mape = round(exp_error, 2) if exp_error is not None else None
         else:
-            exp_mape = 6.2
+            exp_mape = None
 
         # Expense residual error for confidence intervals
         exp_valid_mask = ~np.isnan(exp_fitted)
@@ -430,7 +447,14 @@ def generate_full_forecast(
         else:
             exp_se = float(np.std(exp_series) * 0.12)
 
-        # 4. Construct Aligned Historical Timeline (common window: 2024-04 to 2026-09)
+        # Historical payroll makes historical operating results comparable to forecast costs.
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT DATE_FORMAT(date, '%%Y-%%m') AS ym, COALESCE(SUM(ctc_amount), 0) AS payroll
+            FROM payroll_records WHERE date >= %s AND date < %s GROUP BY ym
+        """, [rev_months[0] + '-01', cutoff.isoformat()])
+        historical_payroll = {r['ym']: float(r['payroll']) for r in cur.fetchall()}
+        # 4. Construct the common historical timeline
         historical_points = []
         for ym in rev_months:
             r_val = float(rev_series[rev_months.index(ym)])
@@ -439,15 +463,16 @@ def generate_full_forecast(
                 'month': ym,
                 'revenue': round(r_val, 2),
                 'expenses': round(e_val, 2),
-                'net': round(r_val - e_val, 2)
+                'payroll': round(historical_payroll.get(ym, 0.0), 2),
+                'net': round(r_val - e_val - historical_payroll.get(ym, 0.0), 2)
             })
 
         # 5. Construct Forecast Timeline with Confidence Bands & Cash Trajectory
         forecast_points = []
         running_cash = cash_balance
         total_projected_net = 0.0
-        monthly_burns = []
 
+        net_flows = []
         for h in range(horizon):
             ym = forecast_months[h]
             step = h + 1
@@ -464,21 +489,19 @@ def generate_full_forecast(
             upper_exp = pred_exp + z_factor * exp_se
 
             # Fixed scheduled payroll commitment
-            pay_val = float(payroll_scheduled.get(ym, 2300000.0))
+            pay_val = float(payroll_scheduled.get(ym, 0.0))
             
             # Total Outflow = Opex + Payroll
             total_outflow = pred_exp + pay_val
             
             # Net Projected Cash Flow
-            net_proj = pred_rev - total_outflow
-            net_lower = lower_rev - (upper_exp + pay_val)
-            net_upper = upper_rev - (lower_exp + pay_val)
+            net_proj = pred_rev * coll_ratio - total_outflow
+            net_lower = lower_rev * coll_ratio - (upper_exp + pay_val)
+            net_upper = upper_rev * coll_ratio - (lower_exp + pay_val)
 
+            net_flows.append(net_proj)
             running_cash += net_proj
             total_projected_net += net_proj
-
-            if net_proj < 0:
-                monthly_burns.append(abs(net_proj))
 
             forecast_points.append({
                 'month': ym,
@@ -492,6 +515,7 @@ def generate_full_forecast(
                     'lower': round(lower_exp, 2),
                     'upper': round(upper_exp, 2)
                 },
+                'expected_collections': round(pred_rev * coll_ratio, 2),
                 'scheduled_payroll': round(pay_val, 2),
                 'total_projected_outflow': round(total_outflow, 2),
                 'net_projected': round(net_proj, 2),
@@ -500,19 +524,18 @@ def generate_full_forecast(
                 'cumulative_cash': round(running_cash, 2)
             })
 
-        # 6. Runway Calculation
-        if monthly_burns:
-            avg_burn = sum(monthly_burns) / len(monthly_burns)
-            runway_months = round(cash_balance / avg_burn, 1) if avg_burn > 0 else 999.0
-            runway_status = f"{runway_months} Months"
-        else:
-            runway_months = None
-            runway_status = "Self-Sustaining (Cash-Flow Positive)"
+        # Report only depletion observed in this forecast horizon, not an infinite runway.
+        runway_months = cash_runway(cash_balance, net_flows)
+        runway_status = (f"{runway_months} Months" if runway_months is not None
+                         else f"Cash remains positive over {horizon} forecast months")
 
         return {
             'status': 'ok',
-            'as_of_month': '2026-09',
-            'forecast_start_month': '2026-10',
+            'revenue_basis': 'Company share (ex-GST)',
+            'cash_assumption': 'Cash scenario: company-share collections estimated using the historical gross invoice collection ratio. Excludes tax, collection timing, outstanding receivables and future one-off manual income. Historical net is accrual income less expenses and payroll.',
+            'interval_method': 'Approximate residual bands; not calibrated 95% prediction intervals.',
+            'as_of_month': (cutoff - datetime.timedelta(days=1)).strftime('%Y-%m'),
+            'forecast_start_month': cutoff.strftime('%Y-%m'),
             'horizon': horizon,
             'collection_ratio': round(coll_ratio, 3),
             'models': {
@@ -520,13 +543,13 @@ def generate_full_forecast(
                     'selected_model': rev_backtest['selected'],
                     'backtest_mape': rev_backtest['mape'],
                     'training_months': len(rev_series),
-                    'training_window': '2024-04 to 2026-09'
+                    'training_window': f'{rev_months[0]} to {rev_months[-1]}'
                 },
                 'expenses': {
                     'selected_model': exp_model_name,
                     'backtest_mape': exp_mape,
                     'training_months': len(exp_series),
-                    'training_window': '2023-04 to 2026-09'
+                    'training_window': f'{exp_months[0]} to {exp_months[-1]}'
                 }
             },
             'summary': {
