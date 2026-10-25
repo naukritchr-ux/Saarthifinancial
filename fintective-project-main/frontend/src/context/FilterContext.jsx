@@ -1,1479 +1,518 @@
-import React, { createContext, useState, useEffect, useMemo } from 'react';
-import {
-  API_BASE_URL,
-  API_KEY,
-  isApiKeyConfigured,
-  fetchWithApiKey,
-  fetchJsonWithApiKey,
-  logApiDiagnostic
-} from '../utils/apiClient';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import { FinanceContext } from './FinanceContext';
+import { classifyEnquiryStatus, classifyPaymentState } from '../utils/statusMapping';
+import { getTransactionShares } from '../config/financeConfig';
 
-export const FinanceContext = createContext();
-export { API_BASE_URL };
+export const FilterContext = createContext();
 
-const DEFAULT_FRANCHISEES = [
-  { id: 'f-1', name: 'Sandeep', owner: 'Avadai Esakki', city: 'Nagpur', teamLeaderName: 'Avadai Esakki Muthu Sundaram Marthuvar', onboardingDate: '2024-04-01', status: 'Active', candidatesPlaced: 12 },
-  { id: 'f-2', name: 'Preshita Rane', owner: 'Joyeeta Joydeb Khaskel', city: 'Mumbai', teamLeaderName: 'Joyeeta Joydeb Khaskel', onboardingDate: '2024-05-15', status: 'Active', candidatesPlaced: 18 },
-  { id: 'f-3', name: 'Razia Begum', owner: 'Vedika Girish Tolani', city: 'Hyderabad', teamLeaderName: 'Vedika Girish Tolani', onboardingDate: '2024-06-10', status: 'Active', candidatesPlaced: 15 },
-  { id: 'f-4', name: 'Anita Mandar Kulkarni', owner: 'Surbhi Vinod Jain', city: 'Pune', teamLeaderName: 'Surbhi Vinod Jain', onboardingDate: '2024-04-20', status: 'Active', candidatesPlaced: 14 },
-  { id: 'f-5', name: 'Subhash Pande', owner: 'Joyeeta Joydeb Khaskel', city: 'Bengaluru', teamLeaderName: 'Joyeeta Joydeb Khaskel', onboardingDate: '2024-07-01', status: 'Active', candidatesPlaced: 9 },
-  { id: 'f-6', name: 'Ankur Sharma', owner: 'Vedika Girish Tolani', city: 'Delhi NCR', teamLeaderName: 'Vedika Girish Tolani', onboardingDate: '2024-05-01', status: 'Active', candidatesPlaced: 11 }
-];
+const STORAGE_SAVED_VIEWS_KEY = 'fintective_saved_filter_views_v1';
 
-const DEFAULT_BD_AGENTS = [
-  { id: 'bd-1', name: 'Komal Suresh Bhanushali', role: 'Key Account Manager', baseSalary: 20000, commissionRate: 0.03, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 3923, leadsProgressed: 1840, leadsCancelled: 420, status: 'Active' },
-  { id: 'bd-2', name: 'Rajalaxmi Das Das', role: 'Enterprise Account Exec', baseSalary: 22000, commissionRate: 0.04, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 1588, leadsProgressed: 742, leadsCancelled: 180, status: 'Active' },
-  { id: 'bd-3', name: 'Jahnvi Thakker', role: 'Senior BD Specialist', baseSalary: 25000, commissionRate: 0.05, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 720, leadsProgressed: 380, leadsCancelled: 95, status: 'Active' },
-  { id: 'bd-4', name: 'Ashutosh Manoj Hiremath', role: 'Senior BD Specialist', baseSalary: 22000, commissionRate: 0.04, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 82, leadsProgressed: 42, leadsCancelled: 10, status: 'Active' },
-  { id: 'bd-5', name: 'Kadambinee Kundu', role: 'Enterprise Account Exec', baseSalary: 20000, commissionRate: 0.03, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 79, leadsProgressed: 25, leadsCancelled: 33, status: 'Active' },
-  { id: 'bd-6', name: 'Muskan Ritesh Pradhan', role: 'BD Specialist', baseSalary: 18000, commissionRate: 0.03, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 18, leadsProgressed: 15, leadsCancelled: 2, status: 'Active' },
-  { id: 'bd-7', name: 'Rahul Patil', role: 'Senior BD Specialist', baseSalary: 25000, commissionRate: 0.05, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 35, leadsProgressed: 16, leadsCancelled: 8, status: 'Active' },
-  { id: 'bd-8', name: 'Sneha Kulkarni', role: 'Enterprise Account Exec', baseSalary: 22000, commissionRate: 0.04, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 30, leadsProgressed: 14, leadsCancelled: 6, status: 'Active' },
-  { id: 'bd-9', name: 'Ankur Sharma', role: 'BD Manager', baseSalary: 24000, commissionRate: 0.04, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 32, leadsProgressed: 15, leadsCancelled: 5, status: 'Active' },
-  { id: 'bd-10', name: 'Ruchi Shukla', role: 'BD Specialist', baseSalary: 18000, commissionRate: 0.03, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 24, leadsProgressed: 7, leadsCancelled: 0, status: 'Active' },
-  { id: 'bd-11', name: 'Shreya Santosh Talashilkar', role: 'BD Specialist', baseSalary: 18000, commissionRate: 0.03, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 17, leadsProgressed: 8, leadsCancelled: 9, status: 'Active' },
-  { id: 'bd-12', name: 'Sneha Santosh Jaiswal', role: 'BD Associate', baseSalary: 16000, commissionRate: 0.02, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 89, leadsProgressed: 3, leadsCancelled: 1, status: 'Active' },
-  { id: 'bd-13', name: 'Shruti Wilson Adhav', role: 'BD Associate', baseSalary: 16000, commissionRate: 0.02, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 9, leadsProgressed: 3, leadsCancelled: 1, status: 'Active' },
-  { id: 'bd-14', name: 'Jiya Pran Sanda', role: 'BD Associate', baseSalary: 16000, commissionRate: 0.02, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 14, leadsProgressed: 2, leadsCancelled: 0, status: 'Active' },
-  { id: 'bd-15', name: 'Sonali Jayanta Singh', role: 'BD Associate', baseSalary: 16000, commissionRate: 0.02, payPerProgressed: 2500, payPerCancelled: 500, leadsBought: 6, leadsProgressed: 1, leadsCancelled: 0, status: 'Active' }
-];
+export function FilterProvider({ children }) {
+  const {
+    transactions = [],
+    franchisees = [],
+    bdAgents = [],
+    teamLeaders = [],
+    selectedYear
+  } = useContext(FinanceContext);
 
-const DEFAULT_TEAM_LEADERS = [
-  { id: 'tl-1', name: 'Avadai Esakki Muthu Sundaram Marthuvar', role: 'Senior Team Leader', target: 500000 },
-  { id: 'tl-2', name: 'Surbhi Vinod Jain', role: 'Team Leader', target: 500000 },
-  { id: 'tl-3', name: 'Joyeeta Joydeb Khaskel', role: 'Team Leader', target: 500000 },
-  { id: 'tl-4', name: 'Vedika Girish Tolani', role: 'Team Leader', target: 500000 },
-  { id: 'tl-5', name: 'Pooja Sharma', role: 'Team Leader', target: 450000 },
-  { id: 'tl-6', name: 'Rajesh Patil', role: 'Team Leader', target: 450000 },
-  { id: 'tl-7', name: 'Amit Shinde', role: 'Team Leader', target: 400000 },
-  { id: 'tl-8', name: 'Priya Shah', role: 'Team Leader', target: 400000 },
-  { id: 'tl-9', name: 'Sanjay Joshi', role: 'Team Leader', target: 350000 },
-  { id: 'tl-10', name: 'Vikram Mehta', role: 'Team Leader', target: 350000 }
-];
-
-// Helper to standardize Financial Year format to standard YYYY-YYYY (e.g. '2024-2025', '2025-2026')
-// Also converts short formats like '2025-26' -> '2025-2026' and fixes invalid ones like '2025-2025'
-export const normalizeFinancialYear = (fy, dateStr = null) => {
-  if (typeof fy === 'string') {
-    const clean = fy.trim();
-    // 1. Standard 4-digit consecutive format: YYYY-YYYY (e.g. 2025-2026)
-    const match4 = clean.match(/^(\d{4})-(\d{4})$/);
-    if (match4) {
-      const y1 = parseInt(match4[1], 10);
-      const y2 = parseInt(match4[2], 10);
-      if (y2 === y1 + 1) {
-        return `${y1}-${y2}`;
-      }
-    }
-    // 2. Short 2-digit format: YYYY-YY (e.g. 2025-26 -> 2025-2026)
-    const match2 = clean.match(/^(\d{4})-(\d{2})$/);
-    if (match2) {
-      const y1 = parseInt(match2[1], 10);
-      const y2Suffix = parseInt(match2[2], 10);
-      const century = Math.floor(y1 / 100) * 100;
-      const y2 = century + y2Suffix;
-      if (y2 === y1 + 1) {
-        return `${y1}-${y2}`;
-      }
-    }
-  }
-
-  // 3. Fallback: derive strictly valid consecutive FY from date (e.g. invalid '2025-2025' gets corrected)
-  if (dateStr) {
-    const d = new Date(dateStr);
-    if (!isNaN(d.getTime())) {
-      const y = d.getFullYear();
-      const m = d.getMonth(); // 0=Jan, 3=Apr
-      return m >= 3 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
-    }
-  }
-  return null;
-};
-
-export const getCurrentFY = () => {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth(); // 0-indexed: 0=Jan, 3=Apr
-  return m >= 3 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
-};
-
-const DEFAULT_TRANSACTIONS = [];
-
-const TX_CACHE_VERSION = 'v3_manual_cash_and_payout_direction';
-
-export const FinanceProvider = ({ children }) => {
-  const currentFY = getCurrentFY();
-
-  const [cacheTimestamp, setCacheTimestamp] = useState(() => {
-    return localStorage.getItem('fintective_cache_timestamp') || sessionStorage.getItem('fintective_cache_timestamp') || null;
-  });
-
-  const [transactions, setTransactions] = useState(() => {
+  // Parse initial state from URL query parameters or fallback to defaults
+  const getInitialStateFromUrl = () => {
     try {
-      const storedVersion = localStorage.getItem('fintective_tx_cache_version');
-      if (storedVersion !== TX_CACHE_VERSION) {
-        localStorage.removeItem('fintective_cached_txs');
-        sessionStorage.removeItem('fintective_cached_txs');
-        return [];
-      }
-      const cached = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const hasSalaries = parsed.some(tx => tx.category === 'Salaries' || tx.is_payroll);
-          if (!hasSalaries) {
-            localStorage.removeItem('fintective_cached_txs');
-            sessionStorage.removeItem('fintective_cached_txs');
-            return [];
-          }
-          return parsed.map(tx => ({
-            ...tx,
-            financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || currentFY
-          }));
-        }
-      }
-      return [];
-    } catch {
-      return [];
-    }
-  });
-  const [franchisees, setFranchisees] = useState(() => {
-    try {
-      const cached = localStorage.getItem('fintective_cached_franchisees') || sessionStorage.getItem('fintective_cached_franchisees');
-      return cached ? JSON.parse(cached) : DEFAULT_FRANCHISEES;
-    } catch {
-      return DEFAULT_FRANCHISEES;
-    }
-  });
-  const [bdAgents, setBdAgents] = useState(() => {
-    try {
-      const cached = localStorage.getItem('fintective_cached_bd') || sessionStorage.getItem('fintective_cached_bd');
-      return cached ? JSON.parse(cached) : DEFAULT_BD_AGENTS;
-    } catch {
-      return DEFAULT_BD_AGENTS;
-    }
-  });
-  const [teamLeaders, setTeamLeaders] = useState(() => {
-    try {
-      const cached = localStorage.getItem('fintective_cached_tl') || sessionStorage.getItem('fintective_cached_tl');
-      return cached ? JSON.parse(cached) : DEFAULT_TEAM_LEADERS;
-    } catch {
-      return DEFAULT_TEAM_LEADERS;
-    }
-  });
-  const [budgets, setBudgets] = useState(() => {
-    try {
-      const cached = localStorage.getItem('fintective_cached_budgets') || sessionStorage.getItem('fintective_cached_budgets');
-      return cached ? JSON.parse(cached) : {
-        'Salaries': 800000,
-        'BD commissions': 120000,
-        'Marketing': 50000,
-        'Office & infra': 55000,
-        'Portal subscriptions': 85000,
-        'Other': 50000
-      };
-    } catch {
+      const params = new URLSearchParams(window.location.search);
       return {
-        'Salaries': 800000,
-        'BD commissions': 120000,
-        'Marketing': 50000,
-        'Office & infra': 55000,
-        'Portal subscriptions': 85000,
-        'Other': 50000
+        groupBy: params.get('groupBy') || 'none',
+        whoType: params.get('whoType') || 'all',
+        whoId: params.get('whoId') || 'all',
+        period: params.get('period') || 'FY 2026-27',
+        timePerspective: params.get('time') || 'all', // 'past' | 'now' | 'future' | 'all'
+        dealStages: params.get('stage') ? params.get('stage').split(',') : [],
+        paymentStates: params.get('payment') ? params.get('payment').split(',') : [],
+        riskFilters: params.get('risk') ? params.get('risk').split(',') : [],
+        tl: params.get('tl') ? params.get('tl').split(',') : [],
+        bd: params.get('bd') ? params.get('bd').split(',') : [],
+        franchise: params.get('franchise') ? params.get('franchise').split(',') : [],
+        industry: params.get('industry') ? params.get('industry').split(',') : [],
+        subIndustry: params.get('subIndustry') ? params.get('subIndustry').split(',') : [],
+        city: params.get('city') ? params.get('city').split(',') : [],
+        company: params.get('company') ? params.get('company').split(',') : [],
+        category: params.get('category') ? params.get('category').split(',') : [],
+        paymentMode: params.get('mode') ? params.get('mode').split(',') : [],
+        search: params.get('q') || '',
+        types: params.get('types') ? params.get('types').split(',') : [],
+        subCategory: params.get('subCat') ? params.get('subCat').split(',') : [],
+        amountMin: params.get('min') || '',
+        amountMax: params.get('max') || '',
+        dateFrom: params.get('from') || '',
+        dateTo: params.get('to') || '',
+        actualProjected: params.get('timing') || 'all',
+        status: params.get('status') ? params.get('status').split(',') : []
+      };
+    } catch (e) {
+      return {
+        groupBy: 'none',
+        whoType: 'all',
+        whoId: 'all',
+        period: 'FY 2026-27',
+        timePerspective: 'all',
+        dealStages: [],
+        paymentStates: [],
+        riskFilters: [],
+        tl: [],
+        bd: [],
+        franchise: [],
+        industry: [],
+        subIndustry: [],
+        city: [],
+        company: [],
+        category: [],
+        paymentMode: [],
+        search: '',
+        types: [],
+        subCategory: [],
+        amountMin: '',
+        amountMax: '',
+        dateFrom: '',
+        dateTo: '',
+        actualProjected: 'all',
+        status: []
       };
     }
-  });
+  };
 
-  const [lastSyncedAt, setLastSyncedAt] = useState(() => {
-    return sessionStorage.getItem('fintective_last_synced_at') || null;
-  });
-
-  const [selectedMonth, setSelectedMonth] = useState('All Months');
-  const [financeSummary, setFinanceSummary] = useState(null);
-  const [selectedYear, setSelectedYear] = useState(() => {
-    const saved = localStorage.getItem('saarthi_selected_year');
-    const normalized = saved ? normalizeFinancialYear(saved) : null;
-    return (normalized && normalized !== 'All Years') ? normalized : currentFY;
-  });
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-
-  const toggleSidebar = () => setIsSidebarOpen(prev => !prev);
-
-  const availableMonths = React.useMemo(() => {
-    if (!Array.isArray(transactions)) return ['All Months'];
-    const months = new Set();
-    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    transactions.forEach(tx => {
-      if (tx && tx.date) {
-        const d = new Date(tx.date);
-        if (!isNaN(d.getTime())) {
-          months.add(`${monthNames[d.getMonth()]} ${d.getFullYear()}`);
-        }
-      }
-    });
-    const sortedMonths = Array.from(months).sort((a, b) => {
-      const partsA = a.split(' ');
-      const partsB = b.split(' ');
-      const dateA = new Date(parseInt(partsA[1]), monthNames.indexOf(partsA[0]));
-      const dateB = new Date(parseInt(partsB[1]), monthNames.indexOf(partsB[0]));
-      return dateB - dateA;
-    });
-    return ['All Months', ...sortedMonths];
-  }, [transactions]);
-
-  const availableYears = React.useMemo(() => {
-    const years = new Set();
-    // Standard consecutive financial years only
-    years.add('2026-2027');
-    years.add('2025-2026');
-    years.add('2024-2025');
-    years.add('2023-2024');
-
-    if (Array.isArray(transactions)) {
-      transactions.forEach(tx => {
-        const norm = normalizeFinancialYear(tx?.financialYear, tx?.date);
-        if (norm) {
-          years.add(norm);
-        }
-      });
-    }
-
-    const sortedYears = Array.from(years)
-      .filter(y => {
-        if (!y || y === 'All Years') return false;
-        // Strictly only allow valid consecutive 4-digit years YYYY-(YYYY+1)
-        const m = y.match(/^(\d{4})-(\d{4})$/);
-        if (!m) return false;
-        const y1 = parseInt(m[1], 10);
-        const y2 = parseInt(m[2], 10);
-        return y2 === y1 + 1; // Rejects 2025-2025, 2025-26, etc.
-      })
-      .sort((a, b) => b.localeCompare(a));
-
-    return [...sortedYears, 'All Years'];
-  }, [transactions]);
-
-  const [currentUser, setCurrentUser] = useState(() => {
-    const saved = localStorage.getItem('saarthi_current_user');
-    return saved ? JSON.parse(saved) : null;
-  });
-
-  const [userRole, setUserRole] = useState(() => {
-    const saved = localStorage.getItem('saarthi_current_user');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      return parsed.role;
-    }
-    return 'admin';
-  });
-
-  // Module state
-  const [activeModule, setActiveModule] = useState(() => {
-    const saved = localStorage.getItem('saarthi_active_module');
-    return saved || 'franchise_bd_revenue';
-  });
-
-  const [dataSource, setDataSource] = useState(() => {
+  const [filters, setFilters] = useState(getInitialStateFromUrl);
+  const [savedViews, setSavedViews] = useState(() => {
     try {
-      const cached = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
-      return cached ? 'cached' : 'sample';
+      const saved = localStorage.getItem(STORAGE_SAVED_VIEWS_KEY);
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return 'sample';
+      return [];
     }
   });
 
-  const [dataState, setDataState] = useState(() => {
-    try {
-      const cached = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
-      return cached ? 'cached' : 'connecting';
-    } catch {
-      return 'connecting';
-    }
-  });
-
-  const [authError, setAuthError] = useState(null);
-
-  const [backendHealth, setBackendHealth] = useState({
-    isDbConnected: false,
-    cacheWarm: false,
-    host: '',
-    lastChecked: null,
-    raw: null
-  });
-
-  const [connectionProgress, setConnectionProgress] = useState({
-    isConnecting: false,
-    elapsedSec: 0,
-    message: ''
-  });
-
-  const [endpointStatus, setEndpointStatus] = useState({
-    transactions: { status: 'idle', count: 0, error: null },
-    franchisees: { status: 'idle', count: 0, error: null },
-    bdAgents: { status: 'idle', count: 0, error: null },
-    teamLeaders: { status: 'idle', count: 0, error: null },
-    budgets: { status: 'idle', count: 0, error: null },
-    mlInsights: { status: 'idle', error: null }
-  });
-
-  const [lastSyncTimestamp, setLastSyncTimestamp] = useState(() => {
-    try {
-      const ts = sessionStorage.getItem('fintective_last_synced_ts');
-      return ts ? parseInt(ts, 10) : null;
-    } catch {
-      return null;
-    }
-  });
-
-  const [timeAgo, setTimeAgo] = useState('just now');
-
-  // Dynamically update 'Live · updated X min ago' text every 15 seconds
+  // Sync state to URL query parameters
   useEffect(() => {
-    const updateAge = () => {
-      if (!lastSyncTimestamp) {
-        setTimeAgo('never');
-        return;
-      }
-      const diffSec = Math.max(0, Math.floor((Date.now() - lastSyncTimestamp) / 1000));
-      if (diffSec < 60) {
-        setTimeAgo('just now');
-      } else if (diffSec < 120) {
-        setTimeAgo('1 min ago');
-      } else if (diffSec < 3600) {
-        setTimeAgo(`${Math.floor(diffSec / 60)} min ago`);
-      } else {
-        const hrs = Math.floor(diffSec / 3600);
-        setTimeAgo(`${hrs}h ago`);
-      }
-    };
-
-    updateAge();
-    const interval = setInterval(updateAge, 15000);
-    return () => clearInterval(interval);
-  }, [lastSyncTimestamp]);
-
-  // Helper functions for matching stable IDs in fallback path (Phase 2)
-  const getStableStringHash = (str) => {
-    if (!str) return 0;
-    const clean = str.trim().toLowerCase();
-    let hash = 0;
-    for (let i = 0; i < clean.length; i++) {
-      hash = ((hash << 5) - hash) + clean.charCodeAt(i);
-      hash |= 0;
-    }
-    return Math.abs(hash) % 100000;
-  };
-
-  const matchFranchiseeId = (franName, franList = []) => {
-    if (!franName) return null;
-    const clean = franName.trim().toLowerCase();
-    if (!clean) return null;
-    const found = franList.find(f => {
-      const fn = (f.nameAsPerAgreement || f.name || '').trim().toLowerCase();
-      return fn === clean || (clean && fn.includes(clean)) || (fn && clean.includes(fn));
-    });
-    if (found && found.id) return found.id;
-    return `f-${getStableStringHash(clean)}`;
-  };
-
-  const matchBdAgentId = (bdName, bdList = []) => {
-    if (!bdName) return null;
-    const clean = bdName.trim().toLowerCase();
-    if (!clean) return null;
-    const found = bdList.find(b => {
-      const bn = (b.name || b.bd_name || b.bdMemberName || '').trim().toLowerCase();
-      return bn === clean || (clean && bn.includes(clean)) || (bn && clean.includes(bn));
-    });
-    if (found && found.id) return found.id;
-    return `bd-${getStableStringHash(clean)}`;
-  };
-
-  const [mlInsights, setMlInsights] = useState(() => {
     try {
-      const cached = sessionStorage.getItem('fintective_ml_insights');
-      return cached ? JSON.parse(cached) : null;
-    } catch {
-      return null;
-    }
-  });
-  const [isMlInsightsLoading, setIsMlInsightsLoading] = useState(false);
+      const params = new URLSearchParams();
+      if (filters.groupBy && filters.groupBy !== 'none') params.set('groupBy', filters.groupBy);
+      if (filters.whoType && filters.whoType !== 'all') params.set('whoType', filters.whoType);
+      if (filters.whoId && filters.whoId !== 'all') params.set('whoId', filters.whoId);
+      if (filters.period && filters.period !== 'FY 2026-27') params.set('period', filters.period);
+      if (filters.timePerspective && filters.timePerspective !== 'all') params.set('time', filters.timePerspective);
+      if (filters.dealStages?.length) params.set('stage', filters.dealStages.join(','));
+      if (filters.paymentStates?.length) params.set('payment', filters.paymentStates.join(','));
+      if (filters.riskFilters?.length) params.set('risk', filters.riskFilters.join(','));
+      if (filters.tl?.length) params.set('tl', filters.tl.join(','));
+      if (filters.bd?.length) params.set('bd', filters.bd.join(','));
+      if (filters.franchise?.length) params.set('franchise', filters.franchise.join(','));
+      if (filters.industry?.length) params.set('industry', filters.industry.join(','));
+      if (filters.subIndustry?.length) params.set('subIndustry', filters.subIndustry.join(','));
+      if (filters.city?.length) params.set('city', filters.city.join(','));
+      if (filters.company?.length) params.set('company', filters.company.join(','));
+      if (filters.category?.length) params.set('category', filters.category.join(','));
+      if (filters.paymentMode?.length) params.set('mode', filters.paymentMode.join(','));
+      if (filters.search) params.set('q', filters.search);
+      if (filters.types?.length) params.set('types', filters.types.join(','));
+      if (filters.subCategory?.length) params.set('subCat', filters.subCategory.join(','));
+      if (filters.amountMin) params.set('min', filters.amountMin);
+      if (filters.amountMax) params.set('max', filters.amountMax);
+      if (filters.dateFrom) params.set('from', filters.dateFrom);
+      if (filters.dateTo) params.set('to', filters.dateTo);
+      if (filters.actualProjected && filters.actualProjected !== 'all') params.set('timing', filters.actualProjected);
+      if (filters.status?.length) params.set('status', filters.status.join(','));
 
-  // Standalone ML insights fetcher with optional force refresh
-  const fetchMlInsights = async (force = false) => {
-    setIsMlInsightsLoading(true);
-    try {
-      const res = await fetchWithApiKey(`${API_BASE_URL}/ml/insights${force ? '?force=true' : ''}`);
-      if (res.ok) {
-        const data = await res.json();
-        setMlInsights(data);
-        try {
-          sessionStorage.setItem('fintective_ml_insights', JSON.stringify(data));
-        } catch (e) { }
-        return data;
-      }
-    } catch (err) {
-      console.warn('Failed to load ML insights:', err.message);
-    } finally {
-      setIsMlInsightsLoading(false);
-    }
-    return null;
-  };
-
-  const [isLoadingData, setIsLoadingData] = useState(() => {
-    try {
-      const cached = localStorage.getItem('fintective_cached_txs') || sessionStorage.getItem('fintective_cached_txs');
-      return !cached;
-    } catch {
-      return true;
-    }
-  });
-  const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
-
-  // Poll /api/health with backoff up to 40s for cold Render instance warm-up
-  const pollServerHealth = async (maxWaitSeconds = 40) => {
-    // 1. Fast path: try immediate health ping (resolves in ~300ms if server is already awake)
-    try {
-      const quickRes = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(3000) });
-      if (quickRes.ok) {
-        const json = await quickRes.json();
-        const isDbConnected = json.database?.status === 'connected';
-        setBackendHealth({
-          isDbConnected,
-          cacheWarm: Boolean(json.cache?.warm),
-          host: json.database?.host || '',
-          lastChecked: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          raw: json
-        });
-        setConnectionProgress({ isConnecting: false, elapsedSec: 0, message: 'Connected' });
-        return { ok: true, isDbConnected, data: json };
-      }
-    } catch {
-      // Cold-start detected, proceed to poll loop
-    }
-
-    const startTime = Date.now();
-    let delayMs = 1000;
-    while ((Date.now() - startTime) < maxWaitSeconds * 1000) {
-      const elapsedSec = Math.max(1, Math.round((Date.now() - startTime) / 1000));
-      setConnectionProgress({
-        isConnecting: true,
-        elapsedSec,
-        message: elapsedSec > 2 ? `Waking up backend server (${elapsedSec}s)...` : 'Connecting to server...'
-      });
-
-      try {
-        const res = await fetch(`${API_BASE_URL}/health`, {
-          signal: AbortSignal.timeout(6000)
-        });
-        if (res.ok) {
-          const json = await res.json();
-          const isDbConnected = json.database?.status === 'connected';
-          setBackendHealth({
-            isDbConnected,
-            cacheWarm: Boolean(json.cache?.warm),
-            host: json.database?.host || '',
-            lastChecked: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            raw: json
-          });
-          setConnectionProgress({ isConnecting: false, elapsedSec, message: 'Connected' });
-          return { ok: true, isDbConnected, data: json };
-        }
-      } catch {
-        // Cold start in progress or network delay, retry
-      }
-      await new Promise(r => setTimeout(r, delayMs));
-      delayMs = Math.min(delayMs * 1.3, 3000);
-    }
-
-    setConnectionProgress({ isConnecting: false, elapsedSec: maxWaitSeconds, message: 'Server unreachable' });
-    return { ok: false, error: `Connection timed out after ${maxWaitSeconds}s` };
-  };
-
-  // Helper with 60-second abort timeout — accounts for Render cold-start / heavy transactions endpoint
-  const fetchWithTimeout = async (url, options = {}, timeoutMs = 60000) => {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetchWithApiKey(url, { ...options, signal: controller.signal });
-      clearTimeout(timer);
-      return res;
+      const queryString = params.toString();
+      const newUrl = `${window.location.pathname}${queryString ? '?' + queryString : ''}`;
+      window.history.replaceState({}, '', newUrl);
     } catch (e) {
-      clearTimeout(timer);
-      throw e;
+      console.warn('Could not update URL query params:', e);
     }
-  };
+  }, [filters]);
 
-  // Retry wrapper: 3 attempts, 2s → 4s → 8s gaps.
-  // 4xx errors (especially 401 Unauthorized) or HTML responses are definitive: do NOT retry
-  // 429 Too Many Requests is retried with backoff to protect against Render burst throttling
-  const fetchWithRetry = async (url, options = {}, maxAttempts = 3, baseDelayMs = 2000) => {
-    let lastErr;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const res = await fetchWithTimeout(url, options);
-        if (res.ok) return res;
-        if (res.status === 429) {
-          const delay = baseDelayMs * Math.pow(2, attempt);
-          console.warn(`[Fetch] Rate limit 429 on ${url}. Retrying in ${delay}ms...`);
-          await new Promise(r => setTimeout(r, delay));
-          continue;
-        }
-        if (res.status < 500) return res;
-        lastErr = new Error(`HTTP ${res.status}`);
-      } catch (e) {
-        lastErr = e;
-        if (e.isAuthError || e.status === 401 || e.isHtml) {
-          throw e; // Definitive failure, do not retry
-        }
-      }
-      if (attempt < maxAttempts) {
-        const delay = baseDelayMs * Math.pow(2, attempt - 1);
-        console.warn(`[Fetch] Attempt ${attempt}/${maxAttempts} failed for ${url}. Retrying in ${delay}ms...`);
-        await new Promise(r => setTimeout(r, delay));
-      }
-    }
-    throw lastErr;
-  };
-
-  // Re-usable loader to fetch all data from backend with cold-start polling, auth checking, and resilient fallbacks
-  const fetchAllData = async (isManual = false) => {
-    setIsBackgroundSyncing(true);
-    let loadedFromBackend = false;
-
-    // 1. Verify API Key is configured in environment
-    if (!isApiKeyConfigured()) {
-      const errMsg = 'Missing VITE_API_KEY environment variable. Backend API requests require a valid key.';
-      logApiDiagnostic('error', { url: `${API_BASE_URL}/*`, status: 401, isHtml: false, message: errMsg });
-      setAuthError(errMsg);
-      setDataState('auth_error');
-      setIsBackgroundSyncing(false);
-      setIsLoadingData(false);
-      return false;
-    }
-
-    setAuthError(null);
-    setDataState(prev => (prev === 'live' ? 'live' : 'connecting'));
-
-    try {
-      // 2. Poll server health first — wakes up Render cold-instance (up to 40s) with visible countdown
-      const health = await pollServerHealth(40);
-
-      if (health.ok) {
-        // 3. Parallel async fetch of core endpoints with retry
-        const [txRes, franRes, bdRes, tlRes, budgetRes, summaryRes] = await Promise.allSettled([
-          fetchWithRetry(`${API_BASE_URL}/transactions`),
-          fetchWithRetry(`${API_BASE_URL}/franchisees`),
-          fetchWithRetry(`${API_BASE_URL}/bd-agents`),
-          fetchWithRetry(`${API_BASE_URL}/team-leaders`),
-          fetchWithRetry(`${API_BASE_URL}/budgets`),
-          fetchWithRetry(`${API_BASE_URL}/finance/summary?fy=2026-2027`)
-        ]);
-
-        // Kick off heavy ML model insights asynchronously in background without delaying main dashboard
-        fetchMlInsights();
-
-        // Check for 401 Unauthorized across core endpoint responses
-        const any401 = [txRes, franRes, bdRes, tlRes, budgetRes].some(
-          r => (r.status === 'rejected' && (r.reason?.status === 401 || r.reason?.isAuthError)) ||
-            (r.status === 'fulfilled' && r.value?.status === 401)
-        );
-
-        if (any401) {
-          const authMsg = 'Unauthorized (401): Backend rejected API key. Verify VITE_API_KEY matches the backend API_KEY.';
-          logApiDiagnostic('error', { url: `${API_BASE_URL}/transactions`, status: 401, isHtml: false, message: authMsg });
-          setAuthError(authMsg);
-          setDataState('auth_error');
-          setIsBackgroundSyncing(false);
-          setIsLoadingData(false);
-          return false;
-        }
-
-        // Check for HTML response (misrouted proxy / catch-all rewrite)
-        const anyHtml = [txRes, franRes, bdRes, tlRes, budgetRes].some(
-          r => (r.status === 'rejected' && r.reason?.isHtml) ||
-            (r.status === 'fulfilled' && (r.value?.headers?.get('content-type') || '').includes('text/html'))
-        );
-
-        if (anyHtml) {
-          const htmlMsg = 'API call returned HTML instead of JSON. Ensure VITE_API_URL points to the backend server and Vercel proxy rewrites are configured.';
-          setAuthError(htmlMsg);
-          setDataState('routing_error');
-          setIsBackgroundSyncing(false);
-          setIsLoadingData(false);
-          return false;
-        }
-
-        // Process /transactions (A valid empty array [] is a SUCCESSFUL empty result, NOT a failure)
-        if (txRes.status === 'fulfilled' && txRes.value.ok) {
-          try {
-            const txData = await txRes.value.json();
-            if (Array.isArray(txData)) {
-              const sanitized = txData.map(tx => ({
-                ...tx,
-                financialYear: normalizeFinancialYear(tx.financialYear, tx.date) || currentFY
-              }));
-              setTransactions(sanitized);
-              loadedFromBackend = true;
-              setDataSource('backend');
-              setDataState('live');
-              setEndpointStatus(prev => ({
-                ...prev,
-                transactions: { status: sanitized.length > 0 ? 'ok' : 'empty', count: sanitized.length, error: null }
-              }));
-              try {
-                sessionStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
-                localStorage.setItem('fintective_cached_txs', JSON.stringify(sanitized));
-                localStorage.setItem('fintective_tx_cache_version', TX_CACHE_VERSION);
-              } catch (e) { }
-            }
-          } catch (jsonErr) {
-            logApiDiagnostic('error', { url: `${API_BASE_URL}/transactions`, status: 200, isHtml: false, message: jsonErr.message });
-            setEndpointStatus(prev => ({ ...prev, transactions: { status: 'failed', count: 0, error: jsonErr.message } }));
-          }
-        } else {
-          const err = txRes.status === 'rejected' ? txRes.reason?.message : `HTTP ${txRes.value?.status}`;
-          setEndpointStatus(prev => ({ ...prev, transactions: { status: 'failed', count: 0, error: err } }));
-        }
-
-        // Process /franchisees
-        if (franRes.status === 'fulfilled' && franRes.value.ok) {
-          try {
-            const franData = await franRes.value.json();
-            if (Array.isArray(franData)) {
-              setFranchisees(franData);
-              setEndpointStatus(prev => ({ ...prev, franchisees: { status: franData.length > 0 ? 'ok' : 'empty', count: franData.length, error: null } }));
-              try {
-                sessionStorage.setItem('fintective_cached_franchisees', JSON.stringify(franData));
-                localStorage.setItem('fintective_cached_franchisees', JSON.stringify(franData));
-              } catch (e) { }
-            }
-          } catch (e) {
-            setEndpointStatus(prev => ({ ...prev, franchisees: { status: 'failed', error: e.message } }));
-          }
-        } else {
-          setEndpointStatus(prev => ({ ...prev, franchisees: { status: 'failed', error: franRes.reason?.message || 'Request failed' } }));
-        }
-
-        // Process /bd-agents
-        if (bdRes.status === 'fulfilled' && bdRes.value.ok) {
-          try {
-            const bdData = await bdRes.value.json();
-            if (Array.isArray(bdData)) {
-              setBdAgents(bdData);
-              setEndpointStatus(prev => ({ ...prev, bdAgents: { status: bdData.length > 0 ? 'ok' : 'empty', count: bdData.length, error: null } }));
-              try { sessionStorage.setItem('fintective_cached_bd', JSON.stringify(bdData)); } catch (e) { }
-            }
-          } catch (e) {
-            setEndpointStatus(prev => ({ ...prev, bdAgents: { status: 'failed', error: e.message } }));
-          }
-        } else {
-          setEndpointStatus(prev => ({ ...prev, bdAgents: { status: 'failed', error: bdRes.reason?.message || 'Request failed' } }));
-        }
-
-        // Process /team-leaders
-        if (tlRes.status === 'fulfilled' && tlRes.value.ok) {
-          try {
-            const tlData = await tlRes.value.json();
-            if (Array.isArray(tlData)) {
-              setTeamLeaders(tlData);
-              setEndpointStatus(prev => ({ ...prev, teamLeaders: { status: tlData.length > 0 ? 'ok' : 'empty', count: tlData.length, error: null } }));
-              try { sessionStorage.setItem('fintective_cached_tl', JSON.stringify(tlData)); } catch (e) { }
-            }
-          } catch (e) {
-            setEndpointStatus(prev => ({ ...prev, teamLeaders: { status: 'failed', error: e.message } }));
-          }
-        } else {
-          setEndpointStatus(prev => ({ ...prev, teamLeaders: { status: 'failed', error: tlRes.reason?.message || 'Request failed' } }));
-        }
-
-        // Process /budgets
-        if (budgetRes.status === 'fulfilled' && budgetRes.value.ok) {
-          try {
-            const budgetData = await budgetRes.value.json();
-            if (budgetData && typeof budgetData === 'object') {
-              setBudgets(budgetData);
-              setEndpointStatus(prev => ({ ...prev, budgets: { status: 'ok', error: null } }));
-              try { sessionStorage.setItem('fintective_cached_budgets', JSON.stringify(budgetData)); } catch (e) { }
-            }
-          } catch (e) {
-            setEndpointStatus(prev => ({ ...prev, budgets: { status: 'failed', error: e.message } }));
-          }
-        } else {
-          setEndpointStatus(prev => ({ ...prev, budgets: { status: 'failed', error: budgetRes.reason?.message || 'Request failed' } }));
-        }
-
-        // Process /finance/summary
-        if (summaryRes.status === 'fulfilled' && summaryRes.value.ok) {
-          try {
-            const summaryData = await summaryRes.value.json();
-            if (summaryData && typeof summaryData === 'object') {
-              setFinanceSummary(summaryData);
-            }
-          } catch (e) { }
-        }
-      }
-    } catch (err) {
-      logApiDiagnostic('error', { url: `${API_BASE_URL}/*`, status: 0, isHtml: false, message: err.message });
-    }
-
-    // 4. If backend was reached and transactions were loaded:
-    if (loadedFromBackend) {
-      const now = Date.now();
-      setLastSyncTimestamp(now);
-      const nowFormatted = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      setLastSyncedAt(nowFormatted);
-      try {
-        sessionStorage.setItem('fintective_last_synced_at', nowFormatted);
-        sessionStorage.setItem('fintective_last_synced_ts', String(now));
-      } catch (e) { }
-      setIsLoadingData(false);
-      setIsBackgroundSyncing(false);
-      return true;
-    }
-
-    // 5. Backend offline or failed: check if valid cached transactions exist in sessionStorage
-    const cachedTxsStr = sessionStorage.getItem('fintective_cached_txs');
-    if (cachedTxsStr) {
-      try {
-        const cachedTxs = JSON.parse(cachedTxsStr);
-        if (Array.isArray(cachedTxs) && cachedTxs.length > 0) {
-          const hasSalaries = cachedTxs.some(tx => tx.category === 'Salaries' || tx.is_payroll);
-          if (hasSalaries) {
-            console.log('[Fintective Data State] Backend offline. Using cached transactions from sessionStorage.');
-            setTransactions(cachedTxs);
-            setDataSource('cached');
-            setDataState('cached');
-            setIsLoadingData(false);
-            setIsBackgroundSyncing(false);
-            return false;
-          }
-        }
-      } catch (e) { }
-    }
-
-    // 6. Resilient Fallback: Directly pull latest from Saarthi 360 CRM endpoints when backend is waking up / offline
-    let crmFallbackSuccess = false;
-    try {
-      console.log('[Fintective Data State] Backend waking up or offline. Connecting directly to Saarthi CRM API for live data...');
-      const [enqRes, invRes, franRes, expRes, expendRes] = await Promise.allSettled([
-        fetch('https://api.sarthi360.in/api/enquiries', { signal: AbortSignal.timeout(12000) }),
-        fetch('https://api.sarthi360.in/api/Invoice', { signal: AbortSignal.timeout(12000) }),
-        fetch('https://api.sarthi360.in/api/franchisees', { signal: AbortSignal.timeout(12000) }),
-        fetch('https://api.sarthi360.in/api/expenses', { signal: AbortSignal.timeout(12000) }),
-        fetch('https://api.sarthi360.in/api/expenditures/expenditures/all', { signal: AbortSignal.timeout(12000) }).catch(() => null)
-      ]);
-
-      let enquiries = [];
-      if (enqRes.status === 'fulfilled' && enqRes.value?.ok) {
-        const json = await enqRes.value.json();
-        enquiries = Array.isArray(json) ? json : (json.data || json.enquiries || []);
-      }
-
-      let invoices = [];
-      if (invRes.status === 'fulfilled' && invRes.value?.ok) {
-        const json = await invRes.value.json();
-        invoices = Array.isArray(json) ? json : (json.data || json.invoices || []);
-      }
-
-      let currentFranList = franchisees;
-      if (franRes.status === 'fulfilled' && franRes.value?.ok) {
-        const json = await franRes.value.json();
-        const fData = Array.isArray(json) ? json : (json.data || json.franchisees || []);
-        if (fData.length > 0) {
-          currentFranList = fData;
-          setFranchisees(fData);
-        }
-      }
-
-      let liveExp = [];
-      if (expRes.status === 'fulfilled' && expRes.value?.ok) {
-        const json = await expRes.value.json();
-        liveExp = Array.isArray(json) ? json : (json.data || json.expenses || []);
-      }
-
-      let liveExpenditures = [];
-      if (expendRes && expendRes.status === 'fulfilled' && expendRes.value?.ok) {
-        const json = await expendRes.value.json();
-        liveExpenditures = Array.isArray(json) ? json : (json.data || []);
-      }
-
-      const liveTxs = [];
-
-      invoices.forEach(inv => {
-        if (!inv.id) return;
-        const amt = parseFloat(inv.serviceCharges || inv.totalBillAmt || inv.amountReceived || 0);
-        const dateStr = (inv.billDate || inv.dateReceived || inv.createdAt || '').split('T')[0];
-        if (amt > 0 && dateStr) {
-          const franName = inv.franchiseName || '';
-          const bdName = inv.nameOfBd || '';
-          const infoType = (inv.info || '').toUpperCase();
-          const isRev = !['CN', 'LEGAL-CN', 'LEGAL', 'RV', 'C'].includes(infoType);
-
-          // Calculate tenure-aware shares: 70-30 for >= 3 years, 75-25 for < 3 years
-          const matchedFran = currentFranList.find(f =>
-            (f.nameAsPerAgreement && f.nameAsPerAgreement.toLowerCase().trim() === franName.toLowerCase().trim()) ||
-            (f.name && f.name.toLowerCase().trim() === franName.toLowerCase().trim())
-          );
-          let compRate = 0.25;
-          let franRate = 0.75;
-          if (matchedFran && matchedFran.onboardingDate) {
-            const onb = new Date(matchedFran.onboardingDate);
-            const bill = new Date(dateStr);
-            if (!isNaN(onb.getTime()) && !isNaN(bill.getTime())) {
-              const diffY = (bill - onb) / (365.25 * 24 * 3600 * 1000);
-              if (diffY >= 3) {
-                compRate = 0.30;
-                franRate = 0.70;
-              }
-            }
-          }
-
-          const rawOurShare = parseFloat(inv.ourShare);
-          const rawFranShare = parseFloat(inv.franchiseeShare);
-          const finalOurShare = (!isNaN(rawOurShare) && rawOurShare > 0) ? rawOurShare : (amt * compRate);
-          const finalFranShare = (!isNaN(rawFranShare) && rawFranShare > 0) ? rawFranShare : (amt * franRate);
-
-          liveTxs.push({
-            id: `inv-${inv.id}`,
-            title: `${inv.companyName || 'Client Placement'} - ${inv.postOfCandidate || 'Recruitment'}`,
-            amount: amt,
-            type: (!isRev || inv.enquiryStatus === 'credit_note') ? 'credit_note' : 'income',
-            category: 'Recruitment Fee',
-            subCategory: 'Placement Invoice',
-            date: dateStr,
-            companyName: inv.companyName || '',
-            bdAgentName: bdName,
-            teamLeaderName: inv.teamLeader || '',
-            franchiseeName: franName,
-            franchiseeId: matchFranchiseeId(franName, currentFranList),
-            bdAgentId: matchBdAgentId(bdName, bdAgents),
-            financialYear: normalizeFinancialYear(inv.financialYear, dateStr) || currentFY,
-            city: inv.companyCity || inv.city || 'Mumbai',
-            industry: inv.industry || 'Information Technology & Software',
-            ourShare: finalOurShare,
-            franchiseeShare: finalFranShare,
-            info: inv.info || 'R',
-            is_revenue: isRev
-          });
-        }
-      });
-
-      enquiries.forEach(enq => {
-        if (!enq.id) return;
-        const amt = parseFloat(enq.bill_amount || enq.placementFees || 0);
-        const dateStr = (enq.bill_date || enq.dateOfAllocation || enq.created_at || '').split('T')[0];
-        if (amt > 0 && dateStr && !invoices.some(i => i.enquiry_id === enq.id)) {
-          const franName = enq.franchiseeName || '';
-          const bdName = enq.bdMemberName || '';
-          liveTxs.push({
-            id: `enq-${enq.id}`,
-            title: `${enq.companyName || 'Client Placement'} - ${enq.positionName || 'Role'}`,
-            amount: amt,
-            type: 'income',
-            category: 'Recruitment Fee',
-            subCategory: 'Placement',
-            date: dateStr,
-            companyName: enq.companyName || '',
-            bdAgentName: bdName,
-            teamLeaderName: enq.teamLeaderName || '',
-            franchiseeName: franName,
-            franchiseeId: matchFranchiseeId(franName, currentFranList),
-            bdAgentId: matchBdAgentId(bdName, bdAgents),
-            financialYear: normalizeFinancialYear(enq.financialYear, dateStr) || currentFY,
-            ourShare: amt * 0.25,
-            franchiseeShare: amt * 0.75,
-            is_revenue: true
-          });
-        }
-      });
-
-      const liveExpenseTxs = [];
-
-      // 1. Transactional Expenditures
-      if (liveExpenditures.length > 0) {
-        liveExpenditures.forEach(exp => {
-          const amt = parseFloat(exp.amount || exp.net || 0);
-          const dStr = (exp.billDate || exp.date || exp.createdAt || '').split('T')[0];
-          if (amt > 0 && dStr) {
-            liveExpenseTxs.push({
-              id: `expend-${exp.id || exp.srNo || Math.random()}`,
-              title: exp.particulars || exp.expenses || 'Operating Expense',
-              amount: amt,
-              type: 'expense',
-              category: mapCategory(exp.expenses || exp.expenseType || 'Operations', 'expense'),
-              subCategory: exp.expenseType || 'Operations',
-              date: dStr,
-              financialYear: normalizeFinancialYear(exp.financialYear, dStr) || currentFY,
-              companyName: 'Saarthi Corporate'
-            });
-          }
-        });
-      }
-
-      // 2. Monthly Expense Heads (multiplied by 1000 as per CRM format)
-      liveExp.forEach(exp => {
-        const franPart = parseFloat(exp.franchisee || 0);
-        const recPart = parseFloat(exp.recruitment || 0);
-        const total = (franPart + recPart) > 0 ? (franPart + recPart) * 1000 : parseFloat(exp.amount || 0);
-        const dStr = (exp.date || exp.billDate || '2026-08-01').split('T')[0];
-        if (total > 0) {
-          liveExpenseTxs.push({
-            id: `exp-api-${exp.id}`,
-            title: exp.head_component || exp.particulars || 'Operating Expense',
-            amount: total,
-            type: 'expense',
-            category: exp.head_component?.includes('Rent') ? 'Office & infra' : (exp.head_component?.includes('Software') ? 'Portal subscriptions' : 'Marketing'),
-            subCategory: exp.head_component || 'Operations',
-            date: dStr,
-            financialYear: normalizeFinancialYear(exp.financialYear, dStr) || currentFY,
-            companyName: 'Saarthi Corporate'
-          });
-        }
-      });
-
-      const combined = [...liveTxs, ...liveExpenseTxs];
-
-      if (combined.length > 0) {
-        setTransactions(combined);
-        crmFallbackSuccess = true;
-        setDataSource('crm_live_fallback');
-        setDataState('live');
-        try {
-          sessionStorage.setItem('fintective_cached_txs', JSON.stringify(combined));
-          localStorage.setItem('fintective_cached_txs', JSON.stringify(combined));
-        } catch (e) { }
-      }
-    } catch (crmErr) {
-      console.error('[Fintective] Direct CRM live fallback note:', crmErr);
-    }
-
-    if (!crmFallbackSuccess) {
-      console.warn('[Fintective Data State] Backend offline and CRM fallback returned no rows.');
-      setDataSource('empty');
-      setDataState('offline');
-      setTransactions([]);
-    }
-
-    // Always release loading and sync state
-    setIsLoadingData(false);
-    setIsBackgroundSyncing(false);
-    return false;
-  };
-
-  const syncWithSaarthi = async () => {
-    try {
-      // 1. Capture baselineLogId before the POST request
-      let baselineLogId = null;
-      try {
-        const initStatusRes = await fetchWithApiKey(`${API_BASE_URL}/sync/status`, { timeoutMs: 10000 });
-        if (initStatusRes && initStatusRes.ok) {
-          const initData = await initStatusRes.json();
-          const latestInit = initData.latest || (initData.logs && initData.logs[0]);
-          if (latestInit?.id) {
-            baselineLogId = latestInit.id;
-          }
-        }
-      } catch (e) {
-        console.warn('[Sync] Baseline log fetch notice:', e);
-      }
-
-      const response = await fetchWithApiKey(`${API_BASE_URL}/finance/sync-saarthi`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        timeoutMs: 60000
-      });
-      if (response && response.ok) {
-        const data = await response.json();
-        console.log('[Sync] Raw backend response:', data);
-
-        // If backend started asynchronous sync or reports one in progress, poll /sync/status
-        if (data && (data.status === 'started' || data.status === 'in_progress' || data.is_running)) {
-          const maxPolls = 60; // 60 * 2.5s = 150 seconds max
-          for (let i = 0; i < maxPolls; i++) {
-            await new Promise((r) => setTimeout(r, 2500));
-            try {
-              const statusRes = await fetchWithApiKey(`${API_BASE_URL}/sync/status`, { timeoutMs: 15000 });
-              if (statusRes && statusRes.ok) {
-                const sData = await statusRes.json();
-
-                // Treat trigger_error as a failure immediately
-                if (sData.trigger_error) {
-                  return { success: false, error: sData.trigger_error };
-                }
-
-                const latest = sData.latest || (sData.logs && sData.logs[0]);
-                if (latest) {
-                  // In the poll loop, ignore any log whose id equals baselineLogId unless trigger_error is set
-                  if (baselineLogId && latest.id === baselineLogId && !sData.trigger_error) {
-                    continue;
-                  }
-
-                  // If still running, keep waiting
-                  if (latest.status === 'in_progress') {
-                    continue;
-                  }
-
-                  if (latest.status === 'completed' || latest.status === 'completed_with_warnings') {
-                    const totalCounts = (latest.enquiries_count || 0) + (latest.invoices_count || 0);
-                    const isZeroCountWarning = latest.status === 'completed_with_warnings' && totalCounts === 0;
-
-                    if (isZeroCountWarning) {
-                      // Treat 'completed_with_warnings' as a warning/failure when counts are 0, passing message through as errors[]
-                      return {
-                        success: false,
-                        error: latest.message || 'Sync completed with warnings (0 records synced)',
-                        data: {
-                          ok: false,
-                          franchisees: latest.franchisees_count || 0,
-                          enquiries: latest.enquiries_count || 0,
-                          invoices: latest.invoices_count || 0,
-                          expenses: latest.expenses_count || 0,
-                          clients: latest.clients_count || 0,
-                          legals: latest.legals_count || 0,
-                          duration_seconds: latest.duration_seconds || 0,
-                          errors: latest.message ? [latest.message] : ['Completed with warnings: 0 records synced']
-                        }
-                      };
-                    }
-
-                    await fetchAllData();
-                    return {
-                      success: true,
-                      data: {
-                        ok: true,
-                        franchisees: latest.franchisees_count || 0,
-                        enquiries: latest.enquiries_count || 0,
-                        invoices: latest.invoices_count || 0,
-                        expenses: latest.expenses_count || 0,
-                        clients: latest.clients_count || 0,
-                        legals: latest.legals_count || 0,
-                        duration_seconds: latest.duration_seconds || 0,
-                        notes: latest.message ? [latest.message] : [],
-                        errors: latest.status === 'completed_with_warnings' && latest.message ? [latest.message] : []
-                      }
-                    };
-                  }
-                  if (latest.status === 'failed') {
-                    return { success: false, error: latest.message || 'Saarthi CRM sync failed on backend.' };
-                  }
-                }
-              }
-            } catch (pollErr) {
-              console.warn('[Sync] Poll attempt error:', pollErr);
-            }
-          }
-          return { success: false, error: 'Live sync timed out waiting for backend worker.' };
-        }
-
-        // Direct synchronous response fallback
-        if (data && data.success) {
-          await fetchAllData();
-          return { success: true, data: data.data || data };
-        }
-      } else if (response) {
-        const errJson = await response.json().catch(() => ({}));
-        return { success: false, error: errJson.error || errJson.message || `HTTP ${response.status} error from server.` };
-      }
-    } catch (backendErr) {
-      console.error('[Sync] Backend sync endpoint unreachable:', backendErr);
-      return { success: false, error: backendErr.message || 'Backend sync endpoint unreachable. Please verify backend server is running.' };
-    }
-    return { success: false, error: 'Sync failed on server.' };
-  };
-
-  // Auto-poll on mount and every 90s; keep-alive every 8 min to prevent Render cold-sleep
-  useEffect(() => {
-    // First attempt — server may be cold-starting, warmup fires inside fetchAllData
-    fetchAllData();
-
-    // Periodic background refresh (90s — balanced between freshness and server load)
-    const interval = setInterval(() => {
-      fetchAllData();
-    }, 90000);
-
-    // Keep-alive ping every 8 minutes so Render never hits its 15-min inactivity sleep
-    const keepAlive = setInterval(() => {
-      fetch(`${API_BASE_URL}/warmup`).catch(() => { });
-    }, 8 * 60 * 1000);
-
-    return () => {
-      clearInterval(interval);
-      clearInterval(keepAlive);
-    };
+  // Setters for individual filter keys
+  const setFilterKey = useCallback((key, value) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('saarthi_active_module', activeModule);
-  }, [activeModule]);
-
-  useEffect(() => {
-    localStorage.setItem('saarthi_selected_month', selectedMonth);
-  }, [selectedMonth]);
-
-  useEffect(() => {
-    localStorage.setItem('saarthi_selected_year', selectedYear);
-  }, [selectedYear]);
-
-  useEffect(() => {
-    if (availableYears && availableYears.length > 0 && !availableYears.includes(selectedYear)) {
-      setSelectedYear(availableYears.includes(currentFY) ? currentFY : availableYears[0]);
-    }
-  }, [availableYears, selectedYear, currentFY]);
-
-  useEffect(() => {
-    if (availableMonths && availableMonths.length > 0 && !availableMonths.includes(selectedMonth)) {
-      setSelectedMonth(availableMonths[0]);
-    }
-  }, [availableMonths, selectedMonth]);
-
-  const [currentCashBalance, setCurrentCashBalance] = useState(0);
-  const [movingAvgBurn, setMovingAvgBurn] = useState(0);
-
-  const getAsOfDate = (month, year) => {
-    let end = '2026-12-31';
-    if (month !== 'All Months') {
-      const parts = month.split(' ');
-      const mName = parts[0];
-      const yVal = parseInt(parts[1]);
-      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-      const mIdx = monthNames.indexOf(mName);
-      if (mIdx !== -1) {
-        const lastDay = new Date(yVal, mIdx + 1, 0).getDate();
-        end = `${yVal}-${String(mIdx + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-      }
-    } else if (year !== 'All Years') {
-      const parts = year.split('-');
-      const yEnd = parts[1] ? parseInt(parts[1]) : parseInt(parts[0]);
-      end = `${yEnd}-03-31`;
-    }
-    return end;
-  };
-
-  useEffect(() => {
-    const asOf = getAsOfDate(selectedMonth, selectedYear);
-    fetchWithApiKey(`${API_BASE_URL}/finance/cash-balance?as_of=${asOf}`)
-      .then(res => { if (res.ok) return res.json(); })
-      .then(data => {
-        if (data && data.cash_balance != null) {
-          setCurrentCashBalance(data.cash_balance);
-        }
-      })
-      .catch(err => console.error("Failed to load cash balance:", err));
-  }, [selectedMonth, selectedYear, transactions.length]);
-
-  useEffect(() => {
-    if (transactions.length === 0) return;
-    fetchWithApiKey(`${API_BASE_URL}/finance/moving-avg-burn`)
-      .then(res => { if (res.ok) return res.json(); })
-      .then(data => {
-        if (data && data.burn != null) {
-          setMovingAvgBurn(data.burn);
-        }
-      })
-      .catch(err => console.error("Failed to load moving average burn:", err));
-  }, [transactions.length]);
-
-
-
-  // Derived filtered transactions based on active module (memoized for peak UI performance)
-  const moduleFilteredTransactions = useMemo(() => {
-    if (!Array.isArray(transactions)) return [];
-    if (activeModule === 'job_portal') {
-      return transactions.filter(tx => tx && (tx.category === 'Job portal' || tx.category === 'Portal subscriptions'));
-    }
-    return transactions.filter(tx => tx && tx.category !== 'Job portal' && tx.category !== 'Portal subscriptions');
-  }, [transactions, activeModule]);
-
-  const [toast, setToast] = useState(null);
-
-  const showToast = (message, type = 'error') => {
-    setToast({ message, type });
-    setTimeout(() => {
-      setToast(null);
-    }, 4500);
-  };
-
-  // Actions with optimistic updates, response verification, and automatic rollback on failure
-  const addTransaction = async (transaction) => {
-    try {
-      const res = await fetchWithApiKey(`${API_BASE_URL}/transactions`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(transaction)
-      });
-      const saved = await res.json();
-      if (!res.ok) throw new Error(saved.error || `Server responded with ${res.status}`);
-      // Use the persisted ID, so deletion works immediately without reloading.
-      setTransactions(prev => [{ ...transaction, ...saved }, ...prev]);
-      return saved;
-    } catch (err) {
-      showToast(`Failed to save transaction: ${err.message}`, 'error');
-      throw err;
-    }
-  };
-
-  const deleteTransaction = async (id) => {
-    let deletedTx = null;
-    setTransactions((prev) => {
-      deletedTx = prev.find((tx) => tx.id === id);
-      return prev.filter((tx) => tx.id !== id);
+  // Toggle multi-select array chip
+  const toggleArrayItem = useCallback((key, item) => {
+    setFilters(prev => {
+      const current = prev[key] || [];
+      const exists = current.includes(item);
+      const updated = exists ? current.filter(x => x !== item) : [...current, item];
+      return { ...prev, [key]: updated };
     });
-    try {
-      const res = await fetchWithApiKey(`${API_BASE_URL}/transactions/${id}`, {
-        method: 'DELETE'
-      });
-      if (!res.ok) {
-        if (deletedTx) {
-          setTransactions((prev) => [deletedTx, ...prev]);
-        }
-        const errorData = await res.json().catch(() => ({}));
-        showToast(`Failed to delete transaction: ${errorData.error || `Server responded with ${res.status}`}`, 'error');
-      }
-    } catch (err) {
-      if (deletedTx) {
-        setTransactions((prev) => [deletedTx, ...prev]);
-      }
-      showToast(`Network error deleting transaction: ${err.message}`, 'error');
-      console.error('Failed to delete transaction from server:', err.message);
-    }
-  };
+  }, []);
 
-  const updateBudget = async (category, value) => {
-    const updatedVal = parseFloat(value) || 0;
-    const oldVal = budgets[category];
-    setBudgets((prev) => ({
-      ...prev,
-      [category]: updatedVal
-    }));
-    try {
-      const res = await fetchWithApiKey(`${API_BASE_URL}/budgets`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [category]: updatedVal })
-      });
-      if (!res.ok) {
-        setBudgets((prev) => ({
-          ...prev,
-          [category]: oldVal
-        }));
-        const errorData = await res.json().catch(() => ({}));
-        showToast(`Failed to update budget: ${errorData.error || `Server responded with ${res.status}`}`, 'error');
-      }
-    } catch (err) {
-      setBudgets((prev) => ({
-        ...prev,
-        [category]: oldVal
-      }));
-      showToast(`Network error updating budget: ${err.message}`, 'error');
-      console.error('Failed to update budget on server:', err.message);
-    }
-  };
-
-  const addFranchisee = async (fran) => {
-    const newFran = {
-      ...fran,
-      id: `f-${Date.now()}`,
-      candidatesPlaced: 0,
-      status: 'Active'
-    };
-    setFranchisees((prev) => [...prev, newFran]);
-    try {
-      const res = await fetchWithApiKey(`${API_BASE_URL}/franchisees`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newFran)
-      });
-      if (!res.ok) {
-        setFranchisees((prev) => prev.filter((f) => f.id !== newFran.id));
-        const errorData = await res.json().catch(() => ({}));
-        showToast(`Failed to save franchisee: ${errorData.error || `Server responded with ${res.status}`}`, 'error');
-      }
-    } catch (err) {
-      setFranchisees((prev) => prev.filter((f) => f.id !== newFran.id));
-      showToast(`Network error saving franchisee: ${err.message}`, 'error');
-      console.error('Failed to save franchisee to server:', err.message);
-    }
-  };
-
-  const addBdAgent = async (bd) => {
-    const newBd = {
-      ...bd,
-      id: `bd-${Date.now()}`,
-      leadsConverted: bd.leadsProgressed || 0,
-      status: 'Active'
-    };
-    setBdAgents((prev) => [...prev, newBd]);
-    try {
-      const res = await fetchWithApiKey(`${API_BASE_URL}/bd-agents`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newBd)
-      });
-      if (!res.ok) {
-        setBdAgents((prev) => prev.filter((b) => b.id !== newBd.id));
-        const errorData = await res.json().catch(() => ({}));
-        showToast(`Failed to save BD agent: ${errorData.error || `Server responded with ${res.status}`}`, 'error');
-      }
-    } catch (err) {
-      setBdAgents((prev) => prev.filter((b) => b.id !== newBd.id));
-      showToast(`Network error saving BD agent: ${err.message}`, 'error');
-      console.error('Failed to save BD agent to server:', err.message);
-    }
-  };
-
-  const updateBdAgent = async (id, updatedFields) => {
-    let oldAgent = null;
-    setBdAgents((prev) => {
-      oldAgent = prev.find((agent) => agent.id === id);
-      return prev.map((agent) => (agent.id === id ? { ...agent, ...updatedFields } : agent));
+  // Reset all filters to defaults
+  const resetFilters = useCallback(() => {
+    setFilters({
+      groupBy: 'none',
+      whoType: 'all',
+      whoId: 'all',
+      period: 'FY 2026-27',
+      timePerspective: 'all',
+      dealStages: [],
+      paymentStates: [],
+      riskFilters: [],
+      tl: [],
+      bd: [],
+      franchise: [],
+      industry: [],
+      subIndustry: [],
+      city: [],
+      company: [],
+      category: [],
+      paymentMode: [],
+      search: '',
+      types: [],
+      subCategory: [],
+      amountMin: '',
+      amountMax: '',
+      dateFrom: '',
+      dateTo: '',
+      actualProjected: 'all',
+      status: []
     });
-    try {
-      const res = await fetchWithApiKey(`${API_BASE_URL}/bd-agents/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedFields)
-      });
-      if (!res.ok) {
-        if (oldAgent) {
-          setBdAgents((prev) => prev.map((agent) => (agent.id === id ? oldAgent : agent)));
-        }
-        const errorData = await res.json().catch(() => ({}));
-        showToast(`Failed to update BD agent: ${errorData.error || `Server responded with ${res.status}`}`, 'error');
+  }, []);
+
+  // Save current view
+  const saveCurrentView = useCallback((name) => {
+    if (!name || !name.trim()) return;
+    const newView = {
+      id: `view-${Date.now()}`,
+      name: name.trim(),
+      createdAt: new Date().toISOString(),
+      filters: { ...filters }
+    };
+    setSavedViews(prev => {
+      const updated = [newView, ...prev.filter(v => v.name !== name.trim())];
+      try {
+        localStorage.setItem(STORAGE_SAVED_VIEWS_KEY, JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed to save view to localStorage:', err);
       }
-    } catch (err) {
-      if (oldAgent) {
-        setBdAgents((prev) => prev.map((agent) => (agent.id === id ? oldAgent : agent)));
-      }
-      showToast(`Network error updating BD agent: ${err.message}`, 'error');
-      console.error('Failed to update BD agent on server:', err.message);
+      return updated;
+    });
+  }, [filters]);
+
+  // Apply saved view
+  const applySavedView = useCallback((view) => {
+    if (view && view.filters) {
+      setFilters({ ...view.filters });
     }
-  };
+  }, []);
 
-  const login = (role, userObj) => {
-    const session = { role, name: userObj?.name || 'User', details: userObj || {} };
-    setCurrentUser(session);
-    setUserRole(role);
-    localStorage.setItem('saarthi_current_user', JSON.stringify(session));
-  };
+  // Delete saved view
+  const deleteSavedView = useCallback((id) => {
+    setSavedViews(prev => {
+      const updated = prev.filter(v => v.id !== id);
+      try {
+        localStorage.setItem(STORAGE_SAVED_VIEWS_KEY, JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed to update saved views in localStorage:', err);
+      }
+      return updated;
+    });
+  }, []);
 
-  const logout = () => {
-    setCurrentUser(null);
-    setUserRole('admin');
-    localStorage.removeItem('saarthi_current_user');
-  };
+  // Dependent Filtering Options:
+  // 1. TL narrows BD
+  const availableBds = useMemo(() => {
+    if (!filters.tl || filters.tl.length === 0) {
+      return bdAgents;
+    }
+    // Filter BDs belonging to selected TLs
+    return bdAgents.filter(bd => {
+      const bdName = (bd.name || '').toLowerCase();
+      // Match from transactions or teamLeader mappings
+      const hasMatch = transactions.some(t => {
+        const matchesTl = filters.tl.some(selTl => (t.teamLeaderName || '').toLowerCase() === selTl.toLowerCase());
+        const matchesBd = (t.bdAgentName || t.bdMemberName || '').toLowerCase() === bdName;
+        return matchesTl && matchesBd;
+      });
+      return hasMatch;
+    });
+  }, [bdAgents, filters.tl, transactions]);
 
-  const contextValue = useMemo(() => ({
-    transactions,
-    moduleFilteredTransactions,
-    franchisees,
-    bdAgents,
-    teamLeaders,
-    budgets,
-    setBudgets,
-    selectedMonth,
-    setSelectedMonth,
-    selectedYear,
-    setSelectedYear,
-    userRole,
-    setUserRole,
-    currentUser,
-    login,
-    logout,
-    availableMonths,
-    availableYears,
-    activeModule,
-    setActiveModule,
-    dataSource,
-    dataState,
-    authError,
-    backendHealth,
-    connectionProgress,
-    endpointStatus,
-    lastSyncTimestamp,
-    timeAgo,
-    addTransaction,
-    deleteTransaction,
-    updateBudget,
-    addFranchisee,
-    addBdAgent,
-    updateBdAgent,
-    syncWithSaarthi,
-    fetchAllData,
-    currentCashBalance,
-    movingAvgBurn,
-    financeSummary,
-    setFinanceSummary,
-    isSidebarOpen,
-    setIsSidebarOpen,
-    toggleSidebar,
-    isLoadingData,
-    isBackgroundSyncing,
-    lastSyncedAt,
-    mlInsights,
-    setMlInsights,
-    isMlInsightsLoading,
-    fetchMlInsights,
-    showToast
-  }), [
-    transactions,
-    moduleFilteredTransactions,
-    franchisees,
-    bdAgents,
-    teamLeaders,
-    budgets,
-    financeSummary,
-    selectedMonth,
-    selectedYear,
-    userRole,
-    currentUser,
-    availableMonths,
-    availableYears,
-    activeModule,
-    dataSource,
-    dataState,
-    authError,
-    backendHealth,
-    connectionProgress,
-    endpointStatus,
-    lastSyncTimestamp,
-    timeAgo,
-    currentCashBalance,
-    movingAvgBurn,
-    isSidebarOpen,
-    isLoadingData,
-    isBackgroundSyncing,
-    lastSyncedAt,
-    mlInsights,
-    isMlInsightsLoading,
-    toast
-  ]);
+  // 2. City narrows Franchise
+  const availableFranchisees = useMemo(() => {
+    if (!filters.city || filters.city.length === 0) {
+      return franchisees;
+    }
+    return franchisees.filter(f => filters.city.some(c => (f.city || '').toLowerCase() === c.toLowerCase()));
+  }, [franchisees, filters.city]);
+
+  // 3. Compute distinct options and counts across transactions
+  const filterOptions = useMemo(() => {
+    const counts = {
+      industries: {},
+      cities: {},
+      companies: {},
+      categories: {},
+      paymentModes: {},
+      tls: {},
+      bds: {},
+      franchises: {},
+      dealStages: { Progressed: 0, Closed: 0, Cancelled: 0 },
+      paymentStates: { Received: 0, Outstanding: 0, 'Credit note': 0 },
+      risk: { highRisk: 0, stale: 0 }
+    };
+
+    transactions.forEach(t => {
+      const ind = t.industry || 'Other Services';
+      counts.industries[ind] = (counts.industries[ind] || 0) + 1;
+
+      const city = t.city || 'Unassigned';
+      counts.cities[city] = (counts.cities[city] || 0) + 1;
+
+      const comp = t.companyName || 'Standard Client';
+      counts.companies[comp] = (counts.companies[comp] || 0) + 1;
+
+      const cat = t.category || 'General';
+      counts.categories[cat] = (counts.categories[cat] || 0) + 1;
+
+      const mode = t.paymentMethod || t.paymentMode || 'Bank Transfer';
+      counts.paymentModes[mode] = (counts.paymentModes[mode] || 0) + 1;
+
+      if (t.teamLeaderName) {
+        counts.tls[t.teamLeaderName] = (counts.tls[t.teamLeaderName] || 0) + 1;
+      }
+      const bd = t.bdAgentName || t.bdMemberName;
+      if (bd && !bd.toLowerCase().includes('head - office')) {
+        counts.bds[bd] = (counts.bds[bd] || 0) + 1;
+      }
+      if (t.franchiseeName) {
+        counts.franchises[t.franchiseeName] = (counts.franchises[t.franchiseeName] || 0) + 1;
+      }
+
+      // Deal stages
+      const stage = classifyEnquiryStatus(t.status || t.info);
+      if (stage === 'INVOICED') counts.dealStages.Closed += 1;
+      else if (stage === 'PROGRESSED') counts.dealStages.Progressed += 1;
+      else if (stage === 'CANCELLED') counts.dealStages.Cancelled += 1;
+
+      // Payment states
+      const pay = classifyPaymentState(t);
+      if (pay === 'RECEIVED') counts.paymentStates.Received += 1;
+      else if (pay === 'OUTSTANDING') counts.paymentStates.Outstanding += 1;
+      else if (pay === 'CREDIT_NOTE') counts.paymentStates['Credit note'] += 1;
+
+      // Risk
+      if (t.isRisk || t.risk_score > 70) counts.risk.highRisk += 1;
+      if (t.days_outstanding > 365 || t.age_days > 365) counts.risk.stale += 1;
+    });
+
+    return counts;
+  }, [transactions]);
+
+  // Master Transaction Filter Function:
+  // Takes any transaction array and applies all active filters
+  const applyAllFilters = useCallback((rawTxs = transactions) => {
+    if (!Array.isArray(rawTxs)) return [];
+
+    return rawTxs.filter(t => {
+      // 1. Search Query
+      if (filters.search) {
+        const q = filters.search.toLowerCase().trim();
+        const matchesSearch =
+          (t.title && t.title.toLowerCase().includes(q)) ||
+          (t.companyName && t.companyName.toLowerCase().includes(q)) ||
+          (t.candidateName && t.candidateName.toLowerCase().includes(q)) ||
+          (t.referenceId && String(t.referenceId).toLowerCase().includes(q)) ||
+          (t.bdAgentName && t.bdAgentName.toLowerCase().includes(q)) ||
+          (t.franchiseeName && t.franchiseeName.toLowerCase().includes(q));
+        if (!matchesSearch) return false;
+      }
+
+      // 2. Who Filter
+      if (filters.whoType === 'bd' && filters.whoId !== 'all') {
+        const bdMatch = (t.bdAgentName || t.bdMemberName || '').toLowerCase() === filters.whoId.toLowerCase();
+        if (!bdMatch) return false;
+      } else if (filters.whoType === 'tl' && filters.whoId !== 'all') {
+        const tlMatch = (t.teamLeaderName || '').toLowerCase() === filters.whoId.toLowerCase();
+        if (!tlMatch) return false;
+      } else if (filters.whoType === 'franchise' && filters.whoId !== 'all') {
+        const franMatch = (t.franchiseeName || '').toLowerCase() === filters.whoId.toLowerCase();
+        if (!franMatch) return false;
+      }
+
+      // 3. Period Filter
+      if (filters.period && filters.period !== 'all') {
+        const txDate = t.date ? new Date(t.date) : null;
+        if (filters.period.startsWith('FY')) {
+          // Standard FY check (April 1 to March 31)
+          if (txDate && !isNaN(txDate.getTime())) {
+            const year = txDate.getFullYear();
+            const month = txDate.getMonth() + 1; // 1-12
+            const txFyStart = month >= 4 ? year : year - 1;
+            const targetFyStart = parseInt(filters.period.split(' ')[1]?.substring(0, 4) || '2026', 10);
+            if (txFyStart !== targetFyStart) return false;
+          }
+        } else if (filters.period === 'last-6m') {
+          const sixMonthsAgo = new Date();
+          sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+          if (txDate && txDate < sixMonthsAgo) return false;
+        } else if (filters.period === 'last-12m') {
+          const twelveMonthsAgo = new Date();
+          twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+          if (txDate && txDate < twelveMonthsAgo) return false;
+        } else if (filters.period === 'last-24m') {
+          const twentyFourMonthsAgo = new Date();
+          twentyFourMonthsAgo.setMonth(twentyFourMonthsAgo.getMonth() - 24);
+          if (txDate && txDate < twentyFourMonthsAgo) return false;
+        }
+      }
+
+      // 4. Time Perspective [Past | Now | Future | All]
+      if (filters.timePerspective && filters.timePerspective !== 'all') {
+        const now = new Date();
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const txMonth = (t.date || '').substring(0, 7);
+
+        if (filters.timePerspective === 'past' && txMonth >= currentMonth) return false;
+        if (filters.timePerspective === 'now' && txMonth !== currentMonth) return false;
+        if (filters.timePerspective === 'future' && txMonth <= currentMonth) return false;
+      }
+
+      // 5. Deal Stages (Progressed, Closed, Cancelled)
+      if (filters.dealStages?.length > 0) {
+        const stage = classifyEnquiryStatus(t.status || t.info);
+        const matchesStage = filters.dealStages.some(s => {
+          if (s === 'Closed' && stage === 'INVOICED') return true;
+          if (s === 'Progressed' && stage === 'PROGRESSED') return true;
+          if (s === 'Cancelled' && stage === 'CANCELLED') return true;
+          return false;
+        });
+        if (!matchesStage) return false;
+      }
+
+      // 6. Payment States (Received, Outstanding, Credit note)
+      if (filters.paymentStates?.length > 0) {
+        const pay = classifyPaymentState(t);
+        const matchesPay = filters.paymentStates.some(p => {
+          if (p === 'Received' && pay === 'RECEIVED') return true;
+          if (p === 'Outstanding' && pay === 'OUTSTANDING') return true;
+          if (p === 'Credit note' && pay === 'CREDIT_NOTE') return true;
+          return false;
+        });
+        if (!matchesPay) return false;
+      }
+
+      // 7. Risk Filters
+      if (filters.riskFilters?.length > 0) {
+        const matchesRisk = filters.riskFilters.every(r => {
+          if (r === 'highRisk') return t.isRisk || t.risk_score > 70;
+          if (r === 'stale') return t.days_outstanding > 365 || t.age_days > 365;
+          return true;
+        });
+        if (!matchesRisk) return false;
+      }
+
+      // 8. Multi-select Specific Filters
+      if (filters.tl?.length && !filters.tl.includes(t.teamLeaderName)) return false;
+      if (filters.bd?.length && !filters.bd.includes(t.bdAgentName || t.bdMemberName)) return false;
+      if (filters.franchise?.length && !filters.franchise.includes(t.franchiseeName)) return false;
+      if (filters.industry?.length && !filters.industry.includes(t.industry)) return false;
+      if (filters.city?.length && !filters.city.includes(t.city)) return false;
+      if (filters.company?.length && !filters.company.includes(t.companyName)) return false;
+      if (filters.category?.length && !filters.category.includes(t.category)) return false;
+      if (filters.paymentMode?.length && !filters.paymentMode.includes(t.paymentMethod || t.paymentMode)) return false;
+
+      return true;
+    });
+  }, [filters, transactions]);
+
+  // Filtered transactions memoized
+  const filteredTransactions = useMemo(() => {
+    return applyAllFilters(transactions);
+  }, [applyAllFilters, transactions]);
+
+  // Active filter count and tag list for easy chips and ✕ dismissal
+  const activeFilterTags = useMemo(() => {
+    const tags = [];
+    if (filters.whoType !== 'all') tags.push({ key: 'whoType', label: `Type: ${filters.whoType.toUpperCase()}` });
+    if (filters.whoId !== 'all') tags.push({ key: 'whoId', label: `Who: ${filters.whoId}` });
+    if (filters.period !== 'FY 2026-27' && filters.period !== 'all') tags.push({ key: 'period', label: `Period: ${filters.period}` });
+    if (filters.timePerspective !== 'all') tags.push({ key: 'timePerspective', label: `Time: ${filters.timePerspective}` });
+
+    filters.dealStages.forEach(s => tags.push({ key: 'dealStages', item: s, label: `Stage: ${s}` }));
+    filters.paymentStates.forEach(p => tags.push({ key: 'paymentStates', item: p, label: `Payment: ${p}` }));
+    filters.riskFilters.forEach(r => tags.push({ key: 'riskFilters', item: r, label: `Risk: ${r === 'highRisk' ? 'High Risk' : 'Stale >365d'}` }));
+    filters.tl.forEach(v => tags.push({ key: 'tl', item: v, label: `TL: ${v}` }));
+    filters.bd.forEach(v => tags.push({ key: 'bd', item: v, label: `BD: ${v}` }));
+    filters.franchise.forEach(v => tags.push({ key: 'franchise', item: v, label: `Franchise: ${v}` }));
+    filters.industry.forEach(v => tags.push({ key: 'industry', item: v, label: `Industry: ${v}` }));
+    filters.city.forEach(v => tags.push({ key: 'city', item: v, label: `City: ${v}` }));
+    filters.company.forEach(v => tags.push({ key: 'company', item: v, label: `Client: ${v}` }));
+    filters.category.forEach(v => tags.push({ key: 'category', item: v, label: `Category: ${v}` }));
+    filters.paymentMode.forEach(v => tags.push({ key: 'paymentMode', item: v, label: `Mode: ${v}` }));
+    if (filters.types?.length) filters.types.forEach(v => tags.push({ key: 'types', item: v, label: `Type: ${v}` }));
+    if (filters.subCategory?.length) filters.subCategory.forEach(v => tags.push({ key: 'subCategory', item: v, label: `Sub-cat: ${v}` }));
+    if (filters.amountMin) tags.push({ key: 'amountMin', label: `Min ₹${Number(filters.amountMin).toLocaleString()}` });
+    if (filters.amountMax) tags.push({ key: 'amountMax', label: `Max ₹${Number(filters.amountMax).toLocaleString()}` });
+    if (filters.dateFrom) tags.push({ key: 'dateFrom', label: `From: ${filters.dateFrom}` });
+    if (filters.dateTo) tags.push({ key: 'dateTo', label: `To: ${filters.dateTo}` });
+    if (filters.actualProjected && filters.actualProjected !== 'all') tags.push({ key: 'actualProjected', label: `Timing: ${filters.actualProjected === 'actual' ? 'Actual' : 'Projected'}` });
+    if (filters.status?.length) filters.status.forEach(v => tags.push({ key: 'status', item: v, label: `Status: ${v}` }));
+    if (filters.search) tags.push({ key: 'search', label: `Search: "${filters.search}"` });
+
+    return tags;
+  }, [filters]);
+
+  const removeFilterTag = useCallback((tag) => {
+    if (tag.item) {
+      toggleArrayItem(tag.key, tag.item);
+    } else if (tag.key === 'whoType' || tag.key === 'whoId') {
+      setFilters(prev => ({ ...prev, [tag.key]: 'all' }));
+    } else if (tag.key === 'period') {
+      setFilters(prev => ({ ...prev, period: 'FY 2026-27' }));
+    } else if (tag.key === 'timePerspective') {
+      setFilters(prev => ({ ...prev, timePerspective: 'all' }));
+    } else if (tag.key === 'search') {
+      setFilters(prev => ({ ...prev, search: '' }));
+    } else if (tag.key === 'amountMin' || tag.key === 'amountMax' || tag.key === 'dateFrom' || tag.key === 'dateTo') {
+      setFilters(prev => ({ ...prev, [tag.key]: '' }));
+    } else if (tag.key === 'actualProjected') {
+      setFilters(prev => ({ ...prev, actualProjected: 'all' }));
+    }
+  }, [toggleArrayItem]);
+
+  // Generate metadata header string for report exports
+  const getFilterReportHeader = useCallback(() => {
+    const parts = [];
+    if (filters.whoId !== 'all') parts.push(`Who: ${filters.whoId}`);
+    if (filters.period) parts.push(`Period: ${filters.period}`);
+    if (filters.industry?.length) parts.push(`Industry: ${filters.industry.join(', ')}`);
+    if (filters.city?.length) parts.push(`City: ${filters.city.join(', ')}`);
+    if (filters.dealStages?.length) parts.push(`Stage: ${filters.dealStages.join(', ')}`);
+    if (filters.paymentStates?.length) parts.push(`Payment: ${filters.paymentStates.join(', ')}`);
+    const dateStr = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    return `${parts.join(' · ')} · Generated on ${dateStr}`;
+  }, [filters]);
 
   return (
-    <FinanceContext.Provider value={contextValue}>
+    <FilterContext.Provider value={{
+      filters,
+      setFilters,
+      setFilterKey,
+      toggleArrayItem,
+      resetFilters,
+      savedViews,
+      saveCurrentView,
+      applySavedView,
+      deleteSavedView,
+      availableBds,
+      availableFranchisees,
+      filterOptions,
+      filteredTransactions,
+      applyAllFilters,
+      activeFilterTags,
+      removeFilterTag,
+      getFilterReportHeader
+    }}>
       {children}
-      {toast && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '24px',
-            right: '24px',
-            backgroundColor: toast.type === 'error' ? '#1e1b1b' : '#13231b',
-            border: toast.type === 'error' ? '1.5px solid rgba(239, 68, 68, 0.4)' : '1.5px solid rgba(16, 185, 129, 0.4)',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-            borderRadius: '8px',
-            padding: '14px 20px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            zIndex: 9999,
-            color: toast.type === 'error' ? '#fca5a5' : '#86efac',
-            fontSize: '0.875rem',
-            fontWeight: '500',
-            animation: 'fadeIn 0.2s ease-in-out'
-          }}
-        >
-          <span>{toast.message}</span>
-        </div>
-      )}
-    </FinanceContext.Provider>
+    </FilterContext.Provider>
   );
-};
+}
+

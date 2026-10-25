@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { useFilters } from '../context/FilterContext';
+import React, { useContext, useMemo } from 'react';
+import { FilterContext } from '../context/FilterContext';
 import { formatCurrency, formatLakhs } from '../utils/formatters';
 import { getTransactionShares } from '../config/financeConfig';
 import { classifyEnquiryStatus } from '../utils/statusMapping';
@@ -13,7 +13,7 @@ import InfoTip from './InfoTip';
  * Clicking any industry row immediately applies it to the active FilterBar.
  */
 export default function IndustryBreakdownTable({ transactions: propTxs, onIndustryClick }) {
-  const { filteredTransactions, filters, setFilterKey } = useFilters();
+  const { filteredTransactions, filters, setFilterKey } = useContext(FilterContext);
 
   const dataToUse = propTxs || filteredTransactions;
 

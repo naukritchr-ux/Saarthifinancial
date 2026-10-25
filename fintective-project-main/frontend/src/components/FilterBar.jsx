@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useContext } from 'react';
-import { useFilters } from '../context/FilterContext';
+import { FilterContext } from '../context/FilterContext';
 import { FinanceContext } from '../context/FinanceContext';
 import {
   Filter,
@@ -77,7 +77,7 @@ export default function FilterBar({
     activeFilterTags,
     removeFilterTag,
     getFilterReportHeader
-  } = useFilters();
+  } = useContext(FilterContext);
 
   const { teamLeaders = [] } = useContext(FinanceContext);
 
