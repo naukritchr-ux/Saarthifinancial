@@ -22,7 +22,7 @@ export function createApiTransport({apiKey = '', fetchImpl = (...args) => fetch(
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), diagnose = () => {}} = {}) {
   const activeGets = new Map();
   async function perform(url, options) {
-    const {retries, timeoutMs = 30000, retryDelayMs = 750, signal, ...fetchOptions} = options;
+    const {retries, timeoutMs = 60000, retryDelayMs = 750, signal, ...fetchOptions} = options;
     const method = (options.method || 'GET').toUpperCase();
     const attempts = Math.max(1, Math.min(4, Number(retries) || (method === 'GET' ? 2 : 1)));
     const headers = new Headers(options.headers || {});

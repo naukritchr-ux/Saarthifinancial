@@ -418,10 +418,16 @@ export const FinanceProvider = ({ children }) => {
             }
           }));
           try {
-            const serialized = JSON.stringify(value);
-            sessionStorage.setItem(storageKeys[key], serialized);
-            localStorage.setItem(storageKeys[key], serialized);
-            if (key === 'transactions') localStorage.setItem('fintective_tx_cache_version', TX_CACHE_VERSION);
+            let toStore = value;
+            if (key === 'transactions' && Array.isArray(value) && value.length > 2500) {
+              toStore = value.slice(-2500);
+            }
+            const serialized = JSON.stringify(toStore);
+            try { sessionStorage.setItem(storageKeys[key], serialized); } catch {}
+            try { localStorage.setItem(storageKeys[key], serialized); } catch {}
+            if (key === 'transactions') {
+              try { localStorage.setItem('fintective_tx_cache_version', TX_CACHE_VERSION); } catch {}
+            }
           } catch { /* Storage limits must not discard a successful network result. */ }
           if (key === 'transactions') {
             setDataSource('backend');
@@ -479,7 +485,11 @@ export const FinanceProvider = ({ children }) => {
       return false;
     } catch (error) {
       setAuthError(error.message || 'Unable to load finance data.');
-      setDataState('offline');
+      if (transactions && transactions.length > 0) {
+        setDataState('cached');
+      } else {
+        setDataState('offline');
+      }
       return false;
     } finally {
       setIsLoadingData(false);
