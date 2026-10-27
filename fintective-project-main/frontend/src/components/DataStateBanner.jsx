@@ -59,8 +59,12 @@ export const DataStateBanner = () => {
           border: '#fcd34d',
           text: '#92400e',
           icon: <Clock size={18} color="#d97706" />,
-          title: 'Showing Saved Data (Backend Offline)',
-          description: `Showing saved records from ${lastSyncedAt || 'a previous sync'} while the connection is unavailable. These records may be out of date.`,
+          title: authError && authError.toLowerCase().includes('suspended')
+            ? 'Backend Suspended on Render'
+            : 'Showing Saved Data (Backend Offline)',
+          description: authError && authError.toLowerCase().includes('suspended')
+            ? 'The Render web service was suspended by its owner. Please open dashboard.render.com and click "Resume Service" to bring it online.'
+            : `Showing saved records from ${lastSyncedAt || 'a previous sync'} while the connection is unavailable. These records may be out of date.`,
           actionText: 'Retry Connection'
         };
 

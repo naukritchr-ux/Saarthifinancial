@@ -46,6 +46,19 @@ export function createApiTransport({apiKey = '', fetchImpl = (...args) => fetch(
         }
         if (response.ok && !html) return response;
         if (response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status) && !html) return response;
+        if (response.status === 503 && html) {
+          try {
+            const bodyText = await response.clone().text();
+            if (bodyText.toLowerCase().includes('suspended')) {
+              const error = new Error('Render backend is suspended. Please resume it in your Render dashboard (dashboard.render.com).');
+              error.status = 503;
+              error.isSuspended = true;
+              throw error;
+            }
+          } catch (e) {
+            if (e.isSuspended) throw e;
+          }
+        }
         const error = new Error(html && response.status < 500
           ? 'Finance API returned a webpage instead of data. Check the deployed API address and routing.'
           : `Finance API temporarily unavailable (HTTP ${response.status}). Please retry.`);
