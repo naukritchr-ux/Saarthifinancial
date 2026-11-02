@@ -524,34 +524,51 @@
   color: var(--text-muted, #6b7268);
 }
 
-/* --- Slide-in Right Drawer --- */
+/* --- Centered Modal (in middle instead of side drawer) --- */
 .tl-drawer-backdrop {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(2px);
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(4px);
   z-index: 1000;
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  animation: tlModalFadeIn 0.2s ease;
+}
+
+@keyframes tlModalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .tl-drawer {
-  width: 540px;
+  width: 780px;
   max-width: 95vw;
-  height: 100%;
+  max-height: 88vh;
+  height: auto;
   background: #ffffff;
-  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+  border-radius: 14px;
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.25);
   display: flex;
   flex-direction: column;
-  animation: slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+  animation: tlModalZoomIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes slideInRight {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
+@keyframes tlModalZoomIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .tl-drawer-header {

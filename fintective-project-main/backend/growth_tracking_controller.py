@@ -2985,15 +2985,16 @@ def _fetch_entity_portfolio(cursor, entity_type, entity_id_or_name, start_date=N
             franchisee_map[fname]['received'] += eff_amt
             franchisee_map[fname]['received_count'] += 1
             franchisee_map[fname]['deals_count'] += 1
-            franchisee_map[fname]['received_items'].append({
-                'enquiry_id': r['enquiry_id'],
-                'company_name': r.get('company_name') or 'Corporate Client',
-                'position_name': r.get('position_name') or 'Executive Placement',
-                'bill_number': r.get('bill_number') or f"INV-{r['enquiry_id']}",
-                'bill_date': str(r.get('bill_date') or r.get('enquiry_date') or '')[:10],
-                'amount': eff_amt,
-                'status': st
-            })
+            if len(franchisee_map[fname]['received_items']) < 30:
+                franchisee_map[fname]['received_items'].append({
+                    'enquiry_id': r['enquiry_id'],
+                    'company_name': r.get('company_name') or 'Corporate Client',
+                    'position_name': r.get('position_name') or 'Executive Placement',
+                    'bill_number': r.get('bill_number') or f"INV-{r['enquiry_id']}",
+                    'bill_date': str(r.get('bill_date') or r.get('enquiry_date') or '')[:10],
+                    'amount': eff_amt,
+                    'status': st
+                })
 
         elif st == 'credit_note':
             franchisee_map[fname]['credit_notes'] += eff_amt
@@ -3008,21 +3009,24 @@ def _fetch_entity_portfolio(cursor, entity_type, entity_id_or_name, start_date=N
                 'amount': eff_amt,
                 'reason': 'Client fee reversal / replacement credit adjustment'
             }
-            franchisee_map[fname]['credit_note_items'].append(cn_obj)
-            credit_note_items.append(cn_obj)
+            if len(franchisee_map[fname]['credit_note_items']) < 30:
+                franchisee_map[fname]['credit_note_items'].append(cn_obj)
+            if len(credit_note_items) < 100:
+                credit_note_items.append(cn_obj)
 
         elif st in ('cancelled', 'offered_and_rejected'):
             franchisee_map[fname]['cancelled'] += eff_amt
             franchisee_map[fname]['cancelled_count'] += 1
             franchisee_map[fname]['deals_count'] += 1
-            franchisee_map[fname]['cancelled_items'].append({
-                'enquiry_id': r['enquiry_id'],
-                'company_name': r.get('company_name') or 'Client Candidate',
-                'position_name': r.get('position_name') or 'Placement Request',
-                'date': str(r.get('bill_date') or r.get('enquiry_date') or '')[:10],
-                'amount': eff_amt,
-                'status': st
-            })
+            if len(franchisee_map[fname]['cancelled_items']) < 30:
+                franchisee_map[fname]['cancelled_items'].append({
+                    'enquiry_id': r['enquiry_id'],
+                    'company_name': r.get('company_name') or 'Client Candidate',
+                    'position_name': r.get('position_name') or 'Placement Request',
+                    'date': str(r.get('bill_date') or r.get('enquiry_date') or '')[:10],
+                    'amount': eff_amt,
+                    'status': st
+                })
 
         elif st == 'internally_closed':
             # Excluded from commercial Gross; tracked as admin audit note
@@ -3033,14 +3037,15 @@ def _fetch_entity_portfolio(cursor, entity_type, entity_id_or_name, start_date=N
             franchisee_map[fname]['outstanding'] += eff_amt
             franchisee_map[fname]['outstanding_count'] += 1
             franchisee_map[fname]['deals_count'] += 1
-            franchisee_map[fname]['outstanding_items'].append({
-                'enquiry_id': r['enquiry_id'],
-                'company_name': r.get('company_name') or 'Client Candidate',
-                'position_name': r.get('position_name') or 'Executive Placement',
-                'amount': eff_amt,
-                'status': st,
-                'days_outstanding': days
-            })
+            if len(franchisee_map[fname]['outstanding_items']) < 30:
+                franchisee_map[fname]['outstanding_items'].append({
+                    'enquiry_id': r['enquiry_id'],
+                    'company_name': r.get('company_name') or 'Client Candidate',
+                    'position_name': r.get('position_name') or 'Executive Placement',
+                    'amount': eff_amt,
+                    'status': st,
+                    'days_outstanding': days
+                })
 
         # Track monthly time series
         edate = r.get('bill_date') or r.get('enquiry_date')
@@ -3076,6 +3081,30 @@ def _fetch_entity_portfolio(cursor, entity_type, entity_id_or_name, start_date=N
     tot_admin_closures_cnt = 0
     tot_expected_collectible = 0.0
 
+    # Pre-fetch all franchisee track records in a single batch query to eliminate N+1 queries and memory spikes on Render
+    fran_track_records = {}
+    if franchisee_map:
+        try:
+            cursor.execute("""
+                SELECT 
+                    LOWER(TRIM(e.franchiseeName)) AS fname,
+                    SUM(CASE WHEN e.enquiryStatus IN ('closed', 'offered_and_accepted', 'invoiced') THEN 1 ELSE 0 END) as rec_cnt,
+                    SUM(CASE WHEN e.enquiryStatus IN ('cancelled', 'offered_and_rejected') THEN 1 ELSE 0 END) as canc_cnt
+                FROM enquiries e
+                WHERE e.franchiseeName IS NOT NULL AND TRIM(e.franchiseeName) != ''
+                  AND e.created_at >= DATE_SUB(CURDATE(), INTERVAL %s MONTH)
+                GROUP BY LOWER(TRIM(e.franchiseeName))
+            """, [lookback_months])
+            for brow in cursor.fetchall():
+                bfn = str(brow['fname'] or '').strip()
+                br_c = int(brow['rec_cnt'] or 0)
+                bc_c = int(brow['canc_cnt'] or 0)
+                btot = br_c + bc_c
+                brate = (round((br_c / btot) * 100.0, 2), btot) if btot >= 3 else (70.0, btot)
+                fran_track_records[bfn] = brate
+        except Exception as b_err:
+            print(f"[batch_fran_track error]: {b_err}")
+
     for fname, f in franchisee_map.items():
         # Commercial Gross = Received + Outstanding + Cancelled - CreditNotes
         f_gross = round(f['received'] + f['outstanding'] + f['cancelled'] - f['credit_notes'], 2)
@@ -3088,8 +3117,8 @@ def _fetch_entity_portfolio(cursor, entity_type, entity_id_or_name, start_date=N
         rec_pct = round((f_received / f_gross * 100.0) if f_gross > 0 else 0.0, 1)
         canc_pct = round((f_cancelled / f_gross * 100.0) if f_gross > 0 else 0.0, 1)
 
-        # Franchisee Track Record
-        fran_conv_rate, fran_resolved = _calc_franchisee_track_record(cursor, fname, lookback_months)
+        # Franchisee Track Record (instant lookup from pre-fetched map)
+        fran_conv_rate, fran_resolved = fran_track_records.get(fname.strip().lower(), (70.0, 0))
 
         # Evaluate Collection Risk for Outstanding items
         if f_outstanding > 0 and f['outstanding_items']:
