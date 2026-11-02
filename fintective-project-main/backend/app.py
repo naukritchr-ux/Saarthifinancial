@@ -135,6 +135,16 @@ _sync_debug_cache_time = 0
 _sync_debug_lock = threading.Lock()
 SYNC_DEBUG_CACHE_TTL_SECONDS = 60
 
+_action_items_cache = None
+_action_items_cache_time = 0
+_action_items_lock = threading.Lock()
+ACTION_ITEMS_CACHE_TTL_SECONDS = 90
+
+_predictions_cache = None
+_predictions_cache_time = 0
+_predictions_lock = threading.Lock()
+PREDICTIONS_CACHE_TTL_SECONDS = 90
+
 def _clear_sync_debug_cache():
     global _sync_debug_cache, _sync_debug_cache_time
     with _sync_debug_lock:
@@ -173,7 +183,7 @@ def get_data_version(force=False):
 
 def invalidate_all_caches():
     global _tx_cache, _tx_cache_time, _ml_insights_cache, _ml_insights_cache_time, _clients_cache, _clients_cache_time
-    global _last_exclusions_refresh_time
+    global _last_exclusions_refresh_time, _action_items_cache, _action_items_cache_time, _predictions_cache, _predictions_cache_time
     with _tx_cache_lock:
         _tx_cache = {}
         _tx_cache_time = 0
@@ -183,6 +193,12 @@ def invalidate_all_caches():
     with _clients_lock:
         _clients_cache = None
         _clients_cache_time = 0
+    with _action_items_lock:
+        _action_items_cache = None
+        _action_items_cache_time = 0
+    with _predictions_lock:
+        _predictions_cache = None
+        _predictions_cache_time = 0
     _clear_sync_debug_cache()
     # Invalidation clears memory only. Rebuilding all DB metadata synchronously
     # here made unrelated tabs wait behind a full enquiry/invoice scan.
@@ -1038,6 +1054,8 @@ def get_transactions():
             elapsed_ms = round((time.time() - t0) * 1000)
             print(f"[Transactions API] Cache MISS - assembled {len(filtered_result)} rows from database in {elapsed_ms}ms (cached with TTL {TX_CACHE_TTL_SECONDS}s)")
             with _tx_cache_lock:
+                if len(_tx_cache) >= 5:
+                    _tx_cache.clear()
                 _tx_cache[cache_key] = filtered_result
                 _tx_cache_time = time.time()
             resp = jsonify(filtered_result)
@@ -2417,8 +2435,70 @@ def get_bd_enquiry_status():
     finally:
         conn.close()
 
+# Shared ML artifacts singleton cache to prevent repeated 50MB disk load & memory churn on every HTTP request
+_ML_ARTIFACTS_CACHE = None
+_ML_ARTIFACTS_LOCK = threading.Lock()
+
+def _get_ml_artifacts():
+    global _ML_ARTIFACTS_CACHE
+    with _ML_ARTIFACTS_LOCK:
+        if _ML_ARTIFACTS_CACHE is not None:
+            return _ML_ARTIFACTS_CACHE
+        try:
+            import joblib
+            backend_dir = os.path.dirname(os.path.abspath(__file__))
+            models_path = os.path.join(backend_dir, 'models')
+            artifacts = {
+                'payment_pending_model': None,
+                'velocity_model': None,
+                'leakage_model': None,
+                'le_ind': None,
+                'le_fee': None,
+                'le_bd': None,
+                'le_tl': None,
+                'fran_freq_map': {},
+                'comp_freq_map': {}
+            }
+            if os.path.exists(models_path):
+                def _safe_load(filename):
+                    filepath = os.path.join(models_path, filename)
+                    if os.path.exists(filepath):
+                        return joblib.load(filepath)
+                    return None
+                artifacts['payment_pending_model'] = _safe_load('payment_pending_model.joblib')
+                artifacts['velocity_model'] = _safe_load('velocity_model.joblib')
+                artifacts['leakage_model'] = _safe_load('leakage_model.joblib')
+                artifacts['le_ind'] = _safe_load('le_industry.joblib')
+                artifacts['le_fee'] = _safe_load('le_feeband.joblib')
+                artifacts['le_bd'] = _safe_load('le_bd.joblib')
+                artifacts['le_tl'] = _safe_load('le_teamlead.joblib')
+                artifacts['fran_freq_map'] = _safe_load('franchisee_freq_map.joblib') or {}
+                artifacts['comp_freq_map'] = _safe_load('company_freq_map.joblib') or {}
+            _ML_ARTIFACTS_CACHE = artifacts
+            print("[ML Artifacts] Scikit-learn models and encoders cached in memory (singleton).")
+        except Exception as err:
+            print("[ML Artifacts] Warning: could not load ML artifacts:", str(err))
+            _ML_ARTIFACTS_CACHE = {
+                'payment_pending_model': None,
+                'velocity_model': None,
+                'leakage_model': None,
+                'le_ind': None,
+                'le_fee': None,
+                'le_bd': None,
+                'le_tl': None,
+                'fran_freq_map': {},
+                'comp_freq_map': {}
+            }
+        return _ML_ARTIFACTS_CACHE
+
 @app.route('/api/finance/action-items', methods=['GET'])
 def get_action_items():
+    global _action_items_cache, _action_items_cache_time
+    now = time.time()
+    with _action_items_lock:
+        if _action_items_cache is not None and (now - _action_items_cache_time < ACTION_ITEMS_CACHE_TTL_SECONDS):
+            return jsonify(_action_items_cache)
+
     import warnings
     warnings.simplefilter('ignore', category=UserWarning)
     import csv
@@ -2503,22 +2583,16 @@ def get_action_items():
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            # Load payment pending model and encoders for scoring outstanding accounts
-            pending_model_loaded = False
-            try:
-                import joblib
-                backend_dir = os.path.dirname(os.path.abspath(__file__))
-                models_path = os.path.join(backend_dir, 'models')
-                pending_model = joblib.load(os.path.join(models_path, 'payment_pending_model.joblib'))
-                le_ind = joblib.load(os.path.join(models_path, 'le_industry.joblib'))
-                le_fee = joblib.load(os.path.join(models_path, 'le_feeband.joblib'))
-                le_bd = joblib.load(os.path.join(models_path, 'le_bd.joblib'))
-                le_tl = joblib.load(os.path.join(models_path, 'le_teamlead.joblib'))
-                fran_freq_map = joblib.load(os.path.join(models_path, 'franchisee_freq_map.joblib'))
-                comp_freq_map = joblib.load(os.path.join(models_path, 'company_freq_map.joblib'))
-                pending_model_loaded = True
-            except Exception as err:
-                print("Payment pending model not loaded in action-items:", str(err))
+            # Load payment pending model and encoders for scoring outstanding accounts from shared singleton
+            ml_artifacts = _get_ml_artifacts()
+            pending_model = ml_artifacts.get('payment_pending_model')
+            le_ind = ml_artifacts.get('le_ind')
+            le_fee = ml_artifacts.get('le_fee')
+            le_bd = ml_artifacts.get('le_bd')
+            le_tl = ml_artifacts.get('le_tl')
+            fran_freq_map = ml_artifacts.get('fran_freq_map') or {}
+            comp_freq_map = ml_artifacts.get('comp_freq_map') or {}
+            pending_model_loaded = (pending_model is not None and le_ind is not None)
 
             # Get the max dateOfAllocation to serve as anchor for age calculation (same as training)
             as_of = datetime.date.today()
@@ -2771,13 +2845,17 @@ def get_action_items():
             }
         ]
         
-    return jsonify({
+    response_data = {
         'ghost_deals': ghost_deals,
         'duplicate_expenses': duplicate_expenses,
         'outstanding_receivables': outstanding_receivables,
         'over_collections': over_collections,
         'leak_leaderboard': leak_leaderboard
-    })
+    }
+    with _action_items_lock:
+        _action_items_cache = response_data
+        _action_items_cache_time = time.time()
+    return jsonify(response_data)
 
 @app.route('/api/finance/action-items/<id>/soft-delete', methods=['POST'])
 def soft_delete_action_item(id):
@@ -3214,85 +3292,8 @@ def update_budgets():
         conn.close()
 
 def _render_ml_plots_async(df_exp, anoms, df_fran, df_client):
-    """Render ML plots in a background thread to prevent blocking HTTP responses."""
-    try:
-        import matplotlib
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
-        import pandas as pd
-
-        # Chart 1: Expense Outliers
-        if df_exp is not None and len(df_exp) > 0:
-            plt.figure(figsize=(10, 4))
-            plt.scatter(df_exp.index, df_exp['amount'], color='#2563eb', alpha=0.6, label='Normal Expense')
-            if anoms:
-                df_anoms = pd.concat(anoms)
-                plt.scatter(df_anoms.index, df_anoms['amount'], color='#ef4444', s=80, edgecolors='black', zorder=5, label='Anomaly Outlier')
-            plt.title('Expenditure Amount Outlier Analysis')
-            plt.ylabel('Amount (Rs.)')
-            plt.xlabel('Record Index')
-            plt.legend()
-            plt.grid(True, linestyle='--', alpha=0.3)
-            plt.tight_layout()
-            plt.savefig('expense_anomalies.png')
-            plt.close()
-
-        # Chart 2: Franchise Clusters
-        if df_fran is not None and not df_fran.empty and len(df_fran) >= 3:
-            plt.figure(figsize=(8, 5))
-            colors = {
-                "High-Value Leaders (Top Performers)": "#10b981",
-                "Steady Partners (Consistent Output)": "#2563eb",
-                "At-Risk / Low-Activity Hubs": "#ef4444"
-            }
-            for seg, group in df_fran.groupby('segment'):
-                plt.scatter(
-                    group['successful_placements'], 
-                    group['total_billing_revenue'] / 100000, 
-                    label=seg, 
-                    color=colors.get(seg, '#94a3b8'),
-                    s=100, 
-                    alpha=0.8, 
-                    edgecolors='black'
-                )
-            plt.title('Franchise Hub Segments (K-Means)')
-            plt.xlabel('Successful Placements Count')
-            plt.ylabel('Total Billing Revenue (in Lakhs)')
-            plt.legend()
-            plt.grid(True, linestyle='--', alpha=0.3)
-            plt.tight_layout()
-            plt.savefig('franchise_segments.png')
-            plt.close()
-
-        # Chart 3: Client Clusters
-        if df_client is not None and not df_client.empty and len(df_client) >= 4:
-            plt.figure(figsize=(8, 5))
-            colors_c = {
-                "Elite Clients (High-Volume Placements & Billings)": "#10b981",
-                "Mid-Tier Consistent Buyers": "#2563eb",
-                "Niche Premium (High Average Salaries, Moderate Volume)": "#c084fc",
-                "Low-Frequency / Inactive Accounts": "#ef4444"
-            }
-            for seg, group in df_client.groupby('segment'):
-                plt.scatter(
-                    group['total_jobs'], 
-                    group['total_billing'] / 100000, 
-                    label=seg, 
-                    color=colors_c.get(seg, '#94a3b8'),
-                    s=80, 
-                    alpha=0.7, 
-                    edgecolors='black'
-                )
-            plt.title('Corporate Client Segments (K-Means)')
-            plt.xlabel('Total Allocated Jobs Count')
-            plt.ylabel('Total Billing Contribution (in Lakhs)')
-            plt.legend()
-            plt.grid(True, linestyle='--', alpha=0.3)
-            plt.tight_layout()
-            plt.savefig('client_segments.png')
-            plt.close()
-    except Exception as plot_err:
-        print("[ML Plotting] Warning: async plot render skipped:", str(plot_err))
+    """Render ML plots no-op: Charts are dynamically rendered in React client to conserve 512MB RAM."""
+    pass
 
 def compute_ml_insights(force=False):
     """Compute and cache ML predictive models (Isolation Forest + K-Means)."""
@@ -3576,12 +3577,13 @@ def compute_ml_insights(force=False):
                     'cluster': int(row['cluster'])
                 })
 
-        # Render visual plots asynchronously in background thread so JSON returns immediately
-        threading.Thread(
-            target=_render_ml_plots_async,
-            args=(df_exp.copy() if not df_exp.empty else None, anoms, df_fran.copy() if not df_fran.empty else None, df_client.copy() if not df_client.empty else None),
-            daemon=True
-        ).start()
+        # Free heavy DataFrame structures to minimize memory footprint in 512MB RAM container
+        try:
+            del df_exp, df_fran, df_client
+            import gc
+            gc.collect()
+        except Exception:
+            pass
 
         with _ml_insights_lock:
             _ml_insights_cache = insights
@@ -3619,28 +3621,26 @@ def get_ml_plot(filename):
 
 @app.route('/api/ml/active-predictions', methods=['GET'])
 def get_active_predictions():
+    global _predictions_cache, _predictions_cache_time
+    now = time.time()
+    with _predictions_lock:
+        if _predictions_cache is not None and (now - _predictions_cache_time < PREDICTIONS_CACHE_TTL_SECONDS):
+            return jsonify(_predictions_cache)
+
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # Load models and mappings
-        models_loaded = False
-        fran_freq_map = {}
-        comp_freq_map = {}
-        try:
-            import joblib
-            backend_dir = os.path.dirname(os.path.abspath(__file__))
-            models_path = os.path.join(backend_dir, 'models')
-            vel_model = joblib.load(os.path.join(models_path, 'velocity_model.joblib'))
-            leak_model = joblib.load(os.path.join(models_path, 'leakage_model.joblib'))
-            le_ind = joblib.load(os.path.join(models_path, 'le_industry.joblib'))
-            le_fee = joblib.load(os.path.join(models_path, 'le_feeband.joblib'))
-            le_bd = joblib.load(os.path.join(models_path, 'le_bd.joblib'))
-            le_tl = joblib.load(os.path.join(models_path, 'le_teamlead.joblib'))
-            fran_freq_map = joblib.load(os.path.join(models_path, 'franchisee_freq_map.joblib'))
-            comp_freq_map = joblib.load(os.path.join(models_path, 'company_freq_map.joblib'))
-            models_loaded = True
-        except Exception as err:
-            print("Models not trained yet, using baseline heuristic scoring:", str(err))
+        # Load models and mappings from shared singleton
+        ml_artifacts = _get_ml_artifacts()
+        vel_model = ml_artifacts.get('velocity_model')
+        leak_model = ml_artifacts.get('leakage_model')
+        le_ind = ml_artifacts.get('le_ind')
+        le_fee = ml_artifacts.get('le_fee')
+        le_bd = ml_artifacts.get('le_bd')
+        le_tl = ml_artifacts.get('le_tl')
+        fran_freq_map = ml_artifacts.get('fran_freq_map') or {}
+        comp_freq_map = ml_artifacts.get('comp_freq_map') or {}
+        models_loaded = (vel_model is not None and leak_model is not None and le_ind is not None)
 
         # Get the max dateOfAllocation to serve as anchor for age calculation (same as training)
         as_of = datetime.date.today()
@@ -3773,11 +3773,15 @@ def get_active_predictions():
 
         # Sort predictions by leakage risk descending
         predictions.sort(key=lambda x: x['leakage_risk'], reverse=True)
-        return jsonify({
+        response_data = {
             'success': True,
             'is_ml_active': models_loaded,
             'predictions': predictions
-        })
+        }
+        with _predictions_lock:
+            _predictions_cache = response_data
+            _predictions_cache_time = time.time()
+        return jsonify(response_data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:

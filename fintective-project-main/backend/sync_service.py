@@ -1238,6 +1238,12 @@ def sync_saarthi_all(existing_log_id=None):
             except Exception:
                 pass
 
+        try:
+            import gc
+            gc.collect()
+        except Exception:
+            pass
+
         stats["duration_seconds"] = (datetime.datetime.now() - start_time).total_seconds()
         stats["timestamp"] = datetime.datetime.now().isoformat()
         return stats

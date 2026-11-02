@@ -16,9 +16,10 @@ from finance_rules import (
 
 growth_tracking_bp = Blueprint("growth_tracking", __name__)
 
-# High-performance thread-safe in-memory cache system (TTL 180s)
+# High-performance thread-safe in-memory cache system (TTL 180s, bounded max 30 items)
 _RESPONSE_CACHE = {}
 _CACHE_LOCK = threading.Lock()
+MAX_RESPONSE_CACHE_SIZE = 30
 
 def _get_cached(key):
     with _CACHE_LOCK:
@@ -29,13 +30,26 @@ def _get_cached(key):
 
 def _set_cached(key, data, ttl_seconds=180):
     with _CACHE_LOCK:
-        _RESPONSE_CACHE[key] = (data, time.time() + ttl_seconds)
+        now = time.time()
+        # Prune expired entries to prevent memory leaks
+        if len(_RESPONSE_CACHE) >= MAX_RESPONSE_CACHE_SIZE:
+            expired_keys = [k for k, v in _RESPONSE_CACHE.items() if v[1] <= now]
+            for k in expired_keys:
+                _RESPONSE_CACHE.pop(k, None)
+            # If still exceeds max, drop the oldest 10 entries
+            if len(_RESPONSE_CACHE) >= MAX_RESPONSE_CACHE_SIZE:
+                oldest_keys = sorted(_RESPONSE_CACHE.keys(), key=lambda k: _RESPONSE_CACHE[k][1])[:10]
+                for k in oldest_keys:
+                    _RESPONSE_CACHE.pop(k, None)
+        _RESPONSE_CACHE[key] = (data, now + ttl_seconds)
 
 def _clear_cache_prefix(prefix=""):
-    global _RESPONSE_CACHE
+    global _RESPONSE_CACHE, _ENTITY_CONV_CACHE, _FRANCHISEE_TRACK_CACHE
     with _CACHE_LOCK:
         if not prefix:
             _RESPONSE_CACHE.clear()
+            _ENTITY_CONV_CACHE.clear()
+            _FRANCHISEE_TRACK_CACHE.clear()
         else:
             _RESPONSE_CACHE = {k: v for k, v in _RESPONSE_CACHE.items() if not k.startswith(prefix)}
 
@@ -2800,6 +2814,8 @@ def _calc_entity_conversion_rate(cursor, entity_col, aliases, lookback_months=12
             canc = int(row['cancelled_cnt'] or 0) if row else 0
             total_resolved = rec + canc
             res = (round((rec / total_resolved) * 100.0, 2), total_resolved) if total_resolved >= 5 else (70.0, total_resolved)
+            if len(_ENTITY_CONV_CACHE) >= 50:
+                _ENTITY_CONV_CACHE.clear()
             _ENTITY_CONV_CACHE[cache_k] = {'val': res, 'exp': now + 300}
             return res
         except Exception as e:
@@ -2837,6 +2853,8 @@ def _calc_entity_conversion_rate(cursor, entity_col, aliases, lookback_months=12
         total_resolved = rec + canc
 
         res = (round((rec / total_resolved) * 100.0, 2), total_resolved) if total_resolved >= 5 else (70.0, total_resolved)
+        if len(_ENTITY_CONV_CACHE) >= 50:
+            _ENTITY_CONV_CACHE.clear()
         _ENTITY_CONV_CACHE[cache_k] = {'val': res, 'exp': now + 300}
         return res
     except Exception as e:
@@ -2881,6 +2899,8 @@ def _calc_franchisee_track_record(cursor, franchisee_name, lookback_months=12):
         total_resolved = rec + canc
 
         res = (round((rec / total_resolved) * 100.0, 2), total_resolved) if total_resolved >= 3 else (70.0, total_resolved)
+        if len(_FRANCHISEE_TRACK_CACHE) >= 100:
+            _FRANCHISEE_TRACK_CACHE.clear()
         _FRANCHISEE_TRACK_CACHE[cache_k] = {'val': res, 'exp': now + 300}
         return res
     except Exception as e:

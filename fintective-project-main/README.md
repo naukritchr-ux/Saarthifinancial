@@ -50,14 +50,11 @@ Open the local address printed by Vite (typically [http://localhost:5173](http:/
 ## Production Deployment & Environment Configuration
 
 ### Backend (Render / Production)
-* **Production Command**: Run the Flask backend using Gunicorn:
+* **Production Command**: Run the Flask backend using Gunicorn with the optimized 512MB memory profile (`1` worker, `4` threads):
   ```bash
-  gunicorn app:app
+  gunicorn --config gunicorn.conf.py app:app
   ```
-  Or with workers:
-  ```bash
-  gunicorn -w 4 -b 0.0.0.0:$PORT app:app
-  ```
+  *(Never use `-w 4` on Render 512MB containers, as multiple worker processes duplicate Python heap memory and cause OOM crashes).*
 * **Environment Variables**:
   * `API_KEY`: Secret API key to authenticate all frontend and API client requests.
   * `ADMIN_API_KEY`: Admin-level secret API key required for sensitive operations (e.g., `/api/sync/prune`, `/api/sync/ghost-report`). Defaults to `API_KEY` if not set.
