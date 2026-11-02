@@ -339,6 +339,8 @@ function TLKpiRow({ totals = {}, openItemsCount = 0 }) {
 // 3. Collection Trend Chart Component (Left Column)
 // --------------------------------------------------------------------------
 function TLTrendChart({ monthlyTrend = [], isVisibleOnMobile, onToggleMobile }) {
+  const [hoveredIndex, setHoveredIndex] = useState(null);
+
   if (!monthlyTrend || monthlyTrend.length === 0) {
     return (
       <div className="tl-analytics-card">
@@ -353,21 +355,66 @@ function TLTrendChart({ monthlyTrend = [], isVisibleOnMobile, onToggleMobile }) 
   }
 
   const width = 560;
-  const height = 130;
-  const padX = 35;
-  const padY = 16;
-  const plotW = width - padX * 2;
-  const plotH = height - padY * 2;
+  const height = 142;
+  const padLeft = 52;
+  const padRight = 16;
+  const padTop = 14;
+  const padBottom = 22;
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
 
-  const maxVal = Math.max(
+  const rawMax = Math.max(
     ...monthlyTrend.map(d => Math.max(d.received || 0, d.outstanding || 0, d.cancelled || 0)),
     1000
-  ) * 1.15;
+  );
 
-  const getX = (idx) => padX + (idx / Math.max(1, monthlyTrend.length - 1)) * plotW;
-  const getY = (val) => padY + plotH - ((val || 0) / maxVal) * plotH;
+  const getNiceMax = (val) => {
+    if (val <= 0) return 100000;
+    if (val >= 10000000) {
+      const cr = val / 10000000;
+      const step = cr > 5 ? 1 : 0.5;
+      return Math.ceil(cr / step) * step * 10000000;
+    }
+    if (val >= 1000000) {
+      const l = val / 100000;
+      const step = l > 50 ? 10 : 5;
+      return Math.ceil(l / step) * step * 100000;
+    }
+    if (val >= 100000) {
+      const l = val / 100000;
+      const step = l > 5 ? 1 : 0.5;
+      return Math.ceil(l / step) * step * 100000;
+    }
+    if (val >= 10000) {
+      const k = val / 1000;
+      return Math.ceil(k / 10) * 10 * 1000;
+    }
+    return Math.ceil(val / 1000) * 1000;
+  };
 
-  const zeroY = padY + plotH;
+  const maxVal = getNiceMax(rawMax * 1.05);
+
+  const formatAxisTick = (val) => {
+    if (!val || val <= 0) return '₹0';
+    if (val >= 10000000) {
+      const cr = val / 10000000;
+      return `₹${cr % 1 === 0 ? cr : cr.toFixed(1)}Cr`;
+    }
+    if (val >= 100000) {
+      const l = val / 100000;
+      return `₹${l % 1 === 0 ? l : l.toFixed(1)}L`;
+    }
+    if (val >= 1000) {
+      const k = val / 1000;
+      return `₹${k % 1 === 0 ? k : k.toFixed(0)}k`;
+    }
+    return `₹${Math.round(val)}`;
+  };
+
+  const getX = (idx) => padLeft + (idx / Math.max(1, monthlyTrend.length - 1)) * plotW;
+  const getY = (val) => padTop + plotH - ((val || 0) / maxVal) * plotH;
+
+  const zeroY = padTop + plotH;
 
   // Received Line
   const recLine = monthlyTrend.map((d, i) => `${getX(i).toFixed(1)},${getY(d.received).toFixed(1)}`).join(' L ');
@@ -382,6 +429,8 @@ function TLTrendChart({ monthlyTrend = [], isVisibleOnMobile, onToggleMobile }) 
     ? monthlyTrend.map((d, i) => `${getX(i).toFixed(1)},${getY(d.cancelled).toFixed(1)}`).join(' L ')
     : '';
 
+  const hoveredData = hoveredIndex !== null ? monthlyTrend[hoveredIndex] : null;
+
   return (
     <div className="tl-analytics-card">
       <div className="tl-card-header">
@@ -389,12 +438,51 @@ function TLTrendChart({ monthlyTrend = [], isVisibleOnMobile, onToggleMobile }) 
           <h3 className="tl-card-title">12-Month Collection Trend</h3>
           <span className="tl-card-subtitle">Monthly received cash inflows vs outstanding pipeline</span>
         </div>
+        {hoveredData && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '0.72rem',
+            background: '#f8fafc',
+            padding: '3px 8px',
+            borderRadius: '6px',
+            border: '1px solid #e2e8f0'
+          }}>
+            <span style={{ fontWeight: 600, color: '#334155' }}>{hoveredData.label || hoveredData.month}:</span>
+            <span style={{ color: '#0F6E56', fontWeight: 600 }}>Rec: {formatLakhs(hoveredData.received || 0)}</span>
+            <span style={{ color: '#B7791F', fontWeight: 600 }}>Out: {formatLakhs(hoveredData.outstanding || 0)}</span>
+            {(hoveredData.cancelled || 0) > 0 && (
+              <span style={{ color: '#A8402E', fontWeight: 600 }}>Canc: {formatLakhs(hoveredData.cancelled)}</span>
+            )}
+          </div>
+        )}
       </div>
 
       <svg viewBox={`0 0 ${width} ${height}`} className="tl-trend-svg">
-        {/* Grid lines */}
-        <line x1={padX} y1={zeroY} x2={width - padX} y2={zeroY} stroke="#e3e5e0" strokeWidth="1" />
-        <line x1={padX} y1={padY + plotH / 2} x2={width - padX} y2={padY + plotH / 2} stroke="#f1f2ef" strokeWidth="1" strokeDasharray="3 3" />
+        {/* Horizontal grid lines */}
+        <line x1={padLeft} y1={padTop} x2={width - padRight} y2={padTop} stroke="#f1f5f9" strokeWidth="1" strokeDasharray="3 3" />
+        <line x1={padLeft} y1={padTop + plotH / 2} x2={width - padRight} y2={padTop + plotH / 2} stroke="#f1f5f9" strokeWidth="1" strokeDasharray="3 3" />
+        <line x1={padLeft} y1={zeroY} x2={width - padRight} y2={zeroY} stroke="#cbd5e1" strokeWidth="1.2" />
+
+        {/* Y-axis line */}
+        <line x1={padLeft} y1={padTop} x2={padLeft} y2={zeroY} stroke="#cbd5e1" strokeWidth="1.2" />
+
+        {/* Y-axis ticks and labels */}
+        <line x1={padLeft - 4} y1={padTop} x2={padLeft} y2={padTop} stroke="#94a3b8" strokeWidth="1" />
+        <text x={padLeft - 7} y={padTop + 3.5} textAnchor="end" fontSize="9" fontWeight="500" fill="#64748b">
+          {formatAxisTick(maxVal)}
+        </text>
+
+        <line x1={padLeft - 4} y1={padTop + plotH / 2} x2={padLeft} y2={padTop + plotH / 2} stroke="#94a3b8" strokeWidth="1" />
+        <text x={padLeft - 7} y={padTop + plotH / 2 + 3.5} textAnchor="end" fontSize="9" fontWeight="500" fill="#64748b">
+          {formatAxisTick(maxVal / 2)}
+        </text>
+
+        <line x1={padLeft - 4} y1={zeroY} x2={padLeft} y2={zeroY} stroke="#94a3b8" strokeWidth="1" />
+        <text x={padLeft - 7} y={zeroY + 3.5} textAnchor="end" fontSize="9" fontWeight="500" fill="#64748b">
+          ₹0
+        </text>
 
         {/* Shaded Outstanding Area */}
         <path d={outArea} fill="rgba(183, 121, 31, 0.12)" />
@@ -410,20 +498,86 @@ function TLTrendChart({ monthlyTrend = [], isVisibleOnMobile, onToggleMobile }) 
           <path d={`M ${cancLine}`} fill="none" stroke="#A8402E" strokeWidth="1.5" strokeDasharray="2 2" />
         )}
 
-        {/* Month tick labels */}
+        {/* Active Hover Crosshair and Points */}
+        {hoveredIndex !== null && (
+          <g>
+            <line
+              x1={getX(hoveredIndex)}
+              y1={padTop}
+              x2={getX(hoveredIndex)}
+              y2={zeroY}
+              stroke="#94a3b8"
+              strokeWidth="1"
+              strokeDasharray="2 2"
+            />
+            <circle
+              cx={getX(hoveredIndex)}
+              cy={getY(monthlyTrend[hoveredIndex].received)}
+              r="4"
+              fill="#0F6E56"
+              stroke="#ffffff"
+              strokeWidth="2"
+            />
+            <circle
+              cx={getX(hoveredIndex)}
+              cy={getY(monthlyTrend[hoveredIndex].outstanding)}
+              r="4"
+              fill="#B7791F"
+              stroke="#ffffff"
+              strokeWidth="2"
+            />
+            {(monthlyTrend[hoveredIndex].cancelled || 0) > 0 && (
+              <circle
+                cx={getX(hoveredIndex)}
+                cy={getY(monthlyTrend[hoveredIndex].cancelled)}
+                r="3.5"
+                fill="#A8402E"
+                stroke="#ffffff"
+                strokeWidth="1.5"
+              />
+            )}
+          </g>
+        )}
+
+        {/* Month tick labels & tick marks */}
         {monthlyTrend.map((d, i) => {
           if (monthlyTrend.length > 6 && i % 2 !== 0 && i !== monthlyTrend.length - 1) return null;
+          const x = getX(i);
           return (
-            <text
-              key={d.month || i}
-              x={getX(i)}
-              y={height - 2}
-              textAnchor="middle"
-              fontSize="9"
-              fill="#9ca3af"
+            <g key={d.month || i}>
+              <line x1={x} y1={zeroY} x2={x} y2={zeroY + 3.5} stroke="#cbd5e1" strokeWidth="1" />
+              <text
+                x={x}
+                y={zeroY + 14}
+                textAnchor="middle"
+                fontSize="9"
+                fontWeight="500"
+                fill="#64748b"
+              >
+                {d.label || d.month}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Invisible hit areas for mouse hover */}
+        {monthlyTrend.map((d, i) => {
+          const x = getX(i);
+          const colW = plotW / Math.max(1, monthlyTrend.length - 1);
+          return (
+            <rect
+              key={`hit-${i}`}
+              x={Math.max(padLeft, x - colW / 2)}
+              y={padTop}
+              width={colW}
+              height={plotH + padBottom}
+              fill="transparent"
+              style={{ cursor: 'pointer' }}
+              onMouseEnter={() => setHoveredIndex(i)}
+              onMouseLeave={() => setHoveredIndex(null)}
             >
-              {d.label || d.month}
-            </text>
+              <title>{`${d.label || d.month}\nReceived: ${formatCurrency(d.received || 0)}\nOutstanding: ${formatCurrency(d.outstanding || 0)}${(d.cancelled || 0) > 0 ? `\nCancelled: ${formatCurrency(d.cancelled)}` : ''}`}</title>
+            </rect>
           );
         })}
       </svg>
