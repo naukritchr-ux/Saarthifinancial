@@ -2774,11 +2774,38 @@ def _calc_aging_factor(days_outstanding, status='inprogress'):
     return round(base_score * status_multiplier, 2)
 
 
-def _calc_entity_conversion_rate(cursor, entity_col, aliases, lookback_months=12):
+def _calc_entity_conversion_rate(cursor, entity_col, aliases, lookback_months=12, is_all=False):
     """
     Calculates historical conversion rate for the TL/BD entity over trailing lookback_months.
     Fallback to 70.0% if < 5 resolved deals.
     """
+    now = time.time()
+    if is_all:
+        cache_k = (entity_col, 'ALL', lookback_months)
+        if cache_k in _ENTITY_CONV_CACHE and _ENTITY_CONV_CACHE[cache_k]['exp'] > now:
+            return _ENTITY_CONV_CACHE[cache_k]['val']
+        try:
+            query = f"""
+                SELECT 
+                    SUM(CASE WHEN e.enquiryStatus IN ('closed', 'offered_and_accepted', 'invoiced') THEN 1 ELSE 0 END) as received_cnt,
+                    SUM(CASE WHEN e.enquiryStatus IN ('cancelled', 'offered_and_rejected') THEN 1 ELSE 0 END) as cancelled_cnt
+                FROM enquiries e
+                WHERE e.{entity_col} IS NOT NULL AND TRIM(e.{entity_col}) != ''
+                  AND LOWER(TRIM(e.{entity_col})) NOT IN ('head office', 'head  - office', 'unknown', 'prospect', 'old . tl', 'pune . office', '')
+                  AND e.created_at >= DATE_SUB(CURDATE(), INTERVAL %s MONTH)
+            """
+            cursor.execute(query, [lookback_months])
+            row = cursor.fetchone()
+            rec = int(row['received_cnt'] or 0) if row else 0
+            canc = int(row['cancelled_cnt'] or 0) if row else 0
+            total_resolved = rec + canc
+            res = (round((rec / total_resolved) * 100.0, 2), total_resolved) if total_resolved >= 5 else (70.0, total_resolved)
+            _ENTITY_CONV_CACHE[cache_k] = {'val': res, 'exp': now + 300}
+            return res
+        except Exception as e:
+            print(f"[_calc_entity_conversion_rate is_all] Error: {e}")
+            return 70.0, 0
+
     if isinstance(aliases, str):
         aliases = [aliases]
     elif aliases is None:
@@ -2790,7 +2817,6 @@ def _calc_entity_conversion_rate(cursor, entity_col, aliases, lookback_months=12
         return 70.0, 0
 
     cache_k = (entity_col, tuple(sorted(aliases)), lookback_months)
-    now = time.time()
     if cache_k in _ENTITY_CONV_CACHE and _ENTITY_CONV_CACHE[cache_k]['exp'] > now:
         return _ENTITY_CONV_CACHE[cache_k]['val']
 
@@ -2867,14 +2893,23 @@ def _fetch_entity_portfolio(cursor, entity_type, entity_id_or_name, start_date=N
     Generic franchisee portfolio breakdown & collection risk engine for TLs ('tl') and BD Agents ('bd').
     """
     entity_col = 'teamLeaderName' if entity_type == 'tl' else 'bdMemberName'
-    aliases = _get_entity_aliases(cursor, 'employee', entity_id_or_name, entity_id_or_name)
-    if not aliases:
-        aliases = [str(entity_id_or_name).strip()]
+    is_all = str(entity_id_or_name or '').strip().lower() in ('all', 'all team leaders', 'all bd members', 'all tls', 'all bds')
 
-    placeholders = ", ".join(["%s"] * len(aliases))
+    if is_all:
+        entity_conv_rate, entity_resolved_deals = _calc_entity_conversion_rate(cursor, entity_col, [], lookback_months, is_all=True)
+        entity_where = f"e.{entity_col} IS NOT NULL AND TRIM(e.{entity_col}) != '' AND LOWER(TRIM(e.{entity_col})) NOT IN ('head office', 'head  - office', 'unknown', 'prospect', 'old . tl', 'pune . office', '')"
+        entity_params = []
+    else:
+        aliases = _get_entity_aliases(cursor, 'employee', entity_id_or_name, entity_id_or_name)
+        if not aliases:
+            aliases = [str(entity_id_or_name).strip()]
 
-    # Entity historical conversion rate
-    entity_conv_rate, entity_resolved_deals = _calc_entity_conversion_rate(cursor, entity_col, aliases, lookback_months)
+        placeholders = ", ".join(["%s"] * len(aliases))
+
+        # Entity historical conversion rate
+        entity_conv_rate, entity_resolved_deals = _calc_entity_conversion_rate(cursor, entity_col, aliases, lookback_months, is_all=False)
+        entity_where = f"(LOWER(TRIM(e.{entity_col})) IN ({placeholders}) OR e.{entity_col} IN ({placeholders}))"
+        entity_params = aliases + aliases
 
     # Base date filter on enquiries
     date_filter = ""
@@ -2901,11 +2936,11 @@ def _fetch_entity_portfolio(cursor, entity_type, entity_id_or_name, start_date=N
             COALESCE(DATEDIFF(CURDATE(), COALESCE(i.billDate, e.dateOfAllocation, e.created_at)), 30) AS days_outstanding
         FROM enquiries e
         LEFT JOIN invoice i ON i.enquiry_id = e.id
-        WHERE (LOWER(TRIM(e.{entity_col})) IN ({placeholders}) OR e.{entity_col} IN ({placeholders}))
+        WHERE {entity_where}
           {date_filter}
         ORDER BY franchisee_name ASC, days_outstanding DESC
     """
-    cursor.execute(query, aliases + aliases + date_params)
+    cursor.execute(query, entity_params + date_params)
     rows = cursor.fetchall()
 
     franchisee_map = {}
@@ -3174,13 +3209,13 @@ def _fetch_entity_portfolio(cursor, entity_type, entity_id_or_name, start_date=N
         received_delta_pct = None
         outstanding_delta_pct = None
 
-    resolved_info = _resolve_entity_info(cursor, 'employee', entity_id_or_name)
+    resolved_info = ('All Team Leaders' if entity_type == 'tl' else 'All BD Members') if is_all else _resolve_entity_info(cursor, 'employee', entity_id_or_name)
 
     return {
         'entity_type': entity_type,
-        'entity_name': entity_id_or_name,
-        'tl_name': entity_id_or_name if entity_type == 'tl' else None,
-        'bd_name': entity_id_or_name if entity_type == 'bd' else None,
+        'entity_name': 'All' if is_all else entity_id_or_name,
+        'tl_name': ('All Team Leaders' if is_all else entity_id_or_name) if entity_type == 'tl' else None,
+        'bd_name': ('All BD Members' if is_all else entity_id_or_name) if entity_type == 'bd' else None,
         'resolved_entity_name': resolved_info,
         'resolved_tl_name': resolved_info,
         'lookback_months': lookback_months,

@@ -63,9 +63,14 @@ function TLControls({
     );
   }, [teamLeaders, tlSearchQuery]);
 
+  const isAllSelected = selectedTlId === 'all' || selectedTlId === 'All' || selectedTlId === 'All Team Leaders';
+
   const selectedTLObj = useMemo(() => {
+    if (isAllSelected) {
+      return { id: 'all', name: 'All', label: 'All Team Leaders' };
+    }
     return teamLeaders.find(tl => tl.name === selectedTlId || tl.id === selectedTlId) || { name: selectedTlId || 'Select Team Leader' };
-  }, [teamLeaders, selectedTlId]);
+  }, [teamLeaders, selectedTlId, isAllSelected]);
 
   return (
     <div className="tl-controls-card">
@@ -80,7 +85,11 @@ function TLControls({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
               <Users size={15} style={{ color: 'var(--accent-teal, #0f6e56)', flexShrink: 0 }} />
               <span className="truncate">{selectedTLObj.name}</span>
-              {selectedTLObj.franchiseesCount != null && (
+              {isAllSelected ? (
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #6b7268)', fontWeight: 'normal' }}>
+                  (All Team Leaders)
+                </span>
+              ) : selectedTLObj.franchiseesCount != null && (
                 <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #6b7268)', fontWeight: 'normal' }}>
                   ({selectedTLObj.franchiseesCount} accounts)
                 </span>
@@ -100,13 +109,28 @@ function TLControls({
                 autoFocus
               />
               <div className="tl-select-list">
-                {filteredTLs.length === 0 ? (
+                {/* All Option */}
+                {(!tlSearchQuery.trim() || 'all'.includes(tlSearchQuery.toLowerCase().trim()) || 'all team leaders'.includes(tlSearchQuery.toLowerCase().trim())) && (
+                  <div
+                    className={`tl-select-item ${isAllSelected ? 'selected' : ''}`}
+                    onClick={() => {
+                      onSelectTl('All');
+                      setIsTlDropdownOpen(false);
+                    }}
+                  >
+                    <span style={{ fontWeight: 600 }}>All</span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted, #6b7268)' }}>
+                      All Team Leaders
+                    </span>
+                  </div>
+                )}
+                {filteredTLs.length === 0 && (tlSearchQuery.trim() && !'all'.includes(tlSearchQuery.toLowerCase().trim()) && !'all team leaders'.includes(tlSearchQuery.toLowerCase().trim())) ? (
                   <div style={{ padding: '8px', textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted, #6b7268)' }}>
                     No matching Team Leaders
                   </div>
                 ) : (
                   filteredTLs.map(tl => {
-                    const isSelected = tl.name === selectedTlId || tl.id === selectedTlId;
+                    const isSelected = !isAllSelected && (tl.name === selectedTlId || tl.id === selectedTlId);
                     return (
                       <div
                         key={tl.id || tl.name}
@@ -450,7 +474,7 @@ function TLChaseList({ topChaseList = [], onSelectFranchisee, onSeeAllHighRisk }
 
       {topChaseList.length === 0 ? (
         <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted, #6b7268)', fontSize: '0.8rem' }}>
-          ✓ No urgent outstanding accounts for this Team Leader.
+          ✓ No urgent outstanding accounts.
         </div>
       ) : (
         <div className="tl-chase-list">
@@ -1095,7 +1119,7 @@ export default function TLPerformance({ setActivePage }) {
   // 5. Navigate to Cost of Performance
   const handleViewProfitability = () => {
     sessionStorage.setItem('fintective_cost_tab', 'tl');
-    sessionStorage.setItem('fintective_cost_search', selectedTlId);
+    sessionStorage.setItem('fintective_cost_search', (selectedTlId === 'All' || selectedTlId === 'all') ? '' : selectedTlId);
     if (typeof setActivePage === 'function') {
       setActivePage('cost-performance');
     } else {
