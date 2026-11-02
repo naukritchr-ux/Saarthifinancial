@@ -4422,8 +4422,15 @@ if __name__ == '__main__':
         import shutil
         gunicorn_bin = shutil.which("gunicorn") or "gunicorn"
         print(f"Starting production Gunicorn WSGI server on port {port} using gunicorn.conf.py...")
+        # Override any Render container default GUNICORN_CMD_ARGS (e.g. --bind=0.0.0.0:10000)
+        os.environ['GUNICORN_CMD_ARGS'] = f"-b 0.0.0.0:{port}"
         try:
-            os.execvp(gunicorn_bin, [gunicorn_bin, "-c", "gunicorn.conf.py", "app:app"])
+            os.execvp(gunicorn_bin, [
+                gunicorn_bin,
+                "-b", f"0.0.0.0:{port}",
+                "-c", "gunicorn.conf.py",
+                "app:app"
+            ])
         except Exception as e:
             print(f"Failed to execvp gunicorn ({e}), falling back to Werkzeug...")
 
