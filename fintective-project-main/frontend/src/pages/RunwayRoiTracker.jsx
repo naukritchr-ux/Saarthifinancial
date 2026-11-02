@@ -1919,24 +1919,38 @@ const RunwayRoiTracker = ({ setActivePage }) => {
         )}
       </div>
 
-      {/* 4. TRUST LAYER DRILL-DOWN GLASS DRAWER */}
+      {/* 4. TRUST LAYER DRILL-DOWN MODAL (Centered in middle instead of side drawer) */}
       {selectedRecruiter && (
-        <div style={{
-          position: 'fixed',
-          right: 0,
-          top: 0,
-          width: '500px',
-          height: '100vh',
-          backgroundColor: 'var(--bg-card, #ffffff)',
-          borderLeft: '1px solid var(--border-color)',
-          boxShadow: '-10px 0 30px rgba(0,0,0,0.12)',
-          zIndex: 1000,
-          padding: '24px',
-          display: 'flex',
-          flexDirection: 'column',
-          color: 'var(--text-main)',
-          transition: 'all 0.3s ease-in-out'
-        }}>
+        <div 
+          onClick={() => { setSelectedRecruiter(null); setRecruiterPage(1); }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px 16px'
+          }}
+        >
+          <div 
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '640px',
+              maxWidth: '95vw',
+              maxHeight: '88vh',
+              backgroundColor: 'var(--bg-card, #ffffff)',
+              borderRadius: '14px',
+              boxShadow: '0 24px 50px rgba(0,0,0,0.25)',
+              padding: '24px',
+              display: 'flex',
+              flexDirection: 'column',
+              color: 'var(--text-main)',
+              overflow: 'hidden'
+            }}
+          >
           {/* Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
             <div>
@@ -2054,6 +2068,7 @@ const RunwayRoiTracker = ({ setActivePage }) => {
               Close
             </button>
           </div>
+        </div>
         </div>
       )}
 

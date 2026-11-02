@@ -8,6 +8,7 @@ import socket
 import urllib.parse
 import urllib.request
 import urllib.error
+import gc
 from db import get_db_connection, ensure_tables_exist
 
 HTTP_HEADERS = {
@@ -559,43 +560,19 @@ def sync_saarthi_all(existing_log_id=None):
                 for i in range(0, len(iterable), size):
                     yield iterable[i:i + size]
 
-            # Parallel fetch of all upstream Saarthi CRM endpoints
-            import concurrent.futures
-            print("[SYNC] Fetching all 6 Saarthi CRM endpoints in parallel...")
-            endpoints_to_fetch = {
-                "franchisees": "franchisees",
-                "enquiries": "enquiries",
-                "invoices": "Invoice",
-                "expenses": EXPENSE_ENDPOINT,
-                "clients": "clients_info",
-                "legals": "legals_info",
-                "franchise_payments": "franchise-payments"
-            }
-            fetched_results = {}
-            with concurrent.futures.ThreadPoolExecutor(max_workers=7) as executor:
-                future_map = {
-                    executor.submit(fetch_saarthi_endpoint, path): key
-                    for key, path in endpoints_to_fetch.items()
-                }
-                for fut in concurrent.futures.as_completed(future_map):
-                    key = future_map[fut]
-                    try:
-                        fetched_results[key] = fut.result()
-                    except Exception as f_err:
-                        fetched_results[key] = {"ok": False, "data": [], "error": str(f_err)}
+            # Sequential stream-by-stream fetch of Saarthi CRM endpoints to strictly stay under 512MB RAM
+            print("[SYNC] Starting sequential Saarthi CRM stream sync (memory bounded)...")
 
-            # Fallback for invoices if "Invoice" returned no data
-            if not fetched_results.get("invoices", {}).get("ok") or not fetched_results.get("invoices", {}).get("data"):
-                fetched_results["invoices"] = fetch_saarthi_endpoint("invoice")
-
-            # Independent franchisees stream
+            # Independent franchisees stream (Stream 1)
             notes_start = len(stats['notes'])
+            f_res = None
+            fran_rows = None
+            form_rows = None
             try:
                 conn.begin()
-                # 1. Sync Franchisees
-                print("[SYNC] Writing Franchisees to DB...")
-                f_res = fetched_results.get("franchisees", {"ok": False, "data": []})
-                if f_res["ok"] and f_res["data"]:
+                print("[SYNC] Fetching and writing Franchisees to DB...")
+                f_res = fetch_saarthi_endpoint("franchisees")
+                if f_res.get("ok") and f_res.get("data"):
                     fran_rows = []
                     form_rows = []
                     for f in f_res["data"]:

@@ -1,4 +1,8 @@
 import os
+# Strictly bound memory allocation on Linux / Render container (512MB RAM cap)
+os.environ['MALLOC_ARENA_MAX'] = '2'
+os.environ['WEB_CONCURRENCY'] = '1'
+
 import json
 import re
 import datetime
@@ -4382,16 +4386,21 @@ def start_background_sync_daemon():
     threading.Thread(target=render_keepalive, daemon=True).start()
 
     def sync_loop():
-        time.sleep(45)  # Allow incoming web requests priority on cold start before background sync
+        # Prevent sync from competing with cold-start requests and ML model loading on 512MB RAM
+        initial_delay = int(os.environ.get('INITIAL_SYNC_DELAY_SEC', 600))
+        time.sleep(initial_delay)
         while True:
             try:
-                print("[Auto-Pool Daemon] Running automated background Saarthi CRM sync...")
-                from sync_service import sync_saarthi_all
-                res = sync_saarthi_all()
-                print(f"[Auto-Pool Daemon] Auto sync complete: {res.get('invoices', 0)} invoices, {res.get('enquiries', 0)} enquiries, {res.get('franchisees', 0)} franchisees.")
+                if os.environ.get('DISABLE_AUTO_SYNC_DAEMON') != '1':
+                    print("[Auto-Pool Daemon] Running scheduled background Saarthi CRM sync...")
+                    from sync_service import sync_saarthi_all
+                    res = sync_saarthi_all()
+                    print(f"[Auto-Pool Daemon] Auto sync complete: {res.get('invoices', 0)} invoices, {res.get('enquiries', 0)} enquiries, {res.get('franchisees', 0)} franchisees.")
+                    import gc
+                    gc.collect()
             except Exception as e:
                 print(f"[Auto-Pool Daemon] Background sync notice: {str(e)}")
-            time.sleep(900)  # Auto-poll every 15 minutes (900 seconds)
+            time.sleep(int(os.environ.get('AUTO_SYNC_INTERVAL_SEC', 3600)))  # Auto-poll every 1 hour
 
     t = threading.Thread(target=sync_loop, daemon=True)
     t.start()
@@ -4407,6 +4416,17 @@ if __name__ == '__main__':
     init_db()
     
     port = int(os.getenv("PORT", 5000))
+
+    # If running on Render or Linux container, seamlessly switch to production Gunicorn WSGI
+    if os.name != 'nt' and (os.environ.get('RENDER') or os.environ.get('PORT')):
+        import shutil
+        gunicorn_bin = shutil.which("gunicorn") or "gunicorn"
+        print(f"Starting production Gunicorn WSGI server on port {port} using gunicorn.conf.py...")
+        try:
+            os.execvp(gunicorn_bin, [gunicorn_bin, "-c", "gunicorn.conf.py", "app:app"])
+        except Exception as e:
+            print(f"Failed to execvp gunicorn ({e}), falling back to Werkzeug...")
+
     print(f"Starting Python Flask server on port {port}...")
     app.run(host='0.0.0.0', port=port, debug=False)
 
