@@ -617,12 +617,26 @@ function TLFranchiseeTable({
                     title="Click to view ledger details in drawer"
                   >
                     <td>
-                      <div style={{ fontWeight: '600', color: 'var(--text-main, #1b2321)' }}>{f.name}</div>
-                      {f.city && (
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted, #6b7268)' }}>
-                          {f.city} {f.owner ? `• ${f.owner}` : ''}
-                        </div>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: '600', color: 'var(--text-main, #1b2321)' }}>{f.name}</span>
+                        {f.team_leader && (
+                          <span style={{
+                            fontSize: '0.68rem',
+                            fontWeight: '600',
+                            padding: '1px 7px',
+                            borderRadius: '4px',
+                            background: '#f0fdf4',
+                            color: '#166534',
+                            border: '1px solid #bbf7d0',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            TL: {f.team_leader}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted, #6b7268)', marginTop: '2px' }}>
+                        {f.city || ''} {f.owner ? `• ${f.owner}` : ''}
+                      </div>
                     </td>
                     <td style={{ textAlign: 'right', fontWeight: '600' }} className="tabular-nums">
                       {formatCurrency(billedVal)}
@@ -737,7 +751,7 @@ function TLDetailDrawer({ franchisee, isOpen, onClose }) {
               {franchisee.name}
             </h2>
             <div style={{ fontSize: '0.76rem', color: 'var(--text-muted, #6b7268)', marginTop: '2px' }}>
-              {franchisee.city || 'National Partner'} {franchisee.owner ? `• Owner: ${franchisee.owner}` : ''}
+              {franchisee.city || 'National Partner'} {franchisee.owner ? `• Owner: ${franchisee.owner}` : ''} {franchisee.team_leader ? `• Operating TL: ${franchisee.team_leader}` : ''}
             </div>
           </div>
           <button type="button" className="tl-drawer-close" onClick={onClose}>
@@ -934,7 +948,7 @@ export default function TLPerformance({ setActivePage }) {
 
   // Read initial TL from sessionStorage if navigated from CostOfPerformance
   const [selectedTlId, setSelectedTlId] = useState(() => {
-    return sessionStorage.getItem('fintective_selected_tl') || 'Avadai Esakki Muthu Sundaram Marthuvar';
+    return sessionStorage.getItem('fintective_selected_tl') || 'All';
   });
 
   const [lookbackMonths, setLookbackMonths] = useState(12);
@@ -943,7 +957,7 @@ export default function TLPerformance({ setActivePage }) {
   const [isSyncing, setIsSyncing] = useState(false);
 
   // Table filters & pagination state
-  const [tableFilter, setTableFilter] = useState('at_risk'); // 'at_risk' | 'outstanding' | 'cancelled' | 'all'
+  const [tableFilter, setTableFilter] = useState('all'); // 'all' | 'at_risk' | 'outstanding' | 'cancelled'
   const [tableSearchQuery, setTableSearchQuery] = useState('');
   const [tablePage, setTablePage] = useState(1);
 
@@ -1063,7 +1077,11 @@ export default function TLPerformance({ setActivePage }) {
 
     if (tableSearchQuery.trim()) {
       const q = tableSearchQuery.toLowerCase();
-      list = list.filter(f => (f.name || '').toLowerCase().includes(q) || (f.city || '').toLowerCase().includes(q));
+      list = list.filter(f => 
+        (f.name || '').toLowerCase().includes(q) || 
+        (f.city || '').toLowerCase().includes(q) ||
+        (f.team_leader || '').toLowerCase().includes(q)
+      );
     }
 
     return list;
@@ -1082,6 +1100,7 @@ export default function TLPerformance({ setActivePage }) {
     if (filteredFranchisees.length === 0) return;
     const headers = [
       'Franchisee Name',
+      'Operating Team Leader',
       'City',
       'Gross Billing (INR)',
       'Received Amount (INR)',
@@ -1094,6 +1113,7 @@ export default function TLPerformance({ setActivePage }) {
 
     const rows = filteredFranchisees.map(f => [
       `"${f.name || ''}"`,
+      `"${f.team_leader || 'Unassigned'}"`,
       `"${f.city || ''}"`,
       f.gross || 0,
       f.received || 0,

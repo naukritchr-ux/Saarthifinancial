@@ -2922,6 +2922,7 @@ def _fetch_entity_portfolio(cursor, entity_type, entity_id_or_name, start_date=N
     query = f"""
         SELECT 
             COALESCE(NULLIF(TRIM(e.franchiseeName), ''), 'Direct / Unattributed') AS franchisee_name,
+            COALESCE(NULLIF(TRIM(e.teamLeaderName), ''), 'Unassigned') AS team_leader_name,
             e.id AS enquiry_id,
             e.companyName AS company_name,
             e.positionName AS position_name,
@@ -2949,9 +2950,12 @@ def _fetch_entity_portfolio(cursor, entity_type, entity_id_or_name, start_date=N
 
     for r in rows:
         fname = r['franchisee_name']
+        tl_n = (r.get('team_leader_name') or '').strip()
         if fname not in franchisee_map:
             franchisee_map[fname] = {
                 'name': fname,
+                'team_leader': tl_n,
+                'team_leaders': set([tl_n]) if (tl_n and tl_n.lower() not in ('unassigned', 'none', '')) else set(),
                 'deals_count': 0,
                 'gross': 0.0,
                 'received': 0.0,
@@ -3117,8 +3121,11 @@ def _fetch_entity_portfolio(cursor, entity_type, entity_id_or_name, start_date=N
         # Expected Collectible Amount = Outstanding * (RiskScore / 100)
         expected_collectible = round(f_outstanding * (risk_score / 100.0), 2)
 
+        tl_display = ", ".join(sorted(f['team_leaders'])) if f.get('team_leaders') else (f.get('team_leader') or 'Unassigned')
+
         franchisee_list.append({
             'name': fname,
+            'team_leader': tl_display,
             'gross': f_gross,
             'received': f_received,
             'received_count': f['received_count'],
