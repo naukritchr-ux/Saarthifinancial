@@ -32,18 +32,22 @@ export default function GlossaryModal({ isOpen, onClose }) {
       backdropFilter: 'blur(4px)',
       zIndex: 9999,
       display: 'flex',
-      justifyContent: 'flex-end',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '24px 16px',
       animation: 'fadeIn 0.2s ease-out'
     }}>
       <div style={{
         width: '100%',
-        maxWidth: '560px',
-        height: '100%',
+        maxWidth: '680px',
+        maxHeight: '88vh',
         background: 'var(--card-bg, #1e293b)',
-        borderLeft: '1px solid var(--border-color, #334155)',
+        borderRadius: '14px',
+        border: '1px solid var(--border-color, #334155)',
         display: 'flex',
         flexDirection: 'column',
-        boxShadow: '-10px 0 30px rgba(0, 0, 0, 0.5)'
+        boxShadow: '0 24px 50px rgba(0, 0, 0, 0.5)',
+        overflow: 'hidden'
       }}>
         {/* Header */}
         <div style={{

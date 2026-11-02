@@ -212,27 +212,31 @@ export const AuditDrawer = ({
       style={{
         position: 'fixed',
         inset: 0,
-        backgroundColor: 'rgba(15, 23, 42, 0.45)',
-        backdropFilter: 'blur(3px)',
+        backgroundColor: 'rgba(15, 23, 42, 0.55)',
+        backdropFilter: 'blur(4px)',
         zIndex: 9999,
         display: 'flex',
-        justifyContent: 'flex-end',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px 16px',
         transition: 'opacity 0.2s ease'
       }}
     >
       <div 
-        className="audit-drawer-panel animate-slide-left"
+        className="audit-drawer-panel"
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
-          maxWidth: '560px',
+          maxWidth: '780px',
+          maxHeight: '90vh',
           background: 'var(--bg-card, #ffffff)',
-          height: '100%',
+          borderRadius: '14px',
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: '-6px 0 30px rgba(0,0,0,0.22)',
-          borderLeft: '1px solid var(--border-color, #e2e8f0)',
-          position: 'relative'
+          boxShadow: '0 24px 50px rgba(0,0,0,0.25)',
+          border: '1px solid var(--border-color, #e2e8f0)',
+          position: 'relative',
+          overflow: 'hidden'
         }}
       >
         {/* ========================================================================= */}
