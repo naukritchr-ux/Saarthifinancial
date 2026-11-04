@@ -45,7 +45,7 @@ export function AuditDrawer(props) {
   const effectiveFy = (fy || financialYear || '2026-2027').trim();
 
   // Active Filters State
-  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'loss' | 'low_margin' | 'credit_note_hit' | 'healthy'
+  const [statusFilter, setStatusFilter] = useState('loss'); // Default to problem deals: 'loss' | 'low_margin' | 'credit_note_hit' | 'healthy' | 'all'
   const [causeFilter, setCauseFilter] = useState(''); // '' | 'credit_notes' | 'cost_drag' | 'no_conversion'
   const [clientFilter, setClientFilter] = useState('');
   const [sortBy, setSortBy] = useState('worst_first'); // 'worst_first' | 'highest_billed' | 'latest'
@@ -89,7 +89,7 @@ export function AuditDrawer(props) {
   };
 
   // Fetch Audit Data from Backend
-  const fetchAuditData = useCallback(async (isInitial = false) => {
+  const fetchAuditData = useCallback(async (isInitial = false, initialStatus = null) => {
     if (!effectiveEntityId) return;
     if (isInitial) {
       setLoading(true);
@@ -111,10 +111,12 @@ export function AuditDrawer(props) {
         }
       }
 
+      const activeStatus = initialStatus !== null ? initialStatus : statusFilter;
+
       const qParams = new URLSearchParams({
         month: cleanMonth,
         fy: effectiveFy,
-        status: statusFilter,
+        status: activeStatus,
         cause: causeFilter,
         client: clientFilter,
         sort: sortBy
@@ -130,19 +132,17 @@ export function AuditDrawer(props) {
         setData(json);
         initialLoadedRef.current = true;
 
-        // DEFAULT STATE RULE:
-        // On initial open, preselect "Problem deals" = Loss + Credit note hit (worst first)
-        // If no problem deals, fall back to All
-        if (isInitial) {
+        // If initial load requested 'loss' but entity has 0 loss deals, fall back cleanly without infinite loop
+        if (isInitial && activeStatus === 'loss') {
           const counts = json.counts?.status || {};
           const hasLoss = (counts.loss || 0) > 0;
           const hasCn = (counts.credit_note_hit || 0) > 0;
-          if (hasLoss) {
-            setStatusFilter('loss');
-          } else if (hasCn) {
-            setStatusFilter('credit_note_hit');
-          } else {
-            setStatusFilter('all');
+          if (!hasLoss) {
+            if (hasCn) {
+              setStatusFilter('credit_note_hit');
+            } else {
+              setStatusFilter('all');
+            }
           }
         }
       } else {
@@ -162,19 +162,23 @@ export function AuditDrawer(props) {
     if (isOpen && effectiveEntityId) {
       setExpandedRowId(null);
       setIsExpandedAll(false);
+      setStatusFilter('loss');
+      setCauseFilter('');
+      setClientFilter('');
+      setSortBy('worst_first');
       initialLoadedRef.current = false;
-      fetchAuditData(true);
+      fetchAuditData(true, 'loss');
     } else {
       initialLoadedRef.current = false;
     }
   }, [isOpen, effectiveEntityId, entityType, month, effectiveFy]);
 
-  // Refetch when filters change (debounced lightly, never triggers on data updates)
+  // Refetch when filters change (debounced lightly, never triggers on initial mount)
   useEffect(() => {
     if (isOpen && effectiveEntityId && initialLoadedRef.current) {
       const timer = setTimeout(() => {
         fetchAuditData(false);
-      }, 150);
+      }, 120);
       return () => clearTimeout(timer);
     }
   }, [statusFilter, causeFilter, clientFilter, sortBy]);
@@ -472,21 +476,31 @@ export function AuditDrawer(props) {
           {/* ========================================================================= */}
           {/* 3. FILTER BAR (SINGLE LINE, HORIZONTALLY SCROLLABLE)                       */}
           {/* ========================================================================= */}
+          <style>{`
+            .audit-chips-scroll::-webkit-scrollbar { display: none; }
+            @keyframes audit-spin {
+              from { transform: rotate(0deg); }
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
           <div style={{
             display: 'flex',
             flexDirection: 'column',
             gap: '8px'
           }}>
             {/* Scrollable Filters Row */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              overflowX: 'auto',
-              paddingBottom: '4px',
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none'
-            }}>
+            <div 
+              className="audit-chips-scroll"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                overflowX: 'auto',
+                paddingBottom: '4px',
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none'
+              }}
+            >
               {/* STATUS FILTER CHIPS */}
               <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
                 {/* All */}
@@ -849,20 +863,25 @@ export function AuditDrawer(props) {
               )}
             </div>
 
-            {/* LOADING SKELETON (only shown on initial load before data arrives) */}
+            {/* LOADING SPINNER (only shown on initial load before data arrives) */}
             {loading && !data && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {[1, 2, 3].map(n => (
-                  <div 
-                    key={n}
-                    style={{
-                      height: '52px',
-                      borderRadius: '6px',
-                      background: 'rgba(0,0,0,0.04)',
-                      animation: 'pulse 1.2s infinite'
-                    }}
-                  />
-                ))}
+              <div style={{
+                padding: '36px 16px',
+                textAlign: 'center',
+                color: 'var(--text-muted, #64748b)',
+                fontSize: '0.82rem'
+              }}>
+                <div style={{
+                  display: 'inline-block',
+                  width: '24px',
+                  height: '24px',
+                  border: '3px solid rgba(15, 110, 86, 0.15)',
+                  borderTopColor: '#0F6E56',
+                  borderRadius: '50%',
+                  animation: 'audit-spin 0.7s linear infinite',
+                  marginBottom: '10px'
+                }} />
+                <div>Loading audit breakdown...</div>
               </div>
             )}
 
@@ -897,7 +916,7 @@ export function AuditDrawer(props) {
             )}
 
             {/* EMPTY STATE */}
-            {!loading && !error && deals.length === 0 && causeFilter !== 'no_conversion' && (
+            {!loading && !isRefetching && !error && deals.length === 0 && causeFilter !== 'no_conversion' && (
               <div style={{
                 padding: '24px 16px',
                 borderRadius: '8px',
@@ -967,12 +986,12 @@ export function AuditDrawer(props) {
             )}
 
             {/* REGULAR DEALS COMPACT LIST WITH INLINE EXPANSION */}
-            {!error && causeFilter !== 'no_conversion' && (!loading || data) && (
+            {!error && causeFilter !== 'no_conversion' && deals.length > 0 && (
               <div style={{
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '6px',
-                opacity: isRefetching ? 0.6 : 1,
+                opacity: isRefetching ? 0.65 : 1,
                 transition: 'opacity 0.15s ease'
               }}>
                 {displayedDeals.map((deal) => {
