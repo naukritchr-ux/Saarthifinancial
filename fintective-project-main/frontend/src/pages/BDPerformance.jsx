@@ -872,15 +872,17 @@ const BDPerformance = () => {
         />
       </div>
 
-      {/* Audit Drawer (Same props as before) */}
+      {/* Audit Drawer */}
       <AuditDrawer
         isOpen={Boolean(selectedMemberForAudit)}
         onClose={() => setSelectedMemberForAudit(null)}
         entityType="bd"
+        entityId={selectedMemberForAudit?.name || ''}
         entityName={selectedMemberForAudit?.name || ''}
         entityRole={selectedMemberForAudit?.role || 'BD Specialist'}
-        month={selectedMonth === 'All Months' ? 'all' : selectedMonth}
-        financialYear={selectedYear}
+        month={selectedMonth === 'All Months' ? 'all' : (selectedMonth || 'all')}
+        financialYear={selectedFinancialYear !== 'All Financial Years' ? selectedFinancialYear : (selectedYear || '2026-2027')}
+        fy={selectedFinancialYear !== 'All Financial Years' ? selectedFinancialYear : (selectedYear || '2026-2027')}
       />
     </div>
   );

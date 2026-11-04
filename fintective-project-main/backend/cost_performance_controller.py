@@ -1247,7 +1247,7 @@ def get_entity_audit(entity_type, entity_id):
             date_params.append(f"{month}%")
             enq_date_clause = "AND (e.dateOfAllocation LIKE %s OR e.created_at LIKE %s)"
             enq_date_params = [f"{month}%", f"{month}%"]
-        elif fy and fy != 'All Years':
+        elif fy and fy not in ('All Years', 'All Financial Years', 'all', 'All'):
             parts = fy.split('-')
             if len(parts) == 2:
                 start_date = f"{parts[0]}-04-01"
@@ -1268,14 +1268,16 @@ def get_entity_audit(entity_type, entity_id):
         enq_entity_params = []
         if clean_type == 'bd':
             entity_clause = "AND (LOWER(TRIM(v.nameOfBd)) = %s OR LOWER(TRIM(v.nameOfBd)) LIKE %s)"
-            entity_params.extend([clean_id_lower, f"%{clean_id_lower.split()[0]}%"])
+            first_token = clean_id_lower.split()[0] if clean_id_lower.split() else ''
+            entity_params.extend([clean_id_lower, f"%{first_token}%"])
             enq_entity_clause = "AND (LOWER(TRIM(e.bdMemberName)) = %s OR LOWER(TRIM(e.bdMemberName)) LIKE %s)"
-            enq_entity_params.extend([clean_id_lower, f"%{clean_id_lower.split()[0]}%"])
+            enq_entity_params.extend([clean_id_lower, f"%{first_token}%"])
         elif clean_type == 'tl':
             entity_clause = "AND (LOWER(TRIM(v.teamLeader)) = %s OR LOWER(TRIM(v.teamLeader)) LIKE %s)"
-            entity_params.extend([clean_id_lower, f"%{clean_id_lower.split()[0]}%"])
+            first_token = clean_id_lower.split()[0] if clean_id_lower.split() else ''
+            entity_params.extend([clean_id_lower, f"%{first_token}%"])
             enq_entity_clause = "AND (LOWER(TRIM(e.teamLeaderName)) = %s OR LOWER(TRIM(e.teamLeaderName)) LIKE %s)"
-            enq_entity_params.extend([clean_id_lower, f"%{clean_id_lower.split()[0]}%"])
+            enq_entity_params.extend([clean_id_lower, f"%{first_token}%"])
         elif clean_type in ('franchisee', 'franchise'):
             entity_clause = "AND (LOWER(TRIM(v.franchiseName)) = %s OR LOWER(TRIM(v.franchiseName)) LIKE %s)"
             entity_params.extend([clean_id_lower, f"%{clean_id_lower}%"])

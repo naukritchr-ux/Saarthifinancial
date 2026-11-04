@@ -959,7 +959,7 @@ export const WaterfallChart = ({
   netProfit = 0,
   periodLabel = '',
   onConfigurePayroll = null,
-  height = 210
+  height = 230
 }) => {
   const formatVal = (v) => {
     const num = Math.abs(Number(v) || 0);
@@ -972,14 +972,15 @@ export const WaterfallChart = ({
   const isPayrollMissing = !payroll || Number(payroll) <= 0;
 
   // Scale calculations
+  const chartHeight = Math.max(Number(height) || 230, 230);
   const maxVal = Math.max(grossRevenue, companyShare, 100000) * 1.15;
   const width = 560;
   const padL = 40;
   const padR = 24;
-  const padT = 24;
-  const padB = 40;
+  const padT = 20;
+  const padB = 60;
   const plotW = width - padL - padR;
-  const plotH = height - padT - padB;
+  const plotH = chartHeight - padT - padB;
   const baselineY = padT + plotH;
 
   const barWidth = 48;
@@ -1015,9 +1016,15 @@ export const WaterfallChart = ({
   const h4 = Math.max(4, (Math.abs(netProfit) / maxVal) * plotH);
   const y4 = isNetPos ? baselineY - h4 : baselineY;
 
+  // Ensure X-axis category labels are positioned comfortably below baseline and negative bars
+  const maxNegativeDrop = !isNetPos ? h4 : 0;
+  const axisLabelY = baselineY + Math.max(26, maxNegativeDrop + 14);
+  const axisSubLabelY = axisLabelY + 12;
+  const finalSvgHeight = Math.max(chartHeight, axisSubLabelY + 16);
+
   return (
     <div className="waterfall-container">
-      <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}>
+      <svg viewBox={`0 0 ${width} ${finalSvgHeight}`} style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}>
         {/* Baseline */}
         <line x1={padL - 10} y1={baselineY} x2={width - padR + 10} y2={baselineY} stroke="#cbd5e1" strokeWidth="1.5" />
 
@@ -1033,7 +1040,7 @@ export const WaterfallChart = ({
         <line x1={x2 + barWidth} y1={y2_bottom} x2={x3} y2={y3} stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" />
 
         {/* Connector 3 -> 4: From bottom of Payroll across to Net Profit */}
-        <line x1={x3 + barWidth} y1={y3_bottom} x2={x4} y2={isNetPos ? y4 : baselineY} stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" />
+        <line x1={x3 + barWidth} y1={y3_bottom} x2={x4} y2={y3_bottom} stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 3" />
 
         {/* Bar 0: Gross Revenue */}
         <rect x={x0} y={y0} width={barWidth} height={h0} fill="#2563eb" rx={4}>
@@ -1042,10 +1049,10 @@ export const WaterfallChart = ({
         <text x={x0 + barWidth / 2} y={Math.max(12, y0 - 6)} textAnchor="middle" fill="#1e293b" fontSize="9.5" fontWeight="700">
           {formatVal(grossRevenue)}
         </text>
-        <text x={x0 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
+        <text x={x0 + barWidth / 2} y={axisLabelY} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
           Gross Rev
         </text>
-        <text x={x0 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill="#64748b" fontSize="7.5">
+        <text x={x0 + barWidth / 2} y={axisSubLabelY} textAnchor="middle" fill="#64748b" fontSize="7.5">
           100% Billing
         </text>
 
@@ -1056,10 +1063,10 @@ export const WaterfallChart = ({
         <text x={x1 + barWidth / 2} y={Math.max(12, y1 - 6)} textAnchor="middle" fill="#0f6e56" fontSize="9.5" fontWeight="700">
           {formatVal(companyShare)}
         </text>
-        <text x={x1 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
+        <text x={x1 + barWidth / 2} y={axisLabelY} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
           Co. Share
         </text>
-        <text x={x1 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill="#0f766e" fontSize="7.5" fontWeight="600">
+        <text x={x1 + barWidth / 2} y={axisSubLabelY} textAnchor="middle" fill="#0f766e" fontSize="7.5" fontWeight="600">
           ~25% Pool
         </text>
 
@@ -1070,10 +1077,10 @@ export const WaterfallChart = ({
         <text x={x2 + barWidth / 2} y={Math.max(12, y2 - 6)} textAnchor="middle" fill="#a8402e" fontSize="9.5" fontWeight="700">
           -{formatVal(operatingExpenses)}
         </text>
-        <text x={x2 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
+        <text x={x2 + barWidth / 2} y={axisLabelY} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
           Opex & Comm
         </text>
-        <text x={x2 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill="#64748b" fontSize="7.5">
+        <text x={x2 + barWidth / 2} y={axisSubLabelY} textAnchor="middle" fill="#64748b" fontSize="7.5">
           Office/Tools
         </text>
 
@@ -1084,10 +1091,10 @@ export const WaterfallChart = ({
             <text x={x3 + barWidth / 2} y={y3 + 13} textAnchor="middle" fill="#64748b" fontSize="7" fontWeight="600">
               Not configured
             </text>
-            <text x={x3 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#64748b" fontSize="8.5" fontWeight="600">
+            <text x={x3 + barWidth / 2} y={axisLabelY} textAnchor="middle" fill="#64748b" fontSize="8.5" fontWeight="600">
               Payroll
             </text>
-            <text x={x3 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill="#2563eb" fontSize="7.5" fontWeight="600">
+            <text x={x3 + barWidth / 2} y={axisSubLabelY} textAnchor="middle" fill="#2563eb" fontSize="7.5" fontWeight="600">
               [Set Budget]
             </text>
           </g>
@@ -1099,10 +1106,10 @@ export const WaterfallChart = ({
             <text x={x3 + barWidth / 2} y={Math.max(12, y3 - 6)} textAnchor="middle" fill="#7c3aed" fontSize="9.5" fontWeight="700">
               -{formatVal(payroll)}
             </text>
-            <text x={x3 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
+            <text x={x3 + barWidth / 2} y={axisLabelY} textAnchor="middle" fill="#475569" fontSize="8.5" fontWeight="600">
               Payroll
             </text>
-            <text x={x3 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill="#64748b" fontSize="7.5">
+            <text x={x3 + barWidth / 2} y={axisSubLabelY} textAnchor="middle" fill="#64748b" fontSize="7.5">
               CTC Salaries
             </text>
           </g>
@@ -1112,13 +1119,20 @@ export const WaterfallChart = ({
         <rect x={x4} y={y4} width={barWidth} height={h4} fill={isNetPos ? '#10b981' : '#ef4444'} rx={4}>
           <title>{`Corporate Net Profit: ${isNetPos ? '' : '-'}${formatVal(netProfit)}`}</title>
         </rect>
-        <text x={x4 + barWidth / 2} y={isNetPos ? Math.max(12, y4 - 6) : y4 + h4 + 12} textAnchor="middle" fill={isNetPos ? '#059669' : '#dc2626'} fontSize="9.5" fontWeight="800">
+        <text
+          x={x4 + barWidth / 2}
+          y={isNetPos ? Math.max(12, y4 - 6) : Math.max(12, baselineY - 6)}
+          textAnchor="middle"
+          fill={isNetPos ? '#059669' : '#dc2626'}
+          fontSize="9.5"
+          fontWeight="800"
+        >
           {isNetPos ? '+' : '-'}{formatVal(netProfit)}
         </text>
-        <text x={x4 + barWidth / 2} y={baselineY + 16} textAnchor="middle" fill="#0f172a" fontSize="8.5" fontWeight="700">
+        <text x={x4 + barWidth / 2} y={axisLabelY} textAnchor="middle" fill="#0f172a" fontSize="8.5" fontWeight="700">
           Net Profit
         </text>
-        <text x={x4 + barWidth / 2} y={baselineY + 28} textAnchor="middle" fill={isNetPos ? '#059669' : '#dc2626'} fontSize="7.5" fontWeight="700">
+        <text x={x4 + barWidth / 2} y={axisSubLabelY} textAnchor="middle" fill={isNetPos ? '#059669' : '#dc2626'} fontSize="7.5" fontWeight="700">
           Bottom Line
         </text>
       </svg>

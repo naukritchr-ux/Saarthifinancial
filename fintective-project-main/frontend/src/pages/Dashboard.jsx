@@ -850,7 +850,7 @@ const Dashboard = ({ setActivePage, setIsSettingsOpen }) => {
               netProfit={profit}
               periodLabel={periodBasisLabel}
               onConfigurePayroll={() => setIsSettingsOpen && setIsSettingsOpen(true)}
-              height={200}
+              height={230}
             />
 
             <div className="waterfall-summary-pill">

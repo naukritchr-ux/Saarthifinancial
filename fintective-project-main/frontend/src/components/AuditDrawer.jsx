@@ -33,9 +33,15 @@ export const AuditDrawer = ({
   entityId = '',
   entityName = '',
   entityRole = '',
-  month = '2026-08',
-  financialYear = '2026-2027'
+  month = 'all',
+  financialYear = '2026-2027',
+  fy = ''
 }) => {
+  // Normalize identifier & financial year fallbacks
+  const effectiveEntityId = (entityId || entityName || '').trim();
+  const effectiveEntityName = (entityName || entityId || '').trim();
+  const effectiveFy = (fy || financialYear || '2026-2027').trim();
+
   // Active Filters State
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'loss' | 'low_margin' | 'credit_note_hit' | 'healthy'
   const [causeFilter, setCauseFilter] = useState(''); // '' | 'credit_notes' | 'cost_drag' | 'no_conversion'
@@ -53,9 +59,9 @@ export const AuditDrawer = ({
 
   // Synchronize URL query params
   useEffect(() => {
-    if (!isOpen || !entityId) return;
+    if (!isOpen || !effectiveEntityId) return;
     const url = new URL(window.location.href);
-    url.searchParams.set('audit_entity', entityId);
+    url.searchParams.set('audit_entity', effectiveEntityId);
     url.searchParams.set('audit_type', entityType);
     if (statusFilter && statusFilter !== 'all') url.searchParams.set('audit_status', statusFilter);
     else url.searchParams.delete('audit_status');
@@ -64,7 +70,7 @@ export const AuditDrawer = ({
     if (clientFilter) url.searchParams.set('audit_client', clientFilter);
     else url.searchParams.delete('audit_client');
     window.history.replaceState({}, '', url.toString());
-  }, [isOpen, entityId, entityType, statusFilter, causeFilter, clientFilter]);
+  }, [isOpen, effectiveEntityId, entityType, statusFilter, causeFilter, clientFilter]);
 
   // Clean URL on drawer close
   const handleClose = () => {
@@ -80,7 +86,7 @@ export const AuditDrawer = ({
 
   // Fetch Audit Data from Backend
   const fetchAuditData = useCallback(async (isInitial = false) => {
-    if (!entityId) return;
+    if (!effectiveEntityId) return;
     setLoading(true);
     setError(null);
 
@@ -99,14 +105,14 @@ export const AuditDrawer = ({
 
       const qParams = new URLSearchParams({
         month: cleanMonth,
-        fy: financialYear || '2026-2027',
+        fy: effectiveFy,
         status: statusFilter,
         cause: causeFilter,
         client: clientFilter,
         sort: sortBy
       });
 
-      const endpoint = `${API_BASE_URL}/audit/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}?${qParams.toString()}`;
+      const endpoint = `${API_BASE_URL}/audit/${encodeURIComponent(entityType)}/${encodeURIComponent(effectiveEntityId)}?${qParams.toString()}`;
       const res = await fetchWithApiKey(endpoint);
 
       if (!res.ok) throw new Error(`Audit load failed with status ${res.status}`);
@@ -139,25 +145,26 @@ export const AuditDrawer = ({
     } finally {
       setLoading(false);
     }
-  }, [entityType, entityId, month, financialYear, statusFilter, causeFilter, clientFilter, sortBy]);
+  }, [entityType, effectiveEntityId, month, effectiveFy, statusFilter, causeFilter, clientFilter, sortBy]);
 
   // Load when drawer opens or entity/period changes
   useEffect(() => {
-    if (isOpen && entityId) {
+    if (isOpen && effectiveEntityId) {
       setExpandedRowId(null);
       setIsExpandedAll(false);
       fetchAuditData(true);
     }
-  }, [isOpen, entityId, entityType, month, financialYear]);
+  }, [isOpen, effectiveEntityId, entityType, month, effectiveFy]);
 
   // Refetch when filters change (debounced lightly)
   useEffect(() => {
-    if (isOpen && entityId && data) {
+    if (isOpen && effectiveEntityId && data) {
       const timer = setTimeout(() => {
         fetchAuditData(false);
       }, 120);
       return () => clearTimeout(timer);
     }
+  }, [isOpen, effectiveEntityId, statusFilter, causeFilter, clientFilter, sortBy]);
   }, [statusFilter, causeFilter, clientFilter, sortBy]);
 
   // Keyboard escape to close
@@ -268,7 +275,7 @@ export const AuditDrawer = ({
               color: 'var(--text-main, #0f172a)',
               letterSpacing: '-0.01em'
             }}>
-              {entityName || entityId}
+              {effectiveEntityName}
             </h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px' }}>
               {entityRole && (
@@ -278,7 +285,7 @@ export const AuditDrawer = ({
               )}
               <span style={{ fontSize: '0.72rem', color: 'var(--text-muted, #64748b)' }}>•</span>
               <span style={{ fontSize: '0.74rem', color: 'var(--text-muted, #64748b)' }}>
-                {month === 'all' ? `Full FY ${financialYear}` : month}
+                {month === 'all' || month === 'All Months' ? `Full FY ${effectiveFy}` : month}
               </span>
             </div>
           </div>
