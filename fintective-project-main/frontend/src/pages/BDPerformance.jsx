@@ -882,7 +882,6 @@ const BDPerformance = () => {
         entityRole={selectedMemberForAudit?.role || 'BD Specialist'}
         month={selectedMonth === 'All Months' ? 'all' : (selectedMonth || 'all')}
         financialYear={selectedFinancialYear !== 'All Financial Years' ? selectedFinancialYear : (selectedYear || '2026-2027')}
-        fy={selectedFinancialYear !== 'All Financial Years' ? selectedFinancialYear : (selectedYear || '2026-2027')}
       />
     </div>
   );

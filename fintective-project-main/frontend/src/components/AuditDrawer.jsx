@@ -26,17 +26,19 @@ import { fetchWithApiKey, API_BASE_URL } from '../utils/apiClient';
  * Answers: "WHERE exactly is this entity causing loss?"
  * Reusable across CostOfPerformance (BD, TL, Franchise, City, Industry) and BDPerformance.
  */
-export const AuditDrawer = ({
-  isOpen = false,
-  onClose,
-  entityType = 'bd', // 'bd' | 'tl' | 'franchisee' | 'city' | 'industry'
-  entityId = '',
-  entityName = '',
-  entityRole = '',
-  month = 'all',
-  financialYear = '2026-2027',
-  fy = ''
-}) => {
+export function AuditDrawer(props) {
+  const {
+    isOpen = false,
+    onClose = () => {},
+    entityType = 'bd', // 'bd' | 'tl' | 'franchisee' | 'city' | 'industry'
+    entityId = '',
+    entityName = '',
+    entityRole = '',
+    month = 'all',
+    financialYear = '2026-2027',
+    fy = ''
+  } = props || {};
+
   // Normalize identifier & financial year fallbacks
   const effectiveEntityId = (entityId || entityName || '').trim();
   const effectiveEntityName = (entityName || entityId || '').trim();
@@ -137,6 +139,7 @@ export const AuditDrawer = ({
           }
         }
       } else {
+        
         throw new Error(json.error || 'Server error loading audit data');
       }
     } catch (err) {
@@ -164,8 +167,7 @@ export const AuditDrawer = ({
       }, 120);
       return () => clearTimeout(timer);
     }
-  }, [isOpen, effectiveEntityId, statusFilter, causeFilter, clientFilter, sortBy]);
-  }, [statusFilter, causeFilter, clientFilter, sortBy]);
+  }, [isOpen, effectiveEntityId, data, statusFilter, causeFilter, clientFilter, sortBy]);
 
   // Keyboard escape to close
   useEffect(() => {
@@ -1136,6 +1138,6 @@ export const AuditDrawer = ({
       </div>
     </div>
   );
-};
+}
 
 export default AuditDrawer;

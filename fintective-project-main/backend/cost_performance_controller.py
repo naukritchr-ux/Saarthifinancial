@@ -1247,7 +1247,7 @@ def get_entity_audit(entity_type, entity_id):
             date_params.append(f"{month}%")
             enq_date_clause = "AND (e.dateOfAllocation LIKE %s OR e.created_at LIKE %s)"
             enq_date_params = [f"{month}%", f"{month}%"]
-        elif fy and fy not in ('All Years', 'All Financial Years', 'all', 'All'):
+        elif fy and ('-' in fy) and ('all' not in fy.lower()):
             parts = fy.split('-')
             if len(parts) == 2:
                 start_date = f"{parts[0]}-04-01"
