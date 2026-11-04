@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   X, 
   AlertTriangle, 
@@ -57,7 +57,9 @@ export function AuditDrawer(props) {
   // Data States
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [isRefetching, setIsRefetching] = useState(false);
   const [error, setError] = useState(null);
+  const initialLoadedRef = useRef(false);
 
   // Synchronize URL query params
   useEffect(() => {
@@ -89,7 +91,11 @@ export function AuditDrawer(props) {
   // Fetch Audit Data from Backend
   const fetchAuditData = useCallback(async (isInitial = false) => {
     if (!effectiveEntityId) return;
-    setLoading(true);
+    if (isInitial) {
+      setLoading(true);
+    } else {
+      setIsRefetching(true);
+    }
     setError(null);
 
     try {
@@ -122,6 +128,7 @@ export function AuditDrawer(props) {
       
       if (json.success) {
         setData(json);
+        initialLoadedRef.current = true;
 
         // DEFAULT STATE RULE:
         // On initial open, preselect "Problem deals" = Loss + Credit note hit (worst first)
@@ -139,7 +146,6 @@ export function AuditDrawer(props) {
           }
         }
       } else {
-        
         throw new Error(json.error || 'Server error loading audit data');
       }
     } catch (err) {
@@ -147,6 +153,7 @@ export function AuditDrawer(props) {
       setError(err.message || 'Unable to connect to financial audit service');
     } finally {
       setLoading(false);
+      setIsRefetching(false);
     }
   }, [entityType, effectiveEntityId, month, effectiveFy, statusFilter, causeFilter, clientFilter, sortBy]);
 
@@ -155,19 +162,22 @@ export function AuditDrawer(props) {
     if (isOpen && effectiveEntityId) {
       setExpandedRowId(null);
       setIsExpandedAll(false);
+      initialLoadedRef.current = false;
       fetchAuditData(true);
+    } else {
+      initialLoadedRef.current = false;
     }
   }, [isOpen, effectiveEntityId, entityType, month, effectiveFy]);
 
-  // Refetch when filters change (debounced lightly)
+  // Refetch when filters change (debounced lightly, never triggers on data updates)
   useEffect(() => {
-    if (isOpen && effectiveEntityId && data) {
+    if (isOpen && effectiveEntityId && initialLoadedRef.current) {
       const timer = setTimeout(() => {
         fetchAuditData(false);
-      }, 120);
+      }, 150);
       return () => clearTimeout(timer);
     }
-  }, [isOpen, effectiveEntityId, data, statusFilter, causeFilter, clientFilter, sortBy]);
+  }, [statusFilter, causeFilter, clientFilter, sortBy]);
 
   // Keyboard escape to close
   useEffect(() => {
@@ -474,7 +484,8 @@ export function AuditDrawer(props) {
               gap: '6px',
               overflowX: 'auto',
               paddingBottom: '4px',
-              scrollbarWidth: 'thin'
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none'
             }}>
               {/* STATUS FILTER CHIPS */}
               <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
@@ -838,8 +849,8 @@ export function AuditDrawer(props) {
               )}
             </div>
 
-            {/* LOADING SKELETON */}
-            {loading && (
+            {/* LOADING SKELETON (only shown on initial load before data arrives) */}
+            {loading && !data && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {[1, 2, 3].map(n => (
                   <div 
@@ -956,8 +967,14 @@ export function AuditDrawer(props) {
             )}
 
             {/* REGULAR DEALS COMPACT LIST WITH INLINE EXPANSION */}
-            {!loading && !error && causeFilter !== 'no_conversion' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {!error && causeFilter !== 'no_conversion' && (!loading || data) && (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                opacity: isRefetching ? 0.6 : 1,
+                transition: 'opacity 0.15s ease'
+              }}>
                 {displayedDeals.map((deal) => {
                   const isExpanded = expandedRowId === deal.id;
                   const isLoss = deal.net_per_deal < 0;
