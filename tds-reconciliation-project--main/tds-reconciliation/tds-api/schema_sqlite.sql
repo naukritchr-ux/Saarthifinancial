@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS tds_26as_entries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   tan_no TEXT NOT NULL,
   deductor_name TEXT,
+  transaction_date TEXT,
   amount_paid DECIMAL(15,2),
   tds_deducted DECIMAL(15,2) NOT NULL,
   section TEXT,
