@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS tds_26as_entries (
   id INT AUTO_INCREMENT PRIMARY KEY,
   tan_no VARCHAR(20) NOT NULL,
   deductor_name VARCHAR(255),
+  transaction_date VARCHAR(30),
   amount_paid DECIMAL(15,2),
   tds_deducted DECIMAL(15,2) NOT NULL,
   section VARCHAR(20),
