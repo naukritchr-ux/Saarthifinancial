@@ -59,16 +59,16 @@ export default function UploadPanel({ onUploadSuccess }) {
     let filename = '';
     if (type === '26as') {
       filename = 'sample_form_26as.csv';
-      content = `Name of the Company,TAN No,Invoice Amount,TDS Amt,Section,Quarter\n` +
-        `MUMBAI TECH LABS PVT LTD,MUMK12345F,500000.00,50000.00,194J,Q4\n` +
-        `GARIMA SYSTEM SOLUTIONS,DELG03106F,250000.00,25000.00,194C,Q4\n` +
-        `ALPHA CONSULTING SERVICES,BLRN98765A,120000.00,12000.00,194J,Q4`;
+      content = `Name of Company,Transaction Date,Financial Year,TAN No,Transaction Amount,TDS Amount\n` +
+        `MUMBAI TECH LABS PVT LTD,2026-03-15,FY 2025-26,MUMK12345F,500000.00,50000.00\n` +
+        `GARIMA SYSTEM SOLUTIONS,2026-03-18,FY 2025-26,DELG03106F,250000.00,25000.00\n` +
+        `ALPHA CONSULTING SERVICES,2026-03-20,FY 2025-26,BLRN98765A,120000.00,12000.00`;
     } else {
       filename = 'sample_tally_ledger.csv';
-      content = `Name of the Company,GST Num,PAN No,Gross Total,TDS Amt,TAN No,Voucher Date\n` +
-        `MUMBAI TECH LABS PVT LTD,27AAAAA0000A1Z5,AAAAA0000A,500000.00,50000.00,MUMK12345F,2026-03-15\n` +
-        `GARIMA SYSTEM SOLUTIONS,07BBBBB1111B1Z2,BBBBB1111B,250000.00,25000.00,DELG03106F,2026-03-18\n` +
-        `ALPHA CONSULTING SERVICES,29CCCCC2222C1Z9,CCCCC2222C,120000.00,12000.00,BLRN98765A,2026-03-20`;
+      content = `Name of Company,Transaction Date,Financial Year,TAN No,Transaction Amount,TDS Amount\n` +
+        `MUMBAI TECH LABS PVT LTD,2026-03-15,FY 2025-26,MUMK12345F,500000.00,50000.00\n` +
+        `GARIMA SYSTEM SOLUTIONS,2026-03-18,FY 2025-26,DELG03106F,250000.00,25000.00\n` +
+        `ALPHA CONSULTING SERVICES,2026-03-20,FY 2025-26,BLRN98765A,120000.00,12000.00`;
     }
 
     const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
@@ -267,10 +267,10 @@ export default function UploadPanel({ onUploadSuccess }) {
           <div>
             <h2 className="text-xl font-black tracking-tight text-[#1F1B2E] flex items-center gap-2">
               <Table className="w-5 h-5 text-[#9B87F5]" />
-              Expected CSV & Tally Header Specification
+              Standard Upload File Header Specification
             </h2>
             <p className="text-xs text-[#6B6580] mt-1">
-              Verify column names in your CSV or Excel file before uploading. Autodetects TAN/PAN numbers, GST, and TDS amounts.
+              Use the same six-column format for both 26AS and Tally files. Records are reconciled with Saarthi CRM using TAN and Financial Year.
             </p>
           </div>
 
@@ -298,13 +298,12 @@ export default function UploadPanel({ onUploadSuccess }) {
           <div className="bg-[#E8E4FF]/40 p-4 rounded-xl border border-[#E9E4FA] space-y-2">
             <div className="flex items-center justify-between text-xs font-bold text-[#9B87F5] uppercase tracking-wider">
               <span>Form 26AS CSV Headers</span>
-              <span className="text-[10px] bg-[#9B87F5]/20 text-[#9B87F5] px-2 py-0.5 rounded border border-[#9B87F5]/30 font-extrabold">Govt Portal Format</span>
+              <span className="text-[10px] bg-[#9B87F5]/20 text-[#9B87F5] px-2 py-0.5 rounded border border-[#9B87F5]/30 font-extrabold">Standard Upload Format</span>
             </div>
             <div className="flex flex-wrap gap-1.5 text-xs font-mono">
-              <span className="bg-white text-[#1F1B2E] px-2 py-1 rounded border border-[#E9E4FA] font-semibold">Name of the Company</span>
-              <span className="bg-white text-[#FBBF77] px-2 py-1 rounded border border-[#E9E4FA] font-bold">TAN No *</span>
-              <span className="bg-white text-[#1F1B2E] px-2 py-1 rounded border border-[#E9E4FA] font-semibold">Invoice Amount</span>
-              <span className="bg-white text-[#FBBF77] px-2 py-1 rounded border border-[#E9E4FA] font-bold">TDS Amt *</span>
+              {['Name of Company', 'Transaction Date', 'Financial Year', 'TAN No *', 'Transaction Amount', 'TDS Amount *'].map((field) => (
+                <span key={field} className={`bg-white px-2 py-1 rounded border border-[#E9E4FA] font-semibold ${field.includes('*') ? 'text-[#FBBF77] font-bold' : 'text-[#1F1B2E]'}`}>{field}</span>
+              ))}
             </div>
           </div>
 
@@ -312,14 +311,12 @@ export default function UploadPanel({ onUploadSuccess }) {
           <div className="bg-[#E8E4FF]/40 p-4 rounded-xl border border-[#E9E4FA] space-y-2">
             <div className="flex items-center justify-between text-xs font-bold text-[#9B87F5] uppercase tracking-wider">
               <span>Tally Ledger CSV Headers</span>
-              <span className="text-[10px] bg-[#9B87F5]/20 text-[#9B87F5] px-2 py-0.5 rounded border border-[#9B87F5]/30 font-extrabold">Accountant Sheet</span>
+              <span className="text-[10px] bg-[#9B87F5]/20 text-[#9B87F5] px-2 py-0.5 rounded border border-[#9B87F5]/30 font-extrabold">Standard Upload Format</span>
             </div>
             <div className="flex flex-wrap gap-1.5 text-xs font-mono">
-              <span className="bg-white text-[#1F1B2E] px-2 py-1 rounded border border-[#E9E4FA] font-semibold">Name of the Company</span>
-              <span className="bg-white text-[#4ADE80] px-2 py-1 rounded border border-[#E9E4FA] font-semibold">GST Num (pull)</span>
-              <span className="bg-white text-[#1F1B2E] px-2 py-1 rounded border border-[#E9E4FA] font-semibold">PAN No</span>
-              <span className="bg-white text-[#1F1B2E] px-2 py-1 rounded border border-[#E9E4FA] font-semibold">Gross Total</span>
-              <span className="bg-white text-[#FBBF77] px-2 py-1 rounded border border-[#E9E4FA] font-bold">TDS Amt *</span>
+              {['Name of Company', 'Transaction Date', 'Financial Year', 'TAN No *', 'Transaction Amount', 'TDS Amount *'].map((field) => (
+                <span key={field} className={`bg-white px-2 py-1 rounded border border-[#E9E4FA] font-semibold ${field.includes('*') ? 'text-[#FBBF77] font-bold' : 'text-[#1F1B2E]'}`}>{field}</span>
+              ))}
             </div>
           </div>
         </div>
