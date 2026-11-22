@@ -54,7 +54,7 @@ const detectDelimiter = (text) => {
  */
 export const parseCsvFast = (csvText, explicitDelimiter = null) => {
   if (!csvText) return [];
-  
+
   let text = csvText;
   if (text.charCodeAt(0) === 0xFEFF) {
     text = text.slice(1);
@@ -280,7 +280,6 @@ const isTanHeader = (cell) => {
     t === 'tanno' || t === 'tan_no' || t === 'tax deduction account number' || t === 'tax deduction and collection account number' ||
     t.includes('tan of deductor') || t.includes('tan of the deductor') || t.includes('deductor tan') ||
     t.includes('party tan') || t.includes('client tan') || t.includes('customer tan') ||
-    t === 'tan pan' || t === 'pan tan' || t.includes('tan pan') || t.includes('pan tan') ||
     /^(deductor|party|client|customer)?\s*(tan)(\s*(no|number|num|id|code))?$/.test(t)
   );
 };
@@ -403,6 +402,7 @@ const detectHeaderRow26as = (rawData) => {
     tan_no: -1,
     deductor_name: -1,
     amount_paid: -1,
+    transaction_date: -1,
     tds_deducted: -1,
     section: -1,
     quarter: -1,
@@ -419,6 +419,7 @@ const detectHeaderRow26as = (rawData) => {
       tan_no: -1,
       deductor_name: -1,
       amount_paid: -1,
+      transaction_date: -1,
       tds_deducted: -1,
       section: -1,
       quarter: -1,
@@ -429,6 +430,7 @@ const detectHeaderRow26as = (rawData) => {
       if (isTanHeader(cell) && colMap.tan_no === -1) colMap.tan_no = c;
       if (isNameHeader(cell) && colMap.deductor_name === -1) colMap.deductor_name = c;
       if (isAmountHeader(cell) && colMap.amount_paid === -1) colMap.amount_paid = c;
+      if (isDateHeader(cell) && colMap.transaction_date === -1) colMap.transaction_date = c;
       if (isTdsHeader(cell) && colMap.tds_deducted === -1) colMap.tds_deducted = c;
       if (isSectionHeader(cell) && colMap.section === -1) colMap.section = c;
       if (isQuarterHeader(cell) && colMap.quarter === -1) colMap.quarter = c;
@@ -440,6 +442,7 @@ const detectHeaderRow26as = (rawData) => {
     if (colMap.deductor_name !== -1) score += 2;
     if (colMap.tds_deducted !== -1) score += 3;
     if (colMap.amount_paid !== -1) score += 2;
+    if (colMap.transaction_date !== -1) score += 2;
     if (colMap.section !== -1) score += 1;
     if (colMap.quarter !== -1) score += 1;
     if (colMap.fy !== -1) score += 1;
@@ -637,12 +640,6 @@ export const upload26as = async (req, res) => {
 
     const importMode = req.body?.importMode || req.query?.importMode || 'update';
     const uploadFy = String(req.body?.financialYear || req.query?.financialYear || '').trim();
-    if (importMode === 'clean') {
-      console.log('🧹 Cleaning past Form 26AS data before import...');
-      await db.execute('DELETE FROM tds_26as_entries');
-      await db.execute('UPDATE tds_reconciliation_results SET as26_tds = 0, as26_batch_id = NULL WHERE is_manually_edited = 0');
-    }
-
     const uploadBatchId = `batch_26as_${uuidv4().replace(/-/g, '').slice(0, 12)}`;
     const entries = [];
     const startRow = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
@@ -663,6 +660,7 @@ export const upload26as = async (req, res) => {
       let rawTan = colMap.tan_no !== -1 ? String(row[colMap.tan_no] || '').trim() : '';
       let deductorName = colMap.deductor_name !== -1 ? String(row[colMap.deductor_name] || '').trim() : '';
       const amountPaid = colMap.amount_paid !== -1 ? cleanNumber(row[colMap.amount_paid]) : 0.00;
+      const transactionDate = colMap.transaction_date !== -1 ? parseAnyDate(row[colMap.transaction_date]) : null;
       const tdsDeducted = colMap.tds_deducted !== -1 ? cleanNumber(row[colMap.tds_deducted]) : 0.00;
       let section = colMap.section !== -1 ? String(row[colMap.section] || '').trim() : '';
       let quarter = colMap.quarter !== -1 ? String(row[colMap.quarter] || '').trim() : '';
@@ -670,24 +668,27 @@ export const upload26as = async (req, res) => {
 
       // Skip obvious repeated header rows or summary rows
       const combinedRowText = row.join(' ').toUpperCase();
-      if (combinedRowText.includes('TOTAL TAX DEDUCTED') || combinedRowText.includes('SR NO') || combinedRowText.includes('NAME OF DEDUCTOR')) {
+      if (combinedRowText.includes('TOTAL TAX DEDUCTED') || combinedRowText.includes('SR NO') || combinedRowText.includes('NAME OF DEDUCTOR') || combinedRowText.includes('TRANSACTION DATE')) {
         continue;
       }
 
       // Check if this row is a TRACES section header row e.g. "Deductor: XYZ Ltd (DELA12345B)"
-      const rowTanMatch = combinedRowText.match(tanRegex) || combinedRowText.match(panRegex);
-      if (rowTanMatch && (!rawTan || !tanRegex.test(rawTan))) {
+      const rowTanMatch = combinedRowText.match(tanRegex);
+      if (rowTanMatch && (!rawTan || !tanRegex.test(rawTan.replace(/[\s\-_/#:]/g, '')))) {
         activeTan = rowTanMatch[0].toUpperCase();
       }
 
       if (rawTan) {
         const cleanTanExtract = rawTan.replace(/[\s\-_/#:]/g, '').toUpperCase();
-        const m = cleanTanExtract.match(tanRegex) || cleanTanExtract.match(panRegex);
+        const m = cleanTanExtract.match(tanRegex);
         if (m) {
           rawTan = m[0];
           activeTan = rawTan;
+        } else {
+          rawTan = '';
         }
-      } else if (activeTan) {
+      }
+      if (!rawTan && activeTan) {
         rawTan = activeTan;
       }
 
@@ -715,12 +716,13 @@ export const upload26as = async (req, res) => {
 
       const isSpecificFy = uploadFy && uploadFy !== 'All' && uploadFy !== 'All Financial Years';
       const fallbackFy = isSpecificFy ? (normalizeFY(uploadFy) || null) : null;
-      const financialYear = normalizeFY(rowFyRaw) || fallbackFy;
+      const financialYear = normalizeFY(rowFyRaw) || (transactionDate ? getFinancialYearFromDate(transactionDate) : null) || fallbackFy;
 
       entries.push({
         tan,
         deductorName: deductorName || 'Unknown Deductor',
         amountPaid,
+        transactionDate,
         tdsDeducted,
         section: section || 'N/A',
         quarter: quarter || 'N/A',
@@ -733,17 +735,23 @@ export const upload26as = async (req, res) => {
       return res.status(400).json({ success: false, error: 'No valid data rows found in Form 26AS file.' });
     }
 
+    if (importMode === 'clean') {
+      console.log('🧹 Cleaning past Form 26AS data before import...');
+      await db.execute('DELETE FROM tds_26as_entries');
+      await db.execute('UPDATE tds_reconciliation_results SET as26_tds = 0, as26_batch_id = NULL WHERE is_manually_edited = 0');
+    }
+
     // Bulk insert entries in chunks of 500
     const INSERT_CHUNK = 500;
     for (let i = 0; i < entries.length; i += INSERT_CHUNK) {
       const chunk = entries.slice(i, i + INSERT_CHUNK);
-      const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
       const params = [];
       for (const e of chunk) {
-        params.push(e.tan, e.deductorName, e.amountPaid, e.tdsDeducted, e.section, e.quarter, e.financialYear, e.uploadBatchId);
+        params.push(e.tan, e.deductorName, e.transactionDate, e.amountPaid, e.tdsDeducted, e.section, e.quarter, e.financialYear, e.uploadBatchId);
       }
       await db.execute(
-        `INSERT INTO tds_26as_entries (tan_no, deductor_name, amount_paid, tds_deducted, section, quarter, financial_year, upload_batch_id) VALUES ${placeholders}`,
+        `INSERT INTO tds_26as_entries (tan_no, deductor_name, transaction_date, amount_paid, tds_deducted, section, quarter, financial_year, upload_batch_id) VALUES ${placeholders}`,
         params
       );
     }
@@ -839,12 +847,6 @@ export const uploadTally = async (req, res) => {
 
     const importMode = req.body?.importMode || req.query?.importMode || 'update';
     const uploadFy = String(req.body?.financialYear || req.query?.financialYear || '').trim();
-    if (importMode === 'clean') {
-      console.log('🧹 Cleaning past Tally data before import...');
-      await db.execute('DELETE FROM tds_tally_entries');
-      await db.execute('UPDATE tds_reconciliation_results SET tally_tds = 0, tally_batch_id = NULL WHERE is_manually_edited = 0');
-    }
-
     const uploadBatchId = `batch_tally_${uuidv4().replace(/-/g, '').slice(0, 12)}`;
     const entries = [];
     const startRow = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
@@ -903,6 +905,7 @@ export const uploadTally = async (req, res) => {
       if (['TANNO', 'TAN_NO', 'TAN', 'PAN', 'PANNO', 'COMPANYNAME', 'PARTYNAME'].includes(cleanedTan)) {
         cleanedTan = '';
       }
+      const extractedTan = cleanedTan.match(tanRegex)?.[0] || '';
 
       // If PAN is empty but GSTIN is given, extract PAN from GSTIN (chars 2-12)
       if (!panNo && gstNum && gstNum.length >= 12) {
@@ -917,19 +920,14 @@ export const uploadTally = async (req, res) => {
 
       // Determine Final TAN
       let finalTan = '';
-      if (tanRegex.test(cleanedTan)) {
-        finalTan = cleanedTan;
+      if (extractedTan) {
+        finalTan = extractedTan;
       } else if (panNo && tanByPan.has(panNo)) {
         finalTan = tanByPan.get(panNo);
       } else if (partyName && tanByCleanName.has(cleanNameTokens(partyName))) {
         finalTan = tanByCleanName.get(cleanNameTokens(partyName));
-      } else if (panRegex.test(cleanedTan)) {
-        finalTan = cleanedTan;
-      } else if (panNo) {
-        finalTan = panNo;
-      } else if (cleanedTan) {
-        finalTan = cleanedTan;
       } else {
+        // Keep PAN or unknown identifiers out of tan_no; unresolved rows cannot be TAN-reconciled.
         finalTan = 'NO_TAN_' + (cleanNameTokens(partyName) || `ROW_${r}`);
       }
 
@@ -963,8 +961,14 @@ export const uploadTally = async (req, res) => {
       });
     }
 
-    if (entries.length === 0) {
+      if (entries.length === 0) {
       return res.status(400).json({ success: false, error: 'No valid data rows found in Tally file.' });
+    }
+
+    if (importMode === 'clean') {
+      console.log('🧹 Cleaning past Tally data before import...');
+      await db.execute('DELETE FROM tds_tally_entries');
+      await db.execute('UPDATE tds_reconciliation_results SET tally_tds = 0, tally_batch_id = NULL WHERE is_manually_edited = 0');
     }
 
     // Bulk insert entries in chunks of 500
