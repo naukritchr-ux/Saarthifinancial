@@ -9,6 +9,7 @@ import express from 'express';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { validateId } from '../middleware/validate.js';
 import {
+  getPendingTdsFollowups,
   getFollowupSummary,
   getFollowups,
   createFollowup,
@@ -19,6 +20,7 @@ import {
 
 const router = express.Router();
 
+router.get('/pending-tds', asyncHandler(getPendingTdsFollowups));
 router.get('/summary',  asyncHandler(getFollowupSummary));
 router.get('/',         asyncHandler(getFollowups));
 router.post('/',        asyncHandler(createFollowup));

@@ -16,7 +16,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { getFollowups, getFollowupSummary, deleteFollowup, purgeFollowups } from '../../api/tdsApi';
+import { getFollowups, getFollowupSummary, getPendingTdsFollowups, deleteFollowup, purgeFollowups } from '../../api/tdsApi';
 import { triggerCsvDownload } from '../../utils/exportUtils';
 import AddFollowupModal from './AddFollowupModal';
 
@@ -34,6 +34,9 @@ export default function FollowUp() {
   });
 
   const [items, setItems] = useState([]);
+  const [pendingTds, setPendingTds] = useState([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [pendingModalData, setPendingModalData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Filters state
@@ -125,8 +128,20 @@ export default function FollowUp() {
     }
   };
 
+  const loadPendingTds = async () => {
+    setPendingLoading(true);
+    try {
+      const res = await getPendingTdsFollowups(fyFilter && fyFilter !== 'All Financial Years' ? fyFilter : '');
+      setPendingTds(res?.success && Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error('Failed to load pending TDS follow-up queue:', err);
+      setPendingTds([]);
+    } finally { setPendingLoading(false); }
+  };
+
   useEffect(() => {
     loadData();
+    loadPendingTds();
   }, [selectedStatuses, dateRange, customStart, customEnd, search, dueOnly, responseFilter, refreshKey, fyFilter]);
 
   const handleStatusToggle = (st) => {
@@ -282,9 +297,7 @@ export default function FollowUp() {
           </button>
 
           <button
-            onClick={() => {
-              loadData();
-            }}
+            onClick={() => { loadData(); loadPendingTds(); }}
             className="inline-flex items-center gap-2 bg-[#E8E4FF] hover:bg-[#E9E4FA] text-[#1F1B2E] font-bold px-3.5 py-2.5 rounded-xl transition text-xs border border-[#E9E4FA] cursor-pointer shadow-2xs"
             title="Refresh follow-up entries from database"
           >
@@ -301,6 +314,46 @@ export default function FollowUp() {
           </button>
         </div>
       </div>
+
+      {/* Automatic Pending TDS Follow-up Queue */}
+      <section className="bg-white p-5 rounded-2xl border border-amber-200 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-black text-slate-900">Pending TDS Follow-up</h2>
+            <p className="text-xs text-slate-500 mt-1">Automatically based on current reconciliation data · {pendingTds.length} outstanding records</p>
+          </div>
+          <div className="flex gap-2 text-xs font-bold">
+            <span className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">Less Paid: {pendingTds.filter(r => r.status === 'Less Paid').length}</span>
+            <span className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200">Not Received: {pendingTds.filter(r => r.status === 'Not Received').length}</span>
+          </div>
+        </div>
+        {pendingLoading ? <div className="py-8 text-center text-sm text-slate-500">Loading pending reconciliation records…</div> : pendingTds.length === 0 ? <div className="py-8 text-center text-sm text-slate-500">No Less Paid or Not Received records for the selected financial year.</div> : (
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="min-w-[1100px] w-full text-xs">
+              <thead className="bg-slate-50 text-slate-600 uppercase text-[10px] tracking-wide">
+                <tr>{['Company Name','TAN','PAN','Financial Year','Primary TDS','26AS TDS','Difference','Status','Contact Person','Contact Number','Action'].map(h => <th key={h} className="text-left px-3 py-3 whitespace-nowrap">{h}</th>)}</tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {pendingTds.map((row, idx) => (
+                  <tr key={`${row.tanNo}-${row.financialYear}-${idx}`} className="hover:bg-slate-50/80">
+                    <td className="px-3 py-3 font-semibold text-slate-800">{row.companyName || '—'}</td>
+                    <td className="px-3 py-3 font-mono">{row.tanNo || '—'}</td>
+                    <td className="px-3 py-3 font-mono">{row.panNo || '—'}</td>
+                    <td className="px-3 py-3 whitespace-nowrap">{row.financialYear || '—'}</td>
+                    <td className="px-3 py-3 whitespace-nowrap">₹{Number(row.primaryTds || 0).toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
+                    <td className="px-3 py-3 whitespace-nowrap">₹{Number(row.as26Tds || 0).toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
+                    <td className="px-3 py-3 font-bold text-amber-700 whitespace-nowrap">₹{Number(row.difference || 0).toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
+                    <td className="px-3 py-3"><span className={`px-2 py-1 rounded-full text-[10px] font-bold whitespace-nowrap ${row.status === 'Not Received' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}`}>{row.status}</span></td>
+                    <td className="px-3 py-3">{row.contactPerson || '—'}</td>
+                    <td className="px-3 py-3 whitespace-nowrap">{row.contactNumber || '—'}</td>
+                    <td className="px-3 py-3"><button onClick={() => { setItemToEdit(null); setPendingModalData({ company: row.companyName, tan: row.tanNo, contactPerson: row.contactPerson || '', contactNumber: row.contactNumber || '' }); setShowAddModal(true); }} className="px-3 py-1.5 rounded-lg bg-[#9B87F5] text-white font-bold hover:bg-[#8572E0] whitespace-nowrap">Log Follow-up</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {/* Row 1: Summary Statistics Cards (6 Columns) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -750,9 +803,9 @@ export default function FollowUp() {
       {showAddModal && (
         <AddFollowupModal
           itemToEdit={itemToEdit}
-          initialData={followupPreFill}
-          onClose={() => { setShowAddModal(false); setFollowupPreFill(null); }}
-          onSaveSuccess={() => { loadData(); setFollowupPreFill(null); }}
+          initialData={pendingModalData || followupPreFill}
+          onClose={() => { setShowAddModal(false); setFollowupPreFill(null); setPendingModalData(null); }}
+          onSaveSuccess={() => { loadData(); loadPendingTds(); setFollowupPreFill(null); setPendingModalData(null); }}
         />
       )}
     </div>

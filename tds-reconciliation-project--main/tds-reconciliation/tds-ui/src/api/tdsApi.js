@@ -275,6 +275,19 @@ export const deleteUploadBatch = async (id, batchId = null) => {
 };
 
 /** Follow-up API */
+export const getPendingTdsFollowups = async (fy = '') => {
+  try {
+    const q = buildQuery({ fy });
+    const response = await fetchWithTimeout(`${API_URL}/api/followups/pending-tds?${q}`);
+    const data = await response.json();
+    if (response.ok && data && data.success !== false && Array.isArray(data.data)) return data;
+    return { success: false, error: data?.error || 'Failed to fetch pending TDS follow-ups', data: [] };
+  } catch (err) {
+    return { success: false, error: err.message || 'Network error fetching pending TDS follow-ups', data: [] };
+  }
+};
+
+
 export const getFollowupSummary = async () => {
   try {
     const response = await fetchWithTimeout(`${API_URL}/api/followups/summary`);

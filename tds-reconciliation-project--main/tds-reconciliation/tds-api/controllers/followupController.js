@@ -1,4 +1,51 @@
 import db from '../config/db.js';
+import { PRIMARY_TDS_SQL } from '../services/reconciliationRules.js';
+
+
+/**
+ * Automatic Pending TDS Follow-up queue from current reconciliation results.
+ * Only Less Paid (> ₹1 difference) and Not Received rows are returned.
+ */
+export const getPendingTdsFollowups = async (req, res) => {
+  try {
+    const fy = String(req.query.fy || '').trim();
+    const params = [];
+    const fyWhere = fy && fy !== 'All Financial Years' && fy !== 'All'
+      ? "AND COALESCE(tr.financial_year, d.financial_year, '') LIKE ?" : '';
+    if (fyWhere) params.push(`%${fy.replace(/^FY\s*/i, '').trim()}%`);
+
+    const query = `
+      SELECT
+        tr.tan_no AS tanNo,
+        COALESCE(d.company_name, tr.tan_no) AS companyName,
+        d.pan_no AS panNo,
+        COALESCE(tr.financial_year, d.financial_year) AS financialYear,
+        ${PRIMARY_TDS_SQL} AS primaryTds,
+        COALESCE(tr.as26_tds, 0) AS as26Tds,
+        (${PRIMARY_TDS_SQL} - COALESCE(tr.as26_tds, 0)) AS difference,
+        CASE
+          WHEN COALESCE(tr.as26_tds, 0) = 0 AND ${PRIMARY_TDS_SQL} > 0 THEN 'Not Received'
+          WHEN ${PRIMARY_TDS_SQL} > COALESCE(tr.as26_tds, 0) + 1 THEN 'Less Paid'
+          ELSE 'Match'
+        END AS status,
+        d.contact_person_name AS contactPerson,
+        d.contact_number AS contactNumber
+      FROM tds_reconciliation_results tr
+      LEFT JOIN tds_dues d ON d.id = tr.tds_dues_id
+      WHERE (
+        (COALESCE(tr.as26_tds, 0) = 0 AND ${PRIMARY_TDS_SQL} > 0)
+        OR (${PRIMARY_TDS_SQL} > COALESCE(tr.as26_tds, 0) + 1)
+      )
+      ${fyWhere}
+      ORDER BY status ASC, difference DESC, companyName ASC
+    `;
+    const [rows] = await db.execute(query, params);
+    res.json({ success: true, data: rows, count: rows.length });
+  } catch (error) {
+    console.error('Error fetching pending TDS follow-ups:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch pending TDS follow-ups', details: error.message });
+  }
+};
 
 /**
  * Get Follow-up Summary Counts

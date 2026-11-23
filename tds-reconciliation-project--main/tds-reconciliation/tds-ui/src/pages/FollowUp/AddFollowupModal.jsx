@@ -7,9 +7,9 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
 
   const [tanNo, setTanNo] = useState(isEditing ? itemToEdit.tanNo : (initialData?.tan || ''));
   const [companyName, setCompanyName] = useState(isEditing ? itemToEdit.companyName : (initialData?.company || ''));
-  const [contactPerson, setContactPerson] = useState(isEditing ? (itemToEdit.contactPerson || '') : '');
+  const [contactPerson, setContactPerson] = useState(isEditing ? (itemToEdit.contactPerson || '') : (initialData?.contactPerson || ''));
   const [department, setDepartment] = useState(isEditing ? (itemToEdit.department || 'Accounts') : 'Accounts');
-  const [contactNumber, setContactNumber] = useState(isEditing ? (itemToEdit.contactNumber || '') : '');
+  const [contactNumber, setContactNumber] = useState(isEditing ? (itemToEdit.contactNumber || '') : (initialData?.contactNumber || ''));
   const [method, setMethod] = useState(isEditing ? itemToEdit.method : 'Call');
   const standardOptions = [
     'Call Not Picked Up',
