@@ -36,6 +36,7 @@ export default function FollowUp() {
   const [items, setItems] = useState([]);
   const [pendingTds, setPendingTds] = useState([]);
   const [pendingLoading, setPendingLoading] = useState(false);
+  const [pendingError, setPendingError] = useState('');
   const [pendingModalData, setPendingModalData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -130,13 +131,22 @@ export default function FollowUp() {
 
   const loadPendingTds = async () => {
     setPendingLoading(true);
+    setPendingError('');
     try {
       const res = await getPendingTdsFollowups(fyFilter && fyFilter !== 'All Financial Years' ? fyFilter : '');
-      setPendingTds(res?.success && Array.isArray(res.data) ? res.data : []);
+      if (res?.success && Array.isArray(res.data)) {
+        setPendingTds(res.data.filter((row) => ['Less Paid', 'Not Received'].includes(row.status)));
+      } else {
+        setPendingTds([]);
+        setPendingError(res?.error || 'Unable to load pending TDS reconciliation records.');
+      }
     } catch (err) {
       console.error('Failed to load pending TDS follow-up queue:', err);
       setPendingTds([]);
-    } finally { setPendingLoading(false); }
+      setPendingError(err.message || 'Network error while loading pending TDS records.');
+    } finally {
+      setPendingLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -272,81 +282,113 @@ export default function FollowUp() {
     return true;
   });
 
+  const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  const pendingLessPaid = pendingTds.filter((row) => row.status === 'Less Paid').length;
+  const pendingNotReceived = pendingTds.filter((row) => row.status === 'Not Received').length;
+  const visiblePendingTds = pendingTds.filter((row) => {
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return [row.companyName, row.tanNo, row.panNo, row.contactPerson, row.contactNumber]
+      .some((value) => String(value || '').toLowerCase().includes(q));
+  });
+
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-[#E9E4FA] shadow-sm">
+    <div className="space-y-5 animate-fade-in min-w-0">
+      {/* The application's existing global header and navigation are rendered by the parent layout. */}
+
+      <section className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 rounded-2xl border border-violet-100 bg-white p-5 shadow-sm">
         <div>
-          <h1 className="text-2xl font-black text-[#1F1B2E] tracking-tight flex items-center gap-2">
-            <PhoneCall className="w-7 h-7 text-[#9B87F5]" />
-            Client TDS Follow-up Tracker
-          </h1>
-          <p className="text-xs text-[#6B6580] mt-1">
-            Log client outreach, track missing Form 26AS certificate statuses, and manage follow-up schedules.
-          </p>
+          <div className="flex items-center gap-2">
+            <PhoneCall className="h-6 w-6 text-violet-600" />
+            <h1 className="text-xl font-extrabold tracking-tight text-slate-900">Follow-up Report</h1>
+          </div>
+          <p className="mt-1 text-sm text-slate-500">Track pending TDS discrepancies and manage client follow-ups efficiently.</p>
         </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setPurgeConfirmOpen(true)}
-            className="inline-flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold px-3 py-2.5 rounded-xl transition text-xs border border-red-200 cursor-pointer shadow-2xs"
-            title="Clear all follow-up call history logs"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            Clear All Logs
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => { loadData(); loadPendingTds(); }} className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-white px-4 py-2.5 text-sm font-bold text-violet-700 hover:bg-violet-50">
+            <RefreshCw className={`h-4 w-4 ${pendingLoading || loading ? 'animate-spin' : ''}`} /> Refresh Data
           </button>
-
-          <button
-            onClick={() => { loadData(); loadPendingTds(); }}
-            className="inline-flex items-center gap-2 bg-[#E8E4FF] hover:bg-[#E9E4FA] text-[#1F1B2E] font-bold px-3.5 py-2.5 rounded-xl transition text-xs border border-[#E9E4FA] cursor-pointer shadow-2xs"
-            title="Refresh follow-up entries from database"
-          >
-            <RefreshCw className="w-3.5 h-3.5 text-[#9B87F5]" />
-            Refresh Data
-          </button>
-
-          <button
-            onClick={() => { setItemToEdit(null); setShowAddModal(true); }}
-            className="inline-flex items-center gap-2 bg-[#9B87F5] hover:bg-[#8572E0] text-white font-bold px-4 py-2.5 rounded-xl transition text-xs shadow-2xs cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            + Log New Follow-up
+          <button onClick={() => { setItemToEdit(null); setPendingModalData(null); setShowAddModal(true); }} className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-violet-800">
+            <Plus className="h-4 w-4" /> Log New Follow-up
           </button>
         </div>
-      </div>
+      </section>
 
-      {/* Automatic Pending TDS Follow-up Queue */}
-      <section className="bg-white p-5 rounded-2xl border border-amber-200 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      {/* Pending reconciliation summary */}
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <button onClick={() => setResponseFilter('')} className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-5 text-left shadow-sm transition hover:-translate-y-0.5">
+          <div className="flex items-center justify-between"><span className="text-sm font-bold text-amber-800">Less Paid</span><AlertCircle className="h-6 w-6 text-amber-600" /></div>
+          <div className="mt-2 text-3xl font-black text-amber-950">{pendingLessPaid}</div>
+          <p className="mt-1 text-xs text-amber-800">Primary TDS is higher than 26AS TDS</p>
+        </button>
+        <button onClick={() => setResponseFilter('')} className="rounded-2xl border border-rose-200 bg-gradient-to-br from-rose-50 to-red-50 p-5 text-left shadow-sm transition hover:-translate-y-0.5">
+          <div className="flex items-center justify-between"><span className="text-sm font-bold text-rose-800">Not Received</span><AlertCircle className="h-6 w-6 text-rose-600" /></div>
+          <div className="mt-2 text-3xl font-black text-rose-950">{pendingNotReceived}</div>
+          <p className="mt-1 text-xs text-rose-800">Primary TDS exists but no 26AS credit is found</p>
+        </button>
+        <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-green-50 p-5 shadow-sm">
+          <div className="flex items-center justify-between"><span className="text-sm font-bold text-emerald-800">Follow-up Logs</span><CheckCircle2 className="h-6 w-6 text-emerald-600" /></div>
+          <div className="mt-2 text-3xl font-black text-emerald-950">{Number(summary.totalFollowedUp || 0)}</div>
+          <p className="mt-1 text-xs text-emerald-800">Client communication entries recorded</p>
+        </div>
+      </section>
+
+      {/* Pending TDS records */}
+      <section className="overflow-hidden rounded-2xl border border-violet-100 bg-white shadow-sm">
+        <div className="flex flex-col gap-2 border-b border-violet-100 bg-gradient-to-r from-violet-700 to-indigo-600 px-5 py-4 text-white sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-lg font-black text-slate-900">Pending TDS Follow-up</h2>
-            <p className="text-xs text-slate-500 mt-1">Automatically based on current reconciliation data · {pendingTds.length} outstanding records</p>
+            <h2 className="text-base font-extrabold">Pending TDS Follow-up</h2>
+            <p className="mt-0.5 text-xs text-violet-100">Automatically loaded from reconciliation results · {visiblePendingTds.length} records</p>
           </div>
-          <div className="flex gap-2 text-xs font-bold">
-            <span className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 border border-amber-200">Less Paid: {pendingTds.filter(r => r.status === 'Less Paid').length}</span>
-            <span className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200">Not Received: {pendingTds.filter(r => r.status === 'Not Received').length}</span>
+          <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-bold">Less Paid + Not Received only</span>
+        </div>
+
+        <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 p-4 md:flex-row md:items-center md:justify-between">
+          <div className="relative w-full md:max-w-md">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search company, TAN, PAN or contact..." className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100" />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
+            <span className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">Less Paid: {pendingLessPaid}</span>
+            <span className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800">Not Received: {pendingNotReceived}</span>
           </div>
         </div>
-        {pendingLoading ? <div className="py-8 text-center text-sm text-slate-500">Loading pending reconciliation records…</div> : pendingTds.length === 0 ? <div className="py-8 text-center text-sm text-slate-500">No Less Paid or Not Received records for the selected financial year.</div> : (
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
-            <table className="min-w-[1100px] w-full text-xs">
-              <thead className="bg-slate-50 text-slate-600 uppercase text-[10px] tracking-wide">
-                <tr>{['Company Name','TAN','PAN','Financial Year','Primary TDS','26AS TDS','Difference','Status','Contact Person','Contact Number','Action'].map(h => <th key={h} className="text-left px-3 py-3 whitespace-nowrap">{h}</th>)}</tr>
+
+        {pendingLoading ? (
+          <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500"><Loader2 className="h-5 w-5 animate-spin text-violet-600" /> Loading reconciliation records...</div>
+        ) : pendingError ? (
+          <div className="px-4 py-10 text-center">
+            <AlertCircle className="mx-auto h-8 w-8 text-rose-500" />
+            <p className="mt-2 font-bold text-rose-700">Could not load pending TDS records</p>
+            <p className="mt-1 text-xs text-slate-500">{pendingError}</p>
+            <button onClick={loadPendingTds} className="mt-3 rounded-lg bg-violet-700 px-4 py-2 text-xs font-bold text-white hover:bg-violet-800">Try Again</button>
+          </div>
+        ) : visiblePendingTds.length === 0 ? (
+          <div className="px-4 py-12 text-center">
+            <CheckCircle2 className="mx-auto h-9 w-9 text-emerald-500" />
+            <p className="mt-2 font-bold text-slate-800">{pendingTds.length === 0 ? 'No Less Paid or Not Received records found' : 'No records match your search'}</p>
+            <p className="mt-1 text-xs text-slate-500">{pendingTds.length === 0 ? 'The selected financial year currently has no outstanding TDS discrepancies.' : 'Try searching with another company name, TAN or PAN.'}</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-[1120px] w-full text-left text-xs">
+              <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                <tr>{['Company Name','TAN','PAN','Financial Year','Primary TDS','26AS TDS','Difference','Status','Contact Person','Contact No.','Action'].map((heading) => <th key={heading} className="whitespace-nowrap px-3 py-3 font-extrabold">{heading}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {pendingTds.map((row, idx) => (
-                  <tr key={`${row.tanNo}-${row.financialYear}-${idx}`} className="hover:bg-slate-50/80">
-                    <td className="px-3 py-3 font-semibold text-slate-800">{row.companyName || '—'}</td>
-                    <td className="px-3 py-3 font-mono">{row.tanNo || '—'}</td>
-                    <td className="px-3 py-3 font-mono">{row.panNo || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap">{row.financialYear || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap">₹{Number(row.primaryTds || 0).toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
-                    <td className="px-3 py-3 whitespace-nowrap">₹{Number(row.as26Tds || 0).toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
-                    <td className="px-3 py-3 font-bold text-amber-700 whitespace-nowrap">₹{Number(row.difference || 0).toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
-                    <td className="px-3 py-3"><span className={`px-2 py-1 rounded-full text-[10px] font-bold whitespace-nowrap ${row.status === 'Not Received' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}`}>{row.status}</span></td>
-                    <td className="px-3 py-3">{row.contactPerson || '—'}</td>
-                    <td className="px-3 py-3 whitespace-nowrap">{row.contactNumber || '—'}</td>
-                    <td className="px-3 py-3"><button onClick={() => { setItemToEdit(null); setPendingModalData({ company: row.companyName, tan: row.tanNo, contactPerson: row.contactPerson || '', contactNumber: row.contactNumber || '' }); setShowAddModal(true); }} className="px-3 py-1.5 rounded-lg bg-[#9B87F5] text-white font-bold hover:bg-[#8572E0] whitespace-nowrap">Log Follow-up</button></td>
+                {visiblePendingTds.map((row, index) => (
+                  <tr key={`${row.tanNo || 'tan'}-${row.financialYear || 'fy'}-${index}`} className="hover:bg-violet-50/40">
+                    <td className="whitespace-nowrap px-3 py-3 font-bold text-slate-800">{row.companyName || '—'}</td>
+                    <td className="whitespace-nowrap px-3 py-3 font-mono">{row.tanNo || '—'}</td>
+                    <td className="whitespace-nowrap px-3 py-3 font-mono">{row.panNo || '—'}</td>
+                    <td className="whitespace-nowrap px-3 py-3">{row.financialYear || '—'}</td>
+                    <td className="whitespace-nowrap px-3 py-3">{money(row.primaryTds)}</td>
+                    <td className="whitespace-nowrap px-3 py-3">{money(row.as26Tds)}</td>
+                    <td className="whitespace-nowrap px-3 py-3 font-extrabold text-rose-700">{money(row.difference)}</td>
+                    <td className="px-3 py-3"><span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-extrabold ${row.status === 'Not Received' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-800'}`}>{row.status}</span></td>
+                    <td className="whitespace-nowrap px-3 py-3">{row.contactPerson || '—'}</td>
+                    <td className="whitespace-nowrap px-3 py-3">{row.contactNumber || '—'}</td>
+                    <td className="px-3 py-3"><button onClick={() => { setItemToEdit(null); setPendingModalData({ company: row.companyName || '', tan: row.tanNo || '', contactPerson: row.contactPerson || '', contactNumber: row.contactNumber || '' }); setShowAddModal(true); }} className="whitespace-nowrap rounded-lg bg-violet-700 px-3 py-2 font-bold text-white hover:bg-violet-800"><PhoneCall className="mr-1 inline h-3.5 w-3.5" /> Log Follow-up</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -355,457 +397,141 @@ export default function FollowUp() {
         )}
       </section>
 
-      {/* Row 1: Summary Statistics Cards (6 Columns) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-[#F6F8FA] p-3.5 rounded-2xl border border-[#DCE2E8] shadow-2xs text-center">
-          <div className="font-bold text-[#3A4048] text-[10px] uppercase">Total Logs</div>
-          <div className="text-2xl font-black text-[#3A4048] mt-1">{summary.totalFollowedUp}</div>
+      {/* Follow-up communication metrics */}
+      <section>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-base font-extrabold text-slate-900">Follow-up Summary</h2>
+          <span className="text-xs text-slate-500">Based on saved communication logs</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          {[
+            { label: 'Total Logs', value: summary.totalFollowedUp, color: 'blue' },
+            { label: 'Pending Call', value: summary.pendingResponse, color: 'violet' },
+            { label: 'Call Not Picked Up', value: summary.callNotPickedUp, color: 'amber' },
+            { label: 'Check & Revert', value: summary.checkAndRevert, color: 'indigo' },
+            { label: 'TDS Paid', value: summary.tdsPaid, color: 'emerald' },
+            { label: 'Form Received', value: summary.formReceived, color: 'sky' }
+          ].map((card) => (
+            <div key={card.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500">{card.label}</p>
+              <p className="mt-1 text-2xl font-black text-slate-900">{Number(card.value || 0)}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Follow-up history */}
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-base font-extrabold text-slate-900">Follow-up History</h2>
+            <p className="mt-0.5 text-xs text-slate-500">View and manage previous communication with clients</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-1 rounded-xl bg-slate-100 p-1">
+              {[{ id: 'all', label: 'All Time' },{ id: 'year', label: 'Current Year' },{ id: 'quarter', label: 'Current Quarter' },{ id: 'month', label: 'Current Month' },{ id: 'custom', label: 'Custom' }].map((tab) => (
+                <button key={tab.id} onClick={() => setDateRange(tab.id)} className={`rounded-lg px-2.5 py-1.5 text-[10px] font-bold ${dateRange === tab.id ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>{tab.label}</button>
+              ))}
+            </div>
+            <button onClick={() => setPurgeConfirmOpen(true)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50"><Trash2 className="h-3.5 w-3.5" /> Clear Logs</button>
+            <button onClick={handleExportCSV} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"><Download className="h-3.5 w-3.5" /> Export</button>
+          </div>
         </div>
 
-        <div className="bg-[#F6F8FA] p-3.5 rounded-2xl border border-[#DCE2E8] shadow-2xs text-center">
-          <div className="font-bold text-[#C9A778] text-[10px] uppercase">Pending Call</div>
-          <div className="text-2xl font-black text-[#735427] mt-1">{summary.pendingResponse}</div>
-        </div>
+        {dateRange === 'custom' && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs">
+            <Calendar className="h-4 w-4 text-slate-500" />
+            <input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5" />
+            <span className="text-slate-400">to</span>
+            <input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5" />
+          </div>
+        )}
 
-        <div className="bg-[#F6F8FA] p-3.5 rounded-2xl border border-[#DCE2E8] shadow-2xs text-center">
-          <div className="font-bold text-[#C08585] text-[10px] uppercase">Call Not Picked Up</div>
-          <div className="text-2xl font-black text-[#703535] mt-1">{summary.callNotPickedUp}</div>
-        </div>
-
-        <div className="bg-[#F6F8FA] p-3.5 rounded-2xl border border-[#DCE2E8] shadow-2xs text-center">
-          <div className="font-bold text-[#6E8CA0] text-[10px] uppercase">Check & Revert</div>
-          <div className="text-2xl font-black text-[#6E8CA0] mt-1">{summary.checkAndRevert}</div>
-        </div>
-
-        <div className="bg-[#F6F8FA] p-3.5 rounded-2xl border border-[#DCE2E8] shadow-2xs text-center">
-          <div className="font-bold text-[#7FA88A] text-[10px] uppercase">TDS Paid</div>
-          <div className="text-2xl font-black text-[#3D6348] mt-1">{summary.tdsPaid}</div>
-        </div>
-
-        <div className="bg-[#F6F8FA] p-3.5 rounded-2xl border border-[#DCE2E8] shadow-2xs text-center">
-          <div className="font-bold text-[#8FA3BF] text-[10px] uppercase">Form Received</div>
-          <div className="text-2xl font-black text-[#3E4A5C] mt-1">{summary.formReceived}</div>
-        </div>
-      </div>
-
-      {/* Filter Row: Status Badges Toggle */}
-      <div className="bg-[#F6F8FA] p-4 rounded-2xl border border-[#DCE2E8] shadow-2xs space-y-3">
-        <div className="flex justify-between items-center">
-          <span className="text-xs font-extrabold text-[#7A8794] uppercase tracking-wider flex items-center gap-1.5">
-            <Filter className="w-3.5 h-3.5 text-[#6E8CA0]" />
-            Filter Log Entries by Status
-          </span>
-          <span className="text-xs text-[#7A8794] font-semibold">
-            Showing <strong className="text-[#3A4048]">{filteredEntries.length}</strong> of {items.length} logs
-          </span>
-        </div>
-
-        <div className="flex flex-wrap gap-2 items-center">
-          {statusOptions.map((st) => {
-            const isChecked = selectedStatuses.includes(st);
-            return (
-              <label
-                key={st}
-                onClick={() => handleStatusToggle(st)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold cursor-pointer transition select-none ${
-                  isChecked
-                    ? 'bg-[#6E8CA0] text-white border-[#6E8CA0] shadow-xs'
-                    : 'bg-white text-[#3A4048] border-[#DCE2E8] hover:bg-[#EEF1F4]'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={isChecked}
-                  onChange={() => {}}
-                  className="hidden"
-                />
-                <span>{st}</span>
-              </label>
-            );
-          })}
-          {selectedStatuses.length > 0 && (
-            <button
-              onClick={() => setSelectedStatuses([])}
-              className="text-[11px] font-bold text-red-600 hover:underline ml-2"
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Row 3: Search, Date Range Tabs & Controls */}
-      <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm space-y-4">
-        <div className="flex flex-col lg:flex-row justify-between items-center gap-4">
-          
-          {/* Date Range Tabs */}
-          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl w-full lg:w-auto text-xs font-bold">
-            {[
-              { id: 'all', label: 'All Time' },
-              { id: 'year', label: 'Current Year' },
-              { id: 'quarter', label: 'Current Quarter' },
-              { id: 'month', label: 'Current Month' },
-              { id: 'custom', label: 'Custom' }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setDateRange(tab.id)}
-                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                  dateRange === tab.id
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-800'
-                }`}
-              >
-                {tab.label}
-              </button>
+        <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap gap-1.5">
+            {statusOptions.map((status) => (
+              <button key={status} onClick={() => handleStatusToggle(status)} className={`rounded-full border px-3 py-1.5 text-[10px] font-bold ${selectedStatuses.includes(status) ? 'border-violet-700 bg-violet-700 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-violet-300'}`}>{status}</button>
             ))}
+            {selectedStatuses.length > 0 && <button onClick={() => setSelectedStatuses([])} className="px-2 text-[10px] font-bold text-rose-600">Clear status</button>}
           </div>
-
-          {/* Custom Date Inputs */}
-          {dateRange === 'custom' && (
-            <div className="flex items-center gap-2 text-xs">
-              <input
-                type="date"
-                value={customStart}
-                onChange={(e) => setCustomStart(e.target.value)}
-                className="bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-1.5 font-semibold focus:outline-none focus:border-amber-500"
-              />
-              <span className="text-gray-400">to</span>
-              <input
-                type="date"
-                value={customEnd}
-                onChange={(e) => setCustomEnd(e.target.value)}
-                className="bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-1.5 font-semibold focus:outline-none focus:border-amber-500"
-              />
-            </div>
-          )}
-
-          {/* Search & Buttons */}
-          <div className="flex flex-col sm:flex-row items-center gap-2 w-full lg:w-auto text-xs">
-            <form onSubmit={handleSearchSubmit} className="relative flex-grow sm:flex-grow-0 w-full sm:w-60">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                placeholder="Search company, TAN, contact..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-9 pr-3 py-2 text-xs font-medium focus:outline-none focus:border-amber-500"
-              />
-            </form>
-
-            <button
-              onClick={() => setDueOnly(!dueOnly)}
-              className={`px-3 py-2 rounded-xl border text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
-                dueOnly
-                  ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm'
-                  : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-              }`}
-            >
-              <Clock className="w-3.5 h-3.5" />
-              Due Only
-            </button>
-
-            <button
-              onClick={handleExportCSV}
-              className="bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-bold px-3.5 py-2 rounded-xl transition text-xs cursor-pointer flex items-center gap-1.5 shadow-2xs"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Export
-            </button>
-
-            {items.length > 0 && (
-              <button
-                onClick={() => setPurgeConfirmOpen(true)}
-                className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold px-3.5 py-2 rounded-xl transition text-xs cursor-pointer flex items-center gap-1.5 shadow-xs"
-                title="Clear all follow-up logs"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                Clear All Logs
-              </button>
-            )}
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="relative">
+              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search logs..." className="w-48 rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-3 text-xs outline-none focus:border-violet-400" />
+            </label>
+            <button onClick={() => setDueOnly(!dueOnly)} className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-bold ${dueOnly ? 'border-violet-700 bg-violet-700 text-white' : 'border-slate-200 bg-white text-slate-700'}`}><Clock className="h-3.5 w-3.5" /> Due Only</button>
+            <span className="text-[10px] font-semibold text-slate-500">{filteredEntries.length} of {items.length} logs</span>
           </div>
         </div>
-      </div>
 
-      {/* Row 4: Data Table */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-100 text-slate-700 border-b border-slate-200 font-bold uppercase tracking-wider text-[11px]">
-                <th className="px-4 py-3">Company</th>
-                <th className="px-4 py-3">TAN</th>
-                <th className="px-4 py-3">Contact Person</th>
-                <th className="px-4 py-3">Dept</th>
-                <th className="px-4 py-3">Last Follow-up</th>
-                <th className="px-4 py-3">Method</th>
-                <th className="px-4 py-3 text-center">Status</th>
-                <th className="px-4 py-3">Next Follow-up</th>
-                <th className="px-4 py-3 text-center">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 font-medium text-gray-800">
-              {loading ? (
-                <tr>
-                  <td colSpan="9" className="px-4 py-8 text-center text-gray-400">
-                    <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-amber-500" />
-                    <span>Loading follow-up records...</span>
-                  </td>
-                </tr>
-              ) : (() => {
-                const list = Array.isArray(items) ? items : [];
-                const displayItems = list.filter(row => {
-                  if (!row) return false;
-                  if (selectedStatuses.length > 0 && !selectedStatuses.includes(row.status)) return false;
-                  if (search.trim()) {
-                    const q = search.toLowerCase().trim();
-                    const matchCompany = (row.companyName || '').toLowerCase().includes(q);
-                    const matchTan = (row.tanNo || '').toLowerCase().includes(q);
-                    const matchPerson = (row.contactPerson || '').toLowerCase().includes(q);
-                    const matchDept = (row.department || '').toLowerCase().includes(q);
-                    if (!matchCompany && !matchTan && !matchPerson && !matchDept) return false;
-                  }
-                  if (responseFilter === 'responded') {
-                    if (!['TDS Paid', 'Form Received', 'Check & Revert', 'Mail Reply'].includes(row.status)) return false;
-                  } else if (responseFilter === 'no_response') {
-                    if (!['Call Not Picked Up', 'Call Tomorrow', 'HR Left', 'Mailed'].includes(row.status)) return false;
-                  }
-                  if (dueOnly) {
-                    if (['TDS Paid', 'Form Received'].includes(row.status)) return false;
-                  }
-                  return true;
-                });
-
-                if (displayItems.length === 0) {
-                  return (
-                    <tr>
-                      <td colSpan="9" className="px-4 py-12 text-center text-gray-400">
-                        <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                        <span className="font-bold text-gray-700 block text-base">No Follow-up Entries Found</span>
-                        <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
-                          No items match the selected filters. You can log a new outreach entry or restore the default follow-up tracker entries.
-                        </p>
-                        <div className="flex justify-center items-center gap-3 mt-4">
-                          <button
-                            onClick={() => {
-                              loadData();
-                            }}
-                            className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold px-3.5 py-2 rounded-xl text-xs transition cursor-pointer shadow-sm"
-                          >
-                            <RefreshCw className="w-3.5 h-3.5" />
-                            Refresh Follow-ups
-                          </button>
-                          <button
-                            onClick={() => { setItemToEdit(null); setShowAddModal(true); }}
-                            className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-3.5 py-2 rounded-xl text-xs transition cursor-pointer shadow-sm"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            + Log New Follow-up
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
-
-                return displayItems.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-50 transition">
-                    <td className="px-4 py-3.5">
-                      <div className="font-bold text-gray-900">{row.companyName}</div>
-                      {row.notes && <div className="text-[10px] text-gray-400 truncate max-w-xs">{row.notes}</div>}
-                    </td>
-
-                    <td className="px-4 py-3.5 font-mono font-bold text-slate-700">
-                      {(!row.tanNo || row.tanNo.startsWith('NO_TAN_') || row.tanNo === 'Pending TAN' || row.tanNo === 'Not Available' || row.tanNo.includes('UNKNOWN')) ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                          Pending TAN
-                        </span>
-                      ) : (
-                        row.tanNo
-                      )}
-                    </td>
-
-                    <td className="px-4 py-3.5">
-                      <div className="font-semibold text-gray-800">{row.contactPerson || '—'}</div>
-                      {row.contactNumber && <div className="text-[10px] text-gray-400">{row.contactNumber}</div>}
-                    </td>
-
-                    <td className="px-4 py-3.5 text-gray-500">{row.department || 'Accounts'}</td>
-
-                    <td className="px-4 py-3.5 text-gray-600">
-                      {row.followupDate ? new Date(row.followupDate).toLocaleDateString('en-IN') : '—'}
-                    </td>
-
-                    <td className="px-4 py-3.5">
-                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-bold border border-slate-200">
-                        {row.method || 'Call'}
-                      </span>
-                    </td>
-
-                    <td className="px-4 py-3.5 text-center">{getStatusBadge(row.status)}</td>
-
-                    <td className="px-4 py-3.5">
-                      {row.nextFollowupDate ? (
-                        <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-[11px]">
-                          {new Date(row.nextFollowupDate).toLocaleDateString('en-IN')}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-3.5 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => { setItemToEdit(row); setShowAddModal(true); }}
-                          className="p-1.5 rounded-lg border border-gray-200 text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-                          title="Edit Follow-up Log"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteConfirmItem({ id: row.id, companyName: row.companyName });
-                          }}
-                          className="p-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition cursor-pointer"
-                          title="Delete Follow-up Log Entry"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
+        {loading ? (
+          <div className="py-12 text-center text-sm text-slate-500"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-violet-600" />Loading follow-up history...</div>
+        ) : filteredEntries.length === 0 ? (
+          <div className="px-4 py-12 text-center">
+            <CheckCircle2 className="mx-auto h-9 w-9 text-slate-300" />
+            <p className="mt-2 font-bold text-slate-800">No Follow-up Entries Found</p>
+            <p className="mt-1 text-xs text-slate-500">No saved communication logs match the selected filters.</p>
+            <button onClick={() => { setSelectedStatuses([]); setDateRange('all'); setDueOnly(false); setSearch(''); loadData(); }} className="mt-3 rounded-lg bg-violet-700 px-4 py-2 text-xs font-bold text-white hover:bg-violet-800">Reset Filters</button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-[950px] w-full text-left text-xs">
+              <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                <tr>{['Company','TAN','Contact Person','Department','Last Follow-up','Method','Status','Next Follow-up','Action'].map((heading) => <th key={heading} className="whitespace-nowrap px-3 py-3 font-extrabold">{heading}</th>)}</tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredEntries.map((row) => (
+                  <tr key={row.id} className="hover:bg-violet-50/40">
+                    <td className="px-3 py-3 font-bold text-slate-800">{row.companyName || '—'}</td>
+                    <td className="whitespace-nowrap px-3 py-3 font-mono">{row.tanNo || '—'}</td>
+                    <td className="whitespace-nowrap px-3 py-3">{row.contactPerson || '—'}{row.contactNumber ? <div className="text-[10px] text-slate-400">{row.contactNumber}</div> : null}</td>
+                    <td className="whitespace-nowrap px-3 py-3">{row.department || 'Accounts'}</td>
+                    <td className="whitespace-nowrap px-3 py-3">{row.followupDate ? new Date(row.followupDate).toLocaleDateString('en-IN') : '—'}</td>
+                    <td className="whitespace-nowrap px-3 py-3">{row.method || '—'}</td>
+                    <td className="whitespace-nowrap px-3 py-3"><span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-700">{row.status || '—'}</span></td>
+                    <td className="whitespace-nowrap px-3 py-3">{row.nextFollowupDate ? new Date(row.nextFollowupDate).toLocaleDateString('en-IN') : '—'}</td>
+                    <td className="px-3 py-3"><div className="flex items-center gap-1"><button onClick={() => { setItemToEdit(row); setPendingModalData(null); setShowAddModal(true); }} title="Edit" className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-100"><Edit2 className="h-3.5 w-3.5" /></button><button onClick={() => setDeleteConfirmItem({ id: row.id, companyName: row.companyName })} title="Delete" className="rounded-lg border border-rose-200 p-2 text-rose-600 hover:bg-rose-50"><Trash2 className="h-3.5 w-3.5" /></button></div></td>
                   </tr>
-                ))
-              })()}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
-      {/* Floating Feedback Toast */}
       {feedbackToast && (
-        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-semibold animate-fade-in ${
-          feedbackToast.type === 'error'
-            ? 'bg-red-50 text-red-700 border-red-200'
-            : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-        }`}>
-          {feedbackToast.type === 'error' ? (
-            <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
-          ) : (
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          )}
-          <span>{feedbackToast.text}</span>
-          <button
-            onClick={() => setFeedbackToast(null)}
-            className="ml-2 text-gray-400 hover:text-gray-700 cursor-pointer"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold shadow-xl ${feedbackToast.type === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+          {feedbackToast.type === 'error' ? <AlertCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+          <span>{feedbackToast.text}</span><button onClick={() => setFeedbackToast(null)}><X className="h-3.5 w-3.5" /></button>
         </div>
       )}
 
-      {/* Single Item Delete Confirmation Modal */}
       {deleteConfirmItem && (
-        <div
-          onClick={() => !isDeleting && setDeleteConfirmItem(null)}
-          className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 animate-scale-up"
-          >
-            <div className="flex items-center gap-3 text-red-600 mb-3">
-              <div className="p-2.5 rounded-xl bg-red-50 border border-red-100">
-                <Trash2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-slate-900">Delete Follow-up Log?</h3>
-                <p className="text-xs text-slate-500">This action cannot be undone.</p>
-              </div>
-            </div>
-
-            <p className="text-sm text-slate-700 my-4 bg-slate-50 p-3 rounded-xl border border-slate-100">
-              Are you sure you want to permanently delete the follow-up log for <span className="font-bold text-slate-900">{deleteConfirmItem.companyName || 'this client'}</span>?
-            </p>
-
-            <div className="flex items-center justify-end gap-2.5 pt-2">
-              <button
-                type="button"
-                disabled={isDeleting}
-                onClick={() => setDeleteConfirmItem(null)}
-                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isDeleting}
-                onClick={handleDeleteConfirmed}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-xl transition cursor-pointer shadow-sm disabled:opacity-50"
-              >
-                {isDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                {isDeleting ? 'Deleting...' : 'Delete Log'}
-              </button>
-            </div>
+        <div onClick={() => !isDeleting && setDeleteConfirmItem(null)} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="font-extrabold text-slate-900">Delete Follow-up Log?</h3>
+            <p className="my-4 text-sm text-slate-600">Permanently delete the follow-up log for <strong>{deleteConfirmItem.companyName || 'this client'}</strong>?</p>
+            <div className="flex justify-end gap-2"><button disabled={isDeleting} onClick={() => setDeleteConfirmItem(null)} className="rounded-lg px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100">Cancel</button><button disabled={isDeleting} onClick={handleDeleteConfirmed} className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{isDeleting ? 'Deleting...' : 'Delete Log'}</button></div>
           </div>
         </div>
       )}
 
-      {/* Purge All Follow-ups Confirmation Modal */}
       {purgeConfirmOpen && (
-        <div
-          onClick={() => !isDeleting && setPurgeConfirmOpen(false)}
-          className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-50"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 animate-scale-up"
-          >
-            <div className="flex items-center gap-3 text-red-600 mb-3">
-              <div className="p-2.5 rounded-xl bg-red-50 border border-red-100">
-                <Trash2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-slate-900">Clear All Follow-up History?</h3>
-                <p className="text-xs text-slate-500">Irreversible Action</p>
-              </div>
-            </div>
-
-            <p className="text-sm text-slate-700 my-4 bg-red-50/50 p-3 rounded-xl border border-red-100">
-              Are you sure you want to clear <span className="font-bold text-red-900">ALL Client Follow-up Call Logs</span>? This will wipe out all logged call notes and history across all clients.
-            </p>
-
-            <div className="flex items-center justify-end gap-2.5 pt-2">
-              <button
-                type="button"
-                disabled={isDeleting}
-                onClick={() => setPurgeConfirmOpen(false)}
-                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isDeleting}
-                onClick={handlePurgeConfirmed}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-xl transition cursor-pointer shadow-sm disabled:opacity-50"
-              >
-                {isDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                {isDeleting ? 'Clearing...' : 'Clear All Logs'}
-              </button>
-            </div>
+        <div onClick={() => !isDeleting && setPurgeConfirmOpen(false)} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="font-extrabold text-rose-700">Clear All Follow-up History?</h3>
+            <p className="my-4 rounded-xl bg-rose-50 p-3 text-sm text-slate-700">This will permanently delete all saved client follow-up logs. Pending TDS reconciliation records will not be deleted.</p>
+            <div className="flex justify-end gap-2"><button disabled={isDeleting} onClick={() => setPurgeConfirmOpen(false)} className="rounded-lg px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100">Cancel</button><button disabled={isDeleting} onClick={handlePurgeConfirmed} className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{isDeleting ? 'Clearing...' : 'Clear All Logs'}</button></div>
           </div>
         </div>
       )}
 
-      {/* Add / Edit Modal */}
       {showAddModal && (
         <AddFollowupModal
           itemToEdit={itemToEdit}
           initialData={pendingModalData || followupPreFill}
-          onClose={() => { setShowAddModal(false); setFollowupPreFill(null); setPendingModalData(null); }}
-          onSaveSuccess={() => { loadData(); loadPendingTds(); setFollowupPreFill(null); setPendingModalData(null); }}
+          onClose={() => { setShowAddModal(false); setFollowupPreFill(null); setPendingModalData(null); setItemToEdit(null); }}
+          onSaveSuccess={() => { loadData(); loadPendingTds(); setFollowupPreFill(null); setPendingModalData(null); setItemToEdit(null); }}
         />
       )}
     </div>
