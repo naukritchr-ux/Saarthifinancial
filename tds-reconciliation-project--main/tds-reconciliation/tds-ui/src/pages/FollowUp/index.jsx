@@ -16,7 +16,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { getFollowups, getFollowupSummary, getPendingTdsFollowups, getDashboardSummary, deleteFollowup, purgeFollowups } from '../../api/tdsApi';
+import { getFollowups, getFollowupSummary, getPendingTdsFollowups, deleteFollowup, purgeFollowups } from '../../api/tdsApi';
 import { triggerCsvDownload } from '../../utils/exportUtils';
 import AddFollowupModal from './AddFollowupModal';
 
@@ -35,7 +35,6 @@ export default function FollowUp() {
 
   const [items, setItems] = useState([]);
   const [pendingTds, setPendingTds] = useState([]);
-  const [financialTotals, setFinancialTotals] = useState({ tally: 0, as26: 0, saarthi: 0, netGap: 0 });
   const [pendingPage, setPendingPage] = useState(1);
   const PENDING_PAGE_SIZE = 10;
   const [pendingLoading, setPendingLoading] = useState(false);
@@ -137,11 +136,7 @@ export default function FollowUp() {
     setPendingError('');
     try {
       const selectedFy = fyFilter && fyFilter !== 'All Financial Years' ? fyFilter : '';
-      const [res, dashboardRes] = await Promise.all([
-        getPendingTdsFollowups(selectedFy),
-        getDashboardSummary(selectedFy)
-      ]);
-      if (dashboardRes?.success && dashboardRes.totals) setFinancialTotals(dashboardRes.totals);
+      const res = await getPendingTdsFollowups(selectedFy);
       if (res?.success && Array.isArray(res.data)) {
         setPendingTds(res.data.filter((row) => ['Less Paid', 'Not Received'].includes(row.status)));
         setPendingPage(1);
@@ -328,23 +323,6 @@ export default function FollowUp() {
         </div>
       </section>
 
-      {/* Same three-source financial summary used on Reconciliation page */}
-      <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        {[
-          { label: 'Tally Ledger TDS', value: financialTotals.tally, icon: 'T' },
-          { label: 'Form 26AS Portal TDS', value: financialTotals.as26, icon: '26AS' },
-          { label: 'Saarthi 360 CRM TDS', value: financialTotals.saarthi, icon: 'S' }
-        ].map((card) => (
-          <div key={card.label} className="rounded-2xl border border-violet-100 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">{card.label}</p>
-              <span className="rounded-lg bg-violet-50 px-2.5 py-1 text-xs font-black text-violet-700">{card.icon}</span>
-            </div>
-            <p className="mt-2 text-2xl font-black tracking-tight text-slate-900">{money(card.value)}</p>
-          </div>
-        ))}
-      </section>
-
       {/* Pending reconciliation summary */}
       <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <button onClick={() => setResponseFilter('')} className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-5 text-left shadow-sm transition hover:-translate-y-0.5">
@@ -402,9 +380,9 @@ export default function FollowUp() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[1120px] w-full text-left text-xs">
+            <table className="min-w-[1040px] w-full text-left text-xs">
               <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
-                <tr>{['Company Name','TAN','PAN','Financial Year','Tally TDS','26AS TDS','Saarthi 360 TDS','Primary TDS','Difference','Status','Contact Person','Contact No.','Action'].map((heading) => <th key={heading} className="whitespace-nowrap px-3 py-3 font-extrabold">{heading}</th>)}</tr>
+                <tr>{['Company Name','TAN','PAN','Financial Year','Tally TDS','26AS TDS','Saarthi 360 TDS','Difference','Status','Contact Person','Contact No.','Action'].map((heading) => <th key={heading} className="whitespace-nowrap px-3 py-3 font-extrabold">{heading}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {paginatedPendingTds.map((row, index) => (
@@ -416,7 +394,6 @@ export default function FollowUp() {
                     <td className="whitespace-nowrap px-3 py-3">{money(row.tallyTds)}</td>
                     <td className="whitespace-nowrap px-3 py-3">{money(row.as26Tds)}</td>
                     <td className="whitespace-nowrap px-3 py-3 font-semibold text-violet-700">{money(row.saarthiTds)}</td>
-                    <td className="whitespace-nowrap px-3 py-3">{money(row.primaryTds)}</td>
                     <td className="whitespace-nowrap px-3 py-3 font-extrabold text-rose-700">{money(row.difference)}</td>
                     <td className="px-3 py-3"><span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-extrabold ${row.status === 'Not Received' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-800'}`}>{row.status}</span></td>
                     <td className="whitespace-nowrap px-3 py-3">{row.contactPerson || '—'}</td>
