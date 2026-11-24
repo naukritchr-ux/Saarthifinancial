@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import {
   PhoneCall,
@@ -16,9 +15,7 @@ import {
   X,
   Loader2
 } from 'lucide-react';
-
 import { useApp } from '../../context/AppContext';
-
 import {
   getFollowups,
   getFollowupSummary,
@@ -26,17 +23,11 @@ import {
   deleteFollowup,
   purgeFollowups
 } from '../../api/tdsApi';
-
 import { triggerCsvDownload } from '../../utils/exportUtils';
 import AddFollowupModal from './AddFollowupModal';
 
 export default function FollowUp() {
-  const {
-    followupPreFill,
-    setFollowupPreFill,
-    refreshKey,
-    fyFilter
-  } = useApp();
+  const { followupPreFill, setFollowupPreFill, refreshKey, fyFilter } = useApp();
 
   const [summary, setSummary] = useState({
     totalFollowedUp: 0,
@@ -51,18 +42,16 @@ export default function FollowUp() {
   const [items, setItems] = useState([]);
   const [pendingTds, setPendingTds] = useState([]);
 
-  // Pending TDS filters
+  // Pending TDS filters and pagination
   const [pendingPage, setPendingPage] = useState(1);
   const [pendingFyFilter, setPendingFyFilter] = useState('');
   const [pendingCompanyFilter, setPendingCompanyFilter] = useState('');
   const [pendingStatusFilter, setPendingStatusFilter] = useState('');
-
   const PENDING_PAGE_SIZE = 10;
 
   const [pendingLoading, setPendingLoading] = useState(false);
   const [pendingError, setPendingError] = useState('');
   const [pendingModalData, setPendingModalData] = useState(null);
-
   const [loading, setLoading] = useState(true);
 
   // Follow-up history filters
@@ -91,27 +80,18 @@ export default function FollowUp() {
 
   const statusOptions = React.useMemo(() => {
     const list = Array.isArray(items) ? items : [];
-
     const customList = list
-      .map(item => item?.status)
-      .filter(status =>
-        status && !standardStatusOptions.includes(status)
-      );
+      .map(i => i?.status)
+      .filter(st => st && !standardStatusOptions.includes(st));
 
-    return [
-      ...standardStatusOptions,
-      ...Array.from(new Set(customList))
-    ];
+    return [...standardStatusOptions, ...Array.from(new Set(customList))];
   }, [items]);
 
   // Handle pre-fill from Reconciliation table
   useEffect(() => {
     if (followupPreFill) {
       if (followupPreFill.company || followupPreFill.tan) {
-        setSearch(
-          followupPreFill.company || followupPreFill.tan
-        );
-
+        setSearch(followupPreFill.company || followupPreFill.tan);
         setShowAddModal(true);
       }
     }
@@ -126,23 +106,18 @@ export default function FollowUp() {
   // Auto-dismiss toast
   useEffect(() => {
     if (feedbackToast) {
-      const timer = setTimeout(
-        () => setFeedbackToast(null),
-        4000
-      );
-
+      const timer = setTimeout(() => setFeedbackToast(null), 4000);
       return () => clearTimeout(timer);
     }
   }, [feedbackToast]);
 
-  // Load follow-up history
+  // Load saved follow-up logs
   const loadData = async () => {
     setLoading(true);
 
     try {
       const [sumRes, listRes] = await Promise.all([
         getFollowupSummary(),
-
         getFollowups({
           status: selectedStatuses,
           dateRange,
@@ -151,33 +126,23 @@ export default function FollowUp() {
           search,
           dueOnly: dueOnly ? 'true' : 'false',
           responseFilter,
-          fy:
-            fyFilter && fyFilter !== 'All Financial Years'
-              ? fyFilter
-              : ''
+          fy: fyFilter && fyFilter !== 'All Financial Years' ? fyFilter : ''
         })
       ]);
 
-      if (sumRes?.success && sumRes.data) {
+      if (sumRes && sumRes.success && sumRes.data) {
         setSummary(sumRes.data);
       }
 
-      if (
-        listRes?.success &&
-        Array.isArray(listRes.data)
-      ) {
+      if (listRes && listRes.success && Array.isArray(listRes.data)) {
         setItems(listRes.data);
       } else if (Array.isArray(listRes)) {
         setItems(listRes);
       } else {
         setItems([]);
       }
-    } catch (error) {
-      console.error(
-        'Failed to load follow-up report:',
-        error
-      );
-
+    } catch (err) {
+      console.error('Failed to load follow-up report:', err);
       setItems([]);
     } finally {
       setLoading(false);
@@ -191,42 +156,28 @@ export default function FollowUp() {
 
     try {
       const selectedFy =
-        fyFilter && fyFilter !== 'All Financial Years'
-          ? fyFilter
-          : '';
+        fyFilter && fyFilter !== 'All Financial Years' ? fyFilter : '';
 
       const res = await getPendingTdsFollowups(selectedFy);
 
-      if (
-        res?.success &&
-        Array.isArray(res.data)
-      ) {
+      if (res?.success && Array.isArray(res.data)) {
         setPendingTds(
           res.data.filter(row =>
             ['Less Paid', 'Not Received'].includes(row.status)
           )
         );
-
         setPendingPage(1);
       } else {
         setPendingTds([]);
-
         setPendingError(
-          res?.error ||
-          'Unable to load pending TDS reconciliation records.'
+          res?.error || 'Unable to load pending TDS reconciliation records.'
         );
       }
-    } catch (error) {
-      console.error(
-        'Failed to load pending TDS follow-up queue:',
-        error
-      );
-
+    } catch (err) {
+      console.error('Failed to load pending TDS follow-up queue:', err);
       setPendingTds([]);
-
       setPendingError(
-        error.message ||
-        'Network error while loading pending TDS records.'
+        err.message || 'Network error while loading pending TDS records.'
       );
     } finally {
       setPendingLoading(false);
@@ -248,72 +199,51 @@ export default function FollowUp() {
     fyFilter
   ]);
 
-  const handleStatusToggle = (status) => {
-    if (selectedStatuses.includes(status)) {
-      setSelectedStatuses(
-        selectedStatuses.filter(
-          item => item !== status
-        )
-      );
+  const handleStatusToggle = (st) => {
+    if (selectedStatuses.includes(st)) {
+      setSelectedStatuses(selectedStatuses.filter(s => s !== st));
     } else {
-      setSelectedStatuses([
-        ...selectedStatuses,
-        status
-      ]);
+      setSelectedStatuses([...selectedStatuses, st]);
     }
   };
 
-  const handleSearchSubmit = (event) => {
-    event.preventDefault();
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
     loadData();
   };
 
-  // Delete follow-up
+  // Delete follow-up log
   const handleDeleteConfirmed = async () => {
     if (!deleteConfirmItem) return;
 
     const { id, companyName } = deleteConfirmItem;
-
     setIsDeleting(true);
 
     try {
-      setItems(prev =>
-        prev.filter(item => item.id !== id)
-      );
+      setItems(prev => prev.filter(item => item.id !== id));
 
       const res = await deleteFollowup(id);
 
       if (!res || res.success === false) {
         setFeedbackToast({
           type: 'error',
-          text:
-            res?.error ||
-            'Failed to delete follow-up log entry'
+          text: res?.error || 'Failed to delete follow-up log entry'
         });
-
         loadData();
       } else {
         setFeedbackToast({
           type: 'success',
-          text: `Deleted follow-up log for ${
-            companyName || 'client'
-          }`
+          text: `Deleted follow-up log for ${companyName || 'client'}`
         });
-
         setDeleteConfirmItem(null);
         loadData();
       }
-    } catch (error) {
-      console.error(
-        'Failed to delete follow-up:',
-        error
-      );
-
+    } catch (err) {
+      console.error('Failed to delete follow-up:', err);
       setFeedbackToast({
         type: 'error',
         text: 'Network error deleting follow-up entry.'
       });
-
       loadData();
     } finally {
       setIsDeleting(false);
@@ -321,7 +251,7 @@ export default function FollowUp() {
     }
   };
 
-  // Clear follow-up history
+  // Clear all follow-up logs
   const handlePurgeConfirmed = async () => {
     setIsDeleting(true);
 
@@ -335,7 +265,6 @@ export default function FollowUp() {
           type: 'success',
           text: 'All follow-up logs have been cleared successfully.'
         });
-
         setPurgeConfirmOpen(false);
         loadData();
       } else {
@@ -343,20 +272,14 @@ export default function FollowUp() {
           type: 'error',
           text: res?.error || 'Failed to clear follow-ups'
         });
-
         loadData();
       }
-    } catch (error) {
-      console.error(
-        'Failed to purge follow-ups:',
-        error
-      );
-
+    } catch (err) {
+      console.error('Failed to purge follow-ups:', err);
       setFeedbackToast({
         type: 'error',
         text: 'Network error clearing follow-up logs.'
       });
-
       loadData();
     } finally {
       setIsDeleting(false);
@@ -364,12 +287,10 @@ export default function FollowUp() {
     }
   };
 
-  // Export follow-up history
+  // Export follow-up logs
   const handleExportCSV = () => {
     if (filteredEntries.length === 0) {
-      return alert(
-        'No follow-up items to export (check your active filters)'
-      );
+      return alert('No follow-up items to export (check your active filters)');
     }
 
     const headers = [
@@ -402,25 +323,20 @@ export default function FollowUp() {
       ].join(','));
     });
 
-    const csvContent =
-      '\uFEFF' + csvLines.join('\n');
-
+    const csvContent = '\uFEFF' + csvLines.join('\n');
     const filename =
-      `tds_followup_report_${new Date()
-        .toISOString()
-        .slice(0, 10)}.csv`;
+      `tds_followup_report_${new Date().toISOString().slice(0, 10)}.csv`;
 
     triggerCsvDownload(filename, csvContent);
   };
 
-  // Follow-up history status badge
-  const getStatusBadge = (status) => {
-    switch (status) {
+  const getStatusBadge = (st) => {
+    switch (st) {
       case 'TDS Paid':
       case 'Form Received':
         return (
           <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#4ADE80]/15 text-[#2E8B57] border border-[#4ADE80]/30">
-            {status}
+            {st}
           </span>
         );
 
@@ -428,7 +344,7 @@ export default function FollowUp() {
       case 'Mail Reply':
         return (
           <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#9B87F5]/15 text-[#9B87F5] border border-[#9B87F5]/30">
-            {status}
+            {st}
           </span>
         );
 
@@ -436,7 +352,7 @@ export default function FollowUp() {
       case 'Mailed':
         return (
           <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#FBBF77]/15 text-[#D97706] border border-[#FBBF77]/30">
-            {status}
+            {st}
           </span>
         );
 
@@ -444,23 +360,21 @@ export default function FollowUp() {
       case 'HR Left':
         return (
           <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#F87A9E]/15 text-[#E11D48] border border-[#F87A9E]/30">
-            {status}
+            {st}
           </span>
         );
 
       default:
         return (
           <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#E8E4FF] text-[#1F1B2E] border border-[#E9E4FA]">
-            {status}
+            {st}
           </span>
         );
     }
   };
 
-  // Filter saved follow-up history
-  const filteredEntries = (
-    Array.isArray(items) ? items : []
-  ).filter(row => {
+  // Filter follow-up history
+  const filteredEntries = (Array.isArray(items) ? items : []).filter(row => {
     if (!row) return false;
 
     if (
@@ -471,71 +385,80 @@ export default function FollowUp() {
     }
 
     if (search.trim()) {
-      const query = search.toLowerCase().trim();
+      const q = search.toLowerCase().trim();
 
-      const matchCompany =
-        (row.companyName || '').toLowerCase().includes(query);
+      const matchCompany = (row.companyName || '').toLowerCase().includes(q);
+      const matchTan = (row.tanNo || '').toLowerCase().includes(q);
+      const matchPerson = (row.contactPerson || '').toLowerCase().includes(q);
+      const matchDept = (row.department || '').toLowerCase().includes(q);
 
-      const matchTan =
-        (row.tanNo || '').toLowerCase().includes(query);
-
-      const matchPerson =
-        (row.contactPerson || '').toLowerCase().includes(query);
-
-      const matchDept =
-        (row.department || '').toLowerCase().includes(query);
-
-      if (
-        !matchCompany &&
-        !matchTan &&
-        !matchPerson &&
-        !matchDept
-      ) {
+      if (!matchCompany && !matchTan && !matchPerson && !matchDept) {
         return false;
       }
     }
 
-    if (responseFilter === 'responded') {
-      if (
-        ![
-          'TDS Paid',
-          'Form Received',
-          'Check & Revert',
-          'Mail Reply'
-        ].includes(row.status)
-      ) {
-        return false;
-      }
-    } else if (responseFilter === 'no_response') {
-      if (
-        ![
-          'Call Not Picked Up',
-          'Call Tomorrow',
-          'HR Left',
-          'Mailed'
-        ].includes(row.status)
-      ) {
-        return false;
-      }
+    if (responseFilter && row.response !== responseFilter) {
+      return false;
     }
 
-    if (dueOnly) {
-      if (
-        ['TDS Paid', 'Form Received'].includes(row.status)
-      ) {
+    if (dueOnly && row.nextFollowupDate) {
+      const nextDate = new Date(row.nextFollowupDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (nextDate > today) return false;
+    }
+
+    if (dateRange !== 'all') {
+      const date = new Date(row.followupDate);
+      const now = new Date();
+
+      if (dateRange === 'year' && date.getFullYear() !== now.getFullYear()) {
         return false;
+      }
+
+      if (dateRange === 'month') {
+        if (
+          date.getMonth() !== now.getMonth() ||
+          date.getFullYear() !== now.getFullYear()
+        ) {
+          return false;
+        }
+      }
+
+      if (dateRange === 'quarter') {
+        const currentQuarter = Math.floor(now.getMonth() / 3);
+        const rowQuarter = Math.floor(date.getMonth() / 3);
+
+        if (
+          rowQuarter !== currentQuarter ||
+          date.getFullYear() !== now.getFullYear()
+        ) {
+          return false;
+        }
+      }
+
+      if (dateRange === 'custom') {
+        if (customStart && date < new Date(customStart)) return false;
+
+        if (customEnd) {
+          const end = new Date(customEnd);
+          end.setHours(23, 59, 59, 999);
+
+          if (date > end) return false;
+        }
       }
     }
 
     return true;
   });
 
+  // Pending TDS summary and filters
   const money = (value) =>
     `₹${Number(value || 0).toLocaleString('en-IN', {
       maximumFractionDigits: 2
     })}`;
 
-  // Pending TDS counts
   const pendingLessPaid = pendingTds.filter(
     row => row.status === 'Less Paid'
   ).length;
@@ -544,24 +467,18 @@ export default function FollowUp() {
     row => row.status === 'Not Received'
   ).length;
 
-  // Dropdown options
   const pendingFinancialYears = [
     ...new Set(
-      pendingTds
-        .map(row => row.financialYear)
-        .filter(Boolean)
+      pendingTds.map(row => row.financialYear).filter(Boolean)
     )
   ].sort();
 
   const pendingCompanies = [
     ...new Set(
-      pendingTds
-        .map(row => row.companyName)
-        .filter(Boolean)
+      pendingTds.map(row => row.companyName).filter(Boolean)
     )
   ].sort((a, b) => a.localeCompare(b));
 
-  // Pending TDS filtering
   const visiblePendingTds = pendingTds.filter(row => {
     if (
       pendingFyFilter &&
@@ -577,16 +494,13 @@ export default function FollowUp() {
       return false;
     }
 
-    if (
-      pendingStatusFilter &&
-      row.status !== pendingStatusFilter
-    ) {
+    if (pendingStatusFilter && row.status !== pendingStatusFilter) {
       return false;
     }
 
     if (!search.trim()) return true;
 
-    const query = search.trim().toLowerCase();
+    const q = search.trim().toLowerCase();
 
     return [
       row.companyName,
@@ -595,22 +509,16 @@ export default function FollowUp() {
       row.contactPerson,
       row.contactNumber
     ].some(value =>
-      String(value || '').toLowerCase().includes(query)
+      String(value || '').toLowerCase().includes(q)
     );
   });
 
-  // Pagination
   const pendingTotalPages = Math.max(
     1,
-    Math.ceil(
-      visiblePendingTds.length / PENDING_PAGE_SIZE
-    )
+    Math.ceil(visiblePendingTds.length / PENDING_PAGE_SIZE)
   );
 
-  const safePendingPage = Math.min(
-    pendingPage,
-    pendingTotalPages
-  );
+  const safePendingPage = Math.min(pendingPage, pendingTotalPages);
 
   const paginatedPendingTds = visiblePendingTds.slice(
     (safePendingPage - 1) * PENDING_PAGE_SIZE,
@@ -628,13 +536,13 @@ export default function FollowUp() {
 
   return (
     <div className="space-y-5 animate-fade-in min-w-0">
+      {/* The application's existing global header and navigation are rendered by the parent layout. */}
 
-      {/* Follow-up page heading */}
+      {/* Page heading */}
       <section className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 rounded-[24px] border border-violet-100 bg-white px-6 py-6 shadow-sm">
         <div>
           <div className="flex items-center gap-2">
             <PhoneCall className="h-6 w-6 text-violet-600" />
-
             <h1 className="text-2xl font-black tracking-tight text-slate-900">
               Follow-up Report
             </h1>
@@ -645,19 +553,15 @@ export default function FollowUp() {
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => {
               loadData();
               loadPendingTds();
             }}
-            className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-white px-4 py-2.5 text-sm font-bold text-violet-700 hover:bg-violet-50"
+            className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-white px-5 py-3 text-sm font-bold text-violet-700 shadow-sm transition hover:bg-violet-50"
           >
-            <RefreshCw
-              className={`h-4 w-4 ${
-                pendingLoading || loading ? 'animate-spin' : ''
-              }`}
-            />
+            <RefreshCw className="h-4 w-4" />
             Refresh Data
           </button>
 
@@ -667,7 +571,7 @@ export default function FollowUp() {
               setPendingModalData(null);
               setShowAddModal(true);
             }}
-            className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-violet-800"
+            className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-violet-800"
           >
             <Plus className="h-4 w-4" />
             Log New Follow-up
@@ -675,14 +579,10 @@ export default function FollowUp() {
         </div>
       </section>
 
-      {/* Pending reconciliation summary */}
+      {/* Pending reconciliation summary cards */}
       <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-
         <button
-          onClick={() => {
-            setPendingStatusFilter('Less Paid');
-            setPendingPage(1);
-          }}
+          onClick={() => setResponseFilter('')}
           className="rounded-[22px] border border-amber-200 bg-[#FFF9ED] p-6 text-left shadow-sm transition hover:-translate-y-0.5"
         >
           <div className="flex items-center justify-between">
@@ -702,10 +602,7 @@ export default function FollowUp() {
         </button>
 
         <button
-          onClick={() => {
-            setPendingStatusFilter('Not Received');
-            setPendingPage(1);
-          }}
+          onClick={() => setResponseFilter('')}
           className="rounded-[22px] border border-rose-200 bg-[#FFF2F3] p-6 text-left shadow-sm transition hover:-translate-y-0.5"
         >
           <div className="flex items-center justify-between">
@@ -742,9 +639,8 @@ export default function FollowUp() {
         </div>
       </section>
 
-      {/* Pending TDS table */}
+      {/* Pending TDS records */}
       <section className="overflow-hidden rounded-[24px] border border-violet-100 bg-white shadow-sm">
-
         <div className="flex flex-col gap-2 border-b border-violet-100 bg-gradient-to-r from-violet-700 to-indigo-600 px-6 py-5 text-white sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-base font-extrabold">
@@ -763,15 +659,14 @@ export default function FollowUp() {
 
         {/* Search and filters */}
         <div className="space-y-4 border-b border-violet-100 bg-white px-5 py-5">
-
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative w-full lg:max-w-xl">
               <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
 
               <input
                 value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
+                onChange={(e) => {
+                  setSearch(e.target.value);
                   setPendingPage(1);
                 }}
                 placeholder="Search across Company Name, TAN, PAN or contact..."
@@ -792,17 +687,16 @@ export default function FollowUp() {
 
           {/* Financial Year, Company Name and Status filters */}
           <div className="grid grid-cols-1 gap-3 border-t border-violet-100 pt-4 md:grid-cols-3">
-
-            <label className="block min-w-0">
-              <span className="mb-2 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-slate-600">
-                <Calendar className="h-3.5 w-3.5 text-violet-500" />
-                Financial Year
-              </span>
+            <div>
+              <label className="mb-2 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-slate-600">
+                <Calendar className="h-4 w-4 text-violet-500" />
+                Filter 1: Financial Year
+              </label>
 
               <select
                 value={pendingFyFilter}
-                onChange={(event) => {
-                  setPendingFyFilter(event.target.value);
+                onChange={(e) => {
+                  setPendingFyFilter(e.target.value);
                   setPendingPage(1);
                 }}
                 className="w-full rounded-xl border border-violet-100 bg-[#F7F7FA] px-3 py-3 text-sm text-slate-800 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
@@ -815,23 +709,23 @@ export default function FollowUp() {
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
 
-            <label className="block min-w-0">
-              <span className="mb-2 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-slate-600">
-                <Filter className="h-3.5 w-3.5 text-violet-500" />
-                Company Name
-              </span>
+            <div>
+              <label className="mb-2 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-slate-600">
+                <Filter className="h-4 w-4 text-violet-500" />
+                Filter 2: Company Name
+              </label>
 
               <select
                 value={pendingCompanyFilter}
-                onChange={(event) => {
-                  setPendingCompanyFilter(event.target.value);
+                onChange={(e) => {
+                  setPendingCompanyFilter(e.target.value);
                   setPendingPage(1);
                 }}
                 className="w-full rounded-xl border border-violet-100 bg-[#F7F7FA] px-3 py-3 text-sm text-slate-800 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
               >
-                <option value="">All Companies</option>
+                <option value="">All Companies ({pendingCompanies.length})</option>
 
                 {pendingCompanies.map(company => (
                   <option key={company} value={company}>
@@ -839,18 +733,18 @@ export default function FollowUp() {
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
 
-            <label className="block min-w-0">
-              <span className="mb-2 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-slate-600">
-                <AlertCircle className="h-3.5 w-3.5 text-violet-500" />
-                Status
-              </span>
+            <div>
+              <label className="mb-2 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wide text-slate-600">
+                <Filter className="h-4 w-4 text-violet-500" />
+                Filter 3: Status
+              </label>
 
               <select
                 value={pendingStatusFilter}
-                onChange={(event) => {
-                  setPendingStatusFilter(event.target.value);
+                onChange={(e) => {
+                  setPendingStatusFilter(e.target.value);
                   setPendingPage(1);
                 }}
                 className="w-full rounded-xl border border-violet-100 bg-[#F7F7FA] px-3 py-3 text-sm text-slate-800 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
@@ -859,16 +753,12 @@ export default function FollowUp() {
                 <option value="Less Paid">Less Paid</option>
                 <option value="Not Received">Not Received</option>
               </select>
-            </label>
+            </div>
           </div>
 
-          {(pendingFyFilter ||
-            pendingCompanyFilter ||
-            pendingStatusFilter ||
-            search) && (
-            <div className="flex justify-end">
+          {(pendingFyFilter || pendingCompanyFilter || pendingStatusFilter || search) && (
+            <div className="flex justify-end border-t border-violet-100 pt-3">
               <button
-                type="button"
                 onClick={() => {
                   setPendingFyFilter('');
                   setPendingCompanyFilter('');
@@ -876,281 +766,205 @@ export default function FollowUp() {
                   setSearch('');
                   setPendingPage(1);
                 }}
-                className="text-xs font-bold text-violet-700 hover:text-violet-900"
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-violet-700 transition hover:bg-violet-50"
               >
-                Clear filters
+                <X className="h-3.5 w-3.5" />
+                Clear Filters
               </button>
             </div>
           )}
         </div>
 
-        {/* Pending records */}
+        {/* Pending TDS table */}
         {pendingLoading ? (
-          <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-500">
-            <Loader2 className="h-5 w-5 animate-spin text-violet-600" />
-            Loading reconciliation records...
+          <div className="py-12 text-center text-sm text-slate-500">
+            <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin text-violet-600" />
+            Loading pending TDS records...
           </div>
         ) : pendingError ? (
-          <div className="px-4 py-10 text-center">
-            <AlertCircle className="mx-auto h-8 w-8 text-rose-500" />
-
-            <p className="mt-2 font-bold text-rose-700">
-              Could not load pending TDS records
-            </p>
-
-            <p className="mt-1 text-xs text-slate-500">
-              {pendingError}
-            </p>
-
+          <div className="px-5 py-10 text-center text-sm text-rose-600">
+            {pendingError}
             <button
               onClick={loadPendingTds}
-              className="mt-3 rounded-lg bg-violet-700 px-4 py-2 text-xs font-bold text-white hover:bg-violet-800"
+              className="ml-2 font-bold text-violet-700 underline"
             >
-              Try Again
+              Retry
             </button>
           </div>
         ) : visiblePendingTds.length === 0 ? (
-          <div className="px-4 py-12 text-center">
-            <CheckCircle2 className="mx-auto h-9 w-9 text-emerald-500" />
-
+          <div className="px-5 py-12 text-center">
+            <CheckCircle2 className="mx-auto h-9 w-9 text-slate-300" />
             <p className="mt-2 font-bold text-slate-800">
-              {pendingTds.length === 0
-                ? 'No Less Paid or Not Received records found'
-                : 'No records match your filters'}
+              No Pending TDS Records Found
             </p>
-
             <p className="mt-1 text-xs text-slate-500">
-              Try changing the financial year, company or status filters.
+              No Less Paid or Not Received records match the selected filters.
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-[1080px] w-full text-left text-xs">
-              <thead className="bg-[#F7F7FA] text-[10px] uppercase tracking-wide text-slate-600">
-                <tr>
-                  {[
-                    'Company Name',
-                    'TAN',
-                    'PAN',
-                    'Financial Year',
-                    'Tally TDS',
-                    '26AS TDS',
-                    'Saarthi 360 TDS',
-                    'Difference',
-                    'Status',
-                    'Contact Person',
-                    'Contact No.',
-                    'Action'
-                  ].map(heading => (
-                    <th
-                      key={heading}
-                      className="whitespace-nowrap px-3 py-3 font-extrabold"
-                    >
-                      {heading}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-100">
-                {paginatedPendingTds.map((row, index) => (
-                  <tr
-                    key={`${row.tanNo || 'tan'}-${row.financialYear || 'fy'}-${index}`}
-                    className="hover:bg-[#F7F4FF]"
-                  >
-                    <td className="whitespace-nowrap px-3 py-3 font-bold text-slate-800">
-                      {row.companyName || '—'}
-                    </td>
-
-                    <td className="whitespace-nowrap px-3 py-3 font-mono">
-                      {row.tanNo || '—'}
-                    </td>
-
-                    <td className="whitespace-nowrap px-3 py-3 font-mono">
-                      {row.panNo || '—'}
-                    </td>
-
-                    <td className="whitespace-nowrap px-3 py-3">
-                      {row.financialYear || '—'}
-                    </td>
-
-                    <td className="whitespace-nowrap px-3 py-3">
-                      {money(row.tallyTds)}
-                    </td>
-
-                    <td className="whitespace-nowrap px-3 py-3">
-                      {money(row.as26Tds)}
-                    </td>
-
-                    <td className="whitespace-nowrap px-3 py-3 font-semibold text-violet-700">
-                      {money(row.saarthiTds)}
-                    </td>
-
-                    <td className="whitespace-nowrap px-3 py-3 font-extrabold text-rose-700">
-                      {money(row.difference)}
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <span
-                        className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-extrabold ${
-                          row.status === 'Not Received'
-                            ? 'bg-rose-100 text-rose-700'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-[1200px] w-full text-left text-xs">
+                <thead className="bg-[#F7F7FA] text-[10px] uppercase tracking-wide text-slate-600">
+                  <tr>
+                    {[
+                      'Company Name',
+                      'TAN',
+                      'PAN',
+                      'Financial Year',
+                      'Tally TDS',
+                      '26AS TDS',
+                      'Saarthi 360 TDS',
+                      'Difference',
+                      'Status',
+                      'Contact Person',
+                      'Contact No.',
+                      'Action'
+                    ].map(heading => (
+                      <th
+                        key={heading}
+                        className="whitespace-nowrap px-3 py-3 font-extrabold"
                       >
-                        {row.status}
-                      </span>
-                    </td>
-
-                    <td className="whitespace-nowrap px-3 py-3">
-                      {row.contactPerson || '—'}
-                    </td>
-
-                    <td className="whitespace-nowrap px-3 py-3">
-                      {row.contactNumber || '—'}
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <button
-                        onClick={() => {
-                          setItemToEdit(null);
-
-                          setPendingModalData({
-                            company: row.companyName || '',
-                            tan: row.tanNo || '',
-                            contactPerson: row.contactPerson || '',
-                            contactNumber: row.contactNumber || ''
-                          });
-
-                          setShowAddModal(true);
-                        }}
-                        className="whitespace-nowrap rounded-lg bg-violet-700 px-3 py-2 font-bold text-white hover:bg-violet-800"
-                      >
-                        <PhoneCall className="mr-1 inline h-3.5 w-3.5" />
-                        Log Follow-up
-                      </button>
-                    </td>
+                        {heading}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
 
-        {/* Pagination */}
-        {!pendingLoading &&
-          !pendingError &&
-          visiblePendingTds.length > 0 && (
-            <div className="flex flex-col gap-3 border-t border-violet-100 bg-[#F7F7FA] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs font-medium text-slate-600">
-                Showing {pendingStart}–{pendingEnd} of {visiblePendingTds.length} records
+                <tbody className="divide-y divide-slate-100">
+                  {paginatedPendingTds.map((row, index) => (
+                    <tr
+                      key={row.id || `${row.tanNo}-${row.financialYear}-${index}`}
+                      className="transition hover:bg-[#F7F4FF]"
+                    >
+                      <td className="max-w-[240px] px-3 py-3 font-bold text-slate-800">
+                        {row.companyName || '—'}
+                      </td>
+
+                      <td className="whitespace-nowrap px-3 py-3 font-mono">
+                        {row.tanNo || '—'}
+                      </td>
+
+                      <td className="whitespace-nowrap px-3 py-3 font-mono">
+                        {row.panNo || '—'}
+                      </td>
+
+                      <td className="whitespace-nowrap px-3 py-3">
+                        {row.financialYear || '—'}
+                      </td>
+
+                      <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-700">
+                        {money(row.tallyTds)}
+                      </td>
+
+                      <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-700">
+                        {money(row.as26Tds)}
+                      </td>
+
+                      <td className="whitespace-nowrap px-3 py-3 font-semibold text-slate-700">
+                        {money(row.saarthiTds)}
+                      </td>
+
+                      <td className={`whitespace-nowrap px-3 py-3 font-extrabold ${
+                        Number(row.difference || 0) > 0
+                          ? 'text-rose-600'
+                          : Number(row.difference || 0) < 0
+                            ? 'text-emerald-600'
+                            : 'text-slate-700'
+                      }`}>
+                        {money(row.difference)}
+                      </td>
+
+                      <td className="whitespace-nowrap px-3 py-3">
+                        {row.status === 'Less Paid' ? (
+                          <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-800">
+                            Less Paid
+                          </span>
+                        ) : (
+                          <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[10px] font-bold text-rose-700">
+                            Not Received
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="whitespace-nowrap px-3 py-3">
+                        {row.contactPerson || '—'}
+                      </td>
+
+                      <td className="whitespace-nowrap px-3 py-3">
+                        {row.contactNumber || '—'}
+                      </td>
+
+                      <td className="whitespace-nowrap px-3 py-3">
+                        <button
+                          onClick={() => {
+                            setPendingModalData({
+                              company: row.companyName,
+                              tan: row.tanNo,
+                              pan: row.panNo,
+                              contactPerson: row.contactPerson,
+                              contactNumber: row.contactNumber,
+                              financialYear: row.financialYear,
+                              status: row.status
+                            });
+                            setItemToEdit(null);
+                            setShowAddModal(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-violet-700 px-3 py-2 text-[11px] font-bold text-white transition hover:bg-violet-800"
+                        >
+                          <PhoneCall className="h-3.5 w-3.5" />
+                          Log Follow-up
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination: 10 records per page */}
+            <div className="flex flex-col gap-3 border-t border-violet-100 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-slate-500">
+                Showing <strong>{pendingStart}</strong> to <strong>{pendingEnd}</strong> of{' '}
+                <strong>{visiblePendingTds.length}</strong> records
               </p>
 
               <div className="flex items-center gap-2">
                 <button
-                  type="button"
                   disabled={safePendingPage <= 1}
-                  onClick={() =>
-                    setPendingPage(page =>
-                      Math.max(1, page - 1)
-                    )
-                  }
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => setPendingPage(page => Math.max(1, page - 1))}
+                  className="rounded-lg border border-violet-100 px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Previous
                 </button>
 
-                <span className="min-w-[90px] text-center text-xs font-bold text-slate-700">
+                <span className="rounded-lg bg-violet-50 px-3 py-2 text-xs font-bold text-violet-700">
                   Page {safePendingPage} of {pendingTotalPages}
                 </span>
 
                 <button
-                  type="button"
                   disabled={safePendingPage >= pendingTotalPages}
                   onClick={() =>
-                    setPendingPage(page =>
-                      Math.min(pendingTotalPages, page + 1)
-                    )
+                    setPendingPage(page => Math.min(pendingTotalPages, page + 1))
                   }
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded-lg border border-violet-100 px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Next
                 </button>
               </div>
             </div>
-          )}
-      </section>
-
-      {/* Follow-up communication metrics */}
-      <section>
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 className="text-base font-extrabold text-slate-900">
-            Follow-up Summary
-          </h2>
-
-          <span className="text-xs text-slate-500">
-            Based on saved communication logs
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-          {[
-            {
-              label: 'Total Logs',
-              value: summary.totalFollowedUp,
-              color: 'blue'
-            },
-            {
-              label: 'Pending Call',
-              value: summary.pendingResponse,
-              color: 'violet'
-            },
-            {
-              label: 'Call Not Picked Up',
-              value: summary.callNotPickedUp,
-              color: 'amber'
-            },
-            {
-              label: 'Check & Revert',
-              value: summary.checkAndRevert,
-              color: 'indigo'
-            },
-            {
-              label: 'TDS Paid',
-              value: summary.tdsPaid,
-              color: 'emerald'
-            },
-            {
-              label: 'Form Received',
-              value: summary.formReceived,
-              color: 'sky'
-            }
-          ].map(card => (
-            <div
-              key={card.label}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-            >
-              <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500">
-                {card.label}
-              </p>
-
-              <p className="mt-1 text-2xl font-black text-slate-900">
-                {Number(card.value || 0)}
-              </p>
-            </div>
-          ))}
-        </div>
+          </>
+        )}
       </section>
 
       {/* Follow-up history */}
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <section className="overflow-hidden rounded-[24px] border border-violet-100 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-violet-100 bg-white px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-base font-extrabold text-slate-900">
               Follow-up History
             </h2>
-
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-500">
               View and manage previous communication with clients
             </p>
           </div>
@@ -1203,7 +1017,7 @@ export default function FollowUp() {
             <input
               type="date"
               value={customStart}
-              onChange={event => setCustomStart(event.target.value)}
+              onChange={e => setCustomStart(e.target.value)}
               className="rounded-lg border border-slate-200 bg-white px-2 py-1.5"
             />
 
@@ -1212,7 +1026,7 @@ export default function FollowUp() {
             <input
               type="date"
               value={customEnd}
-              onChange={event => setCustomEnd(event.target.value)}
+              onChange={e => setCustomEnd(e.target.value)}
               className="rounded-lg border border-slate-200 bg-white px-2 py-1.5"
             />
           </div>
@@ -1250,7 +1064,7 @@ export default function FollowUp() {
 
               <input
                 value={search}
-                onChange={event => setSearch(event.target.value)}
+                onChange={e => setSearch(e.target.value)}
                 placeholder="Search logs..."
                 className="w-48 rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-3 text-xs outline-none focus:border-violet-400"
               />
@@ -1332,10 +1146,7 @@ export default function FollowUp() {
 
               <tbody className="divide-y divide-slate-100">
                 {filteredEntries.map(row => (
-                  <tr
-                    key={row.id}
-                    className="hover:bg-[#F7F4FF]"
-                  >
+                  <tr key={row.id} className="hover:bg-[#F7F4FF]">
                     <td className="px-3 py-3 font-bold text-slate-800">
                       {row.companyName || '—'}
                     </td>
@@ -1346,7 +1157,6 @@ export default function FollowUp() {
 
                     <td className="whitespace-nowrap px-3 py-3">
                       {row.contactPerson || '—'}
-
                       {row.contactNumber ? (
                         <div className="text-[10px] text-slate-400">
                           {row.contactNumber}
@@ -1369,7 +1179,9 @@ export default function FollowUp() {
                     </td>
 
                     <td className="whitespace-nowrap px-3 py-3">
-                      {getStatusBadge(row.status || '—')}
+                      <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-violet-700">
+                        {row.status || '—'}
+                      </span>
                     </td>
 
                     <td className="whitespace-nowrap px-3 py-3">
@@ -1414,7 +1226,7 @@ export default function FollowUp() {
         )}
       </section>
 
-      {/* Feedback toast */}
+      {/* Toast */}
       {feedbackToast && (
         <div
           className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-semibold shadow-xl ${
@@ -1440,13 +1252,11 @@ export default function FollowUp() {
       {/* Delete confirmation */}
       {deleteConfirmItem && (
         <div
-          onClick={() =>
-            !isDeleting && setDeleteConfirmItem(null)
-          }
+          onClick={() => !isDeleting && setDeleteConfirmItem(null)}
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
         >
           <div
-            onClick={event => event.stopPropagation()}
+            onClick={e => e.stopPropagation()}
             className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
           >
             <h3 className="font-extrabold text-slate-900">
@@ -1455,9 +1265,7 @@ export default function FollowUp() {
 
             <p className="my-4 text-sm text-slate-600">
               Permanently delete the follow-up log for{' '}
-              <strong>
-                {deleteConfirmItem.companyName || 'this client'}
-              </strong>?
+              <strong>{deleteConfirmItem.companyName || 'this client'}</strong>?
             </p>
 
             <div className="flex justify-end gap-2">
@@ -1481,16 +1289,14 @@ export default function FollowUp() {
         </div>
       )}
 
-      {/* Clear history confirmation */}
+      {/* Purge confirmation */}
       {purgeConfirmOpen && (
         <div
-          onClick={() =>
-            !isDeleting && setPurgeConfirmOpen(false)
-          }
+          onClick={() => !isDeleting && setPurgeConfirmOpen(false)}
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
         >
           <div
-            onClick={event => event.stopPropagation()}
+            onClick={e => e.stopPropagation()}
             className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"
           >
             <h3 className="font-extrabold text-rose-700">
@@ -1523,7 +1329,7 @@ export default function FollowUp() {
         </div>
       )}
 
-      {/* Add / Edit follow-up modal */}
+      {/* Add / Edit Follow-up Modal */}
       {showAddModal && (
         <AddFollowupModal
           itemToEdit={itemToEdit}
