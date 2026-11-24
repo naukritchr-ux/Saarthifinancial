@@ -1,5 +1,5 @@
 import db from '../config/db.js';
-import { PRIMARY_TDS_SQL } from '../services/reconciliationRules.js';
+import { PRIMARY_TDS_SQL, getFinancialStatusWhereClause } from '../services/reconciliationRules.js';
 
 
 /**
@@ -11,21 +11,29 @@ export const getPendingTdsFollowups = async (req, res) => {
     const fy = String(req.query.fy || '').trim();
     const params = [];
     const fyWhere = fy && fy !== 'All Financial Years' && fy !== 'All'
-      ? "AND COALESCE(tr.financial_year, d.financial_year, '') LIKE ?" : '';
+      ? "AND (TRIM(COALESCE(tr.financial_year, d.financial_year, '')) LIKE ?)" : '';
     if (fyWhere) params.push(`%${fy.replace(/^FY\s*/i, '').trim()}%`);
+
+    // Use the same shared status predicates as the Reconciliation page.
+    // This prevents Not Received rows from also being counted as Less Paid.
+    const lessPaidWhere = getFinancialStatusWhereClause('Less Paid', PRIMARY_TDS_SQL);
+    const notReceivedWhere = getFinancialStatusWhereClause('Not Received', PRIMARY_TDS_SQL);
 
     const query = `
       SELECT
+        tr.id AS reconciliationId,
         tr.tan_no AS tanNo,
         COALESCE(d.company_name, tr.tan_no) AS companyName,
         d.pan_no AS panNo,
         COALESCE(tr.financial_year, d.financial_year) AS financialYear,
-        ${PRIMARY_TDS_SQL} AS primaryTds,
+        COALESCE(tr.tally_tds, 0) AS tallyTds,
         COALESCE(tr.as26_tds, 0) AS as26Tds,
+        COALESCE(tr.books_tds, 0) AS saarthiTds,
+        ${PRIMARY_TDS_SQL} AS primaryTds,
         (${PRIMARY_TDS_SQL} - COALESCE(tr.as26_tds, 0)) AS difference,
         CASE
-          WHEN COALESCE(tr.as26_tds, 0) = 0 AND ${PRIMARY_TDS_SQL} > 0 THEN 'Not Received'
-          WHEN ${PRIMARY_TDS_SQL} > COALESCE(tr.as26_tds, 0) + 1 THEN 'Less Paid'
+          WHEN ${notReceivedWhere} THEN 'Not Received'
+          WHEN ${lessPaidWhere} THEN 'Less Paid'
           ELSE 'Match'
         END AS status,
         d.contact_person_name AS contactPerson,
@@ -33,9 +41,14 @@ export const getPendingTdsFollowups = async (req, res) => {
       FROM tds_reconciliation_results tr
       LEFT JOIN tds_dues d ON d.id = tr.tds_dues_id
       WHERE (
-        (COALESCE(tr.as26_tds, 0) = 0 AND ${PRIMARY_TDS_SQL} > 0)
-        OR (${PRIMARY_TDS_SQL} > COALESCE(tr.as26_tds, 0) + 1)
+        (${lessPaidWhere}) OR (${notReceivedWhere})
       )
+      AND tr.tan_no IS NOT NULL
+      AND tr.tan_no NOT LIKE 'NO_TAN_%'
+      AND tr.tan_no != 'Pending TAN'
+      AND tr.tan_no != 'Not Available'
+      AND tr.tan_no NOT LIKE '%UNKNOWN%'
+      AND TRIM(tr.tan_no) != ''
       ${fyWhere}
       ORDER BY status ASC, difference DESC, companyName ASC
     `;
