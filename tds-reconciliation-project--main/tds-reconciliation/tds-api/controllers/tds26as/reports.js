@@ -871,8 +871,8 @@ export const getReconciliationReport = async (req, res) => {
           CASE WHEN d.tan_no IS NOT NULL AND d.tan_no NOT LIKE 'NO_TAN_%' AND TRIM(d.tan_no) != '' THEN TRIM(d.tan_no) END
         ) as tanNo,
         COALESCE(NULLIF(TRIM(d.company_name), ''), COALESCE(CASE WHEN tr.tan_no NOT LIKE 'NO_TAN_%' THEN tr.tan_no END, d.tan_no), 'Unassigned Entity') as companyName,
-        'N/A' as billNumber,
-        'N/A' as billDate,
+        COALESCE(NULLIF(TRIM(d.bill_number), ''), 'N/A') as billNumber,
+        COALESCE(DATE_FORMAT(d.bill_date, '%Y-%m-%d'), 'N/A') as billDate,
         COALESCE(d.total_bill_amount, 0) as totalBillAmount,
         COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') as financialYear,
 
