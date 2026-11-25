@@ -20,6 +20,7 @@ import {
   getFollowups,
   getFollowupSummary,
   getPendingTdsFollowups,
+  updateFollowup,
   deleteFollowup,
   purgeFollowups
 } from '../../api/tdsApi';
@@ -148,6 +149,32 @@ export default function FollowUp() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Save an edited follow-up in the background: update the row now, confirm or revert when the server answers
+  const handleOptimisticEdit = (id, payload) => {
+    const original = items.find(it => it.id === id);
+
+    setItems(prev => prev.map(it => (it.id === id ? { ...it, ...payload } : it)));
+    setFeedbackToast({ type: 'success', text: 'Saving follow-up…' });
+
+    updateFollowup(id, payload).then(async res => {
+      if (res && res.success) {
+        setFeedbackToast({ type: 'success', text: 'Follow-up saved' });
+        try {
+          const sumRes = await getFollowupSummary();
+          if (sumRes && sumRes.success && sumRes.data) setSummary(sumRes.data);
+        } catch { /* summary refreshes on next load */ }
+      } else {
+        if (original) {
+          setItems(prev => prev.map(it => (it.id === id ? original : it)));
+        }
+        setFeedbackToast({
+          type: 'error',
+          text: res?.error || 'Could not save the follow-up. Your change was reverted.'
+        });
+      }
+    });
   };
 
   // Load pending TDS reconciliation records
@@ -1337,6 +1364,7 @@ export default function FollowUp() {
             setPendingModalData(null);
             setItemToEdit(null);
           }}
+          onOptimisticSave={handleOptimisticEdit}
           onSaveSuccess={() => {
             loadData();
             loadPendingTds();

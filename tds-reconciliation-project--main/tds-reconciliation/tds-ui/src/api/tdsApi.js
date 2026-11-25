@@ -34,6 +34,15 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 45000) => {
   }
 };
 
+/** Lightweight wake-up call so a sleeping backend (e.g. Render free tier) is ready before the user saves */
+export const pingServer = async () => {
+  try {
+    await fetch(`${API_URL}/health`, { cache: 'no-store' });
+  } catch {
+    /* ignore - this is only a warm-up */
+  }
+};
+
 export const triggerSeed = async () => {
   try {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/seed`, {

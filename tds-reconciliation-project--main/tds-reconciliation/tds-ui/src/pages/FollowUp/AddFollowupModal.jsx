@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Loader2, AlertCircle, PhoneCall } from 'lucide-react';
 import { createFollowup, updateFollowup } from '../../api/tdsApi';
 
-export default function AddFollowupModal({ itemToEdit, initialData, onClose, onSaveSuccess }) {
+export default function AddFollowupModal({ itemToEdit, initialData, onClose, onSaveSuccess, onOptimisticSave }) {
   const isEditing = !!itemToEdit;
 
   const [tanNo, setTanNo] = useState(isEditing ? itemToEdit.tanNo : (initialData?.tan || ''));
@@ -79,6 +79,14 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
       followupDate,
       nextFollowupDate: nextFollowupDate || null
     };
+
+    // Editing: close right away and let the page save in the background (it reverts + warns on failure)
+    if (isEditing && onOptimisticSave) {
+      onOptimisticSave(itemToEdit.id, payload);
+      setLoading(false);
+      onClose();
+      return;
+    }
 
     try {
       let res;

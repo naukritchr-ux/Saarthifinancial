@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { getCleaningQueueCount } from '../api/tdsApi';
+import { getCleaningQueueCount, pingServer } from '../api/tdsApi';
 
 const AppContext = createContext();
 
@@ -18,6 +18,15 @@ export function AppProvider({ children }) {
   const [role, setRole] = useState('Accounts Manager');
   const [cleaningQueueCount, setCleaningQueueCount] = useState(0);
   const [followupPreFill, setFollowupPreFill] = useState(null);
+
+  // Keep the backend awake while the app is open (a sleeping server makes the first save take 30-60 s)
+  useEffect(() => {
+    pingServer();
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') pingServer();
+    }, 4 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Sync state with URL hash changes
   useEffect(() => {
