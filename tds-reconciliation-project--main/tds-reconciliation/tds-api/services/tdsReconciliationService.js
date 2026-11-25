@@ -20,6 +20,61 @@ export const cleanNameTokens = (name) => {
     .trim();
 };
 
+/**
+ * Levenshtein edit distance between two strings (two-row DP, O(n*m) time, O(m) memory).
+ */
+const levenshteinDistance = (a, b) => {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const curr = [i];
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+    }
+    prev = curr;
+  }
+  return prev[b.length];
+};
+
+const similarityRatio = (a, b) => {
+  const maxLen = Math.max(a.length, b.length);
+  return maxLen === 0 ? 100 : (1 - levenshteinDistance(a, b) / maxLen) * 100;
+};
+
+/**
+ * Fuzzy name similarity on a 0-100 scale.
+ * - Ignores case, punctuation and legal suffixes (Pvt Ltd / Private Limited / LLP ...)
+ *   via cleanNameTokens.
+ * - Takes the best of (a) character-level similarity of the cleaned names and
+ *   (b) similarity of the word-sorted names, so "Tata Motors" ~ "Motors Tata".
+ * Returns an integer-friendly number; callers may Math.round() it.
+ */
+export const calculateStringSimilarity = (nameA, nameB) => {
+  if (!nameA || !nameB) return 0;
+
+  const cleanA = cleanNameTokens(nameA);
+  const cleanB = cleanNameTokens(nameB);
+  if (!cleanA || !cleanB) return 0;
+  if (cleanA === cleanB) return 100;
+
+  const charScore = similarityRatio(cleanA, cleanB);
+
+  const sortedTokens = (name) =>
+    String(name)
+      .toUpperCase()
+      .split(/[^A-Z0-9]+/)
+      .map((t) => cleanNameTokens(t))
+      .filter(Boolean)
+      .sort()
+      .join('');
+  const tokenScore = similarityRatio(sortedTokens(nameA), sortedTokens(nameB));
+
+  return Math.max(charScore, tokenScore);
+};
+
 export const extractAliases = (name) => {
   if (!name) return [];
   const aliases = new Set();
