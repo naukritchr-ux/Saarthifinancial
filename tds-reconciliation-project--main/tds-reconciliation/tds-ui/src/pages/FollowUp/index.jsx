@@ -569,16 +569,16 @@ export default function FollowUp() {
       {/* The application's existing global header and navigation are rendered by the parent layout. */}
 
       {/* Page heading */}
-      <section className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 rounded-[24px] border border-violet-100 bg-white px-6 py-6 shadow-sm">
+      <section className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 rounded-2xl border border-violet-100 bg-white px-4 py-3 shadow-sm">
         <div>
           <div className="flex items-center gap-2">
-            <PhoneCall className="h-6 w-6 text-violet-600" />
-            <h1 className="text-2xl font-black tracking-tight text-slate-900">
+            <PhoneCall className="h-5 w-5 text-violet-600" />
+            <h1 className="text-lg font-black tracking-tight text-slate-900">
               Follow-up Report
             </h1>
           </div>
 
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-0.5 text-xs text-slate-500">
             Track pending TDS discrepancies and manage client follow-ups efficiently.
           </p>
         </div>
@@ -589,9 +589,9 @@ export default function FollowUp() {
               loadData();
               loadPendingTds();
             }}
-            className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-white px-5 py-3 text-sm font-bold text-violet-700 shadow-sm transition hover:bg-violet-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-white px-3.5 py-2 text-xs font-bold text-violet-700 shadow-sm transition hover:bg-violet-50"
           >
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className="h-3.5 w-3.5" />
             Refresh Data
           </button>
 
@@ -601,69 +601,69 @@ export default function FollowUp() {
               setPendingModalData(null);
               setShowAddModal(true);
             }}
-            className="inline-flex items-center gap-2 rounded-xl bg-violet-700 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-violet-800"
+            className="inline-flex items-center gap-2 rounded-lg bg-violet-700 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-violet-800"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-3.5 w-3.5" />
             Log New Follow-up
           </button>
         </div>
       </section>
 
       {/* Pending reconciliation summary cards */}
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <button
           onClick={() => setResponseFilter('')}
-          className="rounded-[22px] border border-amber-200 bg-[#FFF9ED] p-6 text-left shadow-sm transition hover:-translate-y-0.5"
+          className="rounded-xl border border-amber-200 bg-[#FFF9ED] px-4 py-3 text-left shadow-sm transition hover:-translate-y-0.5"
         >
           <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-amber-800">
+            <span className="text-xs font-bold text-amber-800">
               Less Paid
             </span>
-            <AlertCircle className="h-6 w-6 text-amber-600" />
+            <AlertCircle className="h-4 w-4 text-amber-600" />
           </div>
 
-          <div className="mt-2 text-3xl font-black text-amber-950">
+          <div className="mt-0.5 text-2xl font-black leading-tight text-amber-950">
             {pendingLessPaid}
           </div>
 
-          <p className="mt-1 text-xs text-amber-800">
+          <p className="mt-0.5 text-[11px] text-amber-800">
             Primary TDS is higher than 26AS TDS
           </p>
         </button>
 
         <button
           onClick={() => setResponseFilter('')}
-          className="rounded-[22px] border border-rose-200 bg-[#FFF2F3] p-6 text-left shadow-sm transition hover:-translate-y-0.5"
+          className="rounded-xl border border-rose-200 bg-[#FFF2F3] px-4 py-3 text-left shadow-sm transition hover:-translate-y-0.5"
         >
           <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-rose-800">
+            <span className="text-xs font-bold text-rose-800">
               Not Received
             </span>
-            <AlertCircle className="h-6 w-6 text-rose-600" />
+            <AlertCircle className="h-4 w-4 text-rose-600" />
           </div>
 
-          <div className="mt-2 text-3xl font-black text-rose-950">
+          <div className="mt-0.5 text-2xl font-black leading-tight text-rose-950">
             {pendingNotReceived}
           </div>
 
-          <p className="mt-1 text-xs text-rose-800">
+          <p className="mt-0.5 text-[11px] text-rose-800">
             Primary TDS exists but no 26AS credit is found
           </p>
         </button>
 
-        <div className="rounded-[22px] border border-emerald-200 bg-[#EFFBF5] p-6 shadow-sm">
+        <div className="rounded-xl border border-emerald-200 bg-[#EFFBF5] px-4 py-3 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-bold text-emerald-800">
+            <span className="text-xs font-bold text-emerald-800">
               Follow-up Logs
             </span>
-            <CheckCircle2 className="h-6 w-6 text-emerald-600" />
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
           </div>
 
-          <div className="mt-2 text-3xl font-black text-emerald-950">
+          <div className="mt-0.5 text-2xl font-black leading-tight text-emerald-950">
             {Number(summary.totalFollowedUp || 0)}
           </div>
 
-          <p className="mt-1 text-xs text-emerald-800">
+          <p className="mt-0.5 text-[11px] text-emerald-800">
             Client communication entries recorded
           </p>
         </div>
