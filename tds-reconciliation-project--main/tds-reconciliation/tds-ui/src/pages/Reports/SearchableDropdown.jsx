@@ -29,6 +29,7 @@ const tidy = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
  *  showSearch   show the search box in the popup (default true)
  *  sort         sort A-Z (default true; use false to keep the given order)
  *  mono         monospace font (PAN numbers)
+ *  size         'sm' (default, report filters) or 'md' (larger box, follow-up filters)
  *  onChange     (value) => void
  */
 export default function SearchableDropdown({
@@ -40,6 +41,7 @@ export default function SearchableDropdown({
   showSearch = true,
   sort = true,
   mono = false,
+  size = 'sm',
   onChange
 }) {
   const [open, setOpen] = useState(false);
@@ -123,7 +125,7 @@ export default function SearchableDropdown({
         onClick={() => (open ? close() : setOpen(true))}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`w-full flex items-center justify-between gap-2 bg-[#F6F8FA] border text-[#1F1B2E] rounded-xl px-3 py-2 text-left text-xs focus:outline-none focus:border-[#9B87F5] cursor-pointer ${
+        className={`w-full flex items-center justify-between gap-2 bg-[#F6F8FA] border text-[#1F1B2E] rounded-xl ${size === 'md' ? 'px-3 py-3 text-sm' : 'px-3 py-2 text-xs'} text-left focus:outline-none focus:border-[#9B87F5] cursor-pointer ${
           open ? 'border-[#9B87F5]' : 'border-[#E9E4FA]'
         } ${mono ? 'font-mono font-bold' : 'font-semibold'}`}
       >
@@ -132,9 +134,9 @@ export default function SearchableDropdown({
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full min-w-[220px] rounded-xl border border-[#E9E4FA] bg-white shadow-xl overflow-hidden">
+        <div className="absolute z-50 mt-1 w-full min-w-[220px] rounded-xl border border-[#D9D0FA] bg-[#FBFAFF] shadow-[0_12px_32px_rgba(107,85,199,0.18)] overflow-hidden">
           {showSearch && (
-            <div className="relative p-2 border-b border-[#E9E4FA]">
+            <div className="relative p-2 border-b border-[#E3DCFA] bg-[#F3F0FF]">
               <Search className="w-4 h-4 text-[#6B6580] absolute left-4 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -142,18 +144,18 @@ export default function SearchableDropdown({
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={placeholder}
                 autoFocus
-                className="w-full bg-[#F6F8FA] border border-[#E9E4FA] rounded-lg pl-8 pr-3 py-2 text-xs text-[#1F1B2E] focus:outline-none focus:border-[#9B87F5]"
+                className="w-full bg-white border border-[#E3DCFA] rounded-lg pl-8 pr-3 py-2 text-xs text-[#1F1B2E] focus:outline-none focus:border-[#9B87F5]"
               />
             </div>
           )}
 
-          <ul ref={listRef} role="listbox" className="max-h-60 overflow-y-auto py-1 text-xs">
+          <ul ref={listRef} role="listbox" className={`${size === 'md' ? 'max-h-72 text-sm' : 'max-h-60 text-xs'} overflow-y-auto py-1`}>
             <li
               role="option"
               aria-selected={isAll}
               onMouseDown={(e) => { e.preventDefault(); choose(allValue); }}
               onMouseEnter={() => setActive(0)}
-              className={`px-3 py-2 cursor-pointer font-semibold ${active === 0 ? 'bg-[#F3F0FF]' : ''} ${
+              className={`px-3 py-2 cursor-pointer font-semibold ${active === 0 ? 'bg-[#EDE8FF]' : ''} ${
                 isAll ? 'text-[#6B55C7] font-bold' : 'text-[#6B6580]'
               }`}
             >
@@ -168,8 +170,8 @@ export default function SearchableDropdown({
                 onMouseDown={(e) => { e.preventDefault(); choose(o.value); }}
                 onMouseEnter={() => setActive(i + 1)}
                 className={`px-3 py-2 cursor-pointer break-words ${mono ? 'font-mono font-bold' : 'font-semibold'} ${
-                  active === i + 1 ? 'bg-[#F3F0FF]' : ''
-                } ${value === o.value ? 'bg-[#E8E4FF] text-[#6B55C7]' : 'text-[#1F1B2E]'}`}
+                  active === i + 1 ? 'bg-[#EDE8FF]' : ''
+                } ${value === o.value ? 'bg-[#E3DCFF] text-[#6B55C7]' : 'text-[#1F1B2E]'}`}
               >
                 {o.label}
               </li>
@@ -179,7 +181,7 @@ export default function SearchableDropdown({
               <li className="px-3 py-3 text-[#6B6580]">No matching options found.</li>
             )}
             {matches.length > MAX_VISIBLE && (
-              <li className="px-3 py-2 text-[10px] text-[#6B6580] border-t border-[#E9E4FA]">
+              <li className="px-3 py-2 text-[10px] text-[#6B6580] border-t border-[#E3DCFA] bg-[#F3F0FF]">
                 Showing {MAX_VISIBLE} of {matches.length} — keep typing to narrow down
               </li>
             )}

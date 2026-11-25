@@ -25,6 +25,7 @@ import {
 } from '../../api/tdsApi';
 import { triggerCsvDownload } from '../../utils/exportUtils';
 import AddFollowupModal from './AddFollowupModal';
+import SearchableDropdown from '../Reports/SearchableDropdown';
 
 export default function FollowUp() {
   const { followupPreFill, setFollowupPreFill, refreshKey, fyFilter } = useApp();
@@ -479,17 +480,19 @@ export default function FollowUp() {
     )
   ].sort((a, b) => a.localeCompare(b));
 
+  const normText = (v) => String(v ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+
   const visiblePendingTds = pendingTds.filter(row => {
     if (
       pendingFyFilter &&
-      String(row.financialYear || '') !== pendingFyFilter
+      normText(row.financialYear) !== normText(pendingFyFilter)
     ) {
       return false;
     }
 
     if (
       pendingCompanyFilter &&
-      String(row.companyName || '') !== pendingCompanyFilter
+      normText(row.companyName) !== normText(pendingCompanyFilter)
     ) {
       return false;
     }
@@ -640,8 +643,8 @@ export default function FollowUp() {
       </section>
 
       {/* Pending TDS records */}
-      <section className="overflow-hidden rounded-[24px] border border-violet-100 bg-white shadow-sm">
-        <div className="flex flex-col gap-2 border-b border-violet-100 bg-gradient-to-r from-violet-700 to-indigo-600 px-6 py-5 text-white sm:flex-row sm:items-center sm:justify-between">
+      <section className="rounded-[24px] border border-violet-100 bg-white shadow-sm">
+        <div className="flex flex-col gap-2 rounded-t-[24px] border-b border-violet-100 bg-gradient-to-r from-violet-700 to-indigo-600 px-6 py-5 text-white sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-base font-extrabold">
               Pending TDS Follow-up
@@ -693,22 +696,19 @@ export default function FollowUp() {
                 Filter 1: Financial Year
               </label>
 
-              <select
+              <SearchableDropdown
+                size="md"
                 value={pendingFyFilter}
-                onChange={(e) => {
-                  setPendingFyFilter(e.target.value);
+                options={pendingFinancialYears}
+                allValue=""
+                allLabel="All Financial Years"
+                showSearch={false}
+                sort={false}
+                onChange={(v) => {
+                  setPendingFyFilter(v);
                   setPendingPage(1);
                 }}
-                className="w-full rounded-xl border border-violet-100 bg-[#F7F7FA] px-3 py-3 text-sm text-slate-800 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-              >
-                <option value="">All Financial Years</option>
-
-                {pendingFinancialYears.map(fy => (
-                  <option key={fy} value={fy}>
-                    {fy}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             <div>
@@ -717,22 +717,18 @@ export default function FollowUp() {
                 Filter 2: Company Name
               </label>
 
-              <select
+              <SearchableDropdown
+                size="md"
                 value={pendingCompanyFilter}
-                onChange={(e) => {
-                  setPendingCompanyFilter(e.target.value);
+                options={pendingCompanies}
+                allValue=""
+                allLabel={`All Companies (${pendingCompanies.length})`}
+                placeholder="Search company name..."
+                onChange={(v) => {
+                  setPendingCompanyFilter(v);
                   setPendingPage(1);
                 }}
-                className="w-full rounded-xl border border-violet-100 bg-[#F7F7FA] px-3 py-3 text-sm text-slate-800 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-              >
-                <option value="">All Companies ({pendingCompanies.length})</option>
-
-                {pendingCompanies.map(company => (
-                  <option key={company} value={company}>
-                    {company}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             <div>
@@ -741,18 +737,19 @@ export default function FollowUp() {
                 Filter 3: Status
               </label>
 
-              <select
+              <SearchableDropdown
+                size="md"
                 value={pendingStatusFilter}
-                onChange={(e) => {
-                  setPendingStatusFilter(e.target.value);
+                options={['Less Paid', 'Not Received']}
+                allValue=""
+                allLabel="All Pending Statuses"
+                showSearch={false}
+                sort={false}
+                onChange={(v) => {
+                  setPendingStatusFilter(v);
                   setPendingPage(1);
                 }}
-                className="w-full rounded-xl border border-violet-100 bg-[#F7F7FA] px-3 py-3 text-sm text-slate-800 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
-              >
-                <option value="">All Pending Statuses</option>
-                <option value="Less Paid">Less Paid</option>
-                <option value="Not Received">Not Received</option>
-              </select>
+              />
             </div>
           </div>
 
