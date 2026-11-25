@@ -97,9 +97,6 @@ export const getTallyDataReport = async ({ fy = '', company = '', pan = '', view
       COALESCE(tr.tally_tds, 0) AS tally_tds,
       COALESCE(tr.as26_tds, 0) AS as26_tds,
       COALESCE(tr.books_tds, 0) AS saarthi_tds,
-      COALESCE(d.total_bill_amount, 0) AS gross_amount,
-      d.bill_number,
-      d.bill_date,
       d.contact_person_name,
       d.contact_number,
       d.email_id
@@ -138,7 +135,6 @@ export const getTallyDataReport = async ({ fy = '', company = '', pan = '', view
       company_name: r.company_name,
       pan_no: r.pan_no || 'N/A',
       financial_year: fyStr,
-      gross_amount: parseFloat(r.gross_amount || 0),
       tally_tds: tally,
       as26_tds: as26,
       saarthi_tds: saarthi,
@@ -147,8 +143,6 @@ export const getTallyDataReport = async ({ fy = '', company = '', pan = '', view
       baselineValue,
       status,
       financialStatus,
-      bill_number: r.bill_number || '',
-      bill_date: r.bill_date || '',
       contact_person_name: r.contact_person_name || '',
       contact_number: r.contact_number || '',
       email_id: r.email_id || ''
@@ -177,9 +171,6 @@ export const getAs26DataReport = async ({ fy = '', company = '', pan = '', view 
       COALESCE(tr.books_tds, 0) AS saarthi_tds,
       (SELECT e.section FROM tds_26as_entries e WHERE e.tan_no = tr.tan_no LIMIT 1) AS section,
       (SELECT e.quarter FROM tds_26as_entries e WHERE e.tan_no = tr.tan_no LIMIT 1) AS quarter,
-      COALESCE(d.total_bill_amount, 0) AS gross_amount,
-      d.bill_number,
-      d.bill_date,
       d.contact_person_name,
       d.contact_number,
       d.email_id
@@ -228,9 +219,6 @@ export const getAs26DataReport = async ({ fy = '', company = '', pan = '', view 
       baselineValue,
       status,
       financialStatus,
-      gross_amount: parseFloat(r.gross_amount || 0),
-      bill_number: r.bill_number || '',
-      bill_date: r.bill_date || '',
       contact_person_name: r.contact_person_name || '',
       contact_number: r.contact_number || '',
       email_id: r.email_id || ''
@@ -242,7 +230,7 @@ export const getAs26DataReport = async ({ fy = '', company = '', pan = '', view 
 
 /**
  * 3. SAARTHI 360 DATA REPORT
- * Displays Saarthi 360 CRM records with invoice details, contacts, and FY-based balance
+ * Displays Saarthi 360 CRM records with contacts and FY-based balance (billing details are not fetched)
  */
 export const getSaarthi360DataReport = async ({ fy = '', company = '', pan = '', view = 'all', search = '' } = {}) => {
   const { whereSQL, params } = buildReportFilterConditions({ fy, company, pan, search });
@@ -257,9 +245,6 @@ export const getSaarthi360DataReport = async ({ fy = '', company = '', pan = '',
       COALESCE(tr.books_tds, 0) AS saarthi_tds,
       COALESCE(tr.as26_tds, 0) AS as26_tds,
       COALESCE(tr.tally_tds, 0) AS tally_tds,
-      d.bill_number,
-      d.bill_date,
-      COALESCE(d.total_bill_amount, 0) AS total_bill_amount,
       d.contact_person_name,
       d.contact_number,
       d.email_id,
@@ -299,9 +284,6 @@ export const getSaarthi360DataReport = async ({ fy = '', company = '', pan = '',
       company_name: r.company_name,
       pan_no: r.pan_no || 'N/A',
       financial_year: fyStr,
-      bill_number: r.bill_number || 'N/A',
-      bill_date: r.bill_date || 'N/A',
-      total_bill_amount: parseFloat(r.total_bill_amount || 0),
       saarthi_tds: saarthi,
       as26_tds: as26,
       tally_tds: tally,
@@ -408,8 +390,7 @@ export const getTanWiseReport = async ({ view = 'all', fy = '', search = '' } = 
       SUM(COALESCE(tr.books_tds, 0)) AS saarthi_total,
       MAX(d.contact_person_name) AS contact_person_name,
       MAX(d.contact_number) AS contact_number,
-      MAX(d.email_id) AS email_id,
-      MAX(d.bill_number) AS bill_number
+      MAX(d.email_id) AS email_id
     FROM tds_reconciliation_results tr
     LEFT JOIN tds_dues d ON tr.tds_dues_id = d.id
     WHERE ${whereClauses.join(' AND ')}
@@ -445,7 +426,6 @@ export const getTanWiseReport = async ({ view = 'all', fy = '', search = '' } = 
       baselineSource,
       baselineValue,
       status,
-      bill_number: row.bill_number || '',
       contact_person_name: row.contact_person_name || '',
       contact_number: row.contact_number || '',
       email_id: row.email_id || ''

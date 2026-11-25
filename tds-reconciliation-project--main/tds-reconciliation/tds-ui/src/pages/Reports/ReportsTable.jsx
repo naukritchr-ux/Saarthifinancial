@@ -410,9 +410,6 @@ export default function ReportsTable({
                         <div className="font-extrabold text-[#1F1B2E]">
                           {displayName}
                         </div>
-                        <div className="text-[10px] text-[#6B6580] mt-0.5 flex items-center gap-1.5">
-                          <span>Bill: {row.billNumber || 'N/A'}</span>
-                        </div>
                       </td>
 
                       {/* PAN Number — Fourth Column */}
@@ -550,7 +547,7 @@ export default function ReportsTable({
                       </td>
                     </tr>
 
-                    {/* Expanded details: Company, TAN, HR name, Mobile, Bill no, Bill amount */}
+                    {/* Expanded details: Company, TAN, HR name, Mobile */}
                     {isExpanded && (
                       <tr className="bg-[#E8E4FF]/30 border-b border-[#E9E4FA]">
                         <td colSpan="13" className="px-6 py-4">

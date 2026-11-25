@@ -208,7 +208,7 @@ export default function Reports() {
       setRecoRows(data.map(r => {
         const base = adaptReportRow(r);
         const rec = map[String(r.id)];
-        if (!rec) return { ...base, billNumber: r.bill_number && r.bill_number !== 'N/A' ? r.bill_number : 'N/A' };
+        if (!rec) return base;
         return {
           ...rec,
           // keep this report's own numbers so the table matches the report totals
@@ -217,8 +217,7 @@ export default function Reports() {
           saarthiTds: base.saarthiTds,
           balance: base.balance,
           overallStatus: base.overallStatus || rec.overallStatus,
-          financialStatus: base.financialStatus || rec.financialStatus,
-          billNumber: r.bill_number && r.bill_number !== 'N/A' ? r.bill_number : rec.billNumber
+          financialStatus: base.financialStatus || rec.financialStatus
         };
       }));
       setRecoLoading(false);
@@ -355,7 +354,7 @@ export default function Reports() {
     } else if (activeTab === '26as') {
       headers = ['TAN No.', 'Deductor Name', 'PAN No.', 'Financial Year', 'Section', '26AS TDS (INR)', 'Tally TDS (INR)', 'Saarthi TDS (INR)', 'Balance (INR)', 'Status'];
     } else if (activeTab === 'saarthi360') {
-      headers = ['TAN No.', 'Company Name', 'PAN No.', 'Financial Year', 'Bill No.', 'Bill Amount (INR)', 'Saarthi TDS (INR)', '26AS TDS (INR)', 'Tally TDS (INR)', 'Balance (INR)', 'Status'];
+      headers = ['TAN No.', 'Company Name', 'PAN No.', 'Financial Year', 'Saarthi TDS (INR)', '26AS TDS (INR)', 'Tally TDS (INR)', 'Balance (INR)', 'Status'];
     } else if (activeTab === 'fy-wise') {
       headers = ['Financial Year', 'Tally TDS Total (INR)', '26AS TDS Total (INR)', 'Saarthi TDS Total (INR)', 'Balance (INR)', 'Status'];
     } else {
@@ -394,8 +393,6 @@ export default function Reports() {
           `"${(item.company_name || '').replace(/"/g, '""')}"`,
           item.pan_no || 'N/A',
           item.financial_year || '',
-          item.bill_number || 'N/A',
-          item.total_bill_amount || 0,
           item.saarthi_tds || 0,
           item.as26_tds || 0,
           item.tally_tds || 0,
@@ -892,9 +889,6 @@ export default function Reports() {
                         <>
                           <td className="px-4 py-3.5">
                             <div className="font-extrabold text-[#1F1B2E]">{row.company_name || 'Entity'}</div>
-                            {row.bill_number && row.bill_number !== 'N/A' && (
-                              <div className="text-[10px] text-[#6B6580]">Bill #{row.bill_number}</div>
-                            )}
                           </td>
                           <td className="px-4 py-3.5 font-mono font-bold text-[#1F1B2E]">{row.tan_no}</td>
                           <td className="px-4 py-3.5 font-mono text-[#6B6580]">{row.pan_no || 'N/A'}</td>
