@@ -5,12 +5,12 @@ import { createFollowup, updateFollowup } from '../../api/tdsApi';
 export default function AddFollowupModal({ itemToEdit, initialData, onClose, onSaveSuccess, onOptimisticSave }) {
   const isEditing = !!itemToEdit;
 
-  const [tanNo, setTanNo] = useState(isEditing ? itemToEdit.tanNo : (initialData?.tan || ''));
-  const [companyName, setCompanyName] = useState(isEditing ? itemToEdit.companyName : (initialData?.company || ''));
+  const [tanNo, setTanNo] = useState(isEditing ? (itemToEdit.tanNo ?? '') : (initialData?.tan || ''));
+  const [companyName, setCompanyName] = useState(isEditing ? (itemToEdit.companyName ?? '') : (initialData?.company || ''));
   const [contactPerson, setContactPerson] = useState(isEditing ? (itemToEdit.contactPerson || '') : (initialData?.contactPerson || ''));
   const [department, setDepartment] = useState(isEditing ? (itemToEdit.department || 'Accounts') : 'Accounts');
   const [contactNumber, setContactNumber] = useState(isEditing ? (itemToEdit.contactNumber || '') : (initialData?.contactNumber || ''));
-  const [method, setMethod] = useState(isEditing ? itemToEdit.method : 'Call');
+  const [method, setMethod] = useState(isEditing ? (itemToEdit.method || 'Call') : 'Call');
   const standardOptions = [
     'Call Not Picked Up',
     'Call Tomorrow',
@@ -28,7 +28,7 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
 
   const [status, setStatus] = useState(isCustomStatus ? 'Custom' : initialRawStatus);
   const [customStatus, setCustomStatus] = useState(isCustomStatus ? initialRawStatus : '');
-  const [notes, setNotes] = useState(isEditing ? itemToEdit.notes : '');
+  const [notes, setNotes] = useState(isEditing ? (itemToEdit.notes ?? '') : '');
   const [followupDate, setFollowupDate] = useState(
     isEditing ? (itemToEdit.followupDate ? itemToEdit.followupDate.split('T')[0] : new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0]
   );
@@ -48,34 +48,36 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
+  // Database fields can be null (e.g. empty notes) - never call .trim() on them directly
+  const clean = (v) => String(v ?? '').trim();
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!tanNo.trim() || !companyName.trim()) {
+    if (!clean(tanNo) || !clean(companyName)) {
       setError('TAN Number and Company Name are required');
       return;
     }
 
-    if (status === 'Custom' && !customStatus.trim()) {
+    if (status === 'Custom' && !clean(customStatus)) {
       setError('Please type your custom follow-up status');
       return;
     }
 
-    setLoading(true);
     setError(null);
 
-    const resolvedStatus = (status === 'Custom' ? customStatus.trim() : status) || 'Call Tomorrow';
+    const resolvedStatus = (status === 'Custom' ? clean(customStatus) : status) || 'Call Tomorrow';
 
     const payload = {
-      tanNo: tanNo.trim().toUpperCase(),
-      companyName: companyName.trim(),
-      contactPerson: contactPerson.trim(),
-      department: department.trim(),
-      contactNumber: contactNumber.trim(),
+      tanNo: clean(tanNo).toUpperCase(),
+      companyName: clean(companyName),
+      contactPerson: clean(contactPerson),
+      department: clean(department),
+      contactNumber: clean(contactNumber),
       accountantPerson: null,
       accountantNumber: null,
       method,
       status: resolvedStatus,
-      notes: notes.trim(),
+      notes: clean(notes),
       followupDate,
       nextFollowupDate: nextFollowupDate || null
     };
@@ -83,11 +85,11 @@ export default function AddFollowupModal({ itemToEdit, initialData, onClose, onS
     // Editing: close right away and let the page save in the background (it reverts + warns on failure)
     if (isEditing && onOptimisticSave) {
       onOptimisticSave(itemToEdit.id, payload);
-      setLoading(false);
       onClose();
       return;
     }
 
+    setLoading(true);
     try {
       let res;
       if (isEditing) {

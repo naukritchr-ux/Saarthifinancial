@@ -24,6 +24,9 @@ router.get('/pending-tds', asyncHandler(getPendingTdsFollowups));
 router.get('/summary',  asyncHandler(getFollowupSummary));
 router.get('/',         asyncHandler(getFollowups));
 router.post('/',        asyncHandler(createFollowup));
+router.put('/:id',           validateId, asyncHandler(updateFollowup));
+router.patch('/:id',         validateId, asyncHandler(updateFollowup));
+router.post('/:id/update',   validateId, asyncHandler(updateFollowup));  // POST alias for browser/proxy compat
 router.delete('/purge',      asyncHandler(purgeFollowups));
 router.post('/purge',        asyncHandler(purgeFollowups));   // POST alias for browser/proxy compat
 router.delete('/:id',        asyncHandler(deleteFollowup));
