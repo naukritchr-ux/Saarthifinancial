@@ -142,25 +142,6 @@ export default function ReconciliationTable({
     }).format(Math.round(parseFloat(val || 0)));
   };
 
-  // Format SQL DATE values without introducing timezone date shifts.
-  const formatBillDate = (value) => {
-    if (!value || value === 'N/A') return '—';
-    const raw = String(value).trim();
-    const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (dateOnly) return `${dateOnly[3]}/${dateOnly[2]}/${dateOnly[1]}`;
-    const parsed = new Date(raw);
-    return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleDateString('en-IN');
-  };
-
-  const hasBillDetails = (row) => {
-    const billNumber = String(row?.billNumber || '').trim();
-    const billDate = String(row?.billDate || '').trim();
-    const billAmount = Number(row?.totalBillAmount ?? row?.billAmount ?? 0);
-    return (billNumber && billNumber !== 'N/A' && billNumber !== '-') ||
-      (billDate && billDate !== 'N/A' && billDate !== '-') ||
-      billAmount > 0;
-  };
-
   const isSaarthiEraRow = (fy = '') => {
     if (!fy) return false;
 
@@ -429,9 +410,6 @@ export default function ReconciliationTable({
                         <div className="font-extrabold text-[#1F1B2E]">
                           {displayName}
                         </div>
-                        <div className="text-[10px] text-[#6B6580] mt-0.5 flex items-center gap-1.5">
-                          <span>Bill: {row.billNumber || 'N/A'}</span>
-                        </div>
                       </td>
 
                       {/* PAN Number — Fourth Column */}
@@ -692,38 +670,6 @@ export default function ReconciliationTable({
                                     </div>
                                   </div>
                                 </div>
-                              </div>
-                            </div>
-
-                            {/* Billing Details */}
-                            <div className="space-y-2">
-                              <div className="flex items-center gap-1.5 text-[10px] font-black uppercase text-[#9B87F5] tracking-wider">
-                                <CreditCard className="w-3.5 h-3.5" />
-                                Billing
-                              </div>
-                              <div className="overflow-hidden rounded-xl border border-[#E9E4FA]">
-                                <div className="grid grid-cols-1 sm:grid-cols-3 bg-[#F0EDFF] text-[10px] font-black uppercase tracking-wide text-[#6B6580]">
-                                  <div className="px-3.5 py-2.5">Bill No.</div>
-                                  <div className="px-3.5 py-2.5">Invoice Date</div>
-                                  <div className="px-3.5 py-2.5 sm:text-right">Bill Amount</div>
-                                </div>
-                                {hasBillDetails(row) ? (
-                                  <div className="grid grid-cols-1 sm:grid-cols-3 bg-white text-xs font-bold text-[#1F1B2E]">
-                                    <div className="px-3.5 py-3 break-words">
-                                      {row.billNumber && row.billNumber !== 'N/A' ? row.billNumber : '—'}
-                                    </div>
-                                    <div className="px-3.5 py-3">
-                                      {formatBillDate(row.billDate)}
-                                    </div>
-                                    <div className="px-3.5 py-3 sm:text-right">
-                                      {formatCurrency(row.totalBillAmount ?? row.billAmount ?? 0)}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="px-3.5 py-4 bg-white text-center text-[#8B849B] font-semibold">
-                                    No billing details available for this client and financial year.
-                                  </div>
-                                )}
                               </div>
                             </div>
 

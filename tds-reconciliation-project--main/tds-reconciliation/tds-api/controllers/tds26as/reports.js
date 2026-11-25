@@ -1,12 +1,12 @@
 import xlsx from 'xlsx';
 import fs from 'fs';
 import path from 'path';
-import db from '../../config/db.js';
-import { reconcile, cleanNameTokens } from '../../services/tdsReconciliationService.js';
-import { seedEmbeddedDataset, markPurgedFlag, clearPurgedFlag } from '../../seed_embedded_dataset.js';
+import db from '../config/db.js';
+import { reconcile, cleanNameTokens } from '../services/tdsReconciliationService.js';
+import { seedEmbeddedDataset, markPurgedFlag, clearPurgedFlag } from '../seed_embedded_dataset.js';
 import { v4 as uuidv4 } from 'uuid';
 import { ensurePanColumns } from './identity.js';
-import { normalizeFY, getFinancialYearFromDate } from '../../utils/fyHelper.js';
+import { normalizeFY, getFinancialYearFromDate } from '../utils/fyHelper.js';
 import {
   TDS_TOLERANCE,
   PRIMARY_TDS_SQL,
@@ -16,7 +16,7 @@ import {
   isSaarthiEra,
   deriveFinancialStatus,
   getFinancialStatusWhereClause
-} from '../../services/reconciliationRules.js';
+} from '../services/reconciliationRules.js';
 
 export { normalizeFY, getFinancialYearFromDate };
 
@@ -258,7 +258,7 @@ export const getCleaningQueue = async (req, res) => {
       }
     });
 
-    (dupTallyRows || []).forEach(r => {
+        (dupTallyRows || []).forEach(r => {
       const amountsList = String(r.amounts || '').split(',').map(a => `₹${parseFloat(a).toLocaleString('en-IN')}`).join(', ');
       const key = `${r.tan_no}|${r.financial_year}`.toUpperCase();
       if (duplicateEntriesMap.has(key)) {
@@ -453,7 +453,7 @@ export const getCleaningQueue = async (req, res) => {
       let issueType = 'source_discrepancy';
 
       // Explicit triage priority:
-      // 1. Conflicting TANs across datasets (hard mismatch between 26AS, Tally, or Sarthi)
+      // 1. Conflicting TANs across datasets (hard mismatch between 26AS, Tally, or Saarthi)
       // 2. Multiple TAN registrations for the same legal company entity (e.g. branch offices)
       // 3. PAN entered into TAN field (common user/accountant transposition)
       // 4. Ambiguous duplicate entry with differing amounts for the same TAN+FY
@@ -518,7 +518,8 @@ export const getCleaningQueue = async (req, res) => {
       if (isZeroData && isUnknownDummy) return false;
 
       const invalidTan = !item.tanNo || item.tanNo === 'Pending TAN' || item.tanNo.length < 10 || item.tanNo.includes('UNKNOWN') || !/^[A-Za-z]{4}[0-9]{5}[A-Za-z]$/.test(item.tanNo);
-      const isPanAsTan = /^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(item.tanNo);
+
+            const isPanAsTan = /^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/.test(item.tanNo);
       const missingName = isDummyPlaceholderName(item.saarthiName);
       const lowConfidence = item.confidence < 90;
       const tanMismatch = item.isTanMismatch;
@@ -778,7 +779,8 @@ export const getReconciliationReport = async (req, res) => {
 
     if (booksVs26asStatus && booksVs26asStatus !== 'All') {
       whereClauses.push('tr.books_vs_26as_status = ?');
-      queryParams.push(booksVs26asStatus);
+
+            queryParams.push(booksVs26asStatus);
     }
 
     // 3-Way Source Coverage Filter
@@ -871,8 +873,8 @@ export const getReconciliationReport = async (req, res) => {
           CASE WHEN d.tan_no IS NOT NULL AND d.tan_no NOT LIKE 'NO_TAN_%' AND TRIM(d.tan_no) != '' THEN TRIM(d.tan_no) END
         ) as tanNo,
         COALESCE(NULLIF(TRIM(d.company_name), ''), COALESCE(CASE WHEN tr.tan_no NOT LIKE 'NO_TAN_%' THEN tr.tan_no END, d.tan_no), 'Unassigned Entity') as companyName,
-        COALESCE(NULLIF(TRIM(d.bill_number), ''), 'N/A') as billNumber,
-        COALESCE(DATE_FORMAT(d.bill_date, '%Y-%m-%d'), 'N/A') as billDate,
+        'N/A' as billNumber,
+        'N/A' as billDate,
         COALESCE(d.total_bill_amount, 0) as totalBillAmount,
         COALESCE(NULLIF(TRIM(tr.financial_year), ''), NULLIF(TRIM(d.financial_year), ''), 'Unspecified') as financialYear,
 
@@ -900,7 +902,11 @@ export const getReconciliationReport = async (req, res) => {
         COALESCE(NULLIF(TRIM(d.pan_no), ''), (SELECT t.pan_no FROM tds_tally_entries t WHERE t.tan_no = tr.tan_no AND t.pan_no IS NOT NULL AND TRIM(t.pan_no) != '' LIMIT 1), (SELECT a.pan_no FROM tds_26as_entries a WHERE a.tan_no = tr.tan_no AND a.pan_no IS NOT NULL AND TRIM(a.pan_no) != '' LIMIT 1), '') as panNo,
         0 as tallyGrossTotal,
 
-        d.company_name as as26DeductorName,
+        COALESCE(
+          (SELECT a.deductor_name FROM tds_26as_entries a WHERE a.tan_no = tr.tan_no AND a.financial_year = tr.financial_year AND a.deductor_name IS NOT NULL AND TRIM(a.deductor_name) != '' LIMIT 1),
+          (SELECT a.deductor_name FROM tds_26as_entries a WHERE a.tan_no = tr.tan_no AND a.deductor_name IS NOT NULL AND TRIM(a.deductor_name) != '' LIMIT 1),
+          ''
+        ) as as26DeductorName,
         0 as as26InvoiceAmount
 
       FROM tds_reconciliation_results tr
@@ -1034,7 +1040,8 @@ export const overrideReconciliationStatus = async (req, res) => {
     if (overrideField === 'overall_status') {
       if (!validOverallStatuses.includes(newValue)) {
         return res.status(400).json({ success: false, error: `Invalid overall status value: ${newValue}` });
-      }
+
+              }
     } else {
       if (!validPairStatuses.includes(newValue)) {
         return res.status(400).json({ success: false, error: `Invalid status value: ${newValue}` });
@@ -1294,7 +1301,7 @@ export const createCrmBookEntry = async (req, res) => {
       company_name,
       financial_year,
       tds_amount,
-      total_bill_amount,
+            total_bill_amount,
       bill_number,
       bill_date,
       contact_person_name,
@@ -1554,7 +1561,7 @@ export const getCompanyEntries = async (req, res) => {
     }
 
     if (pan && String(pan).trim() !== '' && String(pan).trim() !== 'N/A') {
-      const cleanPan = String(pan).trim().toUpperCase();
+            const cleanPan = String(pan).trim().toUpperCase();
       orConditions.push('d.pan_no = ?');
       params.push(cleanPan);
       orConditions.push('tr.tan_no IN (SELECT tan_no FROM tds_tally_entries WHERE pan_no = ?)');
@@ -1592,14 +1599,14 @@ export const getCompanyEntries = async (req, res) => {
     `;
 
     const [rows] = await db.execute(query, params);
-    
+
     // Deduplicate by ID and normalize FY strings
     const seenIds = new Set();
     const uniqueRows = [];
     for (const r of (rows || [])) {
       if (!seenIds.has(r.id)) {
         seenIds.add(r.id);
-        
+
         // Fix any 2025-25 typo -> FY 2024-25 or FY 2025-26
         let cleanFy = r.financialYear ? String(r.financialYear).trim() : 'Unspecified';
         if (/2025[-/]?25/i.test(cleanFy)) {
@@ -1813,8 +1820,7 @@ export const getCompanyTransactions = async (req, res) => {
           status,
           payment_date as paymentDate,
           financial_year as financialYear,
-          note
-        FROM tds_dues
+          note FROM tds_dues
         WHERE (${duesConditions.join(' OR ')})
       `;
       if (targetFy) {
@@ -1905,7 +1911,7 @@ export const getCompanyTransactions = async (req, res) => {
     const totalBillAmount = bills.reduce((acc, b) => acc + parseFloat(b.totalBillAmount || 0), 0);
     const totalBillTds = bills.reduce((acc, b) => acc + parseFloat(b.tds || 0), 0);
     const totalAmountReceived = bills.reduce((acc, b) => acc + parseFloat(b.amountReceived || 0), 0);
-    
+
     // Count paid vs unpaid
     const paidBills = bills.filter(b => {
       const s = (b.status || '').toLowerCase();
