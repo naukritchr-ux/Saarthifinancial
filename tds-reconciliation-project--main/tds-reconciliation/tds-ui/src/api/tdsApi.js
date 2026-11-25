@@ -73,7 +73,8 @@ export const getCleaningQueue = async () => {
     const response = await fetchWithTimeout(`${API_URL}/api/tds-26as/cleaning-queue`);
     const data = await response.json();
     if (response.ok && data && data.success !== false) return data;
-    return { success: false, error: data?.error || 'Failed to load cleaning queue', count: 0, data: [] };
+    const detail = data?.details ? ` — ${data.details}` : '';
+    return { success: false, error: `${data?.error || 'Failed to load cleaning queue'} (HTTP ${response.status})${detail}`, count: 0, data: [] };
   } catch (err) {
     return { success: false, error: err.message || 'Error connecting to cleaning queue', count: 0, data: [] };
   }
