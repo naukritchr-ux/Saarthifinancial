@@ -375,6 +375,31 @@ export const syncSaarthiLiveApi = async (req, res) => {
     // tds, books_tds, tally_tds, or any reconciliation source values.
     let invoiceDetailsUpdated = 0;
     try {
+      // Ensure the existing tds_dues table has the Bill Details columns.
+      // This avoids requiring a separate invoice table. The DB account must
+      // have ALTER TABLE permission; if it does not, the warning is logged
+      // and the rest of the existing sync continues safely.
+      const billColumnDefinitions = {
+        bill_number: 'VARCHAR(255) NULL',
+        bill_date: 'DATE NULL',
+        total_bill_amount: 'DECIMAL(15,2) NULL'
+      };
+
+      const [initialBillColumns] = await db.execute('SHOW COLUMNS FROM tds_dues');
+      const existingBillColumns = new Set(
+        (initialBillColumns || []).map(column => String(column.Field || '').toLowerCase())
+      );
+
+      for (const [columnName, columnDefinition] of Object.entries(billColumnDefinitions)) {
+        if (!existingBillColumns.has(columnName)) {
+          await db.execute(
+            `ALTER TABLE tds_dues ADD COLUMN ${columnName} ${columnDefinition}`
+          );
+          console.log(`✅ Added missing tds_dues column: ${columnName}`);
+          existingBillColumns.add(columnName);
+        }
+      }
+
       const parseInvoiceDate = (value) => {
         if (!value) return null;
         if (value instanceof Date && !Number.isNaN(value.getTime())) {
