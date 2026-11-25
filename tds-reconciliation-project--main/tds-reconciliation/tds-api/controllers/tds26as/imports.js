@@ -262,6 +262,38 @@ const parseAnyDate = (dateVal) => {
   return null;
 };
 
+// A genuine TAN is always 10 characters: 4 letters, 5 digits and 1 letter.
+const isValidTan = (value) => /^[A-Z]{4}\d{5}[A-Z]$/i.test(String(value || '').trim());
+
+// Keep unresolved rows isolated without creating long values in tan_no.
+// The generated value is exactly 10 characters and will not match a genuine TAN.
+const createUnresolvedTan = () => {
+  const uuidHex = uuidv4().replace(/-/g, '');
+  const uniqueDigits = (BigInt(`0x${uuidHex}`) % 1000000000n)
+    .toString()
+    .padStart(9, '0');
+  return `X${uniqueDigits}`;
+};
+
+// Older deployments may not yet have transaction_date. Check the live table
+// before building the 26AS INSERT so uploads continue to work during migration.
+const has26asTransactionDateColumn = async () => {
+  try {
+    await db.execute('SELECT transaction_date FROM tds_26as_entries LIMIT 0');
+    return true;
+  } catch (error) {
+    const message = String(error?.message || '').toLowerCase();
+    const missingColumn =
+      error?.code === 'ER_BAD_FIELD_ERROR' ||
+      error?.errno === 1054 ||
+      message.includes('no such column') ||
+      message.includes('unknown column');
+
+    if (missingColumn) return false;
+    throw error;
+  }
+};
+
 // ── Header Matching Utilities ──────────────────────────────────────────────────
 
 const normalizeHeaderCell = (text) => {
@@ -709,7 +741,7 @@ export const upload26as = async (req, res) => {
         continue;
       }
 
-      const tan = (rawTan || ('NO_TAN_' + cleanNameTokens(deductorName))).toUpperCase();
+      const tan = (rawTan && isValidTan(rawTan) ? rawTan.toUpperCase() : createUnresolvedTan());
       if (['TANNO', 'TAN_NO', 'TAN', 'PAN', 'PANNO', 'COMPANYNAME', 'PARTYNAME', 'DEDUCTORNAME'].includes(tan)) {
         continue;
       }
@@ -741,24 +773,51 @@ export const upload26as = async (req, res) => {
       await db.execute('UPDATE tds_reconciliation_results SET as26_tds = 0, as26_batch_id = NULL WHERE is_manually_edited = 0');
     }
 
-    // Bulk insert entries in chunks of 500
+    // Bulk insert entries in chunks of 500. Include transaction_date only when
+    // the live database table has that column; the migration can be applied later.
+    const hasTransactionDate = await has26asTransactionDateColumn();
+    if (!hasTransactionDate) {
+      console.warn(
+        '⚠️ tds_26as_entries.transaction_date is missing. Upload will continue without saving transaction dates. Apply the database migration to store them.'
+      );
+    }
+
     const INSERT_CHUNK = 500;
+    const insertColumns = hasTransactionDate
+      ? 'tan_no, deductor_name, transaction_date, amount_paid, tds_deducted, section, quarter, financial_year, upload_batch_id'
+      : 'tan_no, deductor_name, amount_paid, tds_deducted, section, quarter, financial_year, upload_batch_id';
+    const valuesPerEntry = hasTransactionDate ? 9 : 8;
+
     for (let i = 0; i < entries.length; i += INSERT_CHUNK) {
       const chunk = entries.slice(i, i + INSERT_CHUNK);
-      const placeholders = chunk.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const placeholders = chunk
+        .map(() => `(${Array(valuesPerEntry).fill('?').join(', ')})`)
+        .join(', ');
       const params = [];
+
       for (const e of chunk) {
-        params.push(e.tan, e.deductorName, e.transactionDate, e.amountPaid, e.tdsDeducted, e.section, e.quarter, e.financialYear, e.uploadBatchId);
+        if (hasTransactionDate) {
+          params.push(
+            e.tan, e.deductorName, e.transactionDate, e.amountPaid,
+            e.tdsDeducted, e.section, e.quarter, e.financialYear, e.uploadBatchId
+          );
+        } else {
+          params.push(
+            e.tan, e.deductorName, e.amountPaid, e.tdsDeducted,
+            e.section, e.quarter, e.financialYear, e.uploadBatchId
+          );
+        }
       }
+
       await db.execute(
-        `INSERT INTO tds_26as_entries (tan_no, deductor_name, transaction_date, amount_paid, tds_deducted, section, quarter, financial_year, upload_batch_id) VALUES ${placeholders}`,
+        `INSERT INTO tds_26as_entries (${insertColumns}) VALUES ${placeholders}`,
         params
       );
     }
 
     // Persist financial year onto matching tds_dues rows if specific FY chosen
     if (uploadFy && uploadFy !== 'All' && uploadFy !== 'All Financial Years') {
-      const uniqueTans = [...new Set(entries.map(e => e.tan).filter(t => t && !t.startsWith('NO_TAN_')))];
+      const uniqueTans = [...new Set(entries.map(e => e.tan).filter(isValidTan))];
       const FY_CHUNK = 200;
       for (let i = 0; i < uniqueTans.length; i += FY_CHUNK) {
         const chunk = uniqueTans.slice(i, i + FY_CHUNK);
@@ -788,6 +847,7 @@ export const upload26as = async (req, res) => {
       financial_year: normalizeFY(uploadFy) || null,
       file_name: file.originalname,
       total_records: entries.length,
+      unresolved_tan_records: entries.filter(e => !isValidTan(e.tan)).length,
       duplicates_skipped: 0
     });
 
@@ -801,6 +861,7 @@ export const upload26as = async (req, res) => {
       message: `Form 26AS uploaded and parsed successfully (${entries.length} records). Created batch ID ${uploadBatchId}`,
       batchId: uploadBatchId,
       records: entries.length,
+      unresolvedTanRecords: entries.filter(e => !isValidTan(e.tan)).length,
       duplicatesSkipped: 0
     });
 
@@ -928,7 +989,7 @@ export const uploadTally = async (req, res) => {
         finalTan = tanByCleanName.get(cleanNameTokens(partyName));
       } else {
         // Keep PAN or unknown identifiers out of tan_no; unresolved rows cannot be TAN-reconciled.
-        finalTan = 'NO_TAN_' + (cleanNameTokens(partyName) || `ROW_${r}`);
+        finalTan = createUnresolvedTan();
       }
 
       const contactPerson = colMap.contact_person !== -1 ? String(row[colMap.contact_person] || '').trim() : null;
@@ -961,7 +1022,7 @@ export const uploadTally = async (req, res) => {
       });
     }
 
-      if (entries.length === 0) {
+    if (entries.length === 0) {
       return res.status(400).json({ success: false, error: 'No valid data rows found in Tally file.' });
     }
 
@@ -989,7 +1050,7 @@ export const uploadTally = async (req, res) => {
     // Deduplicate contact info by TAN and update
     const contactsByTan = new Map();
     for (const e of entries) {
-      if (e.tan && (e.contactPerson || e.designation || e.contactNumber || e.emailId || e.teamleader)) {
+      if (isValidTan(e.tan) && (e.contactPerson || e.designation || e.contactNumber || e.emailId || e.teamleader)) {
         const existing = contactsByTan.get(e.tan.toUpperCase()) || {};
         contactsByTan.set(e.tan.toUpperCase(), {
           contactPerson: e.contactPerson || existing.contactPerson || null,
@@ -1041,7 +1102,7 @@ export const uploadTally = async (req, res) => {
 
     // Persist financial year onto matching tds_dues rows if specific FY chosen
     if (uploadFy && uploadFy !== 'All' && uploadFy !== 'All Financial Years') {
-      const uniqueTans = [...new Set(entries.map(e => e.tan).filter(t => t && !t.startsWith('NO_TAN_')))];
+      const uniqueTans = [...new Set(entries.map(e => e.tan).filter(isValidTan))];
       const FY_CHUNK = 200;
       for (let i = 0; i < uniqueTans.length; i += FY_CHUNK) {
         const chunk = uniqueTans.slice(i, i + FY_CHUNK);
@@ -1071,6 +1132,7 @@ export const uploadTally = async (req, res) => {
       financial_year: normalizeFY(uploadFy) || null,
       file_name: file.originalname,
       total_records: entries.length,
+      unresolved_tan_records: entries.filter(e => !isValidTan(e.tan)).length,
       duplicates_skipped: 0
     });
 
@@ -1084,6 +1146,7 @@ export const uploadTally = async (req, res) => {
       message: `Tally file uploaded and parsed successfully (${entries.length} records). Created batch ID ${uploadBatchId}`,
       batchId: uploadBatchId,
       records: entries.length,
+      unresolvedTanRecords: entries.filter(e => !isValidTan(e.tan)).length,
       duplicatesSkipped: 0
     });
 
