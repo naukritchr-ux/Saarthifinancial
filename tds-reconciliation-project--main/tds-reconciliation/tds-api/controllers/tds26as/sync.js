@@ -369,6 +369,223 @@ export const syncSaarthiLiveApi = async (req, res) => {
       inserted += chunk.length;
     }
 
+
+    // ─── Sync CRM invoice details into the existing Bill Details columns ───
+    // This is deliberately separate from Tally extraction and does not change
+    // tds, books_tds, tally_tds, or any reconciliation source values.
+    let invoiceDetailsUpdated = 0;
+    try {
+      const parseInvoiceDate = (value) => {
+        if (!value) return null;
+        if (value instanceof Date && !Number.isNaN(value.getTime())) {
+          return value.toISOString().slice(0, 10);
+        }
+
+        const raw = String(value).trim();
+        if (!raw) return null;
+
+        // Handle common CRM date formats such as DD/MM/YYYY and DD-MM-YYYY.
+        const dmy = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+        if (dmy) {
+          const day = Number(dmy[1]);
+          const month = Number(dmy[2]);
+          const year = Number(dmy[3]);
+          const parsed = new Date(Date.UTC(year, month - 1, day));
+          if (
+            parsed.getUTCFullYear() === year &&
+            parsed.getUTCMonth() === month - 1 &&
+            parsed.getUTCDate() === day
+          ) {
+            return parsed.toISOString().slice(0, 10);
+          }
+          return null;
+        }
+
+        const parsed = new Date(raw);
+        return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+      };
+
+      const firstValue = (obj, fields) => {
+        for (const field of fields) {
+          const value = obj?.[field];
+          if (value !== undefined && value !== null && String(value).trim() !== '') {
+            return value;
+          }
+        }
+        return null;
+      };
+
+      const invoiceGroups = new Map();
+
+      for (const inv of invoicesData) {
+        if (!inv || typeof inv !== 'object') continue;
+
+        const invoiceDateRaw = firstValue(inv, [
+          'invoiceDate', 'invoice_date', 'legal_invoiceDate',
+          'billDate', 'bill_date', 'voucherDate', 'date', 'created_at'
+        ]);
+        const invoiceDate = parseInvoiceDate(invoiceDateRaw);
+        const invoiceFy = normalizeFY(firstValue(inv, [
+          'financialYear', 'financial_year', 'fy', 'fin_year', 'finYear'
+        ])) || getFinancialYearFromDate(invoiceDateRaw) || null;
+
+        if (!invoiceFy) continue;
+
+        const invoiceNumber = String(firstValue(inv, [
+          'billNumber', 'billNo', 'bill_no', 'invoiceNumber',
+          'invoiceNo', 'invoice_no', 'voucherNo', 'voucherNumber'
+        ]) || '').trim();
+
+        // Do not use a generic "amount" field here: in this API it may represent TDS.
+        const amountRaw = firstValue(inv, [
+          'totalBillAmount', 'total_bill_amount', 'billAmount', 'bill_amount',
+          'invoiceAmount', 'invoice_amount', 'totalAmount', 'total_amount',
+          'grossAmount', 'gross_amount', 'subTotal', 'subtotal'
+        ]);
+        const amount = amountRaw === null ? 0 : Number(String(amountRaw).replace(/,/g, ''));
+        const safeAmount = Number.isFinite(amount) && amount > 0 ? amount : 0;
+
+        const gst = String(firstValue(inv, ['gstNo', 'gstNum', 'gstNumber', 'gst_no']) || '')
+          .trim().toUpperCase();
+        const companyName = String(firstValue(inv, [
+          'companyName', 'partyName', 'clientName', 'legalName', 'company_name'
+        ]) || '').trim();
+        const normName = normalize(companyName);
+        const tan = String(firstValue(inv, ['tanNo', 'tanNumber', 'tan_no']) || '')
+          .trim().toUpperCase() ||
+          legalGstToTan.get(gst) ||
+          legalNameToTan.get(normName) ||
+          '';
+        const clientId = firstValue(inv, ['clientId', 'client_id', 'saarthiClientId', 'saarthi_client_id']);
+
+        if (!tan && !normName && !clientId) continue;
+
+        const groupKey = tan
+          ? `TAN|${makeKey(tan, invoiceFy)}`
+          : clientId
+            ? `CLIENT|${String(clientId).trim()}|${invoiceFy}`
+            : `NAME|${makeKey(normName, invoiceFy)}`;
+
+        if (!invoiceGroups.has(groupKey)) {
+          invoiceGroups.set(groupKey, {
+            tan,
+            normName,
+            clientId: clientId ? String(clientId).trim() : '',
+            financialYear: invoiceFy,
+            invoiceNumbers: new Set(),
+            seenInvoices: new Set(),
+            latestBillDate: null,
+            totalBillAmount: 0,
+            hasBillAmount: false
+          });
+        }
+
+        const group = invoiceGroups.get(groupKey);
+        const invoiceId = firstValue(inv, ['id', 'invoiceId', 'invoice_id']);
+        const dedupeKey = invoiceNumber
+          ? [invoiceNumber.toLowerCase(), invoiceDate || '', safeAmount.toFixed(2)].join('|')
+          : invoiceId
+            ? `ID|${String(invoiceId).trim()}`
+            : null;
+
+        // Deduplicate only when the API supplies a stable invoice number or ID.
+        if (dedupeKey && group.seenInvoices.has(dedupeKey)) continue;
+        if (dedupeKey) group.seenInvoices.add(dedupeKey);
+
+        if (invoiceNumber) group.invoiceNumbers.add(invoiceNumber);
+        if (invoiceDate && (!group.latestBillDate || invoiceDate > group.latestBillDate)) {
+          group.latestBillDate = invoiceDate;
+        }
+        if (amountRaw !== null) {
+          group.totalBillAmount += safeAmount;
+          group.hasBillAmount = true;
+        }
+      }
+
+      if (invoiceGroups.size > 0) {
+        const [billColumns] = await db.execute('SHOW COLUMNS FROM tds_dues');
+        const availableColumns = new Set((billColumns || []).map(column => column.Field));
+        const requiredBillColumns = ['bill_number', 'bill_date', 'total_bill_amount'];
+        const missingBillColumns = requiredBillColumns.filter(column => !availableColumns.has(column));
+
+        if (missingBillColumns.length > 0) {
+          console.warn(
+            `⚠️ Invoice details were not written. Missing existing tds_dues columns: ${missingBillColumns.join(', ')}`
+          );
+        } else {
+          const [allRows] = await db.execute(`
+            SELECT id, saarthi_client_id, tan_no, company_name, financial_year
+            FROM tds_dues
+          `);
+
+          const rowsByTanFy = new Map();
+          const rowsByClientFy = new Map();
+          const rowsByNameFy = new Map();
+
+          (allRows || []).forEach(row => {
+            const fy = normalizeFY(row.financial_year) || String(row.financial_year || '').trim();
+            const tan = String(row.tan_no || '').trim().toUpperCase();
+            const name = normalize(row.company_name);
+            if (tan) rowsByTanFy.set(makeKey(tan, fy), row.id);
+            if (row.saarthi_client_id) {
+              rowsByClientFy.set(`${String(row.saarthi_client_id).trim()}|${fy}`, row.id);
+            }
+            if (name) rowsByNameFy.set(makeKey(name, fy), row.id);
+          });
+
+          for (const group of invoiceGroups.values()) {
+            const fy = group.financialYear;
+            let rowId = null;
+
+            if (group.tan) rowId = rowsByTanFy.get(makeKey(group.tan, fy)) || null;
+            if (!rowId && group.clientId) {
+              rowId = rowsByClientFy.get(`${group.clientId}|${fy}`) || null;
+            }
+            if (!rowId && group.normName) {
+              rowId = rowsByNameFy.get(makeKey(group.normName, fy)) || null;
+            }
+
+            if (!rowId) continue;
+
+            const billNumber = Array.from(group.invoiceNumbers).join(', ');
+            const billDate = group.latestBillDate;
+            const billAmount = group.hasBillAmount ? Number(group.totalBillAmount.toFixed(2)) : null;
+
+            // Preserve the existing Bill Details if the CRM has no value for a field.
+            const assignments = [];
+            const params = [];
+            if (billNumber) {
+              assignments.push('bill_number = ?');
+              params.push(billNumber);
+            }
+            if (billDate) {
+              assignments.push('bill_date = ?');
+              params.push(billDate);
+            }
+            if (billAmount !== null) {
+              assignments.push('total_bill_amount = ?');
+              params.push(billAmount);
+            }
+
+            if (assignments.length === 0) continue;
+
+            params.push(rowId);
+            await db.execute(
+              `UPDATE tds_dues SET ${assignments.join(', ')} WHERE id = ?`,
+              params
+            );
+            invoiceDetailsUpdated += 1;
+          }
+        }
+      }
+
+      console.log(`✅ CRM invoice details updated for ${invoiceDetailsUpdated} existing company/FY records`);
+    } catch (invoiceSyncError) {
+      // Invoice API/schema issues must not stop the client/legal sync or Tally workflow.
+      console.warn('⚠️ CRM invoice details sync warning:', invoiceSyncError.message);
+    }
+    // ───────────────────────────────────────────────────────────────────────
+
     // ─── Directly update tds_reconciliation_results.books_tds from tds_dues.tds matching (tan, financial_year) ───
     try {
       await db.execute(`
@@ -439,14 +656,16 @@ export const syncSaarthiLiveApi = async (req, res) => {
 
     res.json({
       success: true,
-      message: `Sarthi 360 sync complete. ${inserted} inserted, ${updated} updated.`,
+      message: `Sarthi 360 sync complete. ${inserted} inserted, ${updated} updated. CRM invoice details updated for ${invoiceDetailsUpdated} records.`,
       liveApiStatus,
       stats: {
         clientsFetched: clientMasters.length,
         clientsProcessed: usableMasters.length,
         skipped: skippedCount,
         inserted,
-        updated
+        updated,
+        invoicesFetched: invoicesData.length,
+        invoiceDetailsUpdated
       }
     });
 
